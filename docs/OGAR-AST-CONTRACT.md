@@ -359,18 +359,22 @@ string-parse. Logged in `CROSS_SESSION_COORDINATION.md`.
    fn commit_event(&self, row: Self::Commit /* = CognitiveEventRow */) -> u64
    ```
    returning the new Lance version. Action commits skip the cognitive-cycle
-   `ShaderBus` shape. **This is the precise `CommitHook::commit` target**, to be
-   added in `lance-graph-callcenter` by the runtime session. Until then the
-   binding's `CommitHook` impl is signature-deferred.
+   `ShaderBus` shape. **This is the precise `CommitHook::on_commit` call
+   target** (see §3's binding example), to be added in `lance-graph-callcenter`
+   by the runtime session. Until then the binding's `LanceCommitHook` impl
+   compiles against a trait-object/stub for `LanceMembrane`.
 3. **Fork access — RESOLVED.** `GH_TOKEN` PAT authenticates as `AdaWorldAPI`
    with push on `AdaWorldAPI/{OGAR, ractor, ractor_actors, lance-graph,
-   bardioc}`. The generic `state_machine` crate lands in `ractor_actors/`
-   (cargo-workspace member); the binding lives in `lance-graph-callcenter`.
-4. **§3 signatures — RECONCILIATION PENDING.** The §3 sketch (`handle(.., hook)`,
-   infallible `commit`) will align to the actual `state_machine` crate
-   (`on_event -> Transition`, `is_commit`, sync-fallible `on_commit`) once the
-   runtime session pushes the scaffold. The OGAR-side surface (§1, §5, §6) is
-   stable regardless — the change is purely in the trait names/return types
-   referenced by §3.
+   bardioc}`. The generic `state_machine` crate lives in `ractor_actors/`
+   (cargo-workspace member, pushed at `feat/state-machine-actor` @ `38a71a4` —
+   7/7 tests green, clippy clean, includes the load-bearing postpone-replay
+   test); the binding lives in `lance-graph-callcenter`.
+4. **§3 signatures — RECONCILED (PR #11).** §3 now carries the canonical
+   `on_event(state, event, ctx) -> Transition`, `is_commit(state) -> bool`,
+   `timeout(state)` + `on_timeout(state, ctx)`, `Transition::{Goto, Stay,
+   Postpone, Stop}`, and `CommitHook::on_commit(from, to, ctx) -> Result<(), ActorProcessingErr>`
+   (sync + fallible — honours I-2) from `ractor_actors` `feat/state-machine-actor`
+   @ `38a71a4`. The OGAR-side surface (§1, §5, §6) is unchanged by the
+   reconciliation.
 5. **Sprint-7 timing — STILL APPLIES.** Pin this contract into the
    `lance-graph-callcenter` design *before* any hand-loop dispatch is written.
