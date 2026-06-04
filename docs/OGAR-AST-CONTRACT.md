@@ -87,7 +87,7 @@ pub struct ActionDef {
     pub method_body:      Option<String>,
     pub results_in:       Option<StateTransition>,  // ::S-to-T → applied at Pending→Committed
     // statem terms (vocab/ogar.ttl, PR #10):
-    pub on_enter:               Option<String>,                 // ogar:onEnter
+    pub on_enter:               Option<EnterEffect>,             // ogar:onEnter (typed; range tightened from xsd:string)
     pub guard_failure_policy:   GuardFailurePolicy,             // Reject (default) | Postponable
     pub state_timeout_millis:   Option<i64>,                    // ogar:stateTimeoutMillis
 }
@@ -279,7 +279,7 @@ eighth"), shipped in `AdaWorldAPI/OGAR#10` and carried on `ActionDef` (§1):
 
 | Term | Slot | Carrier field | Lowers to |
 |---|---|---|---|
-| `ogar:onEnter` | (entry effect) | `ActionDef.on_enter: Option<String>` | `StateMachine::on_enter(Committed)` → `CommitHook` → Lance append (the Rubicon crossing) |
+| `ogar:onEnter` | (entry effect) | `ActionDef.on_enter: Option<EnterEffect>` (typed since PR #13) | `StateMachine::on_enter(Committed)` → `CommitHook` → Lance append (the Rubicon crossing) |
 | `ogar:guardFailurePolicy` ∈ `{Postponable, Reject}` | Modal | `ActionDef.guard_failure_policy: GuardFailurePolicy` | `Postponable` → `Transition::Postpone` (stay `Pending`); `Reject` (default) → `Pending → Failed` |
 | `ogar:StateTimeout` (+ `stateTimeoutMillis`) | Temporal | `ActionDef.state_timeout_millis: Option<i64>` | per-state SLA on `Pending`; gen-stamped timer auto-cancels at the crossing |
 
@@ -292,10 +292,11 @@ Companion: **`docs/ELIXIR-HIRO-PREFETCH.md`** (also #10) — the OLD-Elixir-stac
 onto exactly these three terms, so every migration debt has a type home before
 Sprint 4.5 `unmap` lands. `Language::Elixir` is first-class in `ogar-vocab`.
 
-Follow-up (not blocking): `ogar:onEnter` ranges `xsd:string` today (free-form
-effect name). Worth promoting to a typed `EnterEffect` (or reusing
-`StateTransition`) when the codegen actually consumes it, so it doesn't
-string-parse. Logged in `CROSS_SESSION_COORDINATION.md`.
+Typed `EnterEffect` promotion (`xsd:string → ogar:EnterEffect`) — **CLOSED in
+PR #13**. `ActionDef.on_enter` is now `Option<EnterEffect>` with `field` +
+`to_value` fields; codegen applies the lifecycle-visible transition
+structurally instead of string-parsing. Further tightening of `to_value` to
+typed values beyond strings remains a tracked follow-up.
 
 ## 7. Status of the open seams
 
