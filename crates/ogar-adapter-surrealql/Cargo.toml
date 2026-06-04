@@ -1,0 +1,30 @@
+[package]
+name = "ogar-adapter-surrealql"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+description = "Bidirectional SurrealQL DDL bridge for OGAR. emit(Class) -> SurrealQL DDL via a hand-written formatter aligned with surrealdb-core::catalog::TableDefinition::new_for_ddl (Sprint C16b); unmap(SurrealQL) -> Class via surrealdb-parser + AST walk (deferred — requires rust-version 1.95+, pending OGAR workspace bump). Sources the knowable_from clock for lance-graph-planner::temporal::classify (per OPENPROJECT-TRANSCODING.md §10.3)."
+
+[features]
+default = []
+serde = ["dep:serde", "ogar-vocab/serde"]
+# When OGAR workspace bumps to rust-version 1.95+, enable this feature to
+# pull in surrealdb-ast + surrealdb-parser from AdaWorldAPI/surrealdb (git dep).
+# Then unmap() wires the parser; the parse(emit(parse(x))) == parse(x)
+# roundtrip proptest becomes meaningful.
+surrealdb-parser = []
+
+[dependencies]
+ogar-vocab = { path = "../ogar-vocab" }
+serde = { workspace = true, optional = true }
+
+# When the surrealdb-parser feature is enabled (post rust-version 1.95 bump):
+#   surrealdb-ast    = { git = "https://github.com/AdaWorldAPI/surrealdb", branch = "main", optional = true }
+#   surrealdb-parser = { git = "https://github.com/AdaWorldAPI/surrealdb", branch = "main", optional = true }
+# Until then, parse_surrealql_ddl is a todo!() stub.
+
+[lints]
+workspace = true
