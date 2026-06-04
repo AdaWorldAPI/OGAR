@@ -331,7 +331,62 @@ Source AST (Ruby AR / Python Odoo / Elixir Ecto / SurrealQL DDL / TTL / …)
 > abstraction level) OR if a concrete migration debt forces the
 > conversation.
 
-## 6. What changes in the existing crates
+## 6. Migration scaffold — a third option during transition, not at steady state
+
+§3 concluded "no" to using SurrealQL DDL as the universal IR because at
+*steady state* the behavioral arm's lifecycle FSM has no DDL home and the
+encoding tricks that look like beauty rot immediately. That verdict stands.
+
+But §3's analysis assumed a *steady-state target architecture* — every
+actor is a native Rust ractor handler over OGAR's IR, every commit goes
+through `LanceMembrane::commit_event`. **During migration** from existing
+Rails-AR / Elixir-OTP stacks to substrate-b, a different question
+emerges: can the substrate's actor scheduler (the Kanban dispatcher per
+`SOA-IMPLEMENTATION.md §5.2`) tolerate *non-native* executable forms as
+work-items, so production behavior runs on the substrate before every
+actor has been translated through `ogar-from-{elixir,ruby}` + Rubicon
+codegen?
+
+The answer is yes. The Kanban contract is shaped narrowly enough — a
+work-item is "given `(state, event, ctx)`, produce `Transition`" — that
+multiple executable forms can satisfy it:
+
+| Work-item form | Source | Migration role |
+|---|---|---|
+| Native Rust ractor handler | Rubicon-from-OGAR codegen | **the steady-state target** (every actor graduates here) |
+| BEAM-compiled Elixir function | HIRO/Bardioc actors via Erlang Port / NIF | scaffold for Elixir stacks (high binary cost, full runtime fidelity) |
+| Tiny Elixir-AST interpreter | The "limited commandlets" subset (gen_statem returns, GenServer handle_*, Ecto changesets) evaluated in-process | scaffold for Elixir stacks without BEAM dependency (engineering cost: a real interpreter) |
+| HTTP RPC to Rails sidecar | OpenProject's Rails app on Puma; dispatch = `POST /api/v3/work_packages/:id/<action>` | scaffold for Rails stacks (lowest friction, production-ready Rails app deploys unchanged) |
+| Embedded CRuby via FFI | In-process Ruby dispatch with `ActiveRecord::Reflection` introspection | scaffold for Rails stacks in-process (CRuby GIL serializes per-actor — matches Kanban's per-actor mailbox model) |
+| Rails-AR-reflection dump-as-producer-input | Static-time `rails runner` dump of every `Model.reflect_on_all_*` / `_validators` / `_save_callbacks` fed to `ogar-from-ruby` | **the cheapest beauty win** — no embedding, no sidecar, no runtime; just better producer extraction (Rails AR's runtime reflection is wider than what static Ruby-AST extraction sees: macro expansions, `acts_as_*` metadata, derived columns all materialize) |
+
+Each form's commitment cost differs (HTTP sidecar lowest, BEAM/CRuby
+embed highest, reflection-dump effectively zero). The §14 oracle gates
+per-actor graduation from migration-form to native-Rust steady state.
+The Kanban dispatcher is the **stable contract**; the work-item form
+migrates underneath it without disrupting the rest of the substrate
+(Lance commits, deinterlace, Rubicon's downstream semantics).
+
+This is **architecturally different from §3's unification question** — it
+doesn't replace OGAR's IR with anything; OGAR's `Class`/`ActionDef`
+remain the target form every actor graduates to. It's an *additional
+layer*: work-item polyglotism *during* the migration window, dissolving
+as actors graduate.
+
+The full architecture of the migration scaffold + its end-state
+(OpenProject as the substrate's own operator pane + visualization
+tier-stack + SDK shape comparison vs Palantir Foundry) is in
+**`docs/SUBSTRATE-ENDGAME.md`** — separate doc, different concern from
+this doc's structural-vs-behavioral analysis, not folded in here to keep
+this record focused on its original topic.
+
+**Decision pinned:** §3's verdict on OGAR's behavioral IR being
+irreplaceable for the *steady-state* substrate stands. The
+kanban-as-polyglot-dispatcher pattern is the orthogonal migration
+architecture. Both decisions live; they don't conflict; the migration
+scaffold dissolves once graduation completes.
+
+## 7. What changes in the existing crates
 
 Nothing immediate — this doc *records* the decision; the trajectory was
 already correct. The pieces this doc explicitly endorses:
@@ -340,7 +395,7 @@ already correct. The pieces this doc explicitly endorses:
 - `ogar-vocab::Class` + `ActionDef` + `ActionInvocation`: stay as canonical OGAR types. No deprecation.
 - nexgen's `op-surreal-ast` (C16a) + `op-codegen-projection` (C15): coexist as fast OP-specific in-repo paths; converge with OGAR via C16c's `From<op_surreal_ast::*> for catalog::*`. No collision; same destination.
 
-## 7. Cross-references
+## 8. Cross-references
 
 - `OGAR-AST-CONTRACT.md` §2 — the SurrealQL DDL bridge (this doc's structural arm).
 - `OGAR-AST-CONTRACT.md` §3 — the lowering contract (this doc's behavioral arm is irreplaceable for Rubicon).
@@ -352,3 +407,5 @@ already correct. The pieces this doc explicitly endorses:
 - Sprint C16b op-codegen-bridge README (`AdaWorldAPI/surrealdb/.claude/op-codegen-bridge/README.md`) — the builders this doc endorses.
 - nexgen `op-surreal-ast` / `op-codegen-projection` (`AdaWorldAPI/openproject-nexgen-rs`) — the OP-specific path that coexists.
 - `lance-graph` PR #468 — `temporal::classify` consumes `knowable_from` per the §10.3 pin; cited here to anchor the meet-point reference.
+- `docs/SUBSTRATE-ENDGAME.md` — the migration scaffold (§6 here points there) + OP-as-operator-pane + visualization tier-stack + SDK endgame with Foundry comparison.
+- `docs/ARCHITECTURAL-DECISIONS-2026-06-04.md` — ADR-style capture of every architectural decision from this session, including the structural-vs-behavioral decision recorded in this doc.
