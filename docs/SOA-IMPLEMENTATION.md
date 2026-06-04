@@ -235,6 +235,38 @@ crates when they reach crates.io.
 
 ## 5. Layer 4: Runtime — Ractor + Kanban
 
+> **CORRECTION (2026-06-04, decision #3 shipped).** The `tokio::sync`
+> sketches in §5.1–5.2 below are SUPERSEDED. The shipped reference impl
+> is `lance-graph-callcenter::version_watcher` (`LanceVersionWatcher`),
+> and it is built on **`std::sync::{Arc, RwLock, Mutex, Condvar}`, NOT
+> tokio** — per the upstream **I-2 invariant**: *"tokio is reserved for
+> Layer-3 outbound sinks (PhoenixServer, PostgRestHandler); the hot loop
+> never uses `tokio::sync`."* The corrected hot-path shape:
+>
+> ```text
+> hot path (NO tokio):
+>   lance-graph-planner consumes via LanceVersionWatcher::subscribe()
+>     → WatchReceiver
+>     → wait_changed()  parks on std::sync::Condvar
+>     → current()       returns Arc<CognitiveEventRow>  (Arrow-scalar; BBB invariant)
+> ```
+>
+> SoA bridge ownership: **`lance-graph-ontology`** owns the identity
+> register + classes + codebooks; **`lance-graph-callcenter`** owns the
+> `LanceMembrane` (sole writer) + the watcher + `CognitiveEventRow`.
+> OGAR's `ogar-runtime` is the **std::sync subscriber** that reacts to
+> version ticks (cache-invalidate + WIP pull). Ractor/tokio, if used at
+> all, are the **SLA-coordination / Layer-3 cold path ONLY** — never the
+> hot loop. The `KanbanMailbox` below must therefore be re-expressed in
+> `std::sync` (`Mutex<VecDeque> + Condvar`) for the hot path; a
+> tokio-channel variant is permissible only on the cold coord side.
+>
+> Everything from "### 5.1" to the end of §5.2 is kept for historical
+> context (the WIP/pull/backpressure *policy* is still correct); the
+> `tokio::sync` *mechanism* is replaced by the std::sync Condvar pattern
+> above. See `docs/TEMPORAL-TIME-TRAVEL.md` for the full corrected
+> integration.
+
 ### 5.1 Ractor actor per OGAR class
 
 Per R3 finding: Ractor is the chosen actor framework. Tokio-native,
