@@ -294,7 +294,120 @@ producer must read both code AND data to be complete.
   PASS-rate across the three domains is the substrate's universality
   metric.
 
-## 10. Cross-references
+## 10. Producer ecosystem — two-arm pattern + nexgen convergence
+
+The OpenProject (and broader Rails-AR) producer space already has substantial
+in-flight work across `AdaWorldAPI/ruff`, `AdaWorldAPI/openproject-nexgen-rs`,
+and `AdaWorldAPI/surrealdb`. Naming the arms here so future producers don't
+collide.
+
+### 10.1 Two arms from one AST parse
+
+There are **two complementary IR shapes** a Rails-AR producer should fill,
+each with a distinct downstream consumer:
+
+| Arm | IR | What it captures | Downstream |
+|---|---|---|---|
+| **Narrow / SPO** | `ruff_spo_triplet::ModelGraph` (`Model` / `Field` / `Function`) | data-dependency edges — `depends_on`, `reads_field`, `traverses_relation`, `raises`, `emitted_by` (7-predicate closed vocab) | lance-graph SPO store via ndjson |
+| **Wide / OGAR** | `ogar-vocab::Class` / `ActionDef` / `ActionInvocation` (this doc, §1–§5) | lifecycle contract — `State=ActionState` (Pending → Committed/Failed/Cancelled), typed `EnterEffect`, `KausalSpec` (StateGuard + Depends), TeKaMoLo, paper-trail-as-Lance-version | `lance-graph-ontology` via `MappingProposal` (boundary stub, Sprint-5b `lance-bind`) |
+
+**One AST parse, both arms.** `lib-ruby-parser` walks `app/models/` once. The
+same `class WorkPackage < ApplicationRecord` body fills:
+- `RubyClass { name, body_source, associations }` for `ruff_ruby_spo`-style narrow extraction
+- `ogar_vocab::Class { …, associations, callbacks, computed_fields, validations, methods, attributes }` for OGAR-wide
+
+Producers should be **named pairs** so the duality is explicit, not
+accidental:
+
+| Domain | Narrow SPO (scaffold) | Wide OGAR (planned/this doc) |
+|---|---|---|
+| Ruby AR / OpenProject | [`ruff_ruby_spo`](https://github.com/AdaWorldAPI/ruff/tree/main/crates/ruff_ruby_spo) — scaffold; `todo!()` stubs documenting the Rails constructs to read | `ogar-from-ruby` — planned crate, fills `Class` / `ActionDef` per §1–§5 |
+| Python / Odoo | [`ruff_python_dto_check`](https://github.com/AdaWorldAPI/ruff/tree/main/crates/ruff_python_dto_check) — fully wired (extractors / codegen / preflight / matcher) | `ogar-from-ruff` / `ogar-python` (per `ARCHITECTURE.md` Universal AST diagram) |
+| Elixir (HIRO/Bardioc) | `ruff_elixir_spo` — future, mirroring `ruff_ruby_spo` | `ogar-from-elixir` — next crate, per `ELIXIR-HIRO-PREFETCH.md §2` |
+
+The shared core is [`ruff_spo_triplet`](https://github.com/AdaWorldAPI/ruff/tree/main/crates/ruff_spo_triplet)
+(zero-dep, serde-only). The two arms are **complementary, not competing**:
+SPO answers *"what depends on what"* (the data-dependency DAG that feeds
+Rubicon's `KausalSpec::Depends` guard variant); OGAR answers *"when does this
+fire, what guards, what state, what commits"* (the lifecycle FSM). Both flow
+back through `lance-graph-planner::temporal::classify` to deinterlace into a
+single causally-coherent SoA — see §10.3.
+
+### 10.2 nexgen `op-surreal-ast` ↔ OGAR `Class` convergence
+
+[`AdaWorldAPI/openproject-nexgen-rs`](https://github.com/AdaWorldAPI/openproject-nexgen-rs)
+already ships in-flight OpenProject-specific work that converges with OGAR's
+domain-agnostic IR:
+
+| nexgen crate | Role | Convergence with OGAR |
+|---|---|---|
+| `op-surreal-ast` (C16a sprint) | OP-specific mirror of `surrealdb-core::catalog` layout — typed structs for OpenProject schema elements | **Special case of `Class` → `catalog::TableDefinition`.** C16c sprint plans `From<op_surreal_ast::*> for catalog::*` impls; once those land, `op-surreal-ast` either drops the mirror or keeps it as a fast in-repo path. |
+| `op-codegen-projection` (C15 sprint) | renders OP schema elements as DDL via `op-surreal-ast` | When `ogar-adapter-surrealql` lands (queue item #3 below), `op-codegen-projection` is a special case of the general OGAR `Class` → `TableDefinition::new_for_ddl().with_*()` → `ToSql` path. |
+| `op-codegen-pipeline` / `op-codegen-bucket` (C9, C15 sprints) | extract-to-projection pipeline + bucketing | future `ogar-from-ruby` plays this role for the OGAR-wide arm; the two pipelines coexist (narrow projection for nexgen's existing consumers, wide OGAR for substrate-b). |
+
+`AdaWorldAPI/surrealdb` Sprint C16b's `TableDefinition::new_for_ddl(…).with_*(…)`
+builders were designed specifically for *"external codegen tools that want to
+build a typed `TableDefinition` representing a schema element, render it to
+SurrealQL via `ToSql::to_sql()`, never touch the actual database"* (per the
+op-codegen-bridge README). Both `op-codegen-projection` and the future
+`ogar-adapter-surrealql` are exactly such tools — same builder API, different
+IR sources.
+
+**No collision.** nexgen owns its OP-specific in-repo path; OGAR owns the
+domain-agnostic generalization. They meet at `surrealdb-core::catalog`, not
+at the schema-source level.
+
+### 10.3 `knowable_from` — the meet-point with `lance-graph-planner::temporal`
+
+Per the temporal-deinterlacing design in flight on the runtime session, the
+substrate has four interlaced field-clocks that need merging into one
+causally-coherent SoA. Reading naïvely produces a *combed* frame — fields
+from different writers torn against each other:
+
+| Frame | Clock | Source |
+|---|---|---|
+| **lance** (storage) | per-writer monotonic `lance_version` | every committed write |
+| **surrealql** (schema) | `knowable_from: LanceVersion` — when a class/field became defined | **`ogar-adapter-surrealql`** (queue item #3) — stamps at DDL registration time |
+| **ractor** (awareness) | per-actor `V_ref` reading-horizon | each `ClassActor` instance |
+| **thinking** (cognition) | Markov ±5 `CognitiveEventRow` trajectory | `cognitive-shader-driver` |
+
+HLC `(server_id, lance_version, hlc_tick)` is the deinterlace key;
+`classify(row_version, knowable_from, v_ref) → {CONTEMPORARY | ANACHRONISTIC | SPOILER}`
+is the per-row deinterlace decision. A second `DependsClosure`-input axis
+plugs in for data-causality once SPO producers emit real `depends_on` edges.
+
+**Durable interface pin (cross-session, authoritative):**
+
+> The SurrealQL frame's **`knowable_from`** is sourced by
+> **`ogar-adapter-surrealql`** (OGAR session — queue item #3 below) and
+> consumed by **`lance-graph-planner::temporal::classify`** (runtime
+> session). The producer-side stamps `knowable_from` at DDL registration
+> time; the consumer-side reads it as one of three inputs to
+> `classify(row_version, knowable_from, v_ref)`. **Nowhere else in the
+> substrate owns either side of this seam.**
+
+This pin should mirror to `bardioc/CROSS_SESSION_COORDINATION.md` (the
+runtime-session-owned coord doc) for full cross-session durability. Until
+that mirror lands, this §10.3 is the authoritative OGAR-side source.
+
+### 10.4 Producer queue ordering
+
+Driven by what unblocks the most downstream work:
+
+1. **(this PR)** — OpenProject companion: name the arms, pin the meet-point.
+2. **`ogar-from-elixir` scaffold** — mirrors `ruff_ruby_spo`'s
+   scaffold-with-`todo!()`-stubs pattern but OGAR-shaped; depends on
+   `ogar-vocab` only; `todo!()` stubs document Ecto / `gen_statem` / Phoenix
+   per `ELIXIR-HIRO-PREFETCH.md §2.2`; locked-shape test against hand-built
+   fixtures.
+3. **`ogar-adapter-surrealql`** — the SurrealQL bridge per the C16b
+   builders + `surrealdb-ast`/`surrealdb-parser` (no longer "deferred until
+   crates.io"). `emit` thin via `TableDefinition::new_for_ddl` → `ToSql`;
+   `unmap` is the substantive work (AST walk → `Class`); roundtrip
+   proptest. **Sources `knowable_from` for §10.3.**
+4. **`lance-bind` boundary** — once protoc / cross-repo build holds up.
+
+## 11. Cross-references
 
 - `OGAR-AST-CONTRACT.md` — the typed surface OP lowers onto (`State=ActionState`, `Event=ActionDef`, `Context=ActionInvocation`, typed `on_enter: EnterEffect` from PR #13).
 - `ADAPTERS-AND-ACTORS.md` §3 — Action / SPO+TeKaMoLo / the actor-as-resolved-sentence.
@@ -304,3 +417,17 @@ producer must read both code AND data to be complete.
 - `vocab/ogar.ttl` — `Language::Ruby` (already present); `EnterEffect` (PR #13).
 - Upstream: [openproject/openproject](https://github.com/opf/openproject) — the open-source Rails 8 app modeled here.
 - Runtime: `ractor_actors::state_machine` (`feat/state-machine-actor` @ `38a71a4`); `LanceMembrane::commit_event` (lance-graph PR #467, merged).
+- Producers (narrow SPO arm — `AdaWorldAPI/ruff`):
+  [`ruff_spo_triplet`](https://github.com/AdaWorldAPI/ruff/tree/main/crates/ruff_spo_triplet) (shared zero-dep core),
+  [`ruff_ruby_spo`](https://github.com/AdaWorldAPI/ruff/tree/main/crates/ruff_ruby_spo) (OpenProject scaffold),
+  [`ruff_python_dto_check`](https://github.com/AdaWorldAPI/ruff/tree/main/crates/ruff_python_dto_check) (Python frontend, fully wired).
+- nexgen ([`AdaWorldAPI/openproject-nexgen-rs`](https://github.com/AdaWorldAPI/openproject-nexgen-rs)):
+  `op-surreal-ast` (C16a mirror of `catalog::*` layout),
+  `op-codegen-projection` (DDL renderer),
+  `op-codegen-pipeline` / `op-codegen-bucket` (extract-to-projection pipeline).
+- SurrealDB fork ([`AdaWorldAPI/surrealdb`](https://github.com/AdaWorldAPI/surrealdb)):
+  Sprint C16b `TableDefinition::new_for_ddl` + chainable `with_*` builders
+  in `surrealdb/core/src/catalog/{table,schema/field,schema/index}.rs`;
+  `surrealdb-ast` + `surrealdb-parser` as first-class workspace crates.
+- Temporal deinterlacing: `lance-graph-planner::temporal::classify`
+  (runtime session, in flight) — consumes `knowable_from` per §10.3.
