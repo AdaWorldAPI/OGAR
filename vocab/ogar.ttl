@@ -359,9 +359,27 @@ ogar:Cancelled  a ogar:ActionStateKind .
 # version log"). Carried on the ActionDef.
 ogar:onEnter a rdf:Property ;
     rdfs:domain ogar:ActionDef ;
-    rdfs:range xsd:string ;
+    rdfs:range ogar:EnterEffect ;
     rdfs:label "Entry effect (on-enter commit)" ;
-    rdfs:comment "Effect fired on entering the Committed lifecycle state (the Rubicon crossing). Lowers to ractor_actors::state_machine on-enter / CommitHook → the Lance version append." .
+    rdfs:comment "Effect fired on entering the Committed lifecycle state (the Rubicon crossing). Lowers to ractor_actors::state_machine on-enter / CommitHook → the Lance version append. Range tightened from xsd:string to ogar:EnterEffect so codegen can apply the transition structurally instead of string-parsing." .
+
+# Typed entry effect — replaces free-form xsd:string on ogar:onEnter so the
+# codegen can apply the transition structurally. v1 carries the dominant
+# lifecycle-FSM case (field := to_value); future tightening to typed values
+# beyond string-encoded to_value is a tracked follow-up.
+ogar:EnterEffect a owl:Class ;
+    rdfs:label "Typed entry effect" ;
+    rdfs:comment "Structured representation of the state mutation that fires on entering Committed (the Rubicon crossing). Replaces free-form xsd:string so codegen can apply the transition structurally." .
+
+ogar:enterField a rdf:Property ;
+    rdfs:domain ogar:EnterEffect ;
+    rdfs:range xsd:string ;
+    rdfs:label "Field on object_instance being set" .
+
+ogar:enterToValue a rdf:Property ;
+    rdfs:domain ogar:EnterEffect ;
+    rdfs:range xsd:string ;
+    rdfs:label "Value to set the field to (string-encoded; typed values noted as a follow-up)" .
 
 # (Modal sub-property) Disposition when a Kausal StateGuard is not
 # satisfied: transient (stay Pending + replay) vs hard (Pending→Failed).
