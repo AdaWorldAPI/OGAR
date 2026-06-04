@@ -303,31 +303,6 @@ impl Default for RecordSemantics {
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[non_exhaustive]
 
-/// Typed entry effect — the structured representation of the state mutation
-/// that fires on entering `Committed` (the Rubicon crossing). Replaces
-/// free-form strings on [`ActionDef::on_enter`] so the codegen can apply the
-/// transition structurally instead of string-parsing.
-///
-/// v1 carries the dominant lifecycle-FSM case (`field := to_value`). Complex
-/// domain operations (e.g. chess `Move::Castle`) carry their payload on the
-/// `ActionInvocation` and use `on_enter` only for the lifecycle-visible
-/// transition (e.g. `side_to_move := Black`). Future tightening to typed
-/// values (beyond string-encoded `to_value`) is a tracked follow-up.
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
-pub struct EnterEffect {
-    /// Field on `object_instance` being set.
-    pub field: String,
-    /// Value to set the field to (string-encoded; typed values noted as a follow-up).
-    pub to_value: String,
-}
-
-impl EnterEffect {
-    /// Convenience constructor for the common `field := value` case.
-    pub fn transition(field: impl Into<String>, to_value: impl Into<String>) -> Self {
-        Self { field: field.into(), to_value: to_value.into() }
-    }
-}
 
 pub struct ActionDef {
     /// Stable identity for the action declaration (e.g.
@@ -371,6 +346,33 @@ pub struct ActionDef {
     /// `ogar:stateTimeoutMillis`; the gen-stamped timer auto-cancels at the
     /// `Pending → Committed` crossing.
     pub state_timeout_millis: Option<i64>,
+}
+
+/// Typed entry effect — the structured representation of the state mutation
+/// that fires on entering `Committed` (the Rubicon crossing). Replaces
+/// free-form strings on [`ActionDef::on_enter`] so the codegen can apply the
+/// transition structurally instead of string-parsing.
+///
+/// v1 carries the dominant lifecycle-FSM case (`field := to_value`). Complex
+/// domain operations (e.g. chess `Move::Castle`) carry their payload on the
+/// `ActionInvocation` and use `on_enter` only for the lifecycle-visible
+/// transition (e.g. `side_to_move := Black`). Future tightening to typed
+/// values (beyond string-encoded `to_value`) is a tracked follow-up.
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[non_exhaustive]
+pub struct EnterEffect {
+    /// Field on `object_instance` being set.
+    pub field: String,
+    /// Value to set the field to (string-encoded; typed values noted as a follow-up).
+    pub to_value: String,
+}
+
+impl EnterEffect {
+    /// Convenience constructor for the common `field := value` case.
+    pub fn transition(field: impl Into<String>, to_value: impl Into<String>) -> Self {
+        Self { field: field.into(), to_value: to_value.into() }
+    }
 }
 
 /// Disposition when a `KausalSpec::StateGuard` is not satisfied — the Modal
@@ -1084,12 +1086,6 @@ mod tests {
         assert!(block_form.body_source.is_some());
         assert!(block_form.target_method.is_none());
     }
-}
-
-impl Default for Language {
-    fn default() -> Self {
-        Self::Ruby
-    }
 
     #[test]
     fn enter_effect_is_typed_and_constructible() {
@@ -1111,5 +1107,11 @@ impl Default for Language {
         a.on_enter = Some(EnterEffect::transition("state", "sale"));
         assert_eq!(a.on_enter.as_ref().unwrap().field, "state");
         assert_eq!(a.on_enter.as_ref().unwrap().to_value, "sale");
+    }
+}
+
+impl Default for Language {
+    fn default() -> Self {
+        Self::Ruby
     }
 }

@@ -675,8 +675,14 @@ impl TripleEmitter {
         }
         // Rubicon statem carriers (OGAR-AST-CONTRACT §6). Emitted only when
         // present so non-statem ActionDefs stay clean.
+        // ogar:onEnter ranges ogar:EnterEffect (vocab/ogar.ttl, #10/#13); emit the
+        // typed shape as one link triple + the two leaf triples (ogar:enterField,
+        // ogar:enterToValue) so consumers reassemble the EnterEffect structurally.
         if let Some(ref e) = def.on_enter {
-            triples.push(Triple::new(&id, "ogar:onEnter", e.clone()));
+            let node = format!("{}::on_enter", id);
+            triples.push(Triple::new(&id, "ogar:onEnter", node.clone()));
+            triples.push(Triple::new(&node, "ogar:enterField", e.field.clone()));
+            triples.push(Triple::new(&node, "ogar:enterToValue", e.to_value.clone()));
         }
         if let Some(p) = def.guard_failure_policy {
             triples.push(Triple::new(
@@ -1304,11 +1310,24 @@ mod tests {
             "action_confirm",
             "ogit-erp/sale.order",
         );
-        def.on_enter = Some("draft-to-sale".into());
+        def.on_enter = Some(ogar_vocab::EnterEffect::transition("state", "sale"));
         def.guard_failure_policy = Some(ogar_vocab::GuardFailurePolicy::Postponable);
         def.state_timeout_millis = Some(30_000);
         let t = TripleEmitter::emit_action_def(&def);
-        assert!(t.iter().any(|x| x.predicate == "ogar:onEnter" && x.object == "draft-to-sale"));
+        // ogar:onEnter is now a link to a per-def node carrying the typed EnterEffect
+        // (ogar:enterField + ogar:enterToValue), per vocab/ogar.ttl § Rubicon terms.
+        let link = t
+            .iter()
+            .find(|x| x.predicate == "ogar:onEnter")
+            .expect("ogar:onEnter link triple emitted");
+        let node = link.object.clone();
+        assert!(node.ends_with("::on_enter"), "onEnter node should be derived from def id, got: {node}");
+        assert!(t
+            .iter()
+            .any(|x| x.subject == node && x.predicate == "ogar:enterField" && x.object == "state"));
+        assert!(t
+            .iter()
+            .any(|x| x.subject == node && x.predicate == "ogar:enterToValue" && x.object == "sale"));
         assert!(t
             .iter()
             .any(|x| x.predicate == "ogar:guardFailurePolicy" && x.object == "ogar:Postponable"));
