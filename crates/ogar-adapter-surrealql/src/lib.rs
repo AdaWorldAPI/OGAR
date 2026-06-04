@@ -246,16 +246,44 @@ fn emit_field_assoc(table: &str, assoc: &Association, out: &mut String) {
 }
 
 fn emit_field_enum(table: &str, enum_decl: &EnumDecl, out: &mut String) {
-    let variants = enum_decl
-        .variants
-        .iter()
-        .map(|v| surreal_string_literal(&v.value))
-        .collect::<Vec<_>>()
-        .join(", ");
-    out.push_str(&format!(
-        "DEFINE FIELD {} ON {} TYPE string ASSERT $value IN [{}];\n",
-        enum_decl.name, table, variants
-    ));
+    // Per `ogar-vocab::EnumDecl`: `column` names the field; `source`
+    // carries the variant list (Static / Computed / Add).
+    match &enum_decl.source {
+        ogar_vocab::EnumSource::Static(items) => {
+            let variants = items
+                .iter()
+                .map(|(key, _label)| surreal_string_literal(key))
+                .collect::<Vec<_>>()
+                .join(", ");
+            out.push_str(&format!(
+                "DEFINE FIELD {} ON {} TYPE string ASSERT $value IN [{}];\n",
+                enum_decl.column, table, variants
+            ));
+        }
+        ogar_vocab::EnumSource::Add { items, parent_selection } => {
+            // Inherited enum: emit the added variants only; downstream
+            // consumers reconcile against the parent via `parent_selection`.
+            let variants = items
+                .iter()
+                .map(|(key, _label)| surreal_string_literal(key))
+                .collect::<Vec<_>>()
+                .join(", ");
+            out.push_str(&format!(
+                "DEFINE FIELD {} ON {} TYPE string /* selection_add from {} */ ASSERT $value IN [{}];\n",
+                enum_decl.column, table, parent_selection, variants
+            ));
+        }
+        ogar_vocab::EnumSource::Computed(body) => {
+            // Runtime-computed: can't enumerate at DDL time. Emit a string
+            // field with a comment preserving the lambda body for the unmap
+            // side to reconstitute.
+            let escaped = body.replace("*/", "* /");
+            out.push_str(&format!(
+                "DEFINE FIELD {} ON {} TYPE string /* computed: {} */;\n",
+                enum_decl.column, table, escaped
+            ));
+        }
+    }
 }
 
 // ─────────────────────────────────────────────────────────────────────
@@ -354,17 +382,64 @@ mod tests {
     }
 
     #[test]
-    fn emit_class_with_enum_renders_assert_in_list() {
+    fn emit_class_with_static_enum_renders_assert_in_list() {
         let mut c = Class::new("ticket");
-        let mut status = EnumDecl::default();
-        status.name = "status".into();
-        status.variants.push(EnumVariant { value: "open".into(), ..Default::default() });
-        status.variants.push(EnumVariant { value: "closed".into(), ..Default::default() });
+        let status = EnumDecl {
+            column: "status".into(),
+            source: ogar_vocab::EnumSource::Static(vec![
+                ("open".into(), "Open".into()),
+                ("closed".into(), "Closed".into()),
+            ]),
+            scopes_disabled: None,
+        };
         c.enums.push(status);
         let ddl = emit_surrealql_ddl(&[c]);
         assert!(
             ddl.contains("DEFINE FIELD status ON ticket TYPE string ASSERT $value IN ['open', 'closed'];"),
             "got: {ddl}"
+        );
+    }
+
+    #[test]
+    fn emit_class_with_add_enum_emits_parent_selection_marker() {
+        let mut c = Class::new("account_move_line");
+        let parent_enum = EnumDecl {
+            column: "state".into(),
+            source: ogar_vocab::EnumSource::Add {
+                items: vec![("paid".into(), "Paid".into())],
+                parent_selection: "account.move.line".into(),
+            },
+            scopes_disabled: None,
+        };
+        c.enums.push(parent_enum);
+        let ddl = emit_surrealql_ddl(&[c]);
+        assert!(
+            ddl.contains("selection_add from account.move.line"),
+            "expected parent-selection marker, got: {ddl}"
+        );
+        assert!(ddl.contains("ASSERT $value IN ['paid']"), "got: {ddl}");
+    }
+
+    #[test]
+    fn emit_class_with_computed_enum_emits_lambda_marker() {
+        let mut c = Class::new("address");
+        let country_enum = EnumDecl {
+            column: "country".into(),
+            source: ogar_vocab::EnumSource::Computed(
+                "lambda self: self.env[\'res.country\']...".into(),
+            ),
+            scopes_disabled: None,
+        };
+        c.enums.push(country_enum);
+        let ddl = emit_surrealql_ddl(&[c]);
+        assert!(
+            ddl.contains("DEFINE FIELD country ON address TYPE string /* computed:"),
+            "got: {ddl}"
+        );
+        // No ASSERT $value IN — runtime-computed
+        assert!(
+            !ddl.contains("ASSERT $value IN ["),
+            "computed enums shouldn't ASSERT on a static list, got: {ddl}"
         );
     }
 
