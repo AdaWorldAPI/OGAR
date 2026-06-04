@@ -188,6 +188,295 @@ via a pure `From` impl. No new logic — just shape mapping.
 
 ---
 
+## Sprint 2 — Odoo carve-out + vocab gaps from brutal-review cycle 2 🟡
+
+**Goal**: lift the five BO1 gaps + the BO2 architectural decisions
+identified during the Odoo brutal-review cycle. Ships
+`docs/ODOO-TRANSCODING.md` (the carve-out doc) + vocab extensions
+covering full Odoo coverage.
+
+**Deliverables**
+- `docs/ODOO-TRANSCODING.md` — 18-section carve-out doc with 13
+  non-negotiable rules. Discovery algorithm, field-type mapping
+  table, decorator mapping, state-machine shape, `_inherit`
+  resolution algorithm, registered-prefix table sketch.
+- `crates/ogar-vocab` additions:
+  - `AttributeOptions` struct (required/default/translate/tracking/
+    digits/size/groups/company_dependent/...).
+  - `EnumSource` enum (Static / Computed / Add) replacing flat values.
+  - Class metadata: description, record_order, rec_name,
+    check_company_auto, log_access, auto_create_table,
+    abstract_model, transient, declared_in_module, source_version,
+    computed_fields, methods.
+  - `ComputedField` struct (lifted from ext to base).
+  - `MethodDecl` struct + `MethodKind` enum + `RecordSemantics` enum.
+  - Association: `ondelete`, `auto_join`, `context_source`,
+    `check_company`, `delegate`.
+- `vocab/ogar.ttl` — RDF predicates + OWL classes for all new types.
+- Cross-references in `docs/IDENTITY-MAPPING.md`.
+
+**Acceptance**
+- `cargo check --workspace` clean.
+- `cargo test --workspace` green.
+- Sprint 1 tests still pass after vocab additions.
+
+**Dependencies**: Sprint 1.
+
+---
+
+## Sprint 2.5 — `vocab/ogar-bridges.ttl` cross-vocabulary mappings ⬜
+
+**Goal**: implement the SKOS-design-paper principle "defer to
+existing vocabularies" by curating `owl:equivalentProperty` and
+`skos:exactMatch` mappings between OGAR terms and existing W3C /
+community vocabularies (PROV, Dublin Core, FOAF, SKOS).
+
+**Deliverables**
+- `vocab/ogar-bridges.ttl` with:
+  ```turtle
+  ogar:declaredIn owl:equivalentProperty prov:wasDerivedFrom .
+  ogar:description owl:equivalentProperty dc:description .
+  ogar:MemberOf skos:exactMatch ruby:belongs_to , odoo:Many2one ,
+                                 ecto:belongs_to , django:ForeignKey .
+  ogar:OwnsMany skos:exactMatch ruby:has_many , odoo:One2many ,
+                                 ecto:has_many .
+  ...
+  ```
+- A doc section in `docs/IDENTITY-MAPPING.md` referencing the
+  bridges file.
+- The "transitivity trap" warning from Freytag BA §6.2.3:
+  cross-vocab `skos:exactMatch` chains can produce false
+  equivalences. Document the limit; recommend `skos:closeMatch`
+  where semantics differ subtly.
+
+**Dependencies**: Sprint 2.
+
+---
+
+## Sprint 2.6 — `crates/ogar-conformance` fixture corpus ⬜
+
+**Goal**: build the producer-conformance test gate identified as
+BO2 #2. Every producer (`ogar-from-ruff`, `ogar-python`, future
+`ogar-sql-ddl`) runs this suite as a `cargo test` gate. Drift
+detection by construction.
+
+**Deliverables**
+- `crates/ogar-conformance/` with `fixtures/` directory containing
+  per-Role subdirectories: `member_of/`, `owns_many/`, etc.
+- Each fixture: source snippet + expected `ogar_vocab::Class` IR +
+  expected triples via `TripleEmitter`.
+- `assert_conforms!(producer, fixture_dir)` macro.
+- Initial fixture set: 5 fixtures per role (Ruby AR, Odoo, Django,
+  Ecto, SQL DDL) for the 4 core associations + Include + Attribute
+  + Enum + Validation + Callback.
+
+**Acceptance**
+- Fixtures parse cleanly.
+- The macro fails loudly on any mismatch with explanatory diff.
+
+**Dependencies**: Sprint 2.
+
+---
+
+## Sprint 2.7 — Registered-prefix table impl + producer integration ⬜
+
+**Goal**: implement the registered-prefix table sketched in
+ODOO-TRANSCODING.md §14 so cross-language identity collisions are
+impossible by construction (per BO2 #1).
+
+**Deliverables**
+- `ogar-ontology::REGISTRY` static table mapping prefix → source
+  language.
+- `validate_prefix_for_lang(prefix, lang) -> Result<(), PrefixError>`.
+- All producer crates call this before emitting any triples.
+- Error path: clear messages distinguishing "unregistered prefix"
+  from "language mismatch".
+
+**Dependencies**: Sprint 2.
+
+---
+
+## Sprint 3 — Action vocabulary + adapter trait + SPO + TeKaMoLo ⏳
+
+**Goal**: lift the SECOND ingestion arm — ERP transactions, actions,
+business rules, hand-rolled Odoo business logic — into OGAR IR via
+the `Action` vocabulary with full SPO+TeKaMoLo annotation. Plus
+ship the `Adapter` trait as the data-side counterpart.
+
+**Deliverables**
+- `docs/ADAPTERS-AND-ACTORS.md` (already in Sprint 2 PR) — the
+  canonical carve-out for this sprint.
+- `crates/ogar-vocab/`: add `Action` struct + `ActionSubject` enum +
+  `TemporalSpec` / `KausalSpec` / `ModalSpec` / `LokalSpec` types.
+  Stay in base vocab — both data + behavior IR live together.
+- `crates/ogar-adapter/`: `Adapter` trait + `NibleHHTL` lookup-table
+  type + `TargetForm` struct. Static lookup-table semantics; no
+  conditional logic.
+- `crates/ogar-emitter/`: emit `Action` triples with full SPO+
+  TeKaMoLo annotation. Add `emit_action()` next to existing
+  `emit_callback()` / `emit_method()`.
+- `vocab/ogar.ttl`: add the action vocabulary (`ogar:Action`,
+  `ogar:actionSubject` + 6 more, plus enumeration classes
+  `ogar:ActionSubject` / `ogar:TemporalSpec` / `ogar:ModalSpec`).
+
+**Acceptance**
+- `cargo check --workspace` clean.
+- `cargo test --workspace` green (~40 tests after additions).
+- For one Odoo example (`def action_confirm` on `sale.order`),
+  the producer pipeline emits both:
+  - One `MethodDecl{kind: CrudOverride}` (syntactic capture)
+  - One `Action` with full SPO+TeKaMoLo (pragmatic capture)
+- For one Rails example (`before_save :touch_parent`), same
+  duality.
+
+**Dependencies**: Sprint 2.
+
+---
+
+## Sprint 3.5 — `OdooAdapter` HHTL implementation ⬜
+
+**Goal**: first concrete `Adapter` impl. The `OdooAdapter` is a
+static HHTL with leaves mapping every canonical OGAR concept to
+its Odoo-side form. Per ADAPTERS-AND-ACTORS doc §2.
+
+**Deliverables**
+- `crates/ogar-adapter/src/odoo.rs` — `OdooAdapter` impl.
+- HHTL leaves for: class-name aliasing, field-name renames,
+  decorator → role mappings, action-predicate translations,
+  modal/temporal qualifier renames.
+- Round-trip tests: any Odoo source identity → canonical → Odoo
+  source identity is identity.
+- Composition test: Odoo identity → canonical → Rails identity
+  yields the right Rails form for at least 5 corresponding
+  model pairs.
+
+**Dependencies**: Sprint 3.
+
+---
+
+## Sprint 3.6 — `RailsAdapter` HHTL implementation ⬜
+
+**Goal**: second concrete `Adapter` impl, validating that the
+HHTL pattern generalizes.
+
+**Deliverables**
+- `crates/ogar-adapter/src/rails.rs` — `RailsAdapter` impl.
+- HHTL leaves for the Rails canonical concepts (already
+  documented in IDENTITY-MAPPING.md §3 + §7).
+- Round-trip + composition tests.
+
+**Dependencies**: Sprint 3.
+
+---
+
+## Sprint 4 — SoA implementation: `ogar-vocab-soa` ⬜
+
+**Goal**: implement Apache Arrow RecordBatch schemas + bidirectional
+conversions for the OGAR vocab types. Per `docs/SOA-IMPLEMENTATION.md`.
+
+**Deliverables**
+- `crates/ogar-vocab-soa/` — RecordBatch schema constants for
+  `Class` and `Action`; ArrayBuilder-based conversions both ways.
+- Nested ListArray handling for `associations` / `enums` /
+  `scopes` / `callbacks` / `computed_fields` / `methods` /
+  `validations`.
+- Property tests via proptest: `classes → batch → classes` is
+  identity for ≥1000 random classes.
+
+**Dependencies**: Sprint 2.
+
+---
+
+## Sprint 4.5 — `ogar-adapter-surrealql`: bidirectional DDL ⬜
+
+**Goal**: implement the SurrealQL adapter per R4 finding (depend
+on `surrealdb-core::sql::parse`). Both directions supported.
+
+**Deliverables**
+- `crates/ogar-adapter-surrealql/` with:
+  - `parse_surrealql_ddl(input) -> Vec<Class>` using
+    surrealdb-core's parser.
+  - `emit_surrealql_ddl(classes) -> String` reverse direction.
+  - `DEFINE TABLE`, `DEFINE FIELD`, `DEFINE INDEX`, `DEFINE EVENT`
+    coverage minimum.
+- Property test: `parse(emit(parse(x))) == parse(x)` for arbitrary
+  well-formed input.
+- Pinned surrealdb-core version; migration path noted to
+  `surrealdb-parser` + `surrealdb-ast` when crates.io-published.
+
+**Dependencies**: Sprint 4.
+
+---
+
+## Sprint 5 — `lance-graph-contract` SoA integration ⬜
+
+**Goal**: wire the contract layer (NiblePath identity routing,
+Lance versioning) over SoA RecordBatches.
+
+**Deliverables**
+- Identity column dictionary encoding (segment-level NiblePath
+  shared dictionary).
+- Lance dataset write path with v2 manifest paths from day one.
+- Append batching policy: ≥1 message/sec OR ≥100 messages/batch.
+- Cleanup policy: retain "frozen" ontology versions via tags;
+  cleanup unreferenced versions >1h old.
+
+**Dependencies**: Sprint 4.
+
+---
+
+## Sprint 6 — `lance-graph-ontology` reads SoA + cache integration ⬜
+
+**Goal**: per Sprint 6 placeholder above, but explicitly read
+RecordBatches from the contract layer. Cache invalidation via
+Lance `versions()` watch.
+
+**Deliverables**
+- Read path: scan Class RecordBatches, project identity column,
+  build ontology cache.
+- Watch path: Lance manifest watcher → cache invalidation event.
+- <1µs cached lookup target.
+
+**Dependencies**: Sprint 5.
+
+---
+
+## Sprint 7 (revised) — `lance-graph-callcenter` Ractor + Kanban ⬜
+
+**Goal**: BEAM-style actor runtime per R3 verdict (Ractor),
+organized around Kanban-bounded mailboxes per `SOA-IMPLEMENTATION.md`
+§5.
+
+**Deliverables**
+- `crates/lance-graph-callcenter/` with:
+  - `ClassActor` trait built on Ractor.
+  - `KanbanMailbox<M>` — bounded WIP + pull + backpressure.
+  - Class registration from ontology triples (no manual wiring).
+  - SPO+TeKaMoLo action dispatch routing through ontology cache.
+  - Cascade routing: actor emits `RecordBatch` of downstream
+    actions; receiving actor pulls when its WIP allows.
+- Default WIP=1024 per mailbox; configurable per-class via
+  `ogar:mailboxCapacity` triple.
+
+**Dependencies**: Sprints 5, 6.
+
+---
+
+## Sprint 7.5 — End-to-end SoA performance gate ⬜
+
+**Goal**: prove the full SoA flow performs under target latency.
+
+**Deliverables**
+- Benchmark: SurrealQL DDL → ogar-vocab-soa → lance-graph → actor
+  dispatch in <10ms p99 (cold cache: <50ms).
+- Memory benchmark: 100k classes + 1M actions fit in <500MB
+  RecordBatch arena.
+- Documented as `crates/benchmarks/`.
+
+**Dependencies**: Sprint 7.
+
+---
+
 ## Sprint 1g — API + perf refactor (from brutal-review CB2/CB3) ⬜
 
 **Goal**: apply the deferred API and performance fixes.

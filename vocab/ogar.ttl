@@ -105,11 +105,170 @@ ogar:scopeSource  a rdf:Property ; rdfs:domain ogar:Association ; rdfs:range xsd
 # text — consumers interpret per producer-language grammar.
 
 # ─────────────────────────────────────────────────────────────────────
+# Odoo-flavored Association extensions (Sprint 2)
+# ─────────────────────────────────────────────────────────────────────
+
+ogar:ondelete     a rdf:Property ; rdfs:domain ogar:Association ; rdfs:range xsd:string .
+# Odoo `ondelete='cascade'/'restrict'/'set null'/'set default'`. DB-level FK
+# action, distinct from Rails `dependent:` (app-level). Captured separately.
+
+ogar:autoJoin     a rdf:Property ; rdfs:domain ogar:Association ; rdfs:range xsd:boolean .
+# Odoo `auto_join=True` — auto SQL-join instead of lazy load.
+
+ogar:contextSource a rdf:Property ; rdfs:domain ogar:Association ; rdfs:range xsd:string .
+# Odoo `context={...}` — UI default context for navigation through this association.
+
+ogar:checkCompany a rdf:Property ; rdfs:domain ogar:Association ; rdfs:range xsd:boolean .
+# Odoo `check_company=True` — multi-company tenancy check on FK target.
+
+ogar:delegateField a rdf:Property ; rdfs:domain ogar:Association ; rdfs:range xsd:boolean .
+# Legacy Odoo Many2one `delegate=True`. Modern Odoo uses `_inherits` instead.
+
+# ─────────────────────────────────────────────────────────────────────
+# EnumSource variants (Sprint 2 — replaces flat `values`)
+# ─────────────────────────────────────────────────────────────────────
+
+ogar:enumSourceKind a rdf:Property ; rdfs:domain ogar:EnumDecl ;
+                    rdfs:range ogar:EnumSourceKind .
+ogar:EnumSourceKind a owl:Class .
+ogar:Static    a ogar:EnumSourceKind ; rdfs:label "Static" .
+ogar:Computed  a ogar:EnumSourceKind ; rdfs:label "Computed" .
+ogar:Add       a ogar:EnumSourceKind ; rdfs:label "Add (extends parent selection)" .
+ogar:Unknown   a ogar:EnumSourceKind ; rdfs:label "Unknown (future variant)" .
+
+ogar:enumComputedBody     a rdf:Property ; rdfs:domain ogar:EnumDecl ; rdfs:range xsd:string .
+# Verbatim body for `selection=lambda self: ...` (Odoo Computed source).
+
+ogar:enumParentSelection  a rdf:Property ; rdfs:domain ogar:EnumDecl ; rdfs:range xsd:string .
+# Parent class name for `selection_add=` extension (Odoo Add source).
+
+ogar:hasVariant a rdf:Property ; rdfs:domain ogar:EnumDecl ; rdfs:range ogar:EnumVariant .
+ogar:EnumVariant a owl:Class ; rdfs:label "Enum variant (one (key,label) pair)" .
+
+# ─────────────────────────────────────────────────────────────────────
+# Class-level metadata (Sprint 2 — Odoo `_*` class attributes)
+# ─────────────────────────────────────────────────────────────────────
+
+ogar:description       a rdf:Property ; rdfs:domain ogar:Class ; rdfs:range xsd:string .
+# Odoo `_description = 'Sale Order'` — human-readable name.
+
+ogar:recordOrder       a rdf:Property ; rdfs:domain ogar:Class ; rdfs:range xsd:string .
+# Odoo `_order = 'date desc, id'` — default ORDER BY tail.
+
+ogar:recName           a rdf:Property ; rdfs:domain ogar:Class ; rdfs:range xsd:string .
+# Odoo `_rec_name = 'name'` — UI display field.
+
+ogar:checkCompanyAuto  a rdf:Property ; rdfs:domain ogar:Class ; rdfs:range xsd:boolean .
+ogar:logAccess         a rdf:Property ; rdfs:domain ogar:Class ; rdfs:range xsd:boolean .
+ogar:autoCreateTable   a rdf:Property ; rdfs:domain ogar:Class ; rdfs:range xsd:boolean .
+ogar:abstractModel     a rdf:Property ; rdfs:domain ogar:Class ; rdfs:range xsd:boolean .
+ogar:transientModel    a rdf:Property ; rdfs:domain ogar:Class ; rdfs:range xsd:boolean .
+ogar:registerModel     a rdf:Property ; rdfs:domain ogar:Class ; rdfs:range xsd:boolean .
+
+ogar:declaredIn        a rdf:Property ; rdfs:domain ogar:Class ; rdfs:range xsd:string .
+# The owning module/addon name. Required for Odoo (every class lives in a module),
+# optional for Rails. Enables "show me all classes in addon X" queries.
+# Provenance-style — analogous to `prov:wasDerivedFrom` (Hartig & Zhao 2012).
+
+ogar:sourceVersion     a rdf:Property ; rdfs:domain ogar:Class ; rdfs:range xsd:string .
+# Source language major version (`"17.0"` for Odoo 17, `"7.2"` for Rails 7.2).
+# Reserved for multi-version support; v1 leaves it absent.
+
+# ─────────────────────────────────────────────────────────────────────
+# Computed fields (Sprint 2 — lifted from extensions into base vocab)
+# ─────────────────────────────────────────────────────────────────────
+
+ogar:ComputedField a owl:Class ; rdfs:label "Computed field declaration" ;
+                   rdfs:comment "A field whose value is computed from other fields' values. Universal across Odoo (compute=...), Django (@cached_property), Rails (instance methods)." .
+
+ogar:hasComputedField a rdf:Property ; rdfs:domain ogar:Class ; rdfs:range ogar:ComputedField .
+ogar:computedFieldRef a rdf:Property ; rdfs:domain ogar:ComputedField ; rdfs:range xsd:string .
+ogar:computeMethod    a rdf:Property ; rdfs:domain ogar:ComputedField ; rdfs:range xsd:string .
+ogar:dependsPath      a rdf:Property ; rdfs:domain ogar:ComputedField ; rdfs:range xsd:string .
+ogar:dependsContext   a rdf:Property ; rdfs:domain ogar:ComputedField ; rdfs:range xsd:string .
+ogar:stored           a rdf:Property ; rdfs:domain ogar:ComputedField ; rdfs:range xsd:boolean .
+ogar:inverseMethod    a rdf:Property ; rdfs:domain ogar:ComputedField ; rdfs:range xsd:string .
+ogar:searchMethod     a rdf:Property ; rdfs:domain ogar:ComputedField ; rdfs:range xsd:string .
+
+# ─────────────────────────────────────────────────────────────────────
+# Method declarations (Sprint 2 — CRUD overrides, @api.model helpers)
+# ─────────────────────────────────────────────────────────────────────
+
+ogar:MethodDecl    a owl:Class ; rdfs:label "Method declaration" ;
+                   rdfs:comment "Distinct from Callback (declarative hook). Captures Odoo CRUD overrides (def create/write/unlink/copy), @api.model helpers, and plain instance methods." .
+
+ogar:hasMethod     a rdf:Property ; rdfs:domain ogar:Class ; rdfs:range ogar:MethodDecl .
+ogar:methodName    a rdf:Property ; rdfs:domain ogar:MethodDecl ; rdfs:range xsd:string .
+ogar:methodBody    a rdf:Property ; rdfs:domain ogar:MethodDecl ; rdfs:range xsd:string .
+ogar:methodKind    a rdf:Property ; rdfs:domain ogar:MethodDecl ; rdfs:range ogar:MethodKind .
+ogar:decoratorName a rdf:Property ; rdfs:domain ogar:MethodDecl ; rdfs:range xsd:string .
+ogar:recordSemantics a rdf:Property ; rdfs:domain ogar:MethodDecl ; rdfs:range ogar:RecordSemanticsKind .
+
+ogar:MethodKind          a owl:Class .
+ogar:CrudOverride        a ogar:MethodKind ; rdfs:label "Total CRUD method override (def create/write/unlink/copy)" .
+ogar:ApiModel            a ogar:MethodKind ; rdfs:label "@api.model classmethod-like helper" .
+ogar:ApiModelCreateMulti a ogar:MethodKind ; rdfs:label "@api.model_create_multi bulk override" .
+ogar:Instance            a ogar:MethodKind ; rdfs:label "Plain instance method" .
+
+ogar:RecordSemanticsKind a owl:Class .
+ogar:Record       a ogar:RecordSemanticsKind ; rdfs:label "Single record" .
+ogar:Recordset    a ogar:RecordSemanticsKind ; rdfs:label "Recordset (Odoo default)" .
+ogar:ClassLevel   a ogar:RecordSemanticsKind ; rdfs:label "Class-level (@api.model)" .
+
+# ─────────────────────────────────────────────────────────────────────
+# Attribute options (Sprint 2 — structured kwargs per attribute)
+# ─────────────────────────────────────────────────────────────────────
+
+ogar:default      a rdf:Property ; rdfs:domain ogar:Field ; rdfs:range xsd:string .
+ogar:required     a rdf:Property ; rdfs:domain ogar:Field ; rdfs:range xsd:boolean .
+ogar:readonly     a rdf:Property ; rdfs:domain ogar:Field ; rdfs:range xsd:boolean .
+ogar:indexed      a rdf:Property ; rdfs:domain ogar:Field ; rdfs:range xsd:boolean .
+ogar:fieldStored  a rdf:Property ; rdfs:domain ogar:Field ; rdfs:range xsd:boolean .
+ogar:translate    a rdf:Property ; rdfs:domain ogar:Field ; rdfs:range xsd:boolean .
+ogar:tracking     a rdf:Property ; rdfs:domain ogar:Field ; rdfs:range xsd:integer .
+ogar:groupAccess  a rdf:Property ; rdfs:domain ogar:Field ; rdfs:range xsd:string .
+ogar:companyDependent a rdf:Property ; rdfs:domain ogar:Field ; rdfs:range xsd:boolean .
+ogar:copyOnDuplicate  a rdf:Property ; rdfs:domain ogar:Field ; rdfs:range xsd:boolean .
+ogar:helpText     a rdf:Property ; rdfs:domain ogar:Field ; rdfs:range xsd:string .
+ogar:fieldLabel   a rdf:Property ; rdfs:domain ogar:Field ; rdfs:range xsd:string .
+ogar:precision    a rdf:Property ; rdfs:domain ogar:Field ; rdfs:range xsd:integer .
+ogar:scale        a rdf:Property ; rdfs:domain ogar:Field ; rdfs:range xsd:integer .
+ogar:fieldSize    a rdf:Property ; rdfs:domain ogar:Field ; rdfs:range xsd:integer .
+ogar:currencyField a rdf:Property ; rdfs:domain ogar:Field ; rdfs:range xsd:string .
+
+# ─────────────────────────────────────────────────────────────────────
+# Other already-emitted predicates that were missing from the v0 TTL
+# (correctness fix per brutal-review CB1; documented in EPIPHANIES)
+# ─────────────────────────────────────────────────────────────────────
+
+ogar:inheritanceColumnDisabled a rdf:Property ; rdfs:domain ogar:Class ; rdfs:range xsd:boolean .
+ogar:fieldType                 a rdf:Property ; rdfs:domain ogar:Field ; rdfs:range xsd:string .
+ogar:fieldName                 a rdf:Property ; rdfs:domain ogar:Field ; rdfs:range xsd:string .
+ogar:storeField                a rdf:Property ; rdfs:domain ogar:StoreAccessor ; rdfs:range xsd:string .
+ogar:storePrefix               a rdf:Property ; rdfs:domain ogar:StoreAccessor ; rdfs:range xsd:boolean .
+ogar:scopesDisabled            a rdf:Property ; rdfs:domain ogar:EnumDecl ; rdfs:range xsd:boolean .
+ogar:hasValidation             a rdf:Property ; rdfs:domain ogar:Class ; rdfs:range ogar:Validation .
+ogar:validationTarget          a rdf:Property ; rdfs:domain ogar:Validation ; rdfs:range xsd:string .
+ogar:validationRule            a rdf:Property ; rdfs:domain ogar:Validation ; rdfs:range xsd:string .
+ogar:variantName               a rdf:Property ; rdfs:domain ogar:EnumVariant ; rdfs:range xsd:string .
+ogar:variantValue              a rdf:Property ; rdfs:domain ogar:EnumVariant ; rdfs:range xsd:string .
+ogar:scopePredeclaration       a rdf:Property ; rdfs:domain ogar:Class ; rdfs:range xsd:string .
+ogar:beforeAdd                 a rdf:Property ; rdfs:domain ogar:Association ; rdfs:range xsd:string .
+ogar:afterAdd                  a rdf:Property ; rdfs:domain ogar:Association ; rdfs:range xsd:string .
+ogar:beforeRemove              a rdf:Property ; rdfs:domain ogar:Association ; rdfs:range xsd:string .
+ogar:afterRemove               a rdf:Property ; rdfs:domain ogar:Association ; rdfs:range xsd:string .
+
+# ─────────────────────────────────────────────────────────────────────
 # Properties — EnumDecl, Scope, Callback
 # ─────────────────────────────────────────────────────────────────────
 
 ogar:column       a rdf:Property ; rdfs:domain ogar:EnumDecl ; rdfs:range xsd:string .
-ogar:variantValue a rdf:Property ; rdfs:domain ogar:EnumDecl ; rdfs:range xsd:string .
+# NOTE: ogar:variantValue now has domain ogar:EnumVariant (declared in
+# Sprint 2 additions below). The older domain ogar:EnumDecl declaration
+# was a v0 mistake — variant values belong to the per-variant subject,
+# not the EnumDecl itself. Removed to avoid RDF conjunctive-domain
+# inference inferring every variant value subject as both EnumVariant
+# AND EnumDecl. Codex review 2026-06-04 caught this.
 
 ogar:scopeName    a rdf:Property ; rdfs:domain ogar:Scope ; rdfs:range xsd:string .
 ogar:scopeBody    a rdf:Property ; rdfs:domain ogar:Scope ; rdfs:range xsd:string .

@@ -184,6 +184,43 @@ impl OgarEmitter for TripleEmitter {
             ));
         }
 
+        // Class-level Odoo metadata (Sprint 2 — codex review fix).
+        // Every field added in Sprint 2 emits a triple now; previously
+        // they were dropped silently despite being in vocab/ogar.ttl.
+        if let Some(ref desc) = class.description {
+            triples.push(Triple::new(&subject, "ogar:description", desc.clone()));
+        }
+        if let Some(ref order) = class.record_order {
+            triples.push(Triple::new(&subject, "ogar:recordOrder", order.clone()));
+        }
+        if let Some(ref rn) = class.rec_name {
+            triples.push(Triple::new(&subject, "ogar:recName", rn.clone()));
+        }
+        if let Some(b) = class.check_company_auto {
+            triples.push(Triple::new(&subject, "ogar:checkCompanyAuto", bool_to_str(b)));
+        }
+        if let Some(b) = class.log_access {
+            triples.push(Triple::new(&subject, "ogar:logAccess", bool_to_str(b)));
+        }
+        if let Some(b) = class.auto_create_table {
+            triples.push(Triple::new(&subject, "ogar:autoCreateTable", bool_to_str(b)));
+        }
+        if class.abstract_model {
+            triples.push(Triple::new(&subject, "ogar:abstractModel", "true"));
+        }
+        if class.transient {
+            triples.push(Triple::new(&subject, "ogar:transientModel", "true"));
+        }
+        if let Some(b) = class.register {
+            triples.push(Triple::new(&subject, "ogar:registerModel", bool_to_str(b)));
+        }
+        if let Some(ref module) = class.declared_in_module {
+            triples.push(Triple::new(&subject, "ogar:declaredIn", module.clone()));
+        }
+        if let Some(ref ver) = class.source_version {
+            triples.push(Triple::new(&subject, "ogar:sourceVersion", ver.clone()));
+        }
+
         for (i, assoc) in class.associations.iter().enumerate() {
             triples.extend(Self::emit_association_indexed(assoc, &class.name, prefix, i));
         }
@@ -212,6 +249,14 @@ impl OgarEmitter for TripleEmitter {
             triples.extend(Self::emit_validation_indexed(v, &class.name, prefix, i));
         }
 
+        for (i, cf) in class.computed_fields.iter().enumerate() {
+            triples.extend(Self::emit_computed_field_indexed(cf, &class.name, prefix, i));
+        }
+
+        for (i, m) in class.methods.iter().enumerate() {
+            triples.extend(Self::emit_method_decl_indexed(m, &class.name, prefix, i));
+        }
+
         triples
     }
 
@@ -238,6 +283,59 @@ impl OgarEmitter for TripleEmitter {
         if let Some(ref t) = attr.type_name {
             triples.push(Triple::new(&attr_id, "ogar:fieldType", t.clone()));
         }
+
+        // AttributeOptions emission (Sprint 2 — codex review fix).
+        // Every Option that's Some / Vec that's non-empty produces a
+        // triple. Producers populating the structured options now
+        // round-trip through the graph instead of silently dropping.
+        let opts = &attr.options;
+        if let Some(ref d) = opts.default_source {
+            triples.push(Triple::new(&attr_id, "ogar:default", d.clone()));
+        }
+        if let Some(b) = opts.required {
+            triples.push(Triple::new(&attr_id, "ogar:required", bool_to_str(b)));
+        }
+        if let Some(b) = opts.readonly {
+            triples.push(Triple::new(&attr_id, "ogar:readonly", bool_to_str(b)));
+        }
+        if let Some(b) = opts.indexed {
+            triples.push(Triple::new(&attr_id, "ogar:indexed", bool_to_str(b)));
+        }
+        if let Some(b) = opts.stored {
+            triples.push(Triple::new(&attr_id, "ogar:fieldStored", bool_to_str(b)));
+        }
+        if let Some(b) = opts.translate {
+            triples.push(Triple::new(&attr_id, "ogar:translate", bool_to_str(b)));
+        }
+        if let Some(t) = opts.tracking {
+            triples.push(Triple::new(&attr_id, "ogar:tracking", t.to_string()));
+        }
+        for g in &opts.groups {
+            triples.push(Triple::new(&attr_id, "ogar:groupAccess", g.clone()));
+        }
+        if let Some(b) = opts.company_dependent {
+            triples.push(Triple::new(&attr_id, "ogar:companyDependent", bool_to_str(b)));
+        }
+        if let Some(b) = opts.copy_on_duplicate {
+            triples.push(Triple::new(&attr_id, "ogar:copyOnDuplicate", bool_to_str(b)));
+        }
+        if let Some(ref h) = opts.help_text {
+            triples.push(Triple::new(&attr_id, "ogar:helpText", h.clone()));
+        }
+        if let Some(ref l) = opts.label {
+            triples.push(Triple::new(&attr_id, "ogar:fieldLabel", l.clone()));
+        }
+        if let Some((p, s)) = opts.digits {
+            triples.push(Triple::new(&attr_id, "ogar:precision", p.to_string()));
+            triples.push(Triple::new(&attr_id, "ogar:scale", s.to_string()));
+        }
+        if let Some(sz) = opts.size {
+            triples.push(Triple::new(&attr_id, "ogar:fieldSize", sz.to_string()));
+        }
+        if let Some(ref cf) = opts.currency_field {
+            triples.push(Triple::new(&attr_id, "ogar:currencyField", cf.clone()));
+        }
+
         triples
     }
 
@@ -326,6 +424,25 @@ impl TripleEmitter {
             triples.push(Triple::new(&assoc_id, "ogar:afterRemove", m.clone()));
         }
 
+        // Odoo-flavored Association extensions (Sprint 2 — codex review
+        // fix). These fields are in the IR struct and TTL but were
+        // dropped from emission until now.
+        if let Some(ref od) = assoc.ondelete {
+            triples.push(Triple::new(&assoc_id, "ogar:ondelete", od.clone()));
+        }
+        if let Some(aj) = assoc.auto_join {
+            triples.push(Triple::new(&assoc_id, "ogar:autoJoin", bool_to_str(aj)));
+        }
+        if let Some(ref ctx) = assoc.context_source {
+            triples.push(Triple::new(&assoc_id, "ogar:contextSource", ctx.clone()));
+        }
+        if let Some(cc) = assoc.check_company {
+            triples.push(Triple::new(&assoc_id, "ogar:checkCompany", bool_to_str(cc)));
+        }
+        if let Some(d) = assoc.delegate {
+            triples.push(Triple::new(&assoc_id, "ogar:delegateField", bool_to_str(d)));
+        }
+
         triples
     }
 
@@ -336,23 +453,51 @@ impl TripleEmitter {
         _index: usize,
     ) -> Vec<Triple> {
         let owner_id = class_identity(prefix, owner_class);
-        // Distinct namespace from Attribute/StoreAccessor on the same
-        // column to prevent subject collision.
         let enum_id = format!("{}/{}::enum::{}", prefix, owner_class, enum_decl.column);
         let mut triples = vec![
             Triple::new(&owner_id, "ogar:hasEnum", enum_id.clone()),
             Triple::new(&enum_id, "rdf:type", "ogar:EnumDecl"),
             Triple::new(&enum_id, "ogar:column", enum_decl.column.clone()),
         ];
-        // Emit variants as separate ogar:variantName + ogar:variantValue
-        // triples on a synthetic per-variant subject so values can
-        // contain `=` or other separators without round-trip loss.
-        for (i, (name, value)) in enum_decl.values.iter().enumerate() {
-            let variant_id = format!("{enum_id}#{i}");
-            triples.push(Triple::new(&enum_id, "ogar:hasVariant", variant_id.clone()));
-            triples.push(Triple::new(&variant_id, "rdf:type", "ogar:EnumVariant"));
-            triples.push(Triple::new(&variant_id, "ogar:variantName", name.clone()));
-            triples.push(Triple::new(&variant_id, "ogar:variantValue", value.clone()));
+        // EnumSource has three variants — emit different triples for each
+        // to preserve Odoo's `selection=lambda` and `selection_add=` cases
+        // beyond the simple static list.
+        match &enum_decl.source {
+            ogar_vocab::EnumSource::Static(values) => {
+                triples.push(Triple::new(&enum_id, "ogar:enumSourceKind", "ogar:Static"));
+                for (i, (name, value)) in values.iter().enumerate() {
+                    let variant_id = format!("{enum_id}#{i}");
+                    triples.push(Triple::new(&enum_id, "ogar:hasVariant", variant_id.clone()));
+                    triples.push(Triple::new(&variant_id, "rdf:type", "ogar:EnumVariant"));
+                    triples.push(Triple::new(&variant_id, "ogar:variantName", name.clone()));
+                    triples.push(Triple::new(&variant_id, "ogar:variantValue", value.clone()));
+                }
+            }
+            ogar_vocab::EnumSource::Computed(body) => {
+                triples.push(Triple::new(&enum_id, "ogar:enumSourceKind", "ogar:Computed"));
+                triples.push(Triple::new(&enum_id, "ogar:enumComputedBody", body.clone()));
+            }
+            ogar_vocab::EnumSource::Add { items, parent_selection } => {
+                triples.push(Triple::new(&enum_id, "ogar:enumSourceKind", "ogar:Add"));
+                triples.push(Triple::new(
+                    &enum_id,
+                    "ogar:enumParentSelection",
+                    parent_selection.clone(),
+                ));
+                for (i, (name, value)) in items.iter().enumerate() {
+                    let variant_id = format!("{enum_id}#add{i}");
+                    triples.push(Triple::new(&enum_id, "ogar:hasVariant", variant_id.clone()));
+                    triples.push(Triple::new(&variant_id, "rdf:type", "ogar:EnumVariant"));
+                    triples.push(Triple::new(&variant_id, "ogar:variantName", name.clone()));
+                    triples.push(Triple::new(&variant_id, "ogar:variantValue", value.clone()));
+                }
+            }
+            _ => {
+                // Future non_exhaustive EnumSource variants — emit a
+                // marker triple but don't panic. Real producers must
+                // upgrade to handle.
+                triples.push(Triple::new(&enum_id, "ogar:enumSourceKind", "ogar:Unknown"));
+            }
         }
         if let Some(disabled) = enum_decl.scopes_disabled {
             triples.push(Triple::new(
@@ -440,6 +585,83 @@ impl TripleEmitter {
             Triple::new(&v_id, "ogar:validationTarget", v.target.clone()),
             Triple::new(&v_id, "ogar:validationRule", v.rule_source.clone()),
         ]
+    }
+
+    fn emit_computed_field_indexed(
+        cf: &ogar_vocab::ComputedField,
+        owner_class: &str,
+        prefix: &str,
+        _index: usize,
+    ) -> Vec<Triple> {
+        let owner_id = class_identity(prefix, owner_class);
+        let cf_id = format!("{}/{}::computed::{}", prefix, owner_class, cf.field);
+        let mut triples = vec![
+            Triple::new(&owner_id, "ogar:hasComputedField", cf_id.clone()),
+            Triple::new(&cf_id, "rdf:type", "ogar:ComputedField"),
+            Triple::new(&cf_id, "ogar:computedFieldRef", cf.field.clone()),
+            Triple::new(&cf_id, "ogar:computeMethod", cf.compute_method.clone()),
+            Triple::new(&cf_id, "ogar:stored", bool_to_str(cf.stored)),
+        ];
+        for d in &cf.depends {
+            triples.push(Triple::new(&cf_id, "ogar:dependsPath", d.clone()));
+        }
+        for d in &cf.depends_context {
+            triples.push(Triple::new(&cf_id, "ogar:dependsContext", d.clone()));
+        }
+        if let Some(ref m) = cf.inverse_method {
+            triples.push(Triple::new(&cf_id, "ogar:inverseMethod", m.clone()));
+        }
+        if let Some(ref m) = cf.search_method {
+            triples.push(Triple::new(&cf_id, "ogar:searchMethod", m.clone()));
+        }
+        triples
+    }
+
+    fn emit_method_decl_indexed(
+        m: &ogar_vocab::MethodDecl,
+        owner_class: &str,
+        prefix: &str,
+        index: usize,
+    ) -> Vec<Triple> {
+        let owner_id = class_identity(prefix, owner_class);
+        let m_id = format!("{}/{}::method::{}::{}", prefix, owner_class, index, m.name);
+        let mut triples = vec![
+            Triple::new(&owner_id, "ogar:hasMethod", m_id.clone()),
+            Triple::new(&m_id, "rdf:type", "ogar:MethodDecl"),
+            Triple::new(&m_id, "ogar:methodName", m.name.clone()),
+            Triple::new(&m_id, "ogar:methodBody", m.body_source.clone()),
+            Triple::new(&m_id, "ogar:methodKind", method_kind_to_ogar(m.kind)),
+            Triple::new(
+                &m_id,
+                "ogar:recordSemantics",
+                record_semantics_to_ogar(m.semantics),
+            ),
+        ];
+        for d in &m.decorators {
+            triples.push(Triple::new(&m_id, "ogar:decoratorName", d.clone()));
+        }
+        triples
+    }
+}
+
+fn method_kind_to_ogar(kind: ogar_vocab::MethodKind) -> &'static str {
+    use ogar_vocab::MethodKind;
+    match kind {
+        MethodKind::CrudOverride => "ogar:CrudOverride",
+        MethodKind::ApiModel => "ogar:ApiModel",
+        MethodKind::ApiModelCreateMulti => "ogar:ApiModelCreateMulti",
+        MethodKind::Instance => "ogar:Instance",
+        _ => "ogar:Unknown",
+    }
+}
+
+fn record_semantics_to_ogar(s: ogar_vocab::RecordSemantics) -> &'static str {
+    use ogar_vocab::RecordSemantics;
+    match s {
+        RecordSemantics::Record => "ogar:Record",
+        RecordSemantics::Recordset => "ogar:Recordset",
+        RecordSemantics::ClassLevel => "ogar:ClassLevel",
+        _ => "ogar:Recordset",
     }
 }
 
@@ -562,7 +784,10 @@ mod tests {
     fn enum_emits_variant_name_and_value_separately() {
         let mut class = sample_work_package();
         let mut e = EnumDecl::new("status");
-        e.values = vec![("open".into(), "0".into()), ("closed".into(), "1".into())];
+        e.source = ogar_vocab::EnumSource::Static(vec![
+            ("open".into(), "0".into()),
+            ("closed".into(), "1".into()),
+        ]);
         e.scopes_disabled = Some(true);
         class.enums.push(e);
         let triples = TripleEmitter::emit_class(&class, "ogit-op");
@@ -664,6 +889,163 @@ mod tests {
             .map(|t| t.object.as_str())
             .collect();
         assert_eq!(preds, vec!["like", "human", "visible"]);
+    }
+
+    // ───────────────────────────────────────────────────────────────
+    // Codex review 2026-06-04 fixes — exercise every newly-wired
+    // emission path. These tests fail on the pre-fix emitter where
+    // the IR field was present but no triple was emitted.
+    // ───────────────────────────────────────────────────────────────
+
+    #[test]
+    fn class_metadata_fields_emit_triples() {
+        let mut class = Class::new("sale.order");
+        class.description = Some("Sale Order".into());
+        class.record_order = Some("date desc, id".into());
+        class.rec_name = Some("name".into());
+        class.declared_in_module = Some("sale".into());
+        class.source_version = Some("17.0".into());
+        class.abstract_model = false;
+        class.transient = false;
+        class.check_company_auto = Some(true);
+        let triples = TripleEmitter::emit_class(&class, "ogit-erp");
+        assert!(triples.iter().any(|t| t.predicate == "ogar:description" && t.object == "Sale Order"));
+        assert!(triples.iter().any(|t| t.predicate == "ogar:recordOrder" && t.object == "date desc, id"));
+        assert!(triples.iter().any(|t| t.predicate == "ogar:recName" && t.object == "name"));
+        assert!(triples.iter().any(|t| t.predicate == "ogar:declaredIn" && t.object == "sale"));
+        assert!(triples.iter().any(|t| t.predicate == "ogar:sourceVersion" && t.object == "17.0"));
+        assert!(triples.iter().any(|t| t.predicate == "ogar:checkCompanyAuto" && t.object == "true"));
+    }
+
+    #[test]
+    fn class_abstract_and_transient_flags_emit_when_true() {
+        let mut class = Class::new("mail.thread");
+        class.abstract_model = true;
+        let triples = TripleEmitter::emit_class(&class, "ogit-erp");
+        assert!(triples.iter().any(|t| t.predicate == "ogar:abstractModel" && t.object == "true"));
+        assert!(!triples.iter().any(|t| t.predicate == "ogar:transientModel"));
+    }
+
+    #[test]
+    fn association_odoo_options_emit_triples() {
+        let mut class = Class::new("sale.order");
+        let mut assoc = Association::new(AssociationKind::BelongsTo, "partner_id");
+        assoc.ondelete = Some("restrict".into());
+        assoc.auto_join = Some(true);
+        assoc.context_source = Some("{'default_partner_id': active_id}".into());
+        assoc.check_company = Some(true);
+        assoc.delegate = Some(false);
+        class.associations.push(assoc);
+        let triples = TripleEmitter::emit_class(&class, "ogit-erp");
+        assert!(triples.iter().any(|t| t.predicate == "ogar:ondelete" && t.object == "restrict"));
+        assert!(triples.iter().any(|t| t.predicate == "ogar:autoJoin" && t.object == "true"));
+        assert!(triples.iter().any(|t| t.predicate == "ogar:contextSource"));
+        assert!(triples.iter().any(|t| t.predicate == "ogar:checkCompany" && t.object == "true"));
+        assert!(triples.iter().any(|t| t.predicate == "ogar:delegateField" && t.object == "false"));
+    }
+
+    #[test]
+    fn attribute_options_emit_full_triple_set() {
+        let mut class = Class::new("sale.order");
+        let mut attr = Attribute::new("name");
+        attr.type_name = Some("Char".into());
+        attr.options.required = Some(true);
+        attr.options.translate = Some(true);
+        attr.options.tracking = Some(10);
+        attr.options.indexed = Some(true);
+        attr.options.size = Some(64);
+        attr.options.help_text = Some("Order reference".into());
+        attr.options.label = Some("Order".into());
+        attr.options.groups = vec!["sales.group_user".into(), "sales.group_manager".into()];
+        attr.options.default_source = Some("New".into());
+        class.attributes.push(attr);
+        let triples = TripleEmitter::emit_class(&class, "ogit-erp");
+        assert!(triples.iter().any(|t| t.predicate == "ogar:required" && t.object == "true"));
+        assert!(triples.iter().any(|t| t.predicate == "ogar:translate" && t.object == "true"));
+        assert!(triples.iter().any(|t| t.predicate == "ogar:tracking" && t.object == "10"));
+        assert!(triples.iter().any(|t| t.predicate == "ogar:indexed" && t.object == "true"));
+        assert!(triples.iter().any(|t| t.predicate == "ogar:fieldSize" && t.object == "64"));
+        assert!(triples.iter().any(|t| t.predicate == "ogar:helpText" && t.object == "Order reference"));
+        assert!(triples.iter().any(|t| t.predicate == "ogar:fieldLabel" && t.object == "Order"));
+        assert!(triples.iter().any(|t| t.predicate == "ogar:default" && t.object == "New"));
+        // Two groups → two triples.
+        let group_triples: Vec<_> = triples.iter().filter(|t| t.predicate == "ogar:groupAccess").collect();
+        assert_eq!(group_triples.len(), 2);
+    }
+
+    #[test]
+    fn attribute_options_digits_split_into_precision_and_scale() {
+        let mut attr = Attribute::new("amount_total");
+        attr.type_name = Some("Monetary".into());
+        attr.options.digits = Some((16, 2));
+        attr.options.currency_field = Some("currency_id".into());
+        let mut class = Class::new("sale.order");
+        class.attributes.push(attr);
+        let triples = TripleEmitter::emit_class(&class, "ogit-erp");
+        assert!(triples.iter().any(|t| t.predicate == "ogar:precision" && t.object == "16"));
+        assert!(triples.iter().any(|t| t.predicate == "ogar:scale" && t.object == "2"));
+        assert!(triples.iter().any(|t| t.predicate == "ogar:currencyField" && t.object == "currency_id"));
+    }
+
+    #[test]
+    fn computed_field_emits_full_subgraph() {
+        let mut class = Class::new("sale.order");
+        let mut cf = ogar_vocab::ComputedField::default();
+        cf.field = "amount_total".into();
+        cf.compute_method = "_compute_amount_total".into();
+        cf.depends = vec!["order_line.price_total".into(), "currency_id".into()];
+        cf.depends_context = vec!["company_id".into()];
+        cf.stored = true;
+        cf.inverse_method = Some("_inverse_total".into());
+        class.computed_fields.push(cf);
+        let triples = TripleEmitter::emit_class(&class, "ogit-erp");
+        assert!(triples.iter().any(|t| t.predicate == "ogar:hasComputedField"));
+        assert!(triples.iter().any(|t| t.predicate == "ogar:computedFieldRef" && t.object == "amount_total"));
+        assert!(triples.iter().any(|t| t.predicate == "ogar:computeMethod" && t.object == "_compute_amount_total"));
+        assert!(triples.iter().any(|t| t.predicate == "ogar:stored" && t.object == "true"));
+        assert!(triples.iter().any(|t| t.predicate == "ogar:dependsPath" && t.object == "order_line.price_total"));
+        assert!(triples.iter().any(|t| t.predicate == "ogar:dependsPath" && t.object == "currency_id"));
+        assert!(triples.iter().any(|t| t.predicate == "ogar:dependsContext" && t.object == "company_id"));
+        assert!(triples.iter().any(|t| t.predicate == "ogar:inverseMethod" && t.object == "_inverse_total"));
+        assert!(!triples.iter().any(|t| t.predicate == "ogar:searchMethod"));
+    }
+
+    #[test]
+    fn method_decl_emits_with_kind_and_semantics() {
+        let mut class = Class::new("sale.order");
+        let mut m = ogar_vocab::MethodDecl::default();
+        m.name = "create".into();
+        m.kind = ogar_vocab::MethodKind::ApiModelCreateMulti;
+        m.body_source = "for vals in vals_list: ...".into();
+        m.decorators = vec!["api.model_create_multi".into()];
+        m.semantics = ogar_vocab::RecordSemantics::ClassLevel;
+        class.methods.push(m);
+        let triples = TripleEmitter::emit_class(&class, "ogit-erp");
+        assert!(triples.iter().any(|t| t.predicate == "ogar:hasMethod"));
+        assert!(triples.iter().any(|t| t.predicate == "ogar:methodName" && t.object == "create"));
+        assert!(triples.iter().any(|t| t.predicate == "ogar:methodKind" && t.object == "ogar:ApiModelCreateMulti"));
+        assert!(triples.iter().any(|t| t.predicate == "ogar:recordSemantics" && t.object == "ogar:ClassLevel"));
+        assert!(triples.iter().any(|t| t.predicate == "ogar:decoratorName" && t.object == "api.model_create_multi"));
+    }
+
+    #[test]
+    fn duplicate_methods_get_indexed_subjects() {
+        // Two methods with the same name (rare but possible in legacy
+        // Odoo extends) must produce distinct subjects.
+        let mut class = Class::new("sale.order");
+        for name in ["action_confirm", "action_confirm"] {
+            let mut m = ogar_vocab::MethodDecl::default();
+            m.name = name.into();
+            class.methods.push(m);
+        }
+        let triples = TripleEmitter::emit_class(&class, "ogit-erp");
+        let method_subjects: Vec<_> = triples
+            .iter()
+            .filter(|t| t.predicate == "rdf:type" && t.object == "ogar:MethodDecl")
+            .map(|t| t.subject.as_str())
+            .collect();
+        assert_eq!(method_subjects.len(), 2);
+        assert_ne!(method_subjects[0], method_subjects[1]);
     }
 
     #[test]
