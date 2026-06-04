@@ -419,25 +419,42 @@ on `surrealdb-core::sql::parse`). Both directions supported.
 
 ---
 
-## Sprint 5 — `ogar-to-proposal`: SchemaSource impl (REVISED) ⬜
-> REVISED: NOT "build SoA integration" — that exists. Implement
-> `impl SchemaSource for OgarSource` + `From<ogar::Class> for MappingProposal`
-> (Class→Schema, Association→LinkSpec, Attribute→SemanticType+Marking).
-> Resolve the `&'static str` impedance (intern vs owned vs proposal-only).
-> Land one real OpenProject WorkPackage into the existing OntologyRegistry.
+## Sprint 5 — `ogar-to-proposal`: SchemaSource impl (REVISED) 🟡
+> REVISED: NOT "build SoA integration" — that exists upstream. OGAR is a
+> `SchemaSource` producer into the existing `OntologyRegistry`. The OLD
+> deliverables here ("wire the contract layer / NiblePath dictionary / Lance
+> write path") were pre-correction and are DROPPED — that's upstream's job
+> (`lance-graph-contract` + `lance-graph-ontology`), not OGAR's. See
+> `docs/LANCE-GRAPH-INTEGRATION.md`.
 
-**Goal**: wire the contract layer (NiblePath identity routing,
-Lance versioning) over SoA RecordBatches.
+**Goal**: map OGAR IR → `MappingProposal` and feed it into the existing
+registry. Split into 5a (in-repo mapping) + 5b (cross-repo boundary).
 
-**Deliverables**
-- Identity column dictionary encoding (segment-level NiblePath
-  shared dictionary).
-- Lance dataset write path with v2 manifest paths from day one.
-- Append batching policy: ≥1 message/sec OR ≥100 messages/batch.
-- Cleanup policy: retain "frozen" ontology versions via tags;
-  cleanup unreferenced versions >1h old.
+**Sprint 5a — `ogar-proposal` owned mirror ✅ (PR #5, merged)**
+- `crates/ogar-proposal/` — `ProposalDraft`/`SchemaDraft`/`PropertyDraft`/
+  `LinkDraft` owned mirrors (String where contract uses `&'static str`).
+- `class_to_drafts(&Class, bridge_id)` mapping: Class→Entity{Schema},
+  Association→Edge{LinkSpec} (BelongsTo→OneToOne, HasMany→OneToMany,
+  HABTM→ManyToMany), Attribute→PropertyDraft + SemanticType + Marking
+  heuristics (heuristic semantics lower entity confidence <1.0).
+- 12 tests. Resolves the `&'static str` impedance via owned mirror +
+  documented `Box::leak` boundary sketch (`ogar_proposal::boundary`).
 
-**Dependencies**: Sprint 4.
+**Sprint 5b — thin `impl SchemaSource` (UNBLOCKED)**
+> Decision #1 RESOLVED (bardioc, 2026-06-04): the `Box::leak` interning
+> workaround is ACCEPTED — Sprint 5b proceeds without waiting for an
+> upstream `SchemaOwned` variant. (Upstream `SchemaOwned` stays a
+> nice-to-have-cleaner-later for both consumers, not a blocker.)
+- `crates/ogar-proposal/` gains a `lance-bind` feature: `impl SchemaSource
+  for OgarSource` interning `ProposalDraft` → real
+  `lance_graph_ontology::MappingProposal` via one `Box::leak` of a deduped
+  set (per `ogar_proposal::boundary`).
+- Cross-repo git dependency on `lance-graph-ontology` (needs protoc in CI).
+- Land one real OpenProject `WorkPackage` into a live `OntologyRegistry`;
+  assert the dictionary row appears.
+
+**Dependencies**: Sprint 4 (5a done); Sprint 5b needs the cross-repo build
+(protoc / fork-access) — but NO LONGER blocked on a decision.
 
 ---
 
@@ -462,30 +479,50 @@ Lance `versions()` watch.
 
 ---
 
-## Sprint 7 — `ogar-runtime`: Ractor + Kanban (RENAMED) ⬜
+## Sprint 7 — `ogar-runtime`: Ractor + Kanban (RENAMED + RESCOPED) ⬜
 > RENAMED: `lance-graph-callcenter` already exists upstream (ExternalMembrane
 > /Phoenix/pgwire) — name collision. OGAR's actor-per-class runtime is
 > `ogar-runtime`. The Kanban mailbox is genuinely unbuilt upstream (zero code
-> matches) — it IS the "kanban" in surrealQL>kanban<lance-graph. Evaluate
-> whether ActionInvocation is a projection over the existing callcenter
-> cognitive-event ledger rather than a new store.
+> matches) — it IS the "kanban" in surrealQL>kanban<lance-graph.
+>
+> RESCOPED (bardioc grill #9, 2026-06-04): hot/cold split corrected.
+> The HOT path is the **Lance-subscription bus (no queue)** — bardioc owns
+> it; `ActionInvocation` dispatch RIDES the subscription, it does NOT touch
+> a Ractor mailbox. Ractor + `KanbanMailbox` are the **SLA-coordination /
+> cold layer ONLY**. So `ogar-runtime` SUBSCRIBES to the bus (per §10.3 of
+> LANCE-GRAPH-INTEGRATION) and reacts (cache-invalidate + WIP pull); it is
+> not the hot dispatch path. BLOCKED on 3 surfaced decisions (see EPIPHANIES
+> 2026-06-04 cross-session entry): registry append API, mailbox home
+> confirmation, and the subscription-bus API shape. Do NOT build until
+> those land — building against a guessed bus contract is the rework class
+> this session exists to avoid.
 
-**Goal**: BEAM-style actor runtime per R3 verdict (Ractor),
-organized around Kanban-bounded mailboxes per `SOA-IMPLEMENTATION.md`
-§5.
+**Goal**: `ogar-runtime` is the **cold / SLA-coordination subscriber**
+to the Lance-subscription bus — NOT a hot-dispatch actor runtime. On
+each Lance version bump it reacts (cache-invalidate + WIP pull). The
+hot path (`ActionInvocation` dispatch) rides the bus bardioc owns and
+does not touch a Ractor mailbox.
 
-**Deliverables**
-- `crates/lance-graph-callcenter/` with:
-  - `ClassActor` trait built on Ractor.
-  - `KanbanMailbox<M>` — bounded WIP + pull + backpressure.
-  - Class registration from ontology triples (no manual wiring).
-  - SPO+TeKaMoLo action dispatch routing through ontology cache.
-  - Cascade routing: actor emits `RecordBatch` of downstream
-    actions; receiving actor pulls when its WIP allows.
-- Default WIP=1024 per mailbox; configurable per-class via
-  `ogar:mailboxCapacity` triple.
+**Deliverables** — ALL BLOCKED pending the 3 surfaced decisions
+(registry append API, mailbox-home confirmation, subscription-bus API
+shape; see EPIPHANIES 2026-06-04 cross-session entry). Do NOT start
+until they land:
+- `crates/ogar-runtime/` (NOT `lance-graph-callcenter` — that exists
+  upstream) implementing the **subscriber** side of
+  `ExternalMembrane`/version-watch (per `LANCE-GRAPH-INTEGRATION.md`
+  §10.3): on lance version bump → invalidate the ontology cache slice
+  + pull newly-available work respecting WIP + re-evaluate backpressure.
+- `KanbanMailbox<M>` (bounded WIP + pull + backpressure) for the
+  **SLA-coordination / cold path ONLY**. Default WIP=1024,
+  configurable per-class via `ogar:mailboxCapacity` triple.
+- `ClassActor` (Ractor) for coord/cold dispatch only. Hot
+  `ActionInvocation` dispatch is the bus's job, not this crate's.
+- The end-to-end integration test that a lance version bump fires the
+  subscription and `ogar-runtime` reacts (cache invalidated + WIP
+  pulled) — OGAR owns this test (the upstream `subscribe()` path is
+  undertested).
 
-**Dependencies**: Sprints 5, 6.
+**Dependencies**: Sprints 5, 6 + the 3 surfaced decisions.
 
 ---
 
@@ -627,25 +664,16 @@ identities at sub-microsecond cost.
 
 ---
 
-## Sprint 7 — `lance-graph-callcenter` actor runtime skeleton ⬜
-
-**Goal**: the smallest possible actor-per-class runtime. Routes one
-message type (`Find { id }`) to the right `ogar/Class` actor and
-returns the row.
-
-**Deliverables**
-- Actor trait + supervisor scaffold (probably built on `tokio` + an
-  existing actor crate — Sprint 6 brutal review will resolve which).
-- Class registration via `ogar/Class` triples (no manual wiring).
-- Message dispatch routing through the ontology cache.
-
-**Acceptance**
-- A `Find { id: 42 }` message for `ogit-op/WorkPackage` is routed to
-  the registered actor, reads the row, returns it.
-- Actor supervisor restarts a failed actor without losing other
-  classes' state.
-
-**Dependencies**: Sprint 6.
+## Sprint 7 — `lance-graph-callcenter` actor runtime skeleton — SUPERSEDED ⬜
+> **SUPERSEDED-BY the rescoped Sprint 7 (`ogar-runtime`, RENAMED + RESCOPED)
+> earlier in this file.** This is the original Sprint-0-era sketch. It is
+> WRONG on three counts now: (1) `lance-graph-callcenter` already exists
+> upstream (name collision); (2) the hot path is the Lance-subscription bus,
+> not a `Find{id}` actor mailbox (bardioc grill #9); (3) it is BLOCKED on the
+> 3 surfaced decisions. **Do NOT use this entry as a work queue** — the live
+> Sprint 7 is the rescoped `ogar-runtime` entry above. Tombstone kept per the
+> append-only-at-sprint-level convention (correction is a new entry, the old
+> row stays marked).
 
 ---
 
