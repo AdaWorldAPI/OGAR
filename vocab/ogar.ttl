@@ -1,0 +1,127 @@
+# OGAR — Open Graph of Active Record
+# Canonical vocabulary in Turtle/RDF form.
+#
+# This is the public, cite-able artifact of the vocabulary. Prefix
+# `ogar:` is stable; extensions live under `ogar-extensions:<lang>/` and
+# application overlays under `ogit-<app>:`.
+
+@prefix ogar: <https://github.com/AdaWorldAPI/OGAR/vocab/ogar#> .
+@prefix ogit: <https://www.arago.de/ogit#> .
+@prefix rdf:  <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix owl:  <http://www.w3.org/2002/07/owl#> .
+@prefix xsd:  <http://www.w3.org/2001/XMLSchema#> .
+
+# ─────────────────────────────────────────────────────────────────────
+# Top-level types
+# ─────────────────────────────────────────────────────────────────────
+
+ogar:Class a owl:Class ;
+    rdfs:subClassOf ogit:ObjectType ;
+    rdfs:label "OGAR Class" ;
+    rdfs:comment "A record-class declaration in the Active Record pattern (Rails AR, Odoo models.Model, Django models.Model, Sequel, Prisma, …)." .
+
+ogar:Field a owl:Class ;
+    rdfs:subClassOf ogit:Property ;
+    rdfs:label "OGAR Field" ;
+    rdfs:comment "A column/attribute on a class — typed or schemaless." .
+
+ogar:Association a owl:Class ;
+    rdfs:label "OGAR Association" ;
+    rdfs:comment "A relation between two classes. One of BelongsTo, HasOne, HasMany, HasAndBelongsToMany." .
+
+ogar:EnumDecl a owl:Class ;
+    rdfs:label "OGAR Enum" ;
+    rdfs:comment "An enum-backed column with named variants and literal values." .
+
+ogar:Scope a owl:Class ;
+    rdfs:label "OGAR Scope" ;
+    rdfs:comment "A named query scope — a parameterless lambda over the class's collection." .
+
+ogar:Callback a owl:Class ;
+    rdfs:label "OGAR Callback" ;
+    rdfs:comment "A lifecycle hook — before/after/around the persistence events." .
+
+ogar:Validation a owl:Class ;
+    rdfs:label "OGAR Validation" ;
+    rdfs:comment "A constraint declaration on a field's allowed values." .
+
+ogar:Mixin a owl:Class ;
+    rdfs:label "OGAR Mixin" ;
+    rdfs:comment "A shared module of behaviour included into a class (Rails concern, Odoo _inherit)." .
+
+ogar:StoreAccessor a owl:Class ;
+    rdfs:label "OGAR StoreAccessor" ;
+    rdfs:comment "A bundle of pseudo-fields backed by a single JSONB column." .
+
+# ─────────────────────────────────────────────────────────────────────
+# AssociationKind enumeration
+# ─────────────────────────────────────────────────────────────────────
+
+ogar:AssociationKind a owl:Class ;
+    rdfs:label "OGAR Association Kind" .
+
+ogar:BelongsTo  a ogar:AssociationKind ; rdfs:label "BelongsTo" .
+ogar:HasOne     a ogar:AssociationKind ; rdfs:label "HasOne" .
+ogar:HasMany    a ogar:AssociationKind ; rdfs:label "HasMany" .
+ogar:HasAndBelongsToMany a ogar:AssociationKind ; rdfs:label "HasAndBelongsToMany" .
+
+# ─────────────────────────────────────────────────────────────────────
+# Properties — Class
+# ─────────────────────────────────────────────────────────────────────
+
+ogar:parentClass     a rdf:Property ; rdfs:domain ogar:Class ; rdfs:range ogar:Class .
+ogar:hasField        a rdf:Property ; rdfs:domain ogar:Class ; rdfs:range ogar:Field .
+ogar:hasAssociation  a rdf:Property ; rdfs:domain ogar:Class ; rdfs:range ogar:Association .
+ogar:hasMixin        a rdf:Property ; rdfs:domain ogar:Class ; rdfs:range ogar:Mixin .
+ogar:hasEnum         a rdf:Property ; rdfs:domain ogar:Class ; rdfs:range ogar:EnumDecl .
+ogar:hasScope        a rdf:Property ; rdfs:domain ogar:Class ; rdfs:range ogar:Scope .
+ogar:hasCallback     a rdf:Property ; rdfs:domain ogar:Class ; rdfs:range ogar:Callback .
+ogar:hasValidation   a rdf:Property ; rdfs:domain ogar:Class ; rdfs:range ogar:Validation .
+ogar:hasStoreAccessor a rdf:Property ; rdfs:domain ogar:Class ; rdfs:range ogar:StoreAccessor .
+ogar:tableName       a rdf:Property ; rdfs:domain ogar:Class ; rdfs:range xsd:string .
+ogar:defaultScope    a rdf:Property ; rdfs:domain ogar:Class ; rdfs:range xsd:string .
+ogar:ignoredColumn   a rdf:Property ; rdfs:domain ogar:Class ; rdfs:range xsd:string .
+
+# ─────────────────────────────────────────────────────────────────────
+# Properties — Association
+# ─────────────────────────────────────────────────────────────────────
+
+ogar:kind         a rdf:Property ; rdfs:domain ogar:Association ; rdfs:range ogar:AssociationKind .
+ogar:relationName a rdf:Property ; rdfs:domain ogar:Association ; rdfs:range xsd:string .
+ogar:targetClass  a rdf:Property ; rdfs:domain ogar:Association ; rdfs:range ogar:Class .
+ogar:foreignKey   a rdf:Property ; rdfs:domain ogar:Association ; rdfs:range xsd:string .
+ogar:polymorphic  a rdf:Property ; rdfs:domain ogar:Association ; rdfs:range xsd:boolean .
+ogar:through      a rdf:Property ; rdfs:domain ogar:Association ; rdfs:range xsd:string .
+ogar:sourceAlias  a rdf:Property ; rdfs:domain ogar:Association ; rdfs:range xsd:string .
+ogar:asTarget     a rdf:Property ; rdfs:domain ogar:Association ; rdfs:range xsd:string .
+ogar:dependent    a rdf:Property ; rdfs:domain ogar:Association ; rdfs:range xsd:string .
+ogar:optional     a rdf:Property ; rdfs:domain ogar:Association ; rdfs:range xsd:boolean .
+ogar:inverseOf    a rdf:Property ; rdfs:domain ogar:Association ; rdfs:range xsd:string .
+
+# ─────────────────────────────────────────────────────────────────────
+# Properties — EnumDecl, Scope, Callback
+# ─────────────────────────────────────────────────────────────────────
+
+ogar:column       a rdf:Property ; rdfs:domain ogar:EnumDecl ; rdfs:range xsd:string .
+ogar:variantValue a rdf:Property ; rdfs:domain ogar:EnumDecl ; rdfs:range xsd:string .
+
+ogar:scopeName    a rdf:Property ; rdfs:domain ogar:Scope ; rdfs:range xsd:string .
+ogar:scopeBody    a rdf:Property ; rdfs:domain ogar:Scope ; rdfs:range xsd:string .
+
+ogar:event        a rdf:Property ; rdfs:domain ogar:Callback ; rdfs:range xsd:string .
+ogar:targetMethod a rdf:Property ; rdfs:domain ogar:Callback ; rdfs:range xsd:string .
+ogar:callbackBody a rdf:Property ; rdfs:domain ogar:Callback ; rdfs:range xsd:string .
+
+# ─────────────────────────────────────────────────────────────────────
+# Source-language hints (traceability only)
+# ─────────────────────────────────────────────────────────────────────
+
+ogar:Language a owl:Class ; rdfs:label "Source language" .
+ogar:Ruby       a ogar:Language ; rdfs:label "Ruby (ActiveRecord)" .
+ogar:Python     a ogar:Language ; rdfs:label "Python (Django, Odoo)" .
+ogar:Sql        a ogar:Language ; rdfs:label "SQL DDL" .
+ogar:TypeScript a ogar:Language ; rdfs:label "TypeScript (Prisma, TypeORM, Drizzle)" .
+ogar:SurrealQl  a ogar:Language ; rdfs:label "SurrealQL DDL" .
+
+ogar:sourceLanguage a rdf:Property ; rdfs:domain ogar:Class ; rdfs:range ogar:Language .
