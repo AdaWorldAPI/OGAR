@@ -143,22 +143,52 @@ pub fn emit_surrealql_ddl(classes: &[Class]) -> String;          // consumer
 §5.1.** The actor body is *generated*, not authored — and split so the generic
 crate stays OGAR-free.
 
-**Generic layer (runtime session, zero OGAR types).** `Context` opaque; `on_enter`
-delegates to a `CommitHook`:
+**Generic layer (runtime session, zero OGAR types).** `Context` opaque; the hook
+is wired at spawn (no I/O surface threaded through `on_event`). Canonical
+signatures from `AdaWorldAPI/ractor_actors` `feat/state-machine-actor` @ `38a71a4`:
 
 ```rust
-pub trait StateMachine {
-    type State: Clone + PartialEq;
-    type Event;
-    type Context;                                  // OPAQUE — crate never inspects it
-    fn handle(&mut self, st: &Self::State, ev: Self::Event,
-              cx: &mut Self::Context, hook: &mut dyn CommitHook<Self>) -> Transition<Self>;
-    fn on_enter(&mut self, _st: &Self::State, _cx: &mut Self::Context,
-                _hook: &mut dyn CommitHook<Self>) {}
+pub trait StateMachine: Send + Sync + 'static {
+    type State:   Clone + PartialEq + std::fmt::Debug + Send + Sync + 'static;
+    type Event:   Send + 'static;
+    type Context: Send + 'static;          // OPAQUE — crate never inspects
+
+    fn initial(&self) -> Self::State;
+
+    /// Pure dispatch — guards live here; no hook param, no I/O surface.
+    fn on_event(&self,
+                state: &Self::State,
+                event: &Self::Event,
+                ctx:   &mut Self::Context) -> Transition<Self::State>;
+
+    /// Per-state SLA deadline. Lowering target for `ogar:StateTimeout`.
+    fn timeout(&self, _state: &Self::State)
+        -> Option<ractor::concurrency::Duration> { None }
+
+    /// Timer fired. May NOT return `Postpone` (timeouts don't replay).
+    fn on_timeout(&self, _state: &Self::State, _ctx: &mut Self::Context)
+        -> Transition<Self::State> { Transition::Stay }
+
+    /// Commit predicate. Entering a state where this is `true` fires `CommitHook`.
+    fn is_commit(&self, _state: &Self::State) -> bool { false }
 }
-pub trait CommitHook<M: StateMachine + ?Sized> {   // the on_enter side-effect seam
-    fn commit(&mut self, st: &M::State, cx: &M::Context);
+
+pub enum Transition<S> {
+    Goto(S),    // if is_commit(new): CommitHook fires; then postponed replay (FIFO)
+    Stay,       // no-op / guard rejects this event
+    Postpone,   // defer until next state change; replay FIFO ahead of newer events
+    Stop,       // stop the actor
 }
+
+/// Side-effect seam. SYNC + fallible (honours I-2 — no tokio at the membrane).
+pub trait CommitHook<SM: StateMachine>: Send + Sync + 'static {
+    fn on_commit(&self,
+                 from: &SM::State,
+                 to:   &SM::State,
+                 ctx:  &SM::Context) -> Result<(), ractor::ActorProcessingErr>;
+}
+
+// spawn / fire / current_state — see crate for the actor wiring.
 ```
 
 **Binding layer (this contract's OGAR inputs).** The codegen fills the three
@@ -167,40 +197,58 @@ associated types from OGAR and supplies a `LanceCommitHook`:
 ```rust
 // GENERATED per Action-bearing Class:
 impl StateMachine for <Class>Invocation {
-    type State   = ActionState;       // Pending -> Committed / Failed / Cancelled — lifecycle / Rubicon
-    type Event   = ActionDef;         // transition decl: predicate, object_class, kausal, default temporal/modal
-    type Context = ActionInvocation;  // state, object_instance, idempotency_key, trace_id, parent_invocation,
-                                      // emitted_at_millis: Option<_> (decision #4 HLC), failure_reason, lokal
+    type State   = ActionState;       // Pending → Committed / Failed / Cancelled — lifecycle / Rubicon
+    type Event   = ActionDef;         // realized as ActionInvocation via `realizes`
+    type Context = ActionInvocation;  // state, object_instance, idempotency_key, trace_id,
+                                      // parent_invocation, emitted_at_millis: Option<_> (decision #4 HLC),
+                                      // failure_reason, lokal
+
+    fn is_commit(&self, s: &ActionState) -> bool { matches!(s, ActionState::Committed) }
+    fn timeout(&self, _s: &ActionState) -> Option<Duration> {
+        self.def.state_timeout_millis.map(Duration::from_millis)   // ogar:StateTimeout carrier
+    }
+    // on_event: KausalSpec guard → Goto(Committed) | Stay | Postpone(if guardFailurePolicy=Postponable) | Goto(Failed)
 }
+
 struct LanceCommitHook { membrane: LanceMembrane }   // LanceMembrane = callcenter's sole writer
-impl CommitHook<_> for LanceCommitHook { /* on_enter(Committed): atomically apply ActionDef.results_in to
-                                            object_instance + append the Lance version */ }
+impl CommitHook<<Class>Invocation> for LanceCommitHook {
+    fn on_commit(&self, _from: &ActionState, _to: &ActionState, ctx: &ActionInvocation)
+        -> Result<(), ActorProcessingErr>
+    {
+        // Atomic: apply ActionDef.on_enter to ctx.object_instance + append the Lance version.
+        let row = CognitiveEventRow::from(ctx);
+        self.membrane.commit_event(row);   // sibling on LanceMembrane (runtime session, gate-1 follow-up)
+        Ok(())
+    }
+}
 ```
 
 **Two-level state (resolved binding).** `State = ActionState` — the invocation
 **lifecycle** the callcenter drives/audits; the Rubicon crossing is
-`on_enter(Committed)` = the Lance commit. The **domain** workflow (`draft→sale`)
-is *not* the machine state — it's a guarded **effect** on `object_instance`,
-applied at the `Pending→Committed` crossing, gated by `KausalSpec::StateGuard`,
-atomic under `ModalSpec::Atomic`. Lifecycle formalized; workflow as data.
+`Goto(Committed)` where `is_commit(Committed) = true` → `CommitHook::on_commit`
+= the Lance commit. The **domain** workflow (`draft→sale`) is *not* the machine
+state — it's a guarded **effect** on `object_instance`, applied at the
+`Pending→Committed` crossing, gated by `KausalSpec::StateGuard`, atomic under
+`ModalSpec::Atomic`. Lifecycle formalized; workflow as data.
 
 | Machine construct | Sourced from |
 |---|---|
-| `State` = `ActionState` | the lifecycle enum (Pending/Committed/Failed/Cancelled — exists in vocab) |
-| `Pending → Committed` | `KausalSpec::StateGuard` satisfied on `object_instance` |
-| `Pending → Failed` | guard fails non-transiently / `ModalSpec` violation |
-| `on_enter(Committed)` | `CommitHook`: apply `ActionDef.results_in` to `object_instance` + append Lance version (Atomic) — "state history IS the version log" |
-| `Transition::Postpone` (stay `Pending`) | `StateGuard` fails *transiently* + `guardFailurePolicy = Postponable` |
-| `state_timeout` on `Pending` | `TemporalSpec` (Scheduled/Deferred/`StateTimeout`) → SLA deadline; auto-cancels at the crossing |
-| `Event` | `ActionDef` (predicate / object_class / kausal / defaults) |
+| `State` = `ActionState` | the lifecycle enum (Pending/Committed/Failed/Cancelled — `vocab/ogar.ttl::ActionStateKind`) |
+| `Event` | `ActionDef` (predicate / object_class / kausal / defaults / on_enter / guard_failure_policy / state_timeout_millis) |
+| `on_event` (guard) | `KausalSpec::StateGuard` satisfied on `object_instance` → `Goto(Committed)`; transient fail + `guardFailurePolicy=Postponable` → `Postpone`; hard fail → `Goto(Failed)` |
+| `is_commit(Committed)` | true → fires `CommitHook::on_commit` (the only commit gate) |
+| `CommitHook::on_commit` | apply `ActionDef.on_enter` to `object_instance` + `LanceMembrane::commit_event` (Atomic) — "state history IS the version log" |
+| `timeout(Pending)` | `ActionDef.state_timeout_millis` (`ogar:StateTimeout`) → per-state SLA deadline |
+| `on_timeout(Pending)` | `Goto(Failed)` (or domain-specific `Stay`); **never** `Postpone` |
 
 Full authoritative binding record → `CROSS_SESSION_COORDINATION.md` (runtime
 session); this section is the OGAR-side type surface it binds to.
 
-**Hot-path constraint (I-2 invariant).** The shim's dispatch + postpone queue are
-`std::sync` (`Mutex<VecDeque> + Condvar`), **never** `tokio`, on the hot loop.
-`tokio` is reserved for Layer-3 cold sinks (SLA coord). The `ractor-statem` crate
-must honor this — no `tokio::sync` in the generated dispatch/postpone path.
+**Hot-path constraint (I-2 invariant).** `CommitHook::on_commit` is **sync +
+fallible** (returns `Result<(), ActorProcessingErr>`) — no tokio at the
+membrane. The actor's dispatch + postpone replay are `std::sync`; `tokio` is
+reserved for Layer-3 cold sinks. The `state_machine` crate honors this; the
+binding's `CommitHook` impl must not introduce an `await`.
 
 ## 4. Universality — the same core carries every domain
 
@@ -312,18 +360,22 @@ typed values beyond strings remains a tracked follow-up.
    fn commit_event(&self, row: Self::Commit /* = CognitiveEventRow */) -> u64
    ```
    returning the new Lance version. Action commits skip the cognitive-cycle
-   `ShaderBus` shape. **This is the precise `CommitHook::commit` target**, to be
-   added in `lance-graph-callcenter` by the runtime session. Until then the
-   binding's `CommitHook` impl is signature-deferred.
+   `ShaderBus` shape. **This is the precise `CommitHook::on_commit` call
+   target** (see §3's binding example), to be added in `lance-graph-callcenter`
+   by the runtime session. Until then the binding's `LanceCommitHook` impl
+   compiles against a trait-object/stub for `LanceMembrane`.
 3. **Fork access — RESOLVED.** `GH_TOKEN` PAT authenticates as `AdaWorldAPI`
    with push on `AdaWorldAPI/{OGAR, ractor, ractor_actors, lance-graph,
-   bardioc}`. The generic `state_machine` crate lands in `ractor_actors/`
-   (cargo-workspace member); the binding lives in `lance-graph-callcenter`.
-4. **§3 signatures — RECONCILIATION PENDING.** The §3 sketch (`handle(.., hook)`,
-   infallible `commit`) will align to the actual `state_machine` crate
-   (`on_event -> Transition`, `is_commit`, sync-fallible `on_commit`) once the
-   runtime session pushes the scaffold. The OGAR-side surface (§1, §5, §6) is
-   stable regardless — the change is purely in the trait names/return types
-   referenced by §3.
+   bardioc}`. The generic `state_machine` crate lives in `ractor_actors/`
+   (cargo-workspace member, pushed at `feat/state-machine-actor` @ `38a71a4` —
+   7/7 tests green, clippy clean, includes the load-bearing postpone-replay
+   test); the binding lives in `lance-graph-callcenter`.
+4. **§3 signatures — RECONCILED (PR #11).** §3 now carries the canonical
+   `on_event(state, event, ctx) -> Transition`, `is_commit(state) -> bool`,
+   `timeout(state)` + `on_timeout(state, ctx)`, `Transition::{Goto, Stay,
+   Postpone, Stop}`, and `CommitHook::on_commit(from, to, ctx) -> Result<(), ActorProcessingErr>`
+   (sync + fallible — honours I-2) from `ractor_actors` `feat/state-machine-actor`
+   @ `38a71a4`. The OGAR-side surface (§1, §5, §6) is unchanged by the
+   reconciliation.
 5. **Sprint-7 timing — STILL APPLIES.** Pin this contract into the
    `lance-graph-callcenter` design *before* any hand-loop dispatch is written.
