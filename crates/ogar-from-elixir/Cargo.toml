@@ -24,5 +24,3 @@ serde = { workspace = true, optional = true }
 # Neither is pulled in yet — the scaffold compiles with zero parser deps so
 # the target OGAR shape can be locked first.
 
-[lints]
-workspace = true
