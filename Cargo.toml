@@ -6,6 +6,7 @@ members = [
     "crates/ogar-emitter",
     "crates/ogar-adapter",
     "crates/ogar-proposal",
+    "crates/ogar-from-elixir",
 ]
 
 [workspace.package]
