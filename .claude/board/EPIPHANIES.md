@@ -103,14 +103,22 @@ Per fork-maintainer note + source read:
    `surrealQL > kanban < lance-graph` (pacing burst SurrealQL
    ingest against Lance's ~1–4 commits/sec ceiling).
 
-3. **version→CI self-trigger**: `release.yml` + `.bumpversion.toml`
-   drive version-bump → tag → release. This is the mechanism OGAR
-   Sprint 6 relies on for ontology-cache invalidation on version
-   bump — wired but undertested, so OGAR Sprint 6 OWNS the
-   integration test that the propagation actually fires.
+3. **lance update → kanban update ("CI" is a METAPHOR)**: the "lance
+   self-trigger CI after version update" is NOT GitHub Actions /
+   release.yml. "CI" = *continuous integration of new lance versions
+   into runtime state*. A Lance version bump (append) fires a
+   **subscription** (`ExternalMembrane::subscribe()`, the third method
+   alongside project/ingest — implemented by lance-graph-callcenter),
+   and the subscriber continuously integrates the update: invalidate
+   cache, pull new WIP, re-evaluate backpressure. OGAR's kanban
+   mailbox IS this subscriber. Runtime reactive loop, not a build
+   pipeline. Wired but undertested → OGAR Sprint 6/7 owns the
+   end-to-end integration test (version bump → subscription → kanban
+   reacts).
 
-**Cross-ref:** `docs/LANCE-GRAPH-INTEGRATION.md` §10-11,
-`crates/surreal_container` (upstream), `.github/workflows/release.yml`.
+**Cross-ref:** `docs/LANCE-GRAPH-INTEGRATION.md` §10.3,
+`crates/surreal_container` (upstream),
+`lance-graph-contract::ExternalMembrane::subscribe()`.
 
 ---
 

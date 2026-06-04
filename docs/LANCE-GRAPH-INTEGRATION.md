@@ -263,29 +263,60 @@ renamed `ogar-runtime` (§5), OR offered upstream as
 `ractor-kanban` / `lance-graph`-side bounded-ingest (per
 `UPSTREAM-DEPS.md` §3 contribution candidate).
 
-### 10.3 Lance version self-trigger CI
+### 10.3 Lance update subscription → kanban update ("CI" is a metaphor)
 
-`.github/workflows/release.yml` + `.bumpversion.toml` drive a
-`workflow_dispatch` version-bump → tag → release flow (bump-my-version,
-preview/stable channels). This is the mechanism OGAR Sprint 6 relies
-on for **ontology cache invalidation on version bump** — when the
-ontology dataset version increments, the watcher fires. It's wired
-but "not tested in detail," so OGAR Sprint 6 must NOT assume it's
-bullet-proof: add an explicit integration test that a version bump
-propagates a cache-invalidation event end-to-end.
+**Clarification (fork-maintainer):** the "lance self-trigger CI after
+version update" is **NOT** GitHub Actions CI (`release.yml`). "CI" is a
+**metaphor for continuous integration of new lance versions into
+runtime state**: a Lance dataset version bump (append/commit) fires a
+**subscription**, and the subscriber **continuously integrates** the
+new version — updating the kanban board, invalidating the cache,
+pulling new work.
 
-**Carve-out**: OGAR Sprint 6 owns the **test** for the
-version→invalidation propagation even though the trigger mechanism is
-upstream. The conformance corpus (Sprint 2.6) is the right place for
-this assertion.
+```
+   Lance dataset append → new version N
+            │
+            ▼  subscription fires (the "CI" — continuous integration of the update)
+            │
+            ▼
+   ┌──────────────────────────────────────┐
+   │  kanban update                        │
+   │   • cache invalidation (ontology)     │
+   │   • WIP pull (new work available)     │
+   │   • backpressure re-evaluation        │
+   └──────────────────────────────────────┘
+```
+
+This is a **runtime reactive loop**, not a build pipeline. The
+mechanism upstream is `lance-graph-contract::ExternalMembrane`'s
+`subscribe()` (the third method alongside `project()` / `ingest()`)
+and/or a Lance `versions()` watcher. `lance-graph-callcenter`
+implements `ExternalMembrane`, so the subscription surface exists —
+"mostly wired, not tested in detail."
+
+**OGAR relationship**: OGAR's kanban mailbox (§10.2) is a
+**subscriber** to lance version updates. On each version bump it:
+- invalidates the ontology cache slice it holds,
+- pulls newly-available work into the bounded mailbox (respecting WIP),
+- re-evaluates backpressure.
+
+The "CI" metaphor is exactly right: each lance update is *continuously
+integrated* into the kanban's live state, the way a CI system
+continuously integrates commits. No GitHub Actions involved.
+
+**Carve-out**: OGAR Sprint 6/7 owns the **integration test** that a
+Lance version bump fires the subscription and the kanban reacts
+(cache invalidated + WIP pulled). Since the upstream `subscribe()`
+path is undertested, OGAR must not assume it's bullet-proof — assert
+the full loop end-to-end in the conformance corpus (Sprint 2.6).
 
 ## 11. SurrealQL/kanban/CI — net effect on OGAR sprints
 
 | OGAR sprint | Adjustment from §10 |
 |---|---|
 | 4.5 (`ogar-adapter-surrealql`) | Confirmed OGAR-owned + complementary to `surreal_container`. OGAR parses DDL; surreal_container executes queries. Note the seam. |
-| 6 (ontology cache) | Lean on the existing version→CI trigger, but OWN the integration test that version bump → cache invalidation actually fires (it's undertested upstream). |
-| 7 → `ogar-runtime` | Kanban mailbox is genuinely unbuilt upstream — it's OGAR's to build, and it's the "kanban" in `surrealQL > kanban < lance-graph`. |
+| 6 (ontology cache) | Subscribe to lance version updates via `ExternalMembrane::subscribe()`; OWN the integration test that a version bump fires the subscription → cache invalidation (the "CI" reactive loop, undertested upstream). |
+| 7 → `ogar-runtime` | Kanban mailbox is genuinely unbuilt upstream — it's OGAR's to build. It's both the "kanban" in `surrealQL > kanban < lance-graph` AND the **subscriber** that the lance-update "CI" loop drives (§10.3). |
 
 ## 9. Cross-references
 
