@@ -263,7 +263,12 @@ ogar:afterRemove               a rdf:Property ; rdfs:domain ogar:Association ; r
 # ─────────────────────────────────────────────────────────────────────
 
 ogar:column       a rdf:Property ; rdfs:domain ogar:EnumDecl ; rdfs:range xsd:string .
-ogar:variantValue a rdf:Property ; rdfs:domain ogar:EnumDecl ; rdfs:range xsd:string .
+# NOTE: ogar:variantValue now has domain ogar:EnumVariant (declared in
+# Sprint 2 additions below). The older domain ogar:EnumDecl declaration
+# was a v0 mistake — variant values belong to the per-variant subject,
+# not the EnumDecl itself. Removed to avoid RDF conjunctive-domain
+# inference inferring every variant value subject as both EnumVariant
+# AND EnumDecl. Codex review 2026-06-04 caught this.
 
 ogar:scopeName    a rdf:Property ; rdfs:domain ogar:Scope ; rdfs:range xsd:string .
 ogar:scopeBody    a rdf:Property ; rdfs:domain ogar:Scope ; rdfs:range xsd:string .
