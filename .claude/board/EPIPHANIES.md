@@ -15,6 +15,113 @@
 
 ## Entries (newest first)
 
+## 2026-06-04 — STRATEGIC CORRECTION: OGAR is a SchemaSource producer, not a stack-builder
+**Status:** FINDING
+**Scope:** OGAR positioning × lance-graph-ontology × lance-graph-contract × odoo_blueprint
+
+Read the upstream `AdaWorldAPI/lance-graph` crates before locking
+OGAR Sprint 5–7. The four-layer stack OGAR planned to BUILD already
+ships upstream. OGAR's real shape is narrower and cleaner.
+
+**What already exists upstream (do NOT rebuild):**
+- `lance-graph-contract` — `Schema`, `LinkSpec`, `SemanticType`,
+  `Marking`, `PropertySpec`, `Cardinality`, `ExternalMembrane`.
+  These ARE the IR target.
+- `lance-graph-ontology` — `OntologyRegistry` + `MappingProposal` +
+  `SchemaSource` trait + a 47KB Lance dictionary cache + TTL
+  hydrators for SKOS / PROV-O / schema.org / FIBO / **Odoo** /
+  ZUGFeRD / SKR03-04 + `wikidata_hhtl`.
+- `lance-graph-ontology::odoo_blueprint` — 15 lanes (l1–l15) of
+  typed `OdooEntity` consts carrying fields / methods / decorators /
+  state-machine / constraints / provenance. `op_emitter.rs`
+  (OpenProject!). Extractor at `tools/odoo-blueprint-extractor/`.
+- `lance-graph-callcenter` — `ExternalMembrane` impl (Phoenix/pgwire
+  server, cognitive-event/steering/memory/actor-session ledgers).
+  **NAME COLLISION** with OGAR's planned actor runtime.
+- `lance-graph-planner` (Cypher/Gremlin/SPARQL/GQL),
+  `lance-graph-consumer-conformance` (already exists — OGAR Sprint
+  2.6 overlap), `lance-graph-rbac`, `lance-graph-supervisor`,
+  `lance-graph-catalog`.
+
+**OGAR's corrected shape:**
+> OGAR is the language-agnostic Active-Record vocabulary + the
+> cross-language producer layer that emits `MappingProposal`s into
+> the existing `OntologyRegistry`. It generalizes
+> `odoo_blueprint::OdooEntity` from Odoo-only to Ruby / Python /
+> Ecto / SQL, and adds the behavior-execution layer (ActionInvocation)
+> that ontology does not cover.
+
+**The producer seam** (exact): `impl SchemaSource for OgarSource`
+emitting `MappingProposal { public_name, bridge_id, ogit_uri,
+namespace, kind: Entity{Schema}/Edge{LinkSpec}/Attribute{SemanticType},
+marking, confidence, source_uri, checksum, created_by }`.
+
+**Structural mapping**: `ogar::Class → Schema` (via SchemaBuilder),
+`ogar::Association → LinkSpec` (BelongsTo→OneToOne, HasMany→OneToMany,
+HABTM→ManyToMany), `ogar::Attribute → PropertySpec + SemanticType +
+Marking`.
+
+**The `&'static str` impedance**: contract `Schema.name` /
+`PropertySpec.predicate` are `&'static str` (const-leaning, like
+odoo_blueprint's `const ENTITIES`). OGAR produces at runtime —
+resolve via interning (`Box::leak`) vs owned-schema-variant vs
+MappingProposal-only path. Sprint 5 decides after reading the append API.
+
+**Sprint revisions** (per docs/LANCE-GRAPH-INTEGRATION.md §6):
+- 5: REPLACE "build SoA" → `ogar-to-proposal` (SchemaSource impl).
+- 6: REPLACE "build cache" → register into existing OntologyRegistry.
+- 7: RENAME `lance-graph-callcenter` → `ogar-runtime` (collision).
+
+**What stays unambiguously OGAR-owned**: the AR vocabulary, the
+producers (ruff_ruby_spo + ogar-python), the Action vocabulary
+(SPO+TeKaMoLo behavior layer), the cross-vocab bridges, the identity
+grammar.
+
+**Cross-ref:** `docs/LANCE-GRAPH-INTEGRATION.md` (the full clean-idea
+doc), `docs/UPSTREAM-DEPS.md`, PLAN.md Sprints 5/6/7.
+
+---
+
+## 2026-06-04 — SurrealQL→kanban→lance-graph + version→CI: partly wired, kanban is OGAR's
+**Status:** FINDING
+**Scope:** surreal_container × kanban (unbuilt) × release.yml version trigger
+
+Per fork-maintainer note + source read:
+
+1. **`surreal_container`** wires SurrealDB-on-Lance via the fork's
+   `kv-lance` backend (`SurrealQL query → Datastore → kv-lance →
+   Lance append-only`). Heavily BLOCKED (Lance 6 semver, fork URL,
+   kv-lance feature flag, ndarray patch) — the "mostly wired, not
+   tested" surface. This is QUERY EXECUTION; OGAR's
+   `ogar-adapter-surrealql` is DDL PARSING — complementary, not
+   overlapping. OGAR parses `DEFINE TABLE` → `ogar::Class`;
+   surreal_container serves the SurrealQL against Lance.
+
+2. **kanban**: zero code matches across lance-graph. The
+   Kanban-bounded mailbox (WIP + pull + backpressure) is genuinely
+   unbuilt upstream — OGAR's to build, and it IS the "kanban" in
+   `surrealQL > kanban < lance-graph` (pacing burst SurrealQL
+   ingest against Lance's ~1–4 commits/sec ceiling).
+
+3. **lance update → kanban update ("CI" is a METAPHOR)**: the "lance
+   self-trigger CI after version update" is NOT GitHub Actions /
+   release.yml. "CI" = *continuous integration of new lance versions
+   into runtime state*. A Lance version bump (append) fires a
+   **subscription** (`ExternalMembrane::subscribe()`, the third method
+   alongside project/ingest — implemented by lance-graph-callcenter),
+   and the subscriber continuously integrates the update: invalidate
+   cache, pull new WIP, re-evaluate backpressure. OGAR's kanban
+   mailbox IS this subscriber. Runtime reactive loop, not a build
+   pipeline. Wired but undertested → OGAR Sprint 6/7 owns the
+   end-to-end integration test (version bump → subscription → kanban
+   reacts).
+
+**Cross-ref:** `docs/LANCE-GRAPH-INTEGRATION.md` §10.3,
+`crates/surreal_container` (upstream),
+`lance-graph-contract::ExternalMembrane::subscribe()`.
+
+---
+
 ## 2026-06-04 — lance-graph #461 (Quasicryth + COW radix trie) is the future NibleHHTL substrate
 **Status:** FINDING
 **Scope:** OGAR adapter HHTL × lance-graph upstream × deferred Sprint 1g+ migration

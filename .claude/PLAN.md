@@ -369,7 +369,18 @@ HHTL pattern generalizes.
 
 ---
 
+> **STRATEGIC CORRECTION (2026-06-04).** Sprints 5–7 below were
+> written assuming OGAR builds the lance-graph stack. It already
+> exists upstream (`lance-graph-contract`, `lance-graph-ontology`
+> with Odoo support, `lance-graph-callcenter`). Per
+> `docs/LANCE-GRAPH-INTEGRATION.md`, OGAR is a **`SchemaSource`
+> producer** into the existing `OntologyRegistry`, not a stack
+> builder. The revised intent is annotated inline below; the full
+> rationale is in the integration doc.
+
 ## Sprint 4 — SoA implementation: `ogar-vocab-soa` ⬜
+> REVISED: narrow to Arrow conversion only where the registry doesn't
+> already provide it; prefer feeding `MappingProposal` directly.
 
 **Goal**: implement Apache Arrow RecordBatch schemas + bidirectional
 conversions for the OGAR vocab types. Per `docs/SOA-IMPLEMENTATION.md`.
@@ -408,7 +419,12 @@ on `surrealdb-core::sql::parse`). Both directions supported.
 
 ---
 
-## Sprint 5 — `lance-graph-contract` SoA integration ⬜
+## Sprint 5 — `ogar-to-proposal`: SchemaSource impl (REVISED) ⬜
+> REVISED: NOT "build SoA integration" — that exists. Implement
+> `impl SchemaSource for OgarSource` + `From<ogar::Class> for MappingProposal`
+> (Class→Schema, Association→LinkSpec, Attribute→SemanticType+Marking).
+> Resolve the `&'static str` impedance (intern vs owned vs proposal-only).
+> Land one real OpenProject WorkPackage into the existing OntologyRegistry.
 
 **Goal**: wire the contract layer (NiblePath identity routing,
 Lance versioning) over SoA RecordBatches.
@@ -425,7 +441,12 @@ Lance versioning) over SoA RecordBatches.
 
 ---
 
-## Sprint 6 — `lance-graph-ontology` reads SoA + cache integration ⬜
+## Sprint 6 — register OGAR proposals into existing OntologyRegistry (REVISED) ⬜
+> REVISED: NOT "build cache" — the 47KB Lance dictionary cache exists.
+> Register OGAR proposals; add an `hydrate_ar` / OGAR-TTL hydrator to the
+> existing hydrator set (alongside hydrate_odoo). OWN the integration test
+> that a Lance version bump fires cache invalidation (upstream trigger is
+> wired but undertested).
 
 **Goal**: per Sprint 6 placeholder above, but explicitly read
 RecordBatches from the contract layer. Cache invalidation via
@@ -441,7 +462,13 @@ Lance `versions()` watch.
 
 ---
 
-## Sprint 7 (revised) — `lance-graph-callcenter` Ractor + Kanban ⬜
+## Sprint 7 — `ogar-runtime`: Ractor + Kanban (RENAMED) ⬜
+> RENAMED: `lance-graph-callcenter` already exists upstream (ExternalMembrane
+> /Phoenix/pgwire) — name collision. OGAR's actor-per-class runtime is
+> `ogar-runtime`. The Kanban mailbox is genuinely unbuilt upstream (zero code
+> matches) — it IS the "kanban" in surrealQL>kanban<lance-graph. Evaluate
+> whether ActionInvocation is a projection over the existing callcenter
+> cognitive-event ledger rather than a new store.
 
 **Goal**: BEAM-style actor runtime per R3 verdict (Ractor),
 organized around Kanban-bounded mailboxes per `SOA-IMPLEMENTATION.md`
