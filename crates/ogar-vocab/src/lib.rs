@@ -52,6 +52,13 @@ pub enum Language {
     TypeScript,
     /// SurrealQL DDL (`DEFINE TABLE …`).
     SurrealQl,
+    /// Elixir — Ecto schemas (`schema "t" do …`), Phoenix contexts, and
+    /// OTP behaviours (`GenServer` / `gen_statem`). **First-class for
+    /// migration**: the OLD HIRO/Bardioc stack is Elixir, so it is the
+    /// source of every byte of migration debt and the bridge to the old
+    /// adapters. `gen_statem` lifecycles lower onto the same `Action`
+    /// state machine as every other producer (see `docs/ELIXIR-HIRO-PREFETCH.md`).
+    Elixir,
     /// Unknown or hand-authored.
     Unknown,
 }
@@ -969,6 +976,17 @@ mod tests {
         assert_eq!(c.name, "WorkPackage");
         assert!(c.parent.is_none());
         assert!(c.associations.is_empty());
+    }
+
+    #[test]
+    fn elixir_language_is_a_distinct_first_class_variant() {
+        // The OLD HIRO/Bardioc stack is Elixir; it is a first-class source
+        // language (the migration-roundtrip bridge), not Unknown.
+        let mut c = Class::new("Account");
+        c.language = Language::Elixir;
+        assert_eq!(c.language, Language::Elixir);
+        assert_ne!(c.language, Language::Unknown);
+        assert_ne!(c.language, Language::Ruby);
     }
 
     #[test]
