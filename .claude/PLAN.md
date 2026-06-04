@@ -296,6 +296,79 @@ impossible by construction (per BO2 #1).
 
 ---
 
+## Sprint 3 — Action vocabulary + adapter trait + SPO + TeKaMoLo ⏳
+
+**Goal**: lift the SECOND ingestion arm — ERP transactions, actions,
+business rules, hand-rolled Odoo business logic — into OGAR IR via
+the `Action` vocabulary with full SPO+TeKaMoLo annotation. Plus
+ship the `Adapter` trait as the data-side counterpart.
+
+**Deliverables**
+- `docs/ADAPTERS-AND-ACTORS.md` (already in Sprint 2 PR) — the
+  canonical carve-out for this sprint.
+- `crates/ogar-vocab/`: add `Action` struct + `ActionSubject` enum +
+  `TemporalSpec` / `KausalSpec` / `ModalSpec` / `LokalSpec` types.
+  Stay in base vocab — both data + behavior IR live together.
+- `crates/ogar-adapter/`: `Adapter` trait + `NibleHHTL` lookup-table
+  type + `TargetForm` struct. Static lookup-table semantics; no
+  conditional logic.
+- `crates/ogar-emitter/`: emit `Action` triples with full SPO+
+  TeKaMoLo annotation. Add `emit_action()` next to existing
+  `emit_callback()` / `emit_method()`.
+- `vocab/ogar.ttl`: add the action vocabulary (`ogar:Action`,
+  `ogar:actionSubject` + 6 more, plus enumeration classes
+  `ogar:ActionSubject` / `ogar:TemporalSpec` / `ogar:ModalSpec`).
+
+**Acceptance**
+- `cargo check --workspace` clean.
+- `cargo test --workspace` green (~40 tests after additions).
+- For one Odoo example (`def action_confirm` on `sale.order`),
+  the producer pipeline emits both:
+  - One `MethodDecl{kind: CrudOverride}` (syntactic capture)
+  - One `Action` with full SPO+TeKaMoLo (pragmatic capture)
+- For one Rails example (`before_save :touch_parent`), same
+  duality.
+
+**Dependencies**: Sprint 2.
+
+---
+
+## Sprint 3.5 — `OdooAdapter` HHTL implementation ⬜
+
+**Goal**: first concrete `Adapter` impl. The `OdooAdapter` is a
+static HHTL with leaves mapping every canonical OGAR concept to
+its Odoo-side form. Per ADAPTERS-AND-ACTORS doc §2.
+
+**Deliverables**
+- `crates/ogar-adapter/src/odoo.rs` — `OdooAdapter` impl.
+- HHTL leaves for: class-name aliasing, field-name renames,
+  decorator → role mappings, action-predicate translations,
+  modal/temporal qualifier renames.
+- Round-trip tests: any Odoo source identity → canonical → Odoo
+  source identity is identity.
+- Composition test: Odoo identity → canonical → Rails identity
+  yields the right Rails form for at least 5 corresponding
+  model pairs.
+
+**Dependencies**: Sprint 3.
+
+---
+
+## Sprint 3.6 — `RailsAdapter` HHTL implementation ⬜
+
+**Goal**: second concrete `Adapter` impl, validating that the
+HHTL pattern generalizes.
+
+**Deliverables**
+- `crates/ogar-adapter/src/rails.rs` — `RailsAdapter` impl.
+- HHTL leaves for the Rails canonical concepts (already
+  documented in IDENTITY-MAPPING.md §3 + §7).
+- Round-trip + composition tests.
+
+**Dependencies**: Sprint 3.
+
+---
+
 ## Sprint 1g — API + perf refactor (from brutal-review CB2/CB3) ⬜
 
 **Goal**: apply the deferred API and performance fixes.

@@ -15,6 +15,113 @@
 
 ## Entries (newest first)
 
+## 2026-06-04 — SPO + TeKaMoLo: full sentence grammar for business actions
+**Status:** FRAMING
+**Scope:** behavior ingestion × action vocabulary × actor model × `docs/ADAPTERS-AND-ACTORS.md`
+
+OGAR has two orthogonal ingestion arms — and the user request
+"completely transcode Odoo" requires BOTH:
+
+1. **Data arm** (existing): ERP datasets → DLL/ERP AST →
+   `ogar:Class` triples. Sprint 1/2 covers this.
+
+2. **Behavior arm** (new — Sprint 3): ERP transactions / actions /
+   business rules / hand-rolled Odoo business logic →
+   DLL/ERP AST → `ogar:Action` triples with **SPO + TeKaMoLo**
+   annotation.
+
+**SPO + TeKaMoLo** is the full sentence grammar for an action:
+- **S**ubject (User / System / Cron / Trigger / Cascade)
+- **P**redicate (the action name)
+- **O**bject (the target class instance)
+- **Te**mporal (Immediate / Deferred / Scheduled / OnCommit)
+- **Ka**usal (state guard / lifecycle event / dependency path)
+- **Mo**dal (Sync / Async / Idempotent / Atomic / Requires)
+- **Lo**kal (which actor / which tenant / which company)
+
+Borrowed from German adverbial-order mnemonic (TeKaMoLo —
+temporal/kausal/modal/lokal — the canonical order in
+well-formed German prose) and applied as an annotation system
+for business actions.
+
+**Resolves the trichotomy** explicitly:
+- **Semantik** (sign → object): SPO
+- **Syntax** (sign → sign): the AST that captured this
+- **Pragmatik** (sign → interpreter): TeKaMoLo
+
+Every existing OGAR `Callback` / `MethodDecl` / `Validation` /
+`Workflow.Transition` / `ScheduledJob` / `ComputedField`
+SHOULD have a matching `Action` triple — structural capture
+plus pragmatic capture, coexisting. The structural type
+captures syntax; the Action captures pragmatik.
+
+**Cross-ref:** `docs/ADAPTERS-AND-ACTORS.md` §3, Sprint 3 in
+`.claude/PLAN.md`, eventual consumer `lance-graph-callcenter`
+(Sprint 7).
+
+---
+
+## 2026-06-04 — HHTL adapter is structural, not semantic
+**Status:** FINDING
+**Scope:** `Adapter` trait × NiblePath prefix-radix × cross-language DTO conversion
+
+The adapter pattern in OGAR is the dual of the vocabulary
+carve-out. Where vocab defines WHAT exists, adapter defines
+WHERE it shows up in each target form.
+
+Each Adapter is a **sparse NiblePath HHTL of leaves** mapping
+canonical OGAR path → target-form name. Walking is O(path-depth)
+independent of leaf count. The adapter knows NOTHING about
+semantics — only positions.
+
+```
+                OGAR canonical            Odoo target
+   class:       ogit-erp::move      ↔     odoo::transport
+   field:       ogit-erp::move::          odoo::transport.
+                  attribute::pieces ↔       quantity
+   association: ogit-erp::move::          odoo::transport.
+                  memberof::driver  ↔       partner_id
+   callback:    ogit-erp::move::          odoo::transport.
+                  callback::0::            write
+                  before_save       ↔
+```
+
+Each row is an independent HHTL leaf at a different depth in
+the prefix-radix. No cross-leaf dependencies; no global
+"if class=X then field-rename" logic. The radix-position
+alone determines the leaf.
+
+**Five consequences:**
+
+1. **Compose-ability**: two adapters compose (Odoo→canonical→
+   Rails) by walking HHTL leaves in lock-step.
+
+2. **Bidirectional by construction**: `map()` and `unmap()`
+   are inverse functions on the same leaf set.
+
+3. **Inheritance for free**: HHTL prefix-sharing IS subClassOf
+   in disguise. A class `lateral_movement` extending `move`
+   inherits all adapter leaves under `move::*` automatically.
+
+4. **DTO interface = canonical identity**: a DTO on the wire
+   is the canonical identity. Adapter rewrites the syntactic
+   form per target. Semantics + pragmatics (TeKaMoLo) cross
+   the wire unchanged.
+
+5. **Minimal ontological commitment perfectly satisfied**:
+   the adapter commits to POSITION (HHTL path), not MEANING.
+   The vocab handles meaning.
+
+The adapter pattern + the vocab carve-out together resolve
+the "agnostic-but-precise" tension — the system is agnostic
+about source/target (no semantic bias) but precise about
+what each path maps to (one HHTL leaf per concept).
+
+**Cross-ref:** `docs/ADAPTERS-AND-ACTORS.md` §2,
+Sprint 3 + 3.5 + 3.6 in `.claude/PLAN.md`.
+
+---
+
 ## 2026-06-04 — SKOS design lineage: minimal ontological commitment, compatible extensions, two-layer spec
 **Status:** FINDING
 **Scope:** OGAR design principles × SKOS design-decisions paper (arXiv:1302.1224)
