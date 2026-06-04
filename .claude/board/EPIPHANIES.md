@@ -15,6 +15,50 @@
 
 ## Entries (newest first)
 
+## 2026-06-04 — Sprint 5a: owned-mirror ProposalDraft resolves the &'static str impedance
+**Status:** FINDING
+**Scope:** `crates/ogar-proposal` × lance-graph-contract const-leaning types × producer mapping
+
+The `&'static str` impedance (contract `Schema.name` /
+`PropertySpec.predicate` / `LinkSpec.*` are all `&'static str`, OGAR
+produces at runtime) is resolved by an **owned mirror**: `ProposalDraft`
+/ `SchemaDraft` / `PropertyDraft` / `LinkDraft` carry `String`. The
+mapping `class_to_drafts(&Class, bridge_id)` is fully testable in-repo
+with ZERO dependency on the upstream crate (which has a heavy build
+graph: protoc, oxttl, BLOCKED kv-lance).
+
+The actual `impl SchemaSource` is a thin boundary (Sprint 5b, behind a
+`lance-bind` feature) that interns owned strings → `&'static str` via a
+single `Box::leak` of a deduplicated set. Justified: ontology terms are
+bounded and live for the process lifetime anyway. The boundary sketch is
+documented in `ogar_proposal::boundary`.
+
+**Mapping rules carved + tested:**
+- `Class → Entity{Schema}` (one) + `Association → Edge{LinkSpec}` (N).
+- `Attribute.options.required → PropertyKind::{Required|Optional}`;
+  Required → `CodecRoute::Passthrough`, else `CamPq`.
+- Cardinality: BelongsTo/HasOne → OneToOne, HasMany → OneToMany,
+  HABTM → ManyToMany. **BelongsTo is N:1 but the contract has no
+  ManyToOne** — mapped to OneToOne (each subject → one object); the
+  "many" side is the inverse `has_many` the ORM declares on the target.
+- SemanticType inference: ORM-type-driven (Monetary→Currency,
+  Date→Date) high-confidence; field-name heuristics (email→Email,
+  iban→Iban, tax+id→TaxId) lower-confidence. ANY heuristic semantic
+  pulls the entity proposal's `confidence` below 1.0 so reviewers can
+  audit guesses. Pure-structural stays at 1.0.
+- Marking inference: Email/Iban/Phone/Address→Pii, TaxId→Restricted,
+  Currency/amount/price→Financial, else Internal (GDPR-safe default).
+- `declared_in_module` → namespace + source_uri provenance.
+
+This is the first concrete lance-graph integration artifact. The
+producer logic exists + is tested; only the cross-repo build wiring
+(protoc/fork-access) remains for the thin `impl SchemaSource`.
+
+**Cross-ref:** `crates/ogar-proposal/src/lib.rs`,
+`docs/LANCE-GRAPH-INTEGRATION.md` §3, PLAN.md Sprint 5.
+
+---
+
 ## 2026-06-04 — STRATEGIC CORRECTION: OGAR is a SchemaSource producer, not a stack-builder
 **Status:** FINDING
 **Scope:** OGAR positioning × lance-graph-ontology × lance-graph-contract × odoo_blueprint
