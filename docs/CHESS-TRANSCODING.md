@@ -78,8 +78,14 @@ ogit-chess::Game::invocation::<ulid>
 ```
 
 **Adding chess = a producer (`ogar-from-shakmaty`) + a short TTL ontology.**
-Not touching: the IR types, the state-machine crate, the codegen, the
-membrane. That's the universality guarantee from `OGAR-AST-CONTRACT.md §4`.
+Not touching: the state-machine crate, the codegen, the membrane — that's the
+universality guarantee from `OGAR-AST-CONTRACT.md §4`. The one *known
+extension point* the producer exercises is the `Language` enum in `ogar-vocab`
+(open by design — `Elixir` was added the same way via PR #10). The chess
+producer ships with `Language::Unknown` on day one and earns a typed
+`Language::Rust` variant via a one-line PR when ready — `Language` extensions
+are the precedent path for any new source-AST tag and don't violate "core
+unchanged" the way an IR-struct change would.
 
 ## 2. Structural arm — shakmaty → `Class`
 
@@ -88,7 +94,7 @@ and emits the following classes:
 
 | shakmaty type | OGAR mapping |
 |---|---|
-| `Chess` (impl `Position`) | `Class { identity: "ogit-chess::Game", language: Rust, attributes: [turn, halfmove_clock, fullmoves, castling_rights, ep_square, outcome], associations: [position: Position, white: Player, black: Player] }` |
+| `Chess` (impl `Position`) | `Class { identity: "ogit-chess::Game", language: Unknown /* or Language::Rust once added — see §1 */, attributes: [turn, halfmove_clock, fullmoves, castling_rights, ep_square, outcome], associations: [position: Position, white: Player, black: Player] }` |
 | `Board` + `Setup` (piece arrangement) | `Class { identity: "ogit-chess::Position", attributes: [board_fen, side_to_move, …] }` (nested; one per ply) |
 | `Role` (Pawn..King) | `EnumDecl { name: "Role", values: [Pawn, Knight, Bishop, Rook, Queen, King] }` |
 | `Color` (White/Black) | `EnumDecl { name: "Color", values: [White, Black] }` |
@@ -97,9 +103,11 @@ and emits the following classes:
 | `CastlingSide` (Kingside/Queenside) | `EnumDecl` on the castle ActionDef |
 | `PlayError` | not a `Class` — it's the `KausalSpec` rejection → `Pending → Failed` |
 
-The `language: Rust` (a new `Language` variant the producer adds, mirroring
-`Language::Elixir` from PR #10) marks the source AST as Rust struct/enum
-definitions in shakmaty.
+The `language` field uses `Language::Unknown` until a typed `Language::Rust`
+variant is added to `ogar-vocab` (one-line PR, precedent: `Language::Elixir`
+in PR #10). `Language` is the established extension point for new source-AST
+tags; the chess producer doesn't require it to ship but earns the typed tag
+when convenient.
 
 ## 3. Behavioral arm — shakmaty → `ActionDef`
 
