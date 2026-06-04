@@ -15,6 +15,72 @@
 
 ## Entries (newest first)
 
+## 2026-06-04 — Cross-session coordination: 3 decisions I'm waiting on + 1 correction absorbed
+**Status:** FINDING
+**Scope:** OGAR ↔ bardioc ↔ lance-graph composition × Sprint 5b/7 inputs
+
+A parallel session (bardioc) laid out the three-workstream composition
+side-by-side. Dependency chain is clean, no cycles:
+
+```
+OGAR (carrier: Identity + Action + Adapter + proposal/runtime IR)
+   ↓ feeds proposals into
+lance-graph-ontology + lance-graph-contract (registry + per-tier Edges)
+   ↓ consumed by
+bardioc (migration timeline + hot-path dispatch + cold DataFusion + cutover)
+```
+
+**Stance (the protective boundary):**
+- **OGAR's layer** (`crates/ogar-*` + the 5 carve-out docs) takes NO
+  silent edits from other sessions. Same rule as the mid-flight
+  EPIPHANIES-corruption incident. Changes arrive as requests OGAR
+  actions, never as edits OGAR discovers.
+- **Layers OGAR depends on** (lance-graph-contract/ontology, the Lance
+  subscription bus, the registry append API): OGAR does NOT do those
+  steps (wrong layer = surreal #33→#34 / vart-drift rework class) but
+  REQUIRES the decisions surfaced, because three of them change OGAR's
+  unbuilt sprints.
+
+**3 decisions OGAR is waiting on (surface, don't hide):**
+1. **Registry append API** — does `OntologyRegistry` accept an
+   owned/runtime schema, or only const `&'static str`? If a
+   `SchemaOwned`/runtime variant lands upstream, Sprint 5b's
+   `Box::leak` interning (ogar-proposal::boundary) becomes
+   UNNECESSARY — delete, not ship.
+2. **Bounded-mailbox home** — decided by bardioc grill #9 (below);
+   confirm `ogar-runtime` is the SLA-coord layer, NOT the hot path.
+3. **Lance-subscription-bus API shape** — the exact
+   `ExternalMembrane::subscribe()` / version-watch surface bardioc's
+   hot path owns. OGAR's KanbanMailbox (cold/coord side) must conform,
+   not invent.
+
+**Correction absorbed from bardioc grill #9:**
+Sprint 7 as written ("KanbanMailbox<M> on Ractor for ALL dispatch")
+is WRONG. Grill #9: *hot-path mailbox is the Lance-subscription bus
+(no queue); Ractor is SLA-coordination only.* So `ogar-runtime` is
+the **cold/coord layer that subscribes to the bus bardioc owns** —
+the hot-path `ActionInvocation` dispatch rides the subscription, it
+does NOT touch a Ractor mailbox. Sprint 7 PLAN annotated accordingly.
+This is the same insight as the "CI = lance-update→kanban
+subscription" metaphor (prior entry): the bus is the hot path; kanban
+is the reactive subscriber.
+
+**Confirmed alignments (no action needed):**
+- bardioc grill #9 Kanban contract ≡ OGAR Sprint 7 `ogar-runtime`
+  (no new crate needed — it IS the impl, rescoped to coord).
+- Sprint 4 narrowing ("Arrow only where registry doesn't provide;
+  prefer MappingProposal") ≡ bardioc "stop proposing structures".
+- Sprint 1d Elixir = identity-string `Code.string_to_quoted/1`
+  compatibility, NOT `.ex` source emission (that'd be a future
+  `ogar-to-elixir` consumer).
+- SurrealQL DDL: OGAR consumes `surrealdb-core::sql::parse`; bardioc
+  T4.3/T4.5 made the kv-lance SDK reachable. Complementary.
+
+**Cross-ref:** bardioc `ROADMAP_RUST_PRIMARY_HEADSTONE.md` + grill #9,
+`docs/LANCE-GRAPH-INTEGRATION.md` §10.3, PLAN.md Sprint 5b/7.
+
+---
+
 ## 2026-06-04 — Sprint 5a: owned-mirror ProposalDraft resolves the &'static str impedance
 **Status:** FINDING
 **Scope:** `crates/ogar-proposal` × lance-graph-contract const-leaning types × producer mapping

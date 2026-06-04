@@ -462,13 +462,23 @@ Lance `versions()` watch.
 
 ---
 
-## Sprint 7 — `ogar-runtime`: Ractor + Kanban (RENAMED) ⬜
+## Sprint 7 — `ogar-runtime`: Ractor + Kanban (RENAMED + RESCOPED) ⬜
 > RENAMED: `lance-graph-callcenter` already exists upstream (ExternalMembrane
 > /Phoenix/pgwire) — name collision. OGAR's actor-per-class runtime is
 > `ogar-runtime`. The Kanban mailbox is genuinely unbuilt upstream (zero code
-> matches) — it IS the "kanban" in surrealQL>kanban<lance-graph. Evaluate
-> whether ActionInvocation is a projection over the existing callcenter
-> cognitive-event ledger rather than a new store.
+> matches) — it IS the "kanban" in surrealQL>kanban<lance-graph.
+>
+> RESCOPED (bardioc grill #9, 2026-06-04): hot/cold split corrected.
+> The HOT path is the **Lance-subscription bus (no queue)** — bardioc owns
+> it; `ActionInvocation` dispatch RIDES the subscription, it does NOT touch
+> a Ractor mailbox. Ractor + `KanbanMailbox` are the **SLA-coordination /
+> cold layer ONLY**. So `ogar-runtime` SUBSCRIBES to the bus (per §10.3 of
+> LANCE-GRAPH-INTEGRATION) and reacts (cache-invalidate + WIP pull); it is
+> not the hot dispatch path. BLOCKED on 3 surfaced decisions (see EPIPHANIES
+> 2026-06-04 cross-session entry): registry append API, mailbox home
+> confirmation, and the subscription-bus API shape. Do NOT build until
+> those land — building against a guessed bus contract is the rework class
+> this session exists to avoid.
 
 **Goal**: BEAM-style actor runtime per R3 verdict (Ractor),
 organized around Kanban-bounded mailboxes per `SOA-IMPLEMENTATION.md`
