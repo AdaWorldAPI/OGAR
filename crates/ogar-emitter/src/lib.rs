@@ -644,6 +644,166 @@ impl TripleEmitter {
     }
 }
 
+// ─────────────────────────────────────────────────────────────────────
+// Sprint 3 — Action vocabulary emission
+// ─────────────────────────────────────────────────────────────────────
+
+impl TripleEmitter {
+    /// Emit triples for an ActionDef.
+    pub fn emit_action_def(def: &ogar_vocab::ActionDef) -> Vec<Triple> {
+        let id = def.identity.clone();
+        let mut triples = vec![
+            Triple::new(&id, "rdf:type", "ogar:ActionDef"),
+            Triple::new(&id, "ogar:actionPredicate", def.predicate.clone()),
+            Triple::new(&id, "ogar:actionObjectClass", def.object_class.clone()),
+            Triple::new(&id, "ogar:defaultSubject", subject_to_ogar(def.default_subject)),
+            Triple::new(&id, "ogar:defaultTemporal", temporal_to_ogar(def.default_temporal)),
+            Triple::new(&id, "ogar:defaultModal", modal_to_ogar(def.default_modal)),
+        ];
+        // Action-scoped predicates — NOT the MethodDecl ones. Reusing
+        // ogar:methodBody / ogar:decoratorName (domain ogar:MethodDecl)
+        // would make every body-carrying ActionDef infer as a MethodDecl
+        // and pollute method-enumeration queries. Codex review 2026-06-04.
+        if let Some(ref body) = def.body_source {
+            triples.push(Triple::new(&id, "ogar:actionBody", body.clone()));
+        }
+        for d in &def.decorators {
+            triples.push(Triple::new(&id, "ogar:actionDecorator", d.clone()));
+        }
+        if let Some(ref k) = def.kausal {
+            triples.extend(kausal_triples(&id, k));
+        }
+        triples
+    }
+
+    /// Emit triples for an ActionInvocation. Carries the SPO+TeKaMoLo
+    /// annotation plus B2 provenance fields (trace_id, parent
+    /// invocation, idempotency key, emitted_at).
+    pub fn emit_action_invocation(inv: &ogar_vocab::ActionInvocation) -> Vec<Triple> {
+        let id = inv.identity.clone();
+        let mut triples = vec![
+            Triple::new(&id, "rdf:type", "ogar:ActionInvocation"),
+            Triple::new(&id, "ogar:realizes", inv.action_def.clone()),
+            Triple::new(&id, "ogar:actionSubject", subject_to_ogar(inv.subject)),
+            Triple::new(&id, "ogar:actionObject", inv.object_instance.clone()),
+            Triple::new(&id, "ogar:actionTemporal", temporal_to_ogar(inv.temporal)),
+            Triple::new(&id, "ogar:actionModal", modal_to_ogar(inv.modal)),
+            Triple::new(&id, "ogar:actionState", action_state_to_ogar(inv.state)),
+        ];
+        if let Some(ref a) = inv.lokal.actor {
+            triples.push(Triple::new(&id, "ogar:actionLokal", a.clone()));
+        }
+        if let Some(ref t) = inv.lokal.tenant {
+            triples.push(Triple::new(&id, "ogar:actionTenant", t.clone()));
+        }
+        if let Some(ref c) = inv.lokal.company {
+            triples.push(Triple::new(&id, "ogar:actionCompany", c.clone()));
+        }
+        if let Some(ref t) = inv.trace_id {
+            triples.push(Triple::new(&id, "ogar:traceId", t.clone()));
+        }
+        if let Some(ref p) = inv.parent_invocation {
+            triples.push(Triple::new(&id, "ogar:parentInvocation", p.clone()));
+        }
+        if let Some(ref k) = inv.idempotency_key {
+            triples.push(Triple::new(&id, "ogar:idempotencyKey", k.clone()));
+        }
+        if let Some(ts) = inv.emitted_at_millis {
+            triples.push(Triple::new(&id, "ogar:emittedAt", ts.to_string()));
+        }
+        if let Some(ref r) = inv.failure_reason {
+            triples.push(Triple::new(&id, "ogar:failureReason", r.clone()));
+        }
+        triples
+    }
+}
+
+fn kausal_triples(action_subject: &str, k: &ogar_vocab::KausalSpec) -> Vec<Triple> {
+    use ogar_vocab::KausalSpec;
+    match k {
+        KausalSpec::StateGuard { guard_field, guard_values } => {
+            let mut v = vec![
+                Triple::new(action_subject, "ogar:kausalKind", "ogar:StateGuard"),
+                Triple::new(action_subject, "ogar:guardField", guard_field.clone()),
+            ];
+            for val in guard_values {
+                v.push(Triple::new(action_subject, "ogar:guardValue", val.clone()));
+            }
+            v
+        }
+        KausalSpec::LifecycleTrigger { event } => vec![
+            Triple::new(action_subject, "ogar:kausalKind", "ogar:LifecycleTrigger"),
+            Triple::new(action_subject, "ogar:triggerEvent", event.clone()),
+        ],
+        // Kausal-scoped dependency predicates — NOT the ComputedField ones.
+        // ogar:dependsPath / ogar:dependsContext have domain ogar:ComputedField;
+        // reusing them here would make a dependency-guarded action infer as a
+        // ComputedField and corrupt "enumerate all computed fields" queries.
+        // Codex review 2026-06-04.
+        KausalSpec::Depends { paths } => {
+            let mut v = vec![Triple::new(action_subject, "ogar:kausalKind", "ogar:Depends")];
+            for p in paths {
+                v.push(Triple::new(action_subject, "ogar:kausalDependsPath", p.clone()));
+            }
+            v
+        }
+        KausalSpec::ContextDepends { keys } => {
+            let mut v = vec![Triple::new(action_subject, "ogar:kausalKind", "ogar:ContextDepends")];
+            for k in keys {
+                v.push(Triple::new(action_subject, "ogar:kausalDependsContext", k.clone()));
+            }
+            v
+        }
+        KausalSpec::External => vec![Triple::new(action_subject, "ogar:kausalKind", "ogar:External")],
+        _ => vec![Triple::new(action_subject, "ogar:kausalKind", "ogar:Unknown")],
+    }
+}
+
+fn subject_to_ogar(s: ogar_vocab::ActionSubject) -> &'static str {
+    use ogar_vocab::ActionSubject;
+    match s {
+        ActionSubject::User => "ogar:User",
+        ActionSubject::System => "ogar:System",
+        ActionSubject::Cron => "ogar:Cron",
+        ActionSubject::Trigger => "ogar:Trigger",
+        ActionSubject::Cascade => "ogar:Cascade",
+        _ => "ogar:Unknown",
+    }
+}
+
+fn temporal_to_ogar(t: ogar_vocab::TemporalSpec) -> &'static str {
+    use ogar_vocab::TemporalSpec;
+    match t {
+        TemporalSpec::Immediate => "ogar:Immediate",
+        TemporalSpec::Deferred => "ogar:Deferred",
+        TemporalSpec::Scheduled => "ogar:Scheduled",
+        TemporalSpec::OnCommit => "ogar:OnCommit",
+        _ => "ogar:Immediate",
+    }
+}
+
+fn modal_to_ogar(m: ogar_vocab::ModalSpec) -> &'static str {
+    use ogar_vocab::ModalSpec;
+    match m {
+        ModalSpec::Sync => "ogar:Sync",
+        ModalSpec::Async => "ogar:Async",
+        ModalSpec::Idempotent => "ogar:Idempotent",
+        ModalSpec::Atomic => "ogar:Atomic",
+        _ => "ogar:Sync",
+    }
+}
+
+fn action_state_to_ogar(s: ogar_vocab::ActionState) -> &'static str {
+    use ogar_vocab::ActionState;
+    match s {
+        ActionState::Pending => "ogar:Pending",
+        ActionState::Committed => "ogar:Committed",
+        ActionState::Failed => "ogar:Failed",
+        ActionState::Cancelled => "ogar:Cancelled",
+        _ => "ogar:Pending",
+    }
+}
+
 fn method_kind_to_ogar(kind: ogar_vocab::MethodKind) -> &'static str {
     use ogar_vocab::MethodKind;
     match kind {
@@ -1046,6 +1206,106 @@ mod tests {
             .collect();
         assert_eq!(method_subjects.len(), 2);
         assert_ne!(method_subjects[0], method_subjects[1]);
+    }
+
+    // ───────────────────────────────────────────────────────────────
+    // Sprint 3 — Action vocabulary tests
+    // ───────────────────────────────────────────────────────────────
+
+    #[test]
+    fn action_def_emits_full_subgraph() {
+        let mut def = ogar_vocab::ActionDef::new(
+            "ogit-erp/sale.order::action_def::action_confirm",
+            "action_confirm",
+            "ogit-erp/sale.order",
+        );
+        def.default_subject = ogar_vocab::ActionSubject::User;
+        def.default_temporal = ogar_vocab::TemporalSpec::Immediate;
+        def.default_modal = ogar_vocab::ModalSpec::Atomic;
+        def.kausal = Some(ogar_vocab::KausalSpec::state_guard(
+            "state",
+            vec!["draft".into(), "sent".into()],
+        ));
+        def.body_source = Some("if self.state != 'draft': raise...".into());
+        def.decorators = vec!["api.depends".into()];
+        let triples = TripleEmitter::emit_action_def(&def);
+        assert!(triples.iter().any(|t| t.predicate == "rdf:type" && t.object == "ogar:ActionDef"));
+        assert!(triples.iter().any(|t| t.predicate == "ogar:actionPredicate" && t.object == "action_confirm"));
+        assert!(triples.iter().any(|t| t.predicate == "ogar:defaultSubject" && t.object == "ogar:User"));
+        assert!(triples.iter().any(|t| t.predicate == "ogar:defaultModal" && t.object == "ogar:Atomic"));
+        assert!(triples.iter().any(|t| t.predicate == "ogar:kausalKind" && t.object == "ogar:StateGuard"));
+        assert!(triples.iter().any(|t| t.predicate == "ogar:guardField" && t.object == "state"));
+        let guard_values: Vec<_> = triples
+            .iter()
+            .filter(|t| t.predicate == "ogar:guardValue")
+            .map(|t| t.object.as_str())
+            .collect();
+        assert_eq!(guard_values, vec!["draft", "sent"]);
+    }
+
+    #[test]
+    fn action_invocation_carries_b2_provenance_fields() {
+        let mut inv = ogar_vocab::ActionInvocation::new(
+            "ogit-erp/sale.order::invocation::01H8Q...",
+            "ogit-erp/sale.order::action_def::action_confirm",
+            "ogit-erp/sale.order/42",
+        );
+        inv.subject = ogar_vocab::ActionSubject::User;
+        inv.temporal = ogar_vocab::TemporalSpec::Immediate;
+        inv.modal = ogar_vocab::ModalSpec::Atomic;
+        inv.state = ogar_vocab::ActionState::Pending;
+        inv.lokal.actor = Some("ogit-erp/sale.order::actor".into());
+        inv.lokal.tenant = Some("acme".into());
+        inv.trace_id = Some("00-trace-id-here".into());
+        inv.parent_invocation = Some("ogit-erp/account.payment::invocation::01H8...".into());
+        inv.idempotency_key = Some("confirm-sale-order-42".into());
+        inv.emitted_at_millis = Some(1717500000000);
+        let triples = TripleEmitter::emit_action_invocation(&inv);
+        assert!(triples.iter().any(|t| t.predicate == "rdf:type" && t.object == "ogar:ActionInvocation"));
+        assert!(triples.iter().any(|t| t.predicate == "ogar:actionSubject" && t.object == "ogar:User"));
+        assert!(triples.iter().any(|t| t.predicate == "ogar:actionState" && t.object == "ogar:Pending"));
+        assert!(triples.iter().any(|t| t.predicate == "ogar:traceId" && t.object == "00-trace-id-here"));
+        assert!(triples.iter().any(|t| t.predicate == "ogar:parentInvocation"));
+        assert!(triples.iter().any(|t| t.predicate == "ogar:idempotencyKey" && t.object == "confirm-sale-order-42"));
+        assert!(triples.iter().any(|t| t.predicate == "ogar:actionTenant" && t.object == "acme"));
+    }
+
+    #[test]
+    fn kausal_spec_variants_emit_distinct_kinds() {
+        let mut def = ogar_vocab::ActionDef::new("a", "p", "ogit-op/Foo");
+        def.kausal = Some(ogar_vocab::KausalSpec::lifecycle("before_save"));
+        let t = TripleEmitter::emit_action_def(&def);
+        assert!(t.iter().any(|t| t.predicate == "ogar:kausalKind" && t.object == "ogar:LifecycleTrigger"));
+        assert!(t.iter().any(|t| t.predicate == "ogar:triggerEvent" && t.object == "before_save"));
+
+        def.kausal = Some(ogar_vocab::KausalSpec::depends(vec!["partner_id".into(), "amount".into()]));
+        let t = TripleEmitter::emit_action_def(&def);
+        assert!(t.iter().any(|t| t.predicate == "ogar:kausalKind" && t.object == "ogar:Depends"));
+        // Kausal-scoped predicate, distinct from ComputedField's ogar:dependsPath
+        // (so "enumerate computed fields" queries don't catch actions).
+        let paths: Vec<_> = t.iter().filter(|t| t.predicate == "ogar:kausalDependsPath").map(|t| t.object.as_str()).collect();
+        assert_eq!(paths.len(), 2);
+        // The ComputedField predicate must NOT appear on an ActionDef.
+        assert!(!t.iter().any(|t| t.predicate == "ogar:dependsPath"));
+
+        def.kausal = Some(ogar_vocab::KausalSpec::External);
+        let t = TripleEmitter::emit_action_def(&def);
+        assert!(t.iter().any(|t| t.predicate == "ogar:kausalKind" && t.object == "ogar:External"));
+    }
+
+    #[test]
+    fn action_state_lifecycle_serialization() {
+        for (state, expected) in [
+            (ogar_vocab::ActionState::Pending, "ogar:Pending"),
+            (ogar_vocab::ActionState::Committed, "ogar:Committed"),
+            (ogar_vocab::ActionState::Failed, "ogar:Failed"),
+            (ogar_vocab::ActionState::Cancelled, "ogar:Cancelled"),
+        ] {
+            let mut inv = ogar_vocab::ActionInvocation::new("i", "d", "o");
+            inv.state = state;
+            let triples = TripleEmitter::emit_action_invocation(&inv);
+            assert!(triples.iter().any(|t| t.predicate == "ogar:actionState" && t.object == expected));
+        }
     }
 
     #[test]

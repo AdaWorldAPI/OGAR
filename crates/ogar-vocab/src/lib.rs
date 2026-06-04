@@ -276,6 +276,302 @@ impl Default for RecordSemantics {
     }
 }
 
+// ─────────────────────────────────────────────────────────────────────
+// Sprint 3 — Action vocabulary with SPO + TeKaMoLo grammar
+// (per docs/ADAPTERS-AND-ACTORS.md + brutal-review cycle 3 fixes)
+//
+// B1 fix: Action split into ActionDef (declaration) + ActionInvocation
+// (per-context invocation). One ActionDef may have N invocations.
+// B1 fix: KausalSpec is a proper sum type, not free-form opaque.
+// B2 fix: Provenance fields (trace_id, parent_action_id, idempotency_key,
+// emitted_at) carved into ActionInvocation.
+// B2 fix: ActionState lifecycle (Pending / Committed / Failed) carved.
+// ─────────────────────────────────────────────────────────────────────
+
+/// An action declaration — the AST-extracted shape of a business
+/// operation (a method-decorator combo, a callback declaration, a
+/// workflow transition). One per source-level method/callback decl.
+/// Invocations of this declaration become `ActionInvocation` triples.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[non_exhaustive]
+pub struct ActionDef {
+    /// Stable identity for the action declaration (e.g.
+    /// `ogit-erp/sale.order::action_def::action_confirm`).
+    pub identity: String,
+    /// Predicate name as written in source — `action_confirm`,
+    /// `before_save`, etc.
+    pub predicate: String,
+    /// Object class — the OGAR-canonical class identity this action
+    /// applies to (`ogit-erp/sale.order`).
+    pub object_class: String,
+    /// Default subject when not specified by an invocation.
+    pub default_subject: ActionSubject,
+    /// Default temporal annotation.
+    pub default_temporal: TemporalSpec,
+    /// Default modal annotation.
+    pub default_modal: ModalSpec,
+    /// Causal precondition — when None, action fires unconditionally
+    /// at the right Te point. Sum type: real producers populate one
+    /// of the typed variants below.
+    pub kausal: Option<KausalSpec>,
+    /// Method body verbatim (for projection emission).
+    pub body_source: Option<String>,
+    /// Decorator names that drove the extraction (Odoo `@api.depends`,
+    /// Rails callback macro name).
+    pub decorators: Vec<String>,
+}
+
+/// A runtime invocation of an `ActionDef` — one per (S, P, O, context)
+/// tuple. Captures the actual subject (which user / cron / cascade
+/// fired this), provenance for tracing, and lifecycle state.
+///
+/// B2 production-blocker fixes: every invocation carries trace_id,
+/// parent_action_id, idempotency_key (for at-least-once dedup), and
+/// ActionState (Pending / Committed / Failed).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[non_exhaustive]
+pub struct ActionInvocation {
+    /// Unique per-invocation identity (ULID/UUID at runtime; OGAR
+    /// canonical form `ogit-erp/sale.order::invocation::<ulid>`).
+    pub identity: String,
+    /// Reference to the ActionDef this invocation realizes.
+    pub action_def: String,
+    /// Subject of this specific invocation.
+    pub subject: ActionSubject,
+    /// Object instance identity (e.g. `ogit-erp/sale.order/42`).
+    pub object_instance: String,
+    /// Actual temporal context at invocation time (may differ from
+    /// ActionDef.default_temporal — e.g. cron-deferred vs immediate).
+    pub temporal: TemporalSpec,
+    /// Actual modal context.
+    pub modal: ModalSpec,
+    /// Resolved Lokal (which actor instance / tenant / company).
+    pub lokal: LokalSpec,
+    /// Lifecycle state. Sprint 3 — start Pending; the callcenter
+    /// (Sprint 7) transitions to Committed or Failed.
+    pub state: ActionState,
+    // ── B2 provenance fields ────────────────────────────────────
+    /// OpenTelemetry trace ID for cross-actor correlation.
+    pub trace_id: Option<String>,
+    /// Parent action invocation that cascaded this one (None for
+    /// top-level user-initiated actions).
+    pub parent_invocation: Option<String>,
+    /// Idempotency key — for Modal=Idempotent actions, the dedup
+    /// store keys on this string.
+    pub idempotency_key: Option<String>,
+    /// UTC timestamp of invocation emit (millis since epoch).
+    pub emitted_at_millis: Option<i64>,
+    /// Failure detail when state == Failed.
+    pub failure_reason: Option<String>,
+}
+
+/// Subject of a business action — who/what initiated it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[non_exhaustive]
+pub enum ActionSubject {
+    /// A human user (UI button click, RPC call from authenticated user).
+    User,
+    /// Internal system trigger (no specific user).
+    System,
+    /// Scheduled (`ir.cron`, Rails `Whenever`).
+    Cron,
+    /// Reactive (DB event, `@api.depends` triggered).
+    Trigger,
+    /// Cascaded from a parent action invocation.
+    Cascade,
+}
+
+impl Default for ActionSubject {
+    fn default() -> Self {
+        Self::System
+    }
+}
+
+/// Temporal context — when does the action happen relative to its
+/// trigger.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[non_exhaustive]
+pub enum TemporalSpec {
+    /// Synchronous, on-call.
+    Immediate,
+    /// Queued, async background.
+    Deferred,
+    /// Run at scheduled time / interval (cron-like).
+    Scheduled,
+    /// After DB transaction commits (Rails `after_commit`,
+    /// Odoo `@api.depends`).
+    OnCommit,
+}
+
+impl Default for TemporalSpec {
+    fn default() -> Self {
+        Self::Immediate
+    }
+}
+
+/// Modal context — how is the action performed.
+/// Per B3 YAGNI: dropped `Requires` (no v1 consumer); kept Idempotent
+/// because it gates the dedup mechanism in `ActionInvocation`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[non_exhaustive]
+pub enum ModalSpec {
+    /// Synchronous, blocking.
+    Sync,
+    /// Fire-and-forget.
+    Async,
+    /// Safe to retry (uses `idempotency_key`).
+    Idempotent,
+    /// All-or-nothing transaction.
+    Atomic,
+}
+
+impl Default for ModalSpec {
+    fn default() -> Self {
+        Self::Sync
+    }
+}
+
+/// Causal precondition — what triggered this action. **Sum type** per
+/// B1 review fix. Producers populate one variant; the runtime guard
+/// evaluator dispatches on the variant.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[non_exhaustive]
+pub enum KausalSpec {
+    /// State-field precondition (`self.state in {'draft', 'sent'}`).
+    StateGuard {
+        /// Field name on the object class.
+        guard_field: String,
+        /// Allowed values for the field.
+        guard_values: Vec<String>,
+    },
+    /// Lifecycle event trigger (`before_save`, `after_create`).
+    LifecycleTrigger {
+        /// Event name as written.
+        event: String,
+    },
+    /// `@api.depends` dependency paths (1..N).
+    /// Per R3 research: avg 3 paths, p95 8, max 14.
+    Depends {
+        /// Field paths that trigger this action's recomputation.
+        paths: Vec<String>,
+    },
+    /// `@api.depends_context` env-context keys.
+    ContextDepends {
+        /// Context keys that trigger recomputation.
+        keys: Vec<String>,
+    },
+    /// External cause (RPC call, HTTP request) — no precondition
+    /// to check inside the system.
+    External,
+}
+
+/// Lokal context — where does the action execute (which actor /
+/// tenant / company / db partition).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[non_exhaustive]
+pub struct LokalSpec {
+    /// Actor identity that should handle this invocation (e.g.
+    /// `ogit-erp/sale.order::actor`). Routes via NiblePath.
+    pub actor: Option<String>,
+    /// Tenant scope from the `Identity` tenant prefix.
+    pub tenant: Option<String>,
+    /// Multi-company id when applicable.
+    pub company: Option<String>,
+}
+
+/// Lifecycle state of an `ActionInvocation`.
+/// Per B2 production-blocker #3: explicit state machine prevents
+/// the silent-gap problem (action started, didn't complete, no record).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[non_exhaustive]
+pub enum ActionState {
+    /// Emitted but not yet processed by the callcenter.
+    Pending,
+    /// Successfully processed; effects committed.
+    Committed,
+    /// Processing failed; rollback complete (if Atomic) or
+    /// partial effects recorded in `failure_reason`.
+    Failed,
+    /// Cancelled before execution.
+    Cancelled,
+}
+
+impl Default for ActionState {
+    fn default() -> Self {
+        Self::Pending
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// Sprint 3 constructors (per #[non_exhaustive] convention)
+// ─────────────────────────────────────────────────────────────────────
+
+impl ActionDef {
+    /// Build an ActionDef with identity, predicate, and object class.
+    /// All other fields default.
+    #[must_use]
+    pub fn new(
+        identity: impl Into<String>,
+        predicate: impl Into<String>,
+        object_class: impl Into<String>,
+    ) -> Self {
+        Self {
+            identity: identity.into(),
+            predicate: predicate.into(),
+            object_class: object_class.into(),
+            ..Default::default()
+        }
+    }
+}
+
+impl ActionInvocation {
+    /// Build an ActionInvocation pointing at a defined ActionDef.
+    #[must_use]
+    pub fn new(
+        identity: impl Into<String>,
+        action_def: impl Into<String>,
+        object_instance: impl Into<String>,
+    ) -> Self {
+        Self {
+            identity: identity.into(),
+            action_def: action_def.into(),
+            object_instance: object_instance.into(),
+            ..Default::default()
+        }
+    }
+}
+
+impl KausalSpec {
+    /// Convenience: build a StateGuard.
+    #[must_use]
+    pub fn state_guard(field: impl Into<String>, values: Vec<String>) -> Self {
+        Self::StateGuard {
+            guard_field: field.into(),
+            guard_values: values,
+        }
+    }
+
+    /// Convenience: build a LifecycleTrigger.
+    #[must_use]
+    pub fn lifecycle(event: impl Into<String>) -> Self {
+        Self::LifecycleTrigger { event: event.into() }
+    }
+
+    /// Convenience: build a Depends spec.
+    #[must_use]
+    pub fn depends(paths: Vec<String>) -> Self {
+        Self::Depends { paths }
+    }
+}
+
 /// The four canonical Active Record relation kinds. Cross-ORM mapping:
 /// Rails `belongs_to`/`has_one`/`has_many`/`has_and_belongs_to_many`,
 /// Odoo `Many2one`/`One2many`/`Many2many` (Odoo collapses `has_one` into

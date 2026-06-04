@@ -259,6 +259,86 @@ ogar:beforeRemove              a rdf:Property ; rdfs:domain ogar:Association ; r
 ogar:afterRemove               a rdf:Property ; rdfs:domain ogar:Association ; rdfs:range xsd:string .
 
 # ─────────────────────────────────────────────────────────────────────
+# Sprint 3 — Action vocabulary (SPO + TeKaMoLo)
+# ActionDef (declaration) + ActionInvocation (per-(S,P,O,context)) split
+# per B1; KausalSpec as proper sum type; provenance + state lifecycle
+# per B2.
+# ─────────────────────────────────────────────────────────────────────
+
+ogar:ActionDef        a owl:Class ; rdfs:label "Action declaration (AST-extracted method/callback)" .
+ogar:ActionInvocation a owl:Class ; rdfs:label "Action invocation (per-S/P/O context)" .
+
+ogar:actionPredicate   a rdf:Property ; rdfs:domain ogar:ActionDef ; rdfs:range xsd:string .
+ogar:actionObjectClass a rdf:Property ; rdfs:domain ogar:ActionDef ; rdfs:range ogar:Class .
+ogar:defaultSubject    a rdf:Property ; rdfs:domain ogar:ActionDef ; rdfs:range ogar:ActionSubjectKind .
+ogar:defaultTemporal   a rdf:Property ; rdfs:domain ogar:ActionDef ; rdfs:range ogar:TemporalSpecKind .
+ogar:defaultModal      a rdf:Property ; rdfs:domain ogar:ActionDef ; rdfs:range ogar:ModalSpecKind .
+
+ogar:realizes         a rdf:Property ; rdfs:domain ogar:ActionInvocation ; rdfs:range ogar:ActionDef .
+ogar:actionSubject    a rdf:Property ; rdfs:domain ogar:ActionInvocation ; rdfs:range ogar:ActionSubjectKind .
+ogar:actionObject     a rdf:Property ; rdfs:domain ogar:ActionInvocation ; rdfs:range xsd:string .
+ogar:actionTemporal   a rdf:Property ; rdfs:domain ogar:ActionInvocation ; rdfs:range ogar:TemporalSpecKind .
+ogar:actionModal      a rdf:Property ; rdfs:domain ogar:ActionInvocation ; rdfs:range ogar:ModalSpecKind .
+ogar:actionState      a rdf:Property ; rdfs:domain ogar:ActionInvocation ; rdfs:range ogar:ActionStateKind .
+ogar:actionLokal      a rdf:Property ; rdfs:domain ogar:ActionInvocation ; rdfs:range xsd:string .
+ogar:actionTenant     a rdf:Property ; rdfs:domain ogar:ActionInvocation ; rdfs:range xsd:string .
+ogar:actionCompany    a rdf:Property ; rdfs:domain ogar:ActionInvocation ; rdfs:range xsd:string .
+ogar:traceId          a rdf:Property ; rdfs:domain ogar:ActionInvocation ; rdfs:range xsd:string .
+ogar:parentInvocation a rdf:Property ; rdfs:domain ogar:ActionInvocation ; rdfs:range ogar:ActionInvocation .
+ogar:idempotencyKey   a rdf:Property ; rdfs:domain ogar:ActionInvocation ; rdfs:range xsd:string .
+ogar:emittedAt        a rdf:Property ; rdfs:domain ogar:ActionInvocation ; rdfs:range xsd:long .
+ogar:failureReason    a rdf:Property ; rdfs:domain ogar:ActionInvocation ; rdfs:range xsd:string .
+
+# ActionDef-scoped body + decorator predicates — distinct from the
+# MethodDecl ones (ogar:methodBody / ogar:decoratorName) so a
+# body-carrying ActionDef is NOT inferred as a MethodDecl. Codex review.
+ogar:actionBody       a rdf:Property ; rdfs:domain ogar:ActionDef ; rdfs:range xsd:string .
+ogar:actionDecorator  a rdf:Property ; rdfs:domain ogar:ActionDef ; rdfs:range xsd:string .
+
+# KausalSpec sum type
+ogar:kausalKind         a rdf:Property ; rdfs:domain ogar:ActionDef ; rdfs:range ogar:KausalKind .
+ogar:KausalKind         a owl:Class .
+ogar:StateGuard         a ogar:KausalKind .
+ogar:LifecycleTrigger   a ogar:KausalKind .
+ogar:Depends            a ogar:KausalKind .
+ogar:ContextDepends     a ogar:KausalKind .
+ogar:External           a ogar:KausalKind .
+ogar:guardField         a rdf:Property ; rdfs:domain ogar:ActionDef ; rdfs:range xsd:string .
+ogar:guardValue         a rdf:Property ; rdfs:domain ogar:ActionDef ; rdfs:range xsd:string .
+ogar:triggerEvent       a rdf:Property ; rdfs:domain ogar:ActionDef ; rdfs:range xsd:string .
+# Kausal-scoped dependency predicates — distinct from the ComputedField
+# ones (ogar:dependsPath / ogar:dependsContext) so a dependency-guarded
+# action is NOT inferred as a ComputedField. Codex review.
+ogar:kausalDependsPath    a rdf:Property ; rdfs:domain ogar:ActionDef ; rdfs:range xsd:string .
+ogar:kausalDependsContext a rdf:Property ; rdfs:domain ogar:ActionDef ; rdfs:range xsd:string .
+
+# Enumerations
+ogar:ActionSubjectKind a owl:Class .
+ogar:User       a ogar:ActionSubjectKind .
+ogar:System     a ogar:ActionSubjectKind .
+ogar:Cron       a ogar:ActionSubjectKind .
+ogar:Trigger    a ogar:ActionSubjectKind .
+ogar:Cascade    a ogar:ActionSubjectKind .
+
+ogar:TemporalSpecKind a owl:Class .
+ogar:Immediate  a ogar:TemporalSpecKind .
+ogar:Deferred   a ogar:TemporalSpecKind .
+ogar:Scheduled  a ogar:TemporalSpecKind .
+ogar:OnCommit   a ogar:TemporalSpecKind .
+
+ogar:ModalSpecKind a owl:Class .
+ogar:Sync       a ogar:ModalSpecKind .
+ogar:Async      a ogar:ModalSpecKind .
+ogar:Idempotent a ogar:ModalSpecKind .
+ogar:Atomic     a ogar:ModalSpecKind .
+
+ogar:ActionStateKind a owl:Class .
+ogar:Pending    a ogar:ActionStateKind .
+ogar:Committed  a ogar:ActionStateKind .
+ogar:Failed     a ogar:ActionStateKind .
+ogar:Cancelled  a ogar:ActionStateKind .
+
+# ─────────────────────────────────────────────────────────────────────
 # Properties — EnumDecl, Scope, Callback
 # ─────────────────────────────────────────────────────────────────────
 
