@@ -98,6 +98,11 @@ ogar:asTarget     a rdf:Property ; rdfs:domain ogar:Association ; rdfs:range xsd
 ogar:dependent    a rdf:Property ; rdfs:domain ogar:Association ; rdfs:range xsd:string .
 ogar:optional     a rdf:Property ; rdfs:domain ogar:Association ; rdfs:range xsd:boolean .
 ogar:inverseOf    a rdf:Property ; rdfs:domain ogar:Association ; rdfs:range xsd:string .
+ogar:scopeSource  a rdf:Property ; rdfs:domain ogar:Association ; rdfs:range xsd:string .
+# scopeSource captures the lambda body for scoped associations: Rails
+# `has_many :line_items, -> { where(active: true) }`, Django
+# `limit_choices_to`, Odoo `Many2one(..., domain=[...])`. Verbatim source
+# text — consumers interpret per producer-language grammar.
 
 # ─────────────────────────────────────────────────────────────────────
 # Properties — EnumDecl, Scope, Callback

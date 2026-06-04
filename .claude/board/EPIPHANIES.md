@@ -15,6 +15,127 @@
 
 ## Entries (newest first)
 
+## 2026-06-04 — Per-session intuitive syntax is a parser problem, not a vocabulary problem
+**Status:** FINDING
+**Scope:** identity string format × cross-session collaboration × `Identity` struct (Sprint 1c)
+
+Each AI session (and each developer) writes URIs in its own
+intuitive form. Forcing one syntax fights against intuition and
+causes cross-session friction. The right move: bidirectional
+parser + serializer over a single canonical `Identity` struct.
+
+Inbound (parse): accept any of compact (`ogit-op/WorkPackage->project`),
+pathlike (`ogit-op::WorkPackage::memberof::project`), Elixir
+(`OgitOp.WorkPackage.belongs_to.project`), dotted, or atom-style.
+
+Internal: one canonical `Identity` struct (per
+`docs/IDENTITY-MAPPING.md`).
+
+Outbound (serialize): emit any form on request — `to_canonical()`,
+`to_compact()`, `to_pathlike()`, `to_elixir()`, `to_erlang_via()`,
+`to_dotted()`.
+
+**Consequence**: the syntax-war ("which separator is sexier?") is
+moot. All forms round-trip via the struct. Sessions write what
+feels intuitive; the system normalizes.
+
+This is the same pattern as the OGAR vocabulary at large: multiple
+sources (Ruby AR / Python Odoo / SQL DDL) → one canonical IR →
+multiple projections (PG / SurrealQL / TS). Here applied to
+identity strings.
+
+**Cross-ref:** `docs/IDENTITY-MAPPING.md`, `.claude/PLAN.md` Sprint 1c,
+1d, 1e.
+
+---
+
+## 2026-06-04 — Carve-out: 12 non-negotiable rules in IDENTITY-MAPPING.md
+**Status:** FINDING
+**Scope:** drift-prevention contract × Role enum × syntax variants
+
+`docs/IDENTITY-MAPPING.md` §10 lists 12 carve-outs that future
+sessions MUST obey. The most load-bearing ones:
+
+- Identity-equality = same conceptual entity. Attributes vary,
+  identity doesn't. Adding `optional: true` to a `belongs_to` does
+  NOT change Identity; changing `belongs_to → has_one` does.
+- Role kind is in URI for pathlike, in triple for compact. Never
+  both (would duplicate the role information and risk diverging).
+- HABTM and `has_many :through` collapse to `GroupOwnsMany`. The
+  through-target lives in a triple, not the URI.
+- `Include` ≠ `ClassInclude` ≠ `Delegate`. Three distinct
+  semantics (Rails include / Rails extend / Odoo `_inherits`);
+  never collapsed.
+- `Callback` and `Validation` always carry an index. First is
+  `::0::`, never bare. Prevents silent collision on duplicates.
+- Tenant uses `.`, prefix-class uses `/` or `::`, version uses
+  `@v<n>`. Mixing is parser error.
+- Reserved tokens (`memberof`, `members`, `class`, `group`, etc.)
+  cannot be class/target/tenant names. Producer error if encountered.
+
+Violations are session errors, not contract relaxations.
+
+**Cross-ref:** `docs/IDENTITY-MAPPING.md`.
+
+---
+
+## 2026-06-04 — Brutal-review cycle 1: 5 research + 3 brutal × 2
+**Status:** FINDING
+**Scope:** Sprint 1 development cycle × autonomous agent orchestration
+
+Eight parallel agents on the OGAR scaffold:
+
+**5 research agents** (R1–R5):
+- R1 (PyO3/Magnus): use Magnus + rb-sys + oxidize-rb precompiled
+  gems. Shopify is the production reference. Skip rutie.
+- R2 (Lance): right fit with caveats — enable v2 manifest paths
+  from day one, batch appends to ≥1/min, accept that long-term
+  history requires tagged versions never cleaned.
+- R3 (actor frameworks): Ractor wins. Hot reload is impossible in
+  compiled Rust regardless of framework; solve at registry/
+  supervisor layer.
+- R4 (SurrealQL parser): depend on `surrealdb-core::sql::parse` /
+  migrate to `surrealdb-parser` + `surrealdb-ast` when they
+  publish. Full DDL coverage; AST public.
+- R5 (Python AR extraction): hybrid — astroid-style static walk
+  on ruff_python_parser as primary, runtime introspection as
+  coverage sidecar. pylint-odoo's proven approach.
+
+**3 brutal review agents on docs** (B1–B3):
+- B1 (architectural): versioned class identity needed NOW; vocab
+  cannot represent scoped associations (`has_many :x, -> { ... }`);
+  bidirectional fixed-point is a quotient, not a fixed point.
+  FIX LANDED: `class_identity_versioned()` helper added,
+  `scope_source` field on Association added.
+- B2 (production-readiness): vocab versioning + projection-
+  compatibility matrix missing; lance compaction undefined;
+  cross-system Odoo↔OP requires CDC, not just shared vocabulary.
+  FIX LANDED: `#[non_exhaustive]` on all public structs/enums.
+- B3 (YAGNI): cut Sprints 2/5/6/7/8 from critical path; minimum
+  viable OGAR = vocab + emitter + ruff adapter + ogar-to-postgres.
+  PARTIALLY ACTED ON: Sprint 1 retains vocab + emitter; ruff
+  adapter pushed to Sprint 1f; postgres deferred.
+
+**3 brutal review agents on code** (CB1–CB3):
+- CB1 (correctness): subject collisions on shared column names
+  between EnumDecl/StoreAccessor/Attribute; eight emitted predicates
+  missing from TTL; `AssociationKind::_ => BelongsTo` silently
+  mislabels future variants. ALL FIXED.
+- CB2 (API ergonomics): trait should be `&mut self` sink, not
+  zero-state; replace `prefix: &str` everywhere with `EmitContext`;
+  `Triple` should borrow with `Cow<'a, str>`. DEFERRED to Sprint 1g.
+- CB3 (perf): build `owner_id` once + pass into child emitters;
+  Triple with Cow; `Vec::with_capacity` in emit_class. PARTIALLY
+  LANDED (with_capacity); rest in Sprint 1g.
+
+**Outcome**: Sprint 1 ships with all critical correctness fixes;
+API/perf refactors split into Sprint 1g; parser/Elixir/`:via`
+work split into Sprint 1c/1d/1e.
+
+**Cross-ref:** `.claude/PLAN.md` Sprint 1 + 1c + 1d + 1e + 1f + 1g.
+
+---
+
 ## 2026-06-04 — OGAR v0 push bypassed local signing infra via PyGithub
 **Status:** FINDING
 **Scope:** repo bootstrap × signing-middleware × Git Data API

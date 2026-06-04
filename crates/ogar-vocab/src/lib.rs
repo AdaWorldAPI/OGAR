@@ -31,6 +31,13 @@ use serde::{Deserialize, Serialize};
 /// (e.g. Odoo `ComputedField`). Not a hard schema discriminator: a class
 /// is fully described by the canonical fields below regardless of
 /// `language`.
+///
+/// **Vocabulary versioning:** `#[non_exhaustive]` so adding a new
+/// language (e.g. `Elixir`) is non-breaking. Match expressions in
+/// consumer code must include a `_ =>` arm. This applies to every
+/// `pub enum` / `pub struct` in this module: the OGAR vocabulary is
+/// expected to evolve over time, and every base type is forward-
+/// compatible-by-construction.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[non_exhaustive]
@@ -70,6 +77,7 @@ pub enum Language {
 /// `ogar-extensions/*` crates so the core IR stays canonical.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[non_exhaustive]
 pub struct Class {
     /// Class name as written in the source. For dotted-name ORMs
     /// (Odoo `account.move`) the dots are preserved; the prefix-radix
@@ -127,6 +135,7 @@ pub struct Class {
 /// `One2many` constrained to 1).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[non_exhaustive]
 pub enum AssociationKind {
     /// Owning side of a 1:N — the FK lives on this class's table.
     BelongsTo,
@@ -143,6 +152,7 @@ pub enum AssociationKind {
 /// treat `None` as "infer per ORM defaults".
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[non_exhaustive]
 pub struct Association {
     /// The relation kind.
     pub kind: AssociationKind,
@@ -178,6 +188,14 @@ pub struct Association {
     pub before_remove: Option<String>,
     /// `after_remove: :method` collection callback.
     pub after_remove: Option<String>,
+    /// Scoping lambda body — for Rails `has_many :line_items, -> { where(active: true) }`,
+    /// Django `limit_choices_to={'active': True}`, Odoo `domain=[('active','=',True)]`.
+    ///
+    /// Captured verbatim as source text. Consumers treat as opaque
+    /// (emit into the target form directly) or re-parse for their
+    /// needs. `None` means the association has no scoping constraint
+    /// — the default and most common case.
+    pub scope_source: Option<String>,
 }
 
 impl Default for AssociationKind {
@@ -191,6 +209,7 @@ impl Default for AssociationKind {
 /// string-backed (`{ active: "active" }`) enums fit one shape.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[non_exhaustive]
 pub struct EnumDecl {
     /// Column the enum is backed by.
     pub column: String,
@@ -205,6 +224,7 @@ pub struct EnumDecl {
 /// JSONB pseudo-fields backed by one column.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[non_exhaustive]
 pub struct StoreAccessor {
     /// JSONB column backing the pseudo-fields.
     pub column: String,
@@ -217,6 +237,7 @@ pub struct StoreAccessor {
 /// An `attribute :name, :type` schemaless / typed-attribute override.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[non_exhaustive]
 pub struct Attribute {
     /// Attribute name as written.
     pub name: String,
@@ -231,6 +252,7 @@ pub struct Attribute {
 /// accept it as an opaque SQL/DSL snippet or re-parse it.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[non_exhaustive]
 pub struct Scope {
     /// Scope name.
     pub name: String,
@@ -248,6 +270,7 @@ pub struct Scope {
 /// wrap semantics.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[non_exhaustive]
 pub struct Callback {
     /// Event name as written: `before_save`, `after_create`,
     /// `around_destroy`, `after_commit`, …
@@ -264,11 +287,112 @@ pub struct Callback {
 /// grammar is the next sprint to lift cleanly across ORMs.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[non_exhaustive]
 pub struct Validation {
     /// Column or attribute the validation applies to.
     pub target: String,
     /// Validation rule body verbatim. Per-ORM grammar is producer-side.
     pub rule_source: String,
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// Constructors
+//
+// Because the public types in this module are `#[non_exhaustive]` (for
+// forward compatibility — see the `Language` enum docs), external crates
+// cannot construct them with struct-literal syntax. The constructors
+// below take the minimal required fields and default the rest, then
+// the caller mutates whatever it needs:
+//
+//     let mut class = Class::new("WorkPackage");
+//     class.parent = Some("ApplicationRecord".into());
+//
+// This is the canonical Rust pattern for `#[non_exhaustive]` types.
+// ─────────────────────────────────────────────────────────────────────
+
+impl Class {
+    /// Build a new class with only the name set. All other fields are
+    /// `Default::default()`. Mutate after construction.
+    #[must_use]
+    pub fn new(name: impl Into<String>) -> Self {
+        Self { name: name.into(), ..Default::default() }
+    }
+}
+
+impl Association {
+    /// Build a new association with kind and name set.
+    #[must_use]
+    pub fn new(kind: AssociationKind, name: impl Into<String>) -> Self {
+        Self { kind, name: name.into(), ..Default::default() }
+    }
+}
+
+impl EnumDecl {
+    /// Build a new enum declaration with the column set.
+    #[must_use]
+    pub fn new(column: impl Into<String>) -> Self {
+        Self { column: column.into(), ..Default::default() }
+    }
+}
+
+impl StoreAccessor {
+    /// Build a new store-accessor bundle with the JSONB column set.
+    #[must_use]
+    pub fn new(column: impl Into<String>) -> Self {
+        Self { column: column.into(), ..Default::default() }
+    }
+}
+
+impl Attribute {
+    /// Build a new attribute override with the name set.
+    #[must_use]
+    pub fn new(name: impl Into<String>) -> Self {
+        Self { name: name.into(), ..Default::default() }
+    }
+}
+
+impl Scope {
+    /// Build a new scope with name and body source.
+    #[must_use]
+    pub fn new(name: impl Into<String>, body_source: impl Into<String>) -> Self {
+        Self {
+            name: name.into(),
+            body_source: body_source.into(),
+        }
+    }
+}
+
+impl Callback {
+    /// Build a new method-form callback: `before_save :method_name`.
+    #[must_use]
+    pub fn method(event: impl Into<String>, target_method: impl Into<String>) -> Self {
+        Self {
+            event: event.into(),
+            target_method: Some(target_method.into()),
+            body_source: None,
+        }
+    }
+
+    /// Build a new block-form callback: `after_create do ... end`.
+    #[must_use]
+    pub fn block(event: impl Into<String>, body_source: impl Into<String>) -> Self {
+        Self {
+            event: event.into(),
+            target_method: None,
+            body_source: Some(body_source.into()),
+        }
+    }
+}
+
+impl Validation {
+    /// Build a new validation rule with target column and rule body.
+    #[must_use]
+    pub fn new(target: impl Into<String>, rule_source: impl Into<String>) -> Self {
+        Self {
+            target: target.into(),
+            rule_source: rule_source.into(),
+        }
+    }
 }
 
 #[cfg(test)]
@@ -284,26 +408,43 @@ mod tests {
     }
 
     #[test]
+    fn class_new_sets_only_name() {
+        let c = Class::new("WorkPackage");
+        assert_eq!(c.name, "WorkPackage");
+        assert!(c.parent.is_none());
+        assert!(c.associations.is_empty());
+    }
+
+    #[test]
     fn association_kind_belongs_to_default() {
         let a = Association::default();
         assert!(matches!(a.kind, AssociationKind::BelongsTo));
     }
 
     #[test]
+    fn association_new_sets_kind_and_name() {
+        let a = Association::new(AssociationKind::HasMany, "line_items");
+        assert!(matches!(a.kind, AssociationKind::HasMany));
+        assert_eq!(a.name, "line_items");
+        assert!(a.scope_source.is_none());
+    }
+
+    #[test]
+    fn association_scope_source_field_present() {
+        let mut a = Association::new(AssociationKind::HasMany, "line_items");
+        a.scope_source = Some("where(active: true)".into());
+        assert_eq!(a.scope_source.as_deref(), Some("where(active: true)"));
+    }
+
+    #[test]
     fn callback_two_forms() {
-        let method_form = Callback {
-            event: "before_save".into(),
-            target_method: Some("touch_parent".into()),
-            body_source: None,
-        };
-        let block_form = Callback {
-            event: "after_create".into(),
-            target_method: None,
-            body_source: Some("notify_subscribers".into()),
-        };
+        let method_form = Callback::method("before_save", "touch_parent");
+        let block_form = Callback::block("after_create", "notify_subscribers");
         assert_ne!(method_form, block_form);
         assert!(method_form.target_method.is_some());
+        assert!(method_form.body_source.is_none());
         assert!(block_form.body_source.is_some());
+        assert!(block_form.target_method.is_none());
     }
 }
 

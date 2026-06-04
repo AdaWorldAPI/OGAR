@@ -3,6 +3,7 @@ resolver = "2"
 members = [
     "crates/ogar-vocab",
     "crates/ogar-ontology",
+    "crates/ogar-emitter",
 ]
 
 [workspace.package]
