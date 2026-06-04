@@ -302,6 +302,33 @@ impl Default for RecordSemantics {
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[non_exhaustive]
+
+/// Typed entry effect — the structured representation of the state mutation
+/// that fires on entering `Committed` (the Rubicon crossing). Replaces
+/// free-form strings on [`ActionDef::on_enter`] so the codegen can apply the
+/// transition structurally instead of string-parsing.
+///
+/// v1 carries the dominant lifecycle-FSM case (`field := to_value`). Complex
+/// domain operations (e.g. chess `Move::Castle`) carry their payload on the
+/// `ActionInvocation` and use `on_enter` only for the lifecycle-visible
+/// transition (e.g. `side_to_move := Black`). Future tightening to typed
+/// values (beyond string-encoded `to_value`) is a tracked follow-up.
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct EnterEffect {
+    /// Field on `object_instance` being set.
+    pub field: String,
+    /// Value to set the field to (string-encoded; typed values noted as a follow-up).
+    pub to_value: String,
+}
+
+impl EnterEffect {
+    /// Convenience constructor for the common `field := value` case.
+    pub fn transition(field: impl Into<String>, to_value: impl Into<String>) -> Self {
+        Self { field: field.into(), to_value: to_value.into() }
+    }
+}
+
 pub struct ActionDef {
     /// Stable identity for the action declaration (e.g.
     /// `ogit-erp/sale.order::action_def::action_confirm`).
@@ -332,10 +359,10 @@ pub struct ActionDef {
     // The three semantics that don't survive Action-flattening; each lowers
     // onto `ractor_actors::state_machine` with `State = ActionState`.
     /// Entry effect fired on entering `Committed` (the Rubicon crossing) —
-    /// typically the domain transition + side effects. Emitted as
-    /// `ogar:onEnter`; lowers to `StateMachine::on_enter` / the `CommitHook`.
-    /// Free-form today; a typed `EnterEffect` is a tracked follow-up.
-    pub on_enter: Option<String>,
+    /// typed via [`EnterEffect`] so codegen can apply the transition
+    /// structurally (no string-parsing). Emitted as `ogar:onEnter`; lowers
+    /// to `StateMachine::on_enter` / the `CommitHook`.
+    pub on_enter: Option<EnterEffect>,
     /// Disposition when the Kausal `StateGuard` fails: `Postponable` (stay
     /// `Pending`, replay) vs `Reject` (`Pending → Failed`, the default).
     /// Emitted as `ogar:guardFailurePolicy`.
@@ -1062,5 +1089,27 @@ mod tests {
 impl Default for Language {
     fn default() -> Self {
         Self::Ruby
+    }
+
+    #[test]
+    fn enter_effect_is_typed_and_constructible() {
+        // EnterEffect replaces the free-form string carrier on ActionDef.on_enter
+        // (per OGAR-AST-CONTRACT §6 follow-up); codegen applies the transition
+        // structurally instead of string-parsing.
+        let e = EnterEffect::transition("state", "sale");
+        assert_eq!(e.field, "state");
+        assert_eq!(e.to_value, "sale");
+        assert_eq!(e, EnterEffect { field: "state".into(), to_value: "sale".into() });
+        assert_ne!(e, EnterEffect::default());
+    }
+
+    #[test]
+    fn action_def_on_enter_is_typed_enter_effect() {
+        // ActionDef.on_enter is now Option<EnterEffect>, not Option<String>.
+        let mut a = ActionDef::default();
+        assert!(a.on_enter.is_none());
+        a.on_enter = Some(EnterEffect::transition("state", "sale"));
+        assert_eq!(a.on_enter.as_ref().unwrap().field, "state");
+        assert_eq!(a.on_enter.as_ref().unwrap().to_value, "sale");
     }
 }
