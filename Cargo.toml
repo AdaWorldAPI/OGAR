@@ -4,6 +4,7 @@ members = [
     "crates/ogar-vocab",
     "crates/ogar-ontology",
     "crates/ogar-emitter",
+    "crates/ogar-adapter",
 ]
 
 [workspace.package]

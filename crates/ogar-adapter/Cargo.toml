@@ -1,0 +1,18 @@
+[package]
+name = "ogar-adapter"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+description = "Open Graph of Active Record — adapter trait + HHTL-style lookup tables for cross-language identity translation"
+
+[features]
+default = []
+serde = ["dep:serde", "ogar-vocab/serde"]
+
+[dependencies]
+ogar-vocab = { path = "../ogar-vocab" }
+ogar-ontology = { path = "../ogar-ontology" }
+serde = { workspace = true, optional = true }

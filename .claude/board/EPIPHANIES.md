@@ -15,6 +15,107 @@
 
 ## Entries (newest first)
 
+## 2026-06-04 — lance-graph #461 (Quasicryth + COW radix trie) is the future NibleHHTL substrate
+**Status:** FINDING
+**Scope:** OGAR adapter HHTL × lance-graph upstream × deferred Sprint 1g+ migration
+
+lance-graph PR #461 merged 2026-06-04: "feat(quasicryth-research):
+direct C→Rust transcode + COW radix trie variant" — adds
+`crates/quasicryth-research/` with two storage variants behind one
+trait: (a) flat-storage codebook (C-reference port) and (b)
+**Copy-on-Write Adaptive Radix Tree** matching the append-only
+doctrine. ~4500 LOC added, zero deps.
+
+**Direct implication for OGAR**: Sprint 3 BTreeMapAdapter is a
+placeholder per B3 YAGNI ("use stdlib until benchmark proves it's
+the bottleneck"). The benchmark threshold has a successor type
+ready upstream — the COW ART from #461. When OGAR has ≥10k adapter
+leaves OR cross-tenant deployments needing structural-sharing
+across adapter copies, migrate `BTreeMapAdapter` → `CowRadixAdapter`
+backed by lance-graph's quasicryth-research COW-ART crate.
+
+Per docs/UPSTREAM-DEPS.md §1: this is the natural upstream
+binding point that justifies the BTreeMap-deferred carve-out. The
+NibleHHTL custom type isn't needed as OGAR-internal — the COW ART
+in lance-graph IS the data structure, and OGAR's adapter trait
+abstracts both.
+
+**Cross-ref:** lance-graph#461 (merged), `crates/ogar-adapter/src/lib.rs`
+(BTreeMapAdapter placeholder), `docs/UPSTREAM-DEPS.md` §1 (lance-graph
+binding tier), Sprint 1g (perf refactor) for the migration.
+
+---
+
+## 2026-06-04 — Sprint 3 brutal-review synthesis: ActionDef/Invocation split + B2 provenance + B3 cuts
+**Status:** FINDING
+**Scope:** Sprint 3 implementation × 5 research (R1-R5) + 3 brutal review (B1-B3)
+
+Cycle 3 outcome — synthesized landing decisions:
+
+**B1 (architectural) — LANDED**
+- Action struct split into `ActionDef` (declaration, AST-extracted)
+  + `ActionInvocation` (per (S, P, O, context) firing). Prevents the
+  1:N collapse identified by B1 (`account.move._post()` called from
+  user button, payment cascade, AND cron — three SPO+TeKaMoLo
+  shapes for one declaration).
+- `KausalSpec` carved as proper sum type:
+  `StateGuard { guard_field, guard_values } | LifecycleTrigger { event } | Depends { paths } | ContextDepends { keys } | External`.
+  No more opaque polymorphic field.
+
+**B2 (production-readiness) — LANDED top 3 blockers**
+- Provenance fields on `ActionInvocation`: `trace_id`,
+  `parent_invocation`, `idempotency_key`, `emitted_at_millis`,
+  `failure_reason`. Cannot bolt these on later without rewriting
+  every Lance fragment.
+- Tenant scope in `LokalSpec { actor, tenant, company }`. Sprint 7
+  callcenter dispatch will key on tenant+actor to prevent cross-
+  tenant leakage.
+- `ActionState` lifecycle: Pending / Committed / Failed / Cancelled.
+  Sprint 7's WAL-before-cascade rule has a place to live.
+
+**B3 (YAGNI) — SELECTIVE CUTS**
+- ✅ Cut: `Requires` modal variant (no v1 consumer).
+- ✅ Cut: RailsAdapter (Sprint 3.6 deferred to post-3.5).
+- ✅ Cut: Custom `NibleHHTL` type — use `BTreeMap<String, String>`
+  with `iter_prefix` filter. Reintroduce when benchmark demands.
+- ✅ Cut: `unmap()` direction — Sprint 4.5 (SurrealQL) will reintroduce.
+- ❌ Kept: all SPO+TeKaMoLo slots (4-slot minimum proposal rejected;
+  the full grammar is the differentiation per R5 finding).
+- ❌ Kept: full 5-variant ActionSubject (Cron/Trigger/Cascade have
+  real consumers in Sprint 7).
+
+**R1 Ractor constraints captured for Sprint 7**:
+- Per-class `Msg` enum (no generic `Action<T>` over single ActorRef).
+- `spawn_linked` for `subClassOf` (Odoo `_inherit`) hierarchy.
+- Semaphore-wrapped `cast` for Kanban (Ractor default mailbox is
+  unbounded).
+- `Modal=Sync/Atomic` → `call_t`; `Modal=Async` → `cast`.
+- `NiblePath` round-trips through `String` for `registry::where_is`.
+
+**R2 OpenTelemetry**: Action span attributes carved into ActionInvocation
+fields (trace_id, parent_invocation). Span attrs at Sprint 7 emission:
+`ogar.action.identity`, `ogar.action.subject`, `ogar.action.predicate`,
+`ogar.action.modal`, `ogar.actor.class_identity`, `ogar.actor.mailbox_depth`.
+
+**R3 Odoo `@api.depends` complexity** (account_move.py L548 has 14 paths,
+6 segments deep): `KausalSpec::Depends.paths: Vec<String>` sized for
+max 14 entries / 900 bytes.
+
+**R4 Erlang via-tuple** for Sprint 1e:
+`{:via, Horde.Registry, {OgitErp.Registry, {:ogit_erp, "sale.order", id}}}`.
+Atom namespace + string class + opaque id is idiomatic.
+
+**R5 Event sourcing patterns**: adopt EventStoreDB per-stream
+optimistic versioning (queued for Sprint 5 lance-graph-contract);
+reject π-calculus channel semantics (OGAR triples = static facts);
+OGAR's grammar-grounded 6-slot annotation is the differentiation.
+
+**Cross-ref:** `crates/ogar-adapter/src/lib.rs`,
+`crates/ogar-vocab/src/lib.rs` (ActionDef/ActionInvocation/KausalSpec),
+`docs/ADAPTERS-AND-ACTORS.md`, Sprint 3 / 3.5 / 4 / 7 in PLAN.md.
+
+---
+
 ## 2026-06-04 — SoA is the wire form at every OGAR layer (zero impedance mismatch)
 **Status:** FINDING
 **Scope:** Apache Arrow × Lance × surrealdb-core × Ractor × `docs/SOA-IMPLEMENTATION.md`
