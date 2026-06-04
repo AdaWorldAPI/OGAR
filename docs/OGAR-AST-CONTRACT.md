@@ -28,10 +28,10 @@ Per the runtime session, the design splits cleanly and the split matters:
   constructor, and is where the callcenter codegen lands.
 
 **This document is the OGAR type surface + projection rules the binding maps
-onto** — `Class`, `Action`, `Identity` (canonical), with SurrealQL DDL as a
-bidirectional bridge (§2). It does **not** re-implement the binding (that's the
-runtime session's, grounded in these types) and adds **no** parallel
-actor/message/state types.
+onto** — `Class`, `ActionDef` / `ActionInvocation`, `Identity` (canonical), with
+SurrealQL DDL as a bidirectional bridge (§2). It does **not** re-implement the
+binding (that's the runtime session's, grounded in these types) and adds **no**
+parallel actor/message/state types.
 
 ## 1. OGAR IR core types — the landing surface
 
@@ -48,14 +48,22 @@ pub struct Identity { /* segments: SmallVec<NibleSeg>; canonical per IDENTITY-MA
 pub struct Class {
     pub identity: Identity,
     pub name: String,
-    pub parent: Option<Identity>,          // subClassOf == supervision edge (ARCHITECTURE)
-    pub language: Lang,                     // Ruby | Python | SurrealQL | Sql | ...
+    pub parent: Option<Identity>,            // subClassOf == supervision edge (ARCHITECTURE)
+    pub language: Language,                  // Ruby | Python | SurrealQl | Sql | TypeScript | Elixir | Unknown
     pub declared_in_module: Option<String>,
     pub source_version: Option<String>,
+    pub description: Option<String>,
+    pub record_order: Option<String>,
+    pub rec_name: Option<String>,
     pub abstract_model: bool,
     pub transient: bool,
+    pub auto_create_table: Option<bool>,
+    pub log_access: Option<bool>,
+    pub inheritance_column_disabled: bool,
+    pub mixins: Vec<Identity>,               // structural mixins (Elixir use_, Ruby include)
+    pub store_accessors: Vec<String>,        // store-backed accessors (Rails, Ecto embeds)
     // nested ListArrays of structs — SoA all the way down:
-    pub associations:    Vec<Association>,  // BelongsTo / HasMany / MemberOf ...
+    pub associations:    Vec<Association>,   // BelongsTo / HasMany / MemberOf ...
     pub enums:           Vec<EnumDecl>,
     pub scopes:          Vec<Scope>,
     pub callbacks:       Vec<Callback>,
@@ -65,25 +73,47 @@ pub struct Class {
     pub attributes:      Vec<Attribute>,
 }
 
-/// Behavior arm. SPO + TeKaMoLo (ADAPTERS-AND-ACTORS §3). == action_record_batch_schema().
-/// This IS the actor message (§3): `type Msg = ActionMsg` over this row.
-pub struct Action {
-    pub identity:  Identity,
-    pub subject:   ActionSubject,   // User | System | Cron | Trigger | Cascade
-    pub predicate: String,          // the event name == the StateMachine Event
-    pub object:    Identity,        // the acted-upon Class
-    pub temporal:  TemporalSpec,    // Immediate | Deferred | Scheduled | OnCommit | (StateTimeout*)
-    pub kausal:    KausalSpec,      // StateGuard{field,value} | LifecycleTrigger{event} | DependsPath | None
-    pub modal:     ModalSpec,       // Sync | Async | Idempotent | Atomic | Requires | (Postponable*)
-    pub lokal:     Identity,        // the executing actor
-    pub method_body: Option<String>,
-    pub results_in:  Option<StateTransition>,  // ::S-to-T  → Transition::Next(T)
+/// Behavior arm — STATIC declaration (one per transition / handler). SPO + TeKaMoLo
+/// (ADAPTERS-AND-ACTORS §3). Carries the four Sprint-7 statem terms landed in #10:
+/// `ogar:onEnter`, `ogar:guardFailurePolicy`, `ogar:StateTimeout` (+ `stateTimeoutMillis`).
+pub struct ActionDef {
+    pub identity:    Identity,
+    pub predicate:   String,              // event name
+    pub object_class: Identity,           // acted-upon Class
+    pub default_subject:  ActionSubject,  // User | System | Cron | Trigger | Cascade
+    pub default_temporal: TemporalSpec,   // Immediate | Deferred | Scheduled | OnCommit | StateTimeout
+    pub default_modal:    ModalSpec,      // Sync | Async | Idempotent | Atomic | Requires
+    pub kausal:           KausalSpec,     // StateGuard{field,value} | LifecycleTrigger | DependsPath | None
+    pub method_body:      Option<String>,
+    pub results_in:       Option<StateTransition>,  // ::S-to-T → applied at Pending→Committed
+    // statem terms (vocab/ogar.ttl, PR #10):
+    pub on_enter:               Option<String>,                 // ogar:onEnter
+    pub guard_failure_policy:   GuardFailurePolicy,             // Reject (default) | Postponable
+    pub state_timeout_millis:   Option<i64>,                    // ogar:stateTimeoutMillis
 }
-// (*) = the three sub-properties this contract asks the vocab to add — see §6.
+
+/// Behavior arm — DYNAMIC instance (one per fire). Carries lifecycle + provenance;
+/// `state` is the StateMachine state per §3 (lifecycle = Pending → Committed/Failed/Cancelled).
+pub struct ActionInvocation {
+    pub identity:          Identity,
+    pub realizes:          Identity,                  // → ActionDef.identity
+    pub state:             ActionState,               // StateMachine::State (lifecycle)
+    pub subject:           ActionSubject,             // provenance
+    pub object_instance:   Identity,                  // the specific instance acted on
+    pub lokal:             LokalSpec,                 // {actor, tenant, company}
+    pub idempotency_key:   Option<String>,            // OLD↔NEW correlation handle for §14 roundtrip
+    pub trace_id:          Option<String>,
+    pub parent_invocation: Option<Identity>,
+    pub emitted_at_millis: Option<i64>,               // decision #4 — keep Option<_> until HLC lands
+    pub failure_reason:    Option<String>,
+}
+// (statem terms above are the three §6 vocab terms LANDED in PR #10's vocab/ogar.ttl.)
 ```
 
-`KausalSpec::StateGuard { field, value }` + `Action.results_in` are the **only**
-places a state machine survives the IR flattening — see §3.
+`KausalSpec::StateGuard { field, value }` (on `ActionDef`) + `ActionDef.results_in`
+are the **only** places a domain workflow survives the IR flattening; the
+**lifecycle** state machine is carried by `ActionInvocation.state: ActionState` —
+see §3.
 
 ## 2. SurrealQL DDL AST bridge (Layer 3)
 
@@ -221,42 +251,78 @@ core, no new substrate.
 1. **The generic `state_machine` crate references zero OGAR types** —
    `State`/`Event`/`Context` are associated types; *all* OGAR coupling lives in
    the binding (so the IR evolves without touching `ractor_actors`). The
-   **binding** emits `impl StateMachine` over OGAR `Class`/`Action`/`Identity` —
-   no parallel hand-rolled actor/message/state types. (Supersedes the
-   hand-authored `ClassActor::handle`.)
-2. `type Event = ActionMsg` — the message **is** the `Action` (SPO+TeKaMoLo).
-   Actors never invent message enums.
-3. `type State` is **derived** from the Class's `StateGuard` values, never
-   hand-declared.
-4. `type Data` is the Class-instance SoA row (Arrow-scalar). No row-form structs.
-5. Routing is by `Identity` NiblePath only.
-6. Hot path `std::sync` (Condvar). The statem shim never pulls `tokio` into
+   **binding** emits `impl StateMachine` over OGAR `Class`/`ActionDef`/
+   `ActionInvocation`/`Identity` — no parallel hand-rolled actor/message/state
+   types. (Supersedes the hand-authored `ClassActor::handle`.)
+2. **`type Event = ActionDef`** — the event is the *static* transition
+   declaration, not a bespoke enum. Actors never invent message enums.
+3. **`type State = ActionState`** — the *lifecycle* enum (Pending → Committed /
+   Failed / Cancelled), drawn from `vocab/ogar.ttl` `ActionStateKind`. Never
+   derived from per-class `StateGuard` values; never hand-declared. Domain
+   workflow rides as guarded effect on `ActionInvocation.object_instance`, not
+   as machine state.
+4. **`type Context = ActionInvocation`** — the *dynamic* invocation row
+   (state, object_instance, idempotency_key, trace_id, parent_invocation,
+   emitted_at_millis, failure_reason, lokal). No row-form structs.
+5. **`ActionDef` and `ActionInvocation` stay split** — never collapsed into a
+   single `Action` type. Static decl ≠ dynamic instance; `realizes` is the link.
+6. Routing is by `Identity` NiblePath only.
+7. Hot path `std::sync` (Condvar). The statem shim never pulls `tokio` into
    dispatch/postpone. `tokio` = Layer-3 cold only.
-7. Inter-actor wire form is RecordBatch IPC — N actions = 1 batch.
+8. Inter-actor wire form is RecordBatch IPC — N invocations = 1 batch.
 
-## 6. Vocab extensions needed from the ontology session
+## 6. Vocab extensions — LANDED in PR #10
 
-Three semantics don't survive the Action-flattening; each is a sub-property of an
-existing TeKaMoLo slot (carve-out: "seven slots, no eighth"):
+Three semantics didn't survive the Action-flattening; each is now a sub-property
+of an existing TeKaMoLo slot in `vocab/ogar.ttl` (carve-out: "seven slots, no
+eighth"), shipped in `AdaWorldAPI/OGAR#10` and carried on `ActionDef` (§1):
 
-| New term | Slot | Lowers to |
-|---|---|---|
-| `ogar:onEnter` | (entry effect) | `StateMachine::on_enter` → the Lance commit |
-| `ogar:guardFailurePolicy = Postponable` | Modal | `Transition::Postpone` (vs reject/`raise`) |
-| `ogar:StateTimeout` | Temporal | gen-stamped `state_timeout` (auto-cancel on transition) |
+| Term | Slot | Carrier field | Lowers to |
+|---|---|---|---|
+| `ogar:onEnter` | (entry effect) | `ActionDef.on_enter: Option<String>` | `StateMachine::on_enter(Committed)` → `CommitHook` → Lance append (the Rubicon crossing) |
+| `ogar:guardFailurePolicy` ∈ `{Postponable, Reject}` | Modal | `ActionDef.guard_failure_policy: GuardFailurePolicy` | `Postponable` → `Transition::Postpone` (stay `Pending`); `Reject` (default) → `Pending → Failed` |
+| `ogar:StateTimeout` (+ `stateTimeoutMillis`) | Temporal | `ActionDef.state_timeout_millis: Option<i64>` | per-state SLA on `Pending`; gen-stamped timer auto-cancels at the crossing |
 
-Without these, the codegen can re-assemble states/events/transitions from the
-existing triples, but **cannot** express enter-effects, postpone, or per-state
-SLA timeouts — i.e. the Rubicon machine can't be generated faithfully.
+Without these the codegen could re-assemble states/transitions from existing
+triples but couldn't express enter-effects, postpone, or per-state SLA timeouts.
+**Now expressible end-to-end**, modulo the §7 runtime-side pieces.
 
-## 7. Open decisions / what this session needs back
+Companion: **`docs/ELIXIR-HIRO-PREFETCH.md`** (also #10) — the OLD-Elixir-stack
+→ OGAR debt ledger; `gen_statem` `state_enter`/`postpone`/state-timeout lower
+onto exactly these three terms, so every migration debt has a type home before
+Sprint 4.5 `unmap` lands. `Language::Elixir` is first-class in `ogar-vocab`.
 
-1. **Scope:** is the statem lowering for *every* `Class` with a state field (all
-   `Workflow.Transition` classes), or **Rubicon-only**? Sets projection breadth.
-2. **`LanceMembrane` sole-writer signature** — to type `CommitHook::commit` (the
-   `on_enter` Lance commit). Callcenter owns it; the binding calls it. This is the
-   one binding seam I cannot type without the runtime/ontology session.
-3. **Fork access:** land `ractor-statem` in `AdaWorldAPI/ractor_actors` (over the
-   `ractor` core fork). Needs scope/PyGithub.
-4. **Timing:** pin this contract into the **Sprint-7** callcenter design *before*
-   the hand-loop is built, or it gets re-done.
+Follow-up (not blocking): `ogar:onEnter` ranges `xsd:string` today (free-form
+effect name). Worth promoting to a typed `EnterEffect` (or reusing
+`StateTransition`) when the codegen actually consumes it, so it doesn't
+string-parse. Logged in `CROSS_SESSION_COORDINATION.md`.
+
+## 7. Status of the open seams
+
+1. **Scope — RESOLVED.** The lowering covers **every Action-bearing
+   invocation**, not Rubicon-only. The lifecycle (`Pending → Committed/Failed/
+   Cancelled`) is universal to every `ActionInvocation`; "Rubicon" is just the
+   name for the `Pending → Committed` crossing, not a special subset. Codegen
+   is uniform — same lowering for Odoo `action_confirm`, OpenProject
+   `before_save`, and any future domain.
+2. **`LanceMembrane` sole-writer signature — ANSWERED, runtime-side to land.**
+   `LanceMembrane` adds a sibling to the zero-dep `ExternalMembrane::project`:
+   ```rust
+   fn commit_event(&self, row: Self::Commit /* = CognitiveEventRow */) -> u64
+   ```
+   returning the new Lance version. Action commits skip the cognitive-cycle
+   `ShaderBus` shape. **This is the precise `CommitHook::commit` target**, to be
+   added in `lance-graph-callcenter` by the runtime session. Until then the
+   binding's `CommitHook` impl is signature-deferred.
+3. **Fork access — RESOLVED.** `GH_TOKEN` PAT authenticates as `AdaWorldAPI`
+   with push on `AdaWorldAPI/{OGAR, ractor, ractor_actors, lance-graph,
+   bardioc}`. The generic `state_machine` crate lands in `ractor_actors/`
+   (cargo-workspace member); the binding lives in `lance-graph-callcenter`.
+4. **§3 signatures — RECONCILIATION PENDING.** The §3 sketch (`handle(.., hook)`,
+   infallible `commit`) will align to the actual `state_machine` crate
+   (`on_event -> Transition`, `is_commit`, sync-fallible `on_commit`) once the
+   runtime session pushes the scaffold. The OGAR-side surface (§1, §5, §6) is
+   stable regardless — the change is purely in the trait names/return types
+   referenced by §3.
+5. **Sprint-7 timing — STILL APPLIES.** Pin this contract into the
+   `lance-graph-callcenter` design *before* any hand-loop dispatch is written.
