@@ -15,6 +15,154 @@
 
 ## Entries (newest first)
 
+## 2026-06-04 — SKOS design lineage: minimal ontological commitment, compatible extensions, two-layer spec
+**Status:** FINDING
+**Scope:** OGAR design principles × SKOS design-decisions paper (arXiv:1302.1224)
+
+Baker/Bechhofer/Isaac/Miles/Schreiber/Summers (2013), "Key Choices
+in the Design of Simple Knowledge Organization System (SKOS)",
+provides four design principles directly applicable to OGAR:
+
+1. **Minimal Ontological Commitment (Gruber)** — make as few claims
+   as possible, allowing parties freedom to specialize. OGAR
+   carve-outs make machine-enforceable claims ONLY where cross-
+   producer drift would break interop. Everywhere else: defer.
+
+2. **SKOS Concepts ≠ OWL Classes** — SKOS Concepts are
+   `owl:NamedIndividual` with `rdf:type skos:Concept`, NOT
+   `owl:Class`. Has implications for OGAR: `ogar:Class`,
+   `ogar:Association` are owl:Class as meta-classes; PRODUCED
+   instances (`ogit-op:WorkPackage`) are individuals with
+   `rdf:type ogar:Class`, not their own owl:Class declarations.
+
+3. **Compatible extensions (sub-classes / sub-properties)** —
+   SKOS pattern: apps needing more constraints extend SKOS via
+   subclasses + subproperties, never fork. OGAR's
+   `ogar-extensions/<lang>/` follows this exactly.
+
+4. **Defer to existing vocabularies** — SKOS WG used `dc:subject`
+   instead of inventing one. OGAR should:
+   - `prov:wasDerivedFrom` ≡ `ogar:declaredIn`
+   - `dc:description` ≡ `ogar:description`
+   - `skos:exactMatch` for cross-vocab role mappings
+   - `foaf:focus` for referential links to real-world entities
+
+   Curated in `vocab/ogar-bridges.ttl` (Sprint 2.5).
+
+Two-layer spec adopted: formal axioms (in `vocab/*.ttl`) vs
+guidelines (in `.claude/AGENTS.md`). Distinction enforced by which
+file the rule lives in.
+
+**Cross-ref:** arXiv:1302.1224, `.claude/VISION.md` "Design
+principles" section, Sprint 2.5 in PLAN.md.
+
+---
+
+## 2026-06-04 — Freytag BA: SKOS extension drift is real and prevents auto-mapping
+**Status:** FINDING
+**Scope:** OGAR drift-prevention × Freytag BA 2016 (Hochschule Hannover)
+
+Daniel Freytag's BA thesis "Nicht-standardisierte Erweiterungen von
+SKOS-Thesauri und ihre Auswirkungen auf die Kompatibilität"
+(Hochschule Hannover, 2016) analyzes five SKOS thesauri (STW,
+Eurovoc, Agrovoc, TheSOZ, UNESCO) and documents how custom
+extensions destroy cross-thesaurus mapping. Direct lessons for
+OGAR:
+
+1. **Table 6.4 is OGAR's failure mode in real**: each thesaurus
+   models "concept" via a different path (`skos:concept` vs
+   `eu:ThesaurusConcept` vs `thesoz:descriptor`, with/without
+   SKOS-XL labels). Auto-mapping requires per-pair manual
+   configuration. Without registered-prefix table + conformance
+   corpus, `ogar-from-ruff` / `ogar-python` / `ogar-from-django`
+   will produce identical drift.
+
+2. **Transitivity hazard (§6.2.3)**: `agro:Obst exactMatch eu:Obst`
+   + `agro:Frucht exactMatch eu:Obst` → impliziert
+   `agro:Obst exactMatch agro:Frucht`, was falsch ist. Implication:
+   naive `owl:equivalentClass` across role variants is dangerous.
+   `OwnsMany` ≠ `One2many` strictly — they share a SHAPE but differ
+   in metadata semantics. Use `skos:closeMatch` not `exactMatch`
+   when semantics differ subtly.
+
+3. **Compound Equivalence (§6.2.3)**: SKOS has no 1:n mapping
+   relations. `Luftverschmutzung ≈ Luft + Schadstoff` is not
+   directly expressible. OGAR analog: Odoo `_inherits` (delegation)
+   IS this kind of compound concept ("SaleOrder accesses
+   product.template's fields through template_id"). Already
+   correctly carved as `Delegate` (not `Include`).
+
+4. **ISO 25964 mappings not covered by SKOS**: Generic, Instantial,
+   Partitive hierarchical mappings, plus compound equivalence.
+   OGAR may need more granular mapping relations than just
+   `subClassOf` + `equivalentClass`.
+
+5. **The author's overall Fazit**: "Custom extensions stand in the
+   way of interoperability... Automatic mapping is impossible due
+   to large structural differences." OGAR's response: carve-outs
+   + conformance corpus + registered-prefix table prevent the
+   structural divergence at the vocabulary level.
+
+**Cross-ref:** Freytag (2016), `docs/IDENTITY-MAPPING.md` §10,
+`docs/ODOO-TRANSCODING.md` §18, Sprint 2.5/2.6/2.7 in PLAN.md.
+
+---
+
+## 2026-06-04 — Cycle 2 Odoo brutal-review findings + carve-outs landed
+**Status:** FINDING
+**Scope:** Sprint 2 development × 5 Odoo research + 3 brutal review
+
+Eight parallel agents on Odoo coverage:
+
+**5 research agents** (RO1–RO5):
+- RO1 (source structure): Odoo addons discovery is `__init__.py`-
+  driven, not glob. Three sources: Community / Enterprise (OEEL-1) /
+  OCA (AGPL-3). Models in `models/` + `wizard/` + `report/`, NOT
+  `controllers/`. Module dependencies (`depends`) MUST be followed
+  transitively for `_inherit` resolution.
+- RO2 (field types): 17 public `fields.*` classes surveyed. Base
+  vocab additions: Monetary, Html, Image, Selection (existing).
+  ext-odoo additions: Properties, PropertiesDefinition, Reference,
+  Many2oneReference. 14 cross-cutting kwargs (required, default,
+  translate, tracking, store, digits, groups, company_dependent...)
+  all need structured capture.
+- RO3 (decorators): 11 `@api.*` decorators mapped. New roles
+  needed: `DependsSpec`, `ScheduledJob`, `AccessPolicy` (ext).
+  CRUD overrides need 2-stage detection (AST candidate + MRO
+  confirmation).
+- RO4 (state machines): `states={...}` dict pattern GONE in 17.0.
+  v8 workflow engine removed in v9. Decompose `Workflow` into:
+  StateField + Transition + StateGuard + ScheduledTransition.
+- RO5 (`_inherit` resolution): 6-pass static algorithm: parse →
+  classify (NEW/EXTEND/MIXIN) → model_table → topological_merge →
+  MRO_assembly → validate. Borrow visit_assign pattern from
+  pylint-odoo.
+
+**3 brutal review agents on docs** (BO1–BO3):
+- BO1 (coverage gaps): TOP 5 BLOCKERS — Attribute kwargs, Association
+  ondelete/auto_join/context, EnumSource for computed/Add,
+  Class-level metadata, MethodDecl + ComputedField struct.
+  ALL FIVE LANDED in this PR.
+- BO2 (architecture): TOP 3 LOCK-BEFORE-SHIP — registered-prefix
+  table coupled to source-language (Sprint 2.7), conformance
+  fixture crate (Sprint 2.6), `Role::Extends` distinct from
+  Include (documented in ODOO-TRANSCODING §11; Identity helper
+  pending).
+- BO3 (YAGNI): minimum viable Odoo v1 = Odoo 17.0 core
+  `addons/*/models/*.py`, no XML/wizards/OCA/multi-version/runtime.
+  Set as scope in ODOO-TRANSCODING §1.
+
+**Outcome**: Sprint 2 ships docs/ODOO-TRANSCODING.md (18 sections,
+13 non-negotiable carve-outs) + base vocab additions for all 5
+BO1 gaps + Sprint 2.5/2.6/2.7 planned for the BO2 architectural
+follow-ups + Sprint 4/5 for `ogar-python` + `ogar-ext-odoo` are
+now informed by the carved design.
+
+**Cross-ref:** `docs/ODOO-TRANSCODING.md`, `.claude/PLAN.md` Sprint
+2 + 2.5 + 2.6 + 2.7.
+
+---
+
 ## 2026-06-04 — Per-session intuitive syntax is a parser problem, not a vocabulary problem
 **Status:** FINDING
 **Scope:** identity string format × cross-session collaboration × `Identity` struct (Sprint 1c)

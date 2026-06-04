@@ -125,8 +125,155 @@ pub struct Class {
     /// Lifecycle callback declarations in source order.
     pub callbacks: Vec<Callback>,
     /// Validation declarations in source order (`validates :col, ...`,
-    /// `@api.constrains('col')`). Future C17 sprint — placeholder.
+    /// `@api.constrains('col')`).
     pub validations: Vec<Validation>,
+
+    // ─────────────────────────────────────────────────────────────
+    // Odoo-shaped fields (also populated by Rails/Django where
+    // sensible). See `docs/ODOO-TRANSCODING.md` §7.
+    // ─────────────────────────────────────────────────────────────
+    /// `_description = 'Sale Order'` (Odoo) — human-readable name.
+    /// Rails has no direct equivalent (class comment usually).
+    pub description: Option<String>,
+    /// `_order = 'date desc, id'` (Odoo) — default record ordering.
+    /// Distinct from `default_scope` (Rails) which is a full where
+    /// clause; `record_order` is just the ORDER BY tail.
+    pub record_order: Option<String>,
+    /// `_rec_name = 'name'` (Odoo) — UI display field. Defaults to
+    /// `'name'` if unset (Odoo convention).
+    pub rec_name: Option<String>,
+    /// `_check_company_auto = True` (Odoo) — auto multi-company
+    /// check on FK targets.
+    pub check_company_auto: Option<bool>,
+    /// `_log_access = False` (Odoo) — skip create_uid / write_uid
+    /// audit columns.
+    pub log_access: Option<bool>,
+    /// `_auto = False` (Odoo) — no auto CREATE TABLE (SQL view
+    /// models like `account.invoice.report`).
+    pub auto_create_table: Option<bool>,
+    /// `_abstract = True` (Odoo) — base class, no table. Methods
+    /// inherited but data not stored.
+    pub abstract_model: bool,
+    /// `_transient = True` (Odoo) — wizard/scratchpad model with
+    /// vacuumed rows.
+    pub transient: bool,
+    /// `_register = False` (Odoo) — skip from registry (rare;
+    /// usually only base classes).
+    pub register: Option<bool>,
+    /// Module name from `__manifest__.py` (`'sale'`, `'account'`).
+    /// Required for Odoo classes (every class lives in one module);
+    /// optional for Rails (engines / gems are the closest concept).
+    /// Emitted as `ogar:declaredIn <module>` triple — see BO2 #3.
+    pub declared_in_module: Option<String>,
+    /// Source language major version (`"17.0"`, `"7.2"`, ...) for
+    /// multi-version source compatibility. Reserved; v1 leaves `None`.
+    pub source_version: Option<String>,
+    /// Computed-field declarations (Odoo `compute=...` fields, also
+    /// Rails / Django where producers can detect them). Lives in
+    /// base vocab — see `docs/ODOO-TRANSCODING.md` §8.
+    pub computed_fields: Vec<ComputedField>,
+    /// CRUD overrides and other method declarations (Odoo
+    /// `def create / write / unlink / copy` overrides, Rails
+    /// `def self.method`, etc.). Distinct from `callbacks` which
+    /// are declarative hooks.
+    pub methods: Vec<MethodDecl>,
+}
+
+/// A computed-field declaration. Carries the field name, the compute
+/// method's symbol, and the dependency list from `@api.depends`.
+/// Universal across ORMs: Odoo `compute='_compute_x'` + `@api.depends`,
+/// Django `cached_property`, Rails instance-method-derived attributes.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[non_exhaustive]
+pub struct ComputedField {
+    /// The field being computed.
+    pub field: String,
+    /// Compute method name (`"_compute_total"`).
+    pub compute_method: String,
+    /// Dependency paths from `@api.depends('partner_id',
+    /// 'order_line.price_total')`. Empty if no `@api.depends`.
+    pub depends: Vec<String>,
+    /// `@api.depends_context('uid', 'company')` — env-context
+    /// dependencies (Odoo only).
+    pub depends_context: Vec<String>,
+    /// `store=True` — store result in DB column. `False` recomputes
+    /// on every read.
+    pub stored: bool,
+    /// `inverse='_inverse_total'` — write-direction helper
+    /// (turning back from computed value to raw field assignments).
+    pub inverse_method: Option<String>,
+    /// `search='_search_total'` — search helper for filtering by
+    /// computed value.
+    pub search_method: Option<String>,
+}
+
+/// A method declaration: CRUD override (`def create`/`def write`/
+/// `def unlink`/`def copy`), `@api.model` helper, or plain instance
+/// method. Distinct from `Callback` which is a declarative hook.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[non_exhaustive]
+pub struct MethodDecl {
+    /// Method name as written.
+    pub name: String,
+    /// The kind of method — distinguishes total overrides from
+    /// declared hooks.
+    pub kind: MethodKind,
+    /// Method body verbatim. Consumers re-parse or emit opaque.
+    pub body_source: String,
+    /// Decorator names as written: `["api.depends", "api.constrains"]`.
+    pub decorators: Vec<String>,
+    /// Recordset binding semantics — does the method bind to a
+    /// single record, a recordset, or class-level?
+    pub semantics: RecordSemantics,
+}
+
+/// Method kind — distinguishes overrides from helpers from plain
+/// methods. The producer determines kind from decorator + name
+/// inspection; see `docs/ODOO-TRANSCODING.md` §13.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[non_exhaustive]
+pub enum MethodKind {
+    /// `def create(self, vals_list)` — total override of an ORM
+    /// CRUD method. Semantically distinct from Rails callbacks.
+    CrudOverride,
+    /// `@api.model def helper(self, ...)` — class-method-like.
+    ApiModel,
+    /// `@api.model_create_multi def create(self, vals_list)` —
+    /// Odoo's bulk-create override.
+    ApiModelCreateMulti,
+    /// Plain instance method, no special semantics.
+    Instance,
+}
+
+impl Default for MethodKind {
+    fn default() -> Self {
+        Self::Instance
+    }
+}
+
+/// Recordset semantics — Odoo methods can bind to a record (single),
+/// a recordset (the default for most methods), or be class-level
+/// (`@api.model`). Captured for cross-language consumers that
+/// project to per-record vs per-collection APIs.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[non_exhaustive]
+pub enum RecordSemantics {
+    /// Single-record context.
+    Record,
+    /// Recordset (Odoo default for most methods).
+    Recordset,
+    /// Class-level (`@api.model` or no `self`).
+    ClassLevel,
+}
+
+impl Default for RecordSemantics {
+    fn default() -> Self {
+        Self::Recordset
+    }
 }
 
 /// The four canonical Active Record relation kinds. Cross-ORM mapping:
@@ -196,6 +343,23 @@ pub struct Association {
     /// needs. `None` means the association has no scoping constraint
     /// — the default and most common case.
     pub scope_source: Option<String>,
+    /// `ondelete='cascade'/'restrict'/'set null'/'set default'` —
+    /// **DB-level FK action**, distinct from Rails `dependent:`
+    /// (app-level). Stored separately to prevent cascade-semantics
+    /// confusion. See `docs/ODOO-TRANSCODING.md` §5.
+    pub ondelete: Option<String>,
+    /// `auto_join=True` (Odoo) — auto SQL-join instead of lazy
+    /// load on Many2one.
+    pub auto_join: Option<bool>,
+    /// `context={...}` (Odoo) — UI default context for navigation
+    /// through this association. Captured verbatim as source text.
+    pub context_source: Option<String>,
+    /// `check_company=True` (Odoo) — multi-company tenancy check
+    /// on the FK target.
+    pub check_company: Option<bool>,
+    /// `delegate=True` — legacy Odoo Many2one delegation (rare;
+    /// modern Odoo uses `_inherits` on the class instead).
+    pub delegate: Option<bool>,
 }
 
 impl Default for AssociationKind {
@@ -204,20 +368,57 @@ impl Default for AssociationKind {
     }
 }
 
-/// An `enum :col, { variant: value, ... }, scopes: false` declaration.
-/// Values are stringified so int-backed (`{ active: 1 }`) and
-/// string-backed (`{ active: "active" }`) enums fit one shape.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+/// An enum-backed column declaration.
+///
+/// The `source` field captures three Odoo cases (static / computed /
+/// additive); for Rails / Django / Ecto only `Static` applies.
+/// See `docs/ODOO-TRANSCODING.md` §6.
+#[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[non_exhaustive]
 pub struct EnumDecl {
     /// Column the enum is backed by.
     pub column: String,
-    /// Variant name → stringified literal value, in declaration order.
-    pub values: Vec<(String, String)>,
-    /// `scopes: false` was passed (disables ORM-generated scope class
-    /// methods). `None` when unset or non-bool.
+    /// Where the enum's variant list comes from.
+    pub source: EnumSource,
+    /// `scopes: false` (Rails) — disables ORM-generated scope class
+    /// methods. `None` when unset or non-bool.
     pub scopes_disabled: Option<bool>,
+}
+
+impl Default for EnumDecl {
+    fn default() -> Self {
+        Self {
+            column: String::new(),
+            source: EnumSource::Static(Vec::new()),
+            scopes_disabled: None,
+        }
+    }
+}
+
+/// Source of an enum's variant list. Three cases capture Odoo's
+/// `selection=`, `selection=lambda`, and `selection_add=`
+/// surface; Rails / Django / Ecto producers always emit `Static`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[non_exhaustive]
+pub enum EnumSource {
+    /// `selection=[('draft', 'Draft'), ('done', 'Done')]` — fixed
+    /// list of `(key, label)` pairs.
+    Static(Vec<(String, String)>),
+    /// `selection=lambda self: self.env['res.country']...` — computed
+    /// at runtime. The lambda body is captured verbatim.
+    Computed(String),
+    /// `selection_add=[('paid', 'Paid')]` — extends a parent
+    /// `_inherit` model's enum without redeclaring it. `parent_selection`
+    /// names the parent class.
+    Add {
+        /// Additional variants to add to the parent's selection.
+        items: Vec<(String, String)>,
+        /// The parent class whose selection is being extended
+        /// (e.g. `"account.move.line"`).
+        parent_selection: String,
+    },
 }
 
 /// A `store_accessor :col, %i[a b c], prefix: true` declaration — N
@@ -235,6 +436,13 @@ pub struct StoreAccessor {
 }
 
 /// An `attribute :name, :type` schemaless / typed-attribute override.
+///
+/// Carries an `options` struct for all the cross-cutting kwargs Odoo,
+/// Django, and Rails attach to field declarations (`required`,
+/// `default`, `translate`, `tracking`, `index`, etc.). Producers
+/// populate the subset they support; consumers branch on what's
+/// `Some`. See `docs/ODOO-TRANSCODING.md` §4 for the full Odoo
+/// kwarg → option mapping.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[non_exhaustive]
@@ -242,9 +450,61 @@ pub struct Attribute {
     /// Attribute name as written.
     pub name: String,
     /// Type name as written (`"string"`, `"integer"`, `"big_integer"`,
-    /// `"Char"`, …). Producer-specific — consumers interpret per
-    /// language.
+    /// `"Char"`, `"Many2one"`, `"Monetary"`, `"Html"`, `"Image"`, …).
+    /// Producer-specific — consumers interpret per source language.
     pub type_name: Option<String>,
+    /// Cross-cutting per-attribute options. Populated by Odoo /
+    /// Django / Rails producers as applicable.
+    pub options: AttributeOptions,
+}
+
+/// The structured option-set on `Attribute`. Every Odoo kwarg has a
+/// home here; no kwarg-dump bucket. Forward-compat via
+/// `#[non_exhaustive]` — new producers add new fields, no breaking
+/// change.
+///
+/// See `docs/ODOO-TRANSCODING.md` §4 for the full mapping.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[non_exhaustive]
+pub struct AttributeOptions {
+    /// `default=value` — literal as source text, or callable name.
+    /// `None` means no default — column null / Rails default.
+    pub default_source: Option<String>,
+    /// `required=True` — NOT NULL constraint at the ORM level.
+    pub required: Option<bool>,
+    /// `readonly=True` — UI / ORM-write blocked.
+    pub readonly: Option<bool>,
+    /// `index=True` — DB index on the column.
+    pub indexed: Option<bool>,
+    /// `store=True` — relevant for computed fields; `False` means
+    /// the value is recomputed on every read.
+    pub stored: Option<bool>,
+    /// `translate=True` — i18n column (jsonb in Odoo 17.0).
+    pub translate: Option<bool>,
+    /// `tracking=True` / `tracking=10` — Odoo audit log priority.
+    /// `None` means no tracking; `Some(0)` means tracking with
+    /// default priority; higher values are explicit priorities.
+    pub tracking: Option<u8>,
+    /// `groups='group.xml.id,another.group'` — visibility ACL.
+    /// Comma-split into a list.
+    pub groups: Vec<String>,
+    /// `company_dependent=True` — value varies by `res.company`
+    /// (Odoo multi-tenancy).
+    pub company_dependent: Option<bool>,
+    /// `copy=False` — excluded from `model.copy()`.
+    pub copy_on_duplicate: Option<bool>,
+    /// `help='...'` — UI tooltip text.
+    pub help_text: Option<String>,
+    /// `string='Label'` — UI label override (independent of `name`).
+    pub label: Option<String>,
+    /// `digits=(precision, scale)` — Float/Monetary precision.
+    pub digits: Option<(u8, u8)>,
+    /// `size=N` — Char/Binary size limit.
+    pub size: Option<usize>,
+    /// `currency_field='currency_id'` — Monetary field's currency
+    /// linkage. Required for `Monetary` type, ignored otherwise.
+    pub currency_field: Option<String>,
 }
 
 /// A `scope :name, -> { body }` definition. `body_source` is opaque

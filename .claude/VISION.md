@@ -122,6 +122,75 @@ projections), cross-system (OpenProject + Odoo + every other Rails or
 Django app) — one queryable graph surface from 6 bytes (one record) to
 one planet (Wikidata on one node).
 
+## Design principles (carved from SKOS lineage)
+
+These four principles, distilled from the SKOS design-decisions paper
+(Baker/Bechhofer/Isaac/Miles/Schreiber/Summers, 2013, arXiv:1302.1224),
+govern every OGAR-vocabulary decision:
+
+### 1. Minimal ontological commitment (Gruber)
+
+> An ontology should require the minimal ontological commitment
+> sufficient to support the intended knowledge sharing activities.
+> An ontology should make as few claims as possible about the world
+> being modeled, allowing the parties committed to the ontology
+> freedom to specialize and instantiate the ontology as needed.
+
+OGAR carve-outs make machine-enforceable claims **only** where
+cross-producer drift would otherwise break interoperability.
+Everywhere else (display labels, optional metadata, per-language
+conventions), OGAR defers to producer choice. Adding a new
+machine-enforced claim is an ontology-level decision; relaxing one
+is an extension.
+
+### 2. Compatible extensions, not custom forks
+
+Apps that need more constraints define **sub-classes** and
+**sub-properties** under `ogar-extensions/<lang>/` rather than
+forking the base vocabulary. Every Odoo-specific concept
+(`ComputedField`, `Delegation`, `StateMachine`) lives in
+`ogar-ext-odoo/` and extends base OGAR terms via `rdfs:subClassOf`
+/ `rdfs:subPropertyOf`. The base vocabulary is **untouched** by
+language-specific needs.
+
+### 3. Defer to existing vocabularies
+
+Where W3C / community vocabularies already cover a need, OGAR uses
+them via `owl:equivalentProperty` / `owl:equivalentClass`:
+
+- `prov:wasDerivedFrom` for provenance (`declared_in_module`)
+- `dc:description` (Dublin Core) for human-readable class descriptions
+- `dc:creator` / `dc:date` for authorship metadata
+- `foaf:focus` for referential links when classes correspond to
+  real-world entities
+- `skos:exactMatch` / `skos:closeMatch` for cross-vocabulary
+  identity mappings (`ogar:MemberOf skos:exactMatch ruby:belongs_to`)
+
+This list is curated in `vocab/ogar-bridges.ttl` (Sprint 2.5).
+
+### 4. Two-layer specification
+
+OGAR distinguishes two kinds of statement:
+
+- **Formal axioms** — machine-enforceable, expressible in RDF/OWL,
+  validated by parsers and emitters. Examples: `Identity` syntax,
+  the `Role` enum, prefix-radix routing, the 13 ODOO-TRANSCODING
+  carve-outs.
+- **Guidelines** — advisory best practices, documented in prose,
+  not in TTL. Examples: naming conventions (PascalCase classes,
+  snake_case fields), commit message style, EPIPHANIES log
+  discipline.
+
+Violating a guideline is a code-review concern; violating an axiom
+is a parser/validator error. The distinction is enforced by which
+document the rule lives in (`vocab/*.ttl` vs `.claude/AGENTS.md`).
+
+### Cross-reference
+
+These principles ground every entry in `.claude/PLAN.md` and every
+carve-out in `docs/IDENTITY-MAPPING.md` + `docs/ODOO-TRANSCODING.md`.
+When in doubt: read principle 1 again.
+
 ## Cross-references
 
 - `docs/ARCHITECTURE.md` — the longer architectural writeup

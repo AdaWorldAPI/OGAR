@@ -336,23 +336,51 @@ impl TripleEmitter {
         _index: usize,
     ) -> Vec<Triple> {
         let owner_id = class_identity(prefix, owner_class);
-        // Distinct namespace from Attribute/StoreAccessor on the same
-        // column to prevent subject collision.
         let enum_id = format!("{}/{}::enum::{}", prefix, owner_class, enum_decl.column);
         let mut triples = vec![
             Triple::new(&owner_id, "ogar:hasEnum", enum_id.clone()),
             Triple::new(&enum_id, "rdf:type", "ogar:EnumDecl"),
             Triple::new(&enum_id, "ogar:column", enum_decl.column.clone()),
         ];
-        // Emit variants as separate ogar:variantName + ogar:variantValue
-        // triples on a synthetic per-variant subject so values can
-        // contain `=` or other separators without round-trip loss.
-        for (i, (name, value)) in enum_decl.values.iter().enumerate() {
-            let variant_id = format!("{enum_id}#{i}");
-            triples.push(Triple::new(&enum_id, "ogar:hasVariant", variant_id.clone()));
-            triples.push(Triple::new(&variant_id, "rdf:type", "ogar:EnumVariant"));
-            triples.push(Triple::new(&variant_id, "ogar:variantName", name.clone()));
-            triples.push(Triple::new(&variant_id, "ogar:variantValue", value.clone()));
+        // EnumSource has three variants — emit different triples for each
+        // to preserve Odoo's `selection=lambda` and `selection_add=` cases
+        // beyond the simple static list.
+        match &enum_decl.source {
+            ogar_vocab::EnumSource::Static(values) => {
+                triples.push(Triple::new(&enum_id, "ogar:enumSourceKind", "ogar:Static"));
+                for (i, (name, value)) in values.iter().enumerate() {
+                    let variant_id = format!("{enum_id}#{i}");
+                    triples.push(Triple::new(&enum_id, "ogar:hasVariant", variant_id.clone()));
+                    triples.push(Triple::new(&variant_id, "rdf:type", "ogar:EnumVariant"));
+                    triples.push(Triple::new(&variant_id, "ogar:variantName", name.clone()));
+                    triples.push(Triple::new(&variant_id, "ogar:variantValue", value.clone()));
+                }
+            }
+            ogar_vocab::EnumSource::Computed(body) => {
+                triples.push(Triple::new(&enum_id, "ogar:enumSourceKind", "ogar:Computed"));
+                triples.push(Triple::new(&enum_id, "ogar:enumComputedBody", body.clone()));
+            }
+            ogar_vocab::EnumSource::Add { items, parent_selection } => {
+                triples.push(Triple::new(&enum_id, "ogar:enumSourceKind", "ogar:Add"));
+                triples.push(Triple::new(
+                    &enum_id,
+                    "ogar:enumParentSelection",
+                    parent_selection.clone(),
+                ));
+                for (i, (name, value)) in items.iter().enumerate() {
+                    let variant_id = format!("{enum_id}#add{i}");
+                    triples.push(Triple::new(&enum_id, "ogar:hasVariant", variant_id.clone()));
+                    triples.push(Triple::new(&variant_id, "rdf:type", "ogar:EnumVariant"));
+                    triples.push(Triple::new(&variant_id, "ogar:variantName", name.clone()));
+                    triples.push(Triple::new(&variant_id, "ogar:variantValue", value.clone()));
+                }
+            }
+            _ => {
+                // Future non_exhaustive EnumSource variants — emit a
+                // marker triple but don't panic. Real producers must
+                // upgrade to handle.
+                triples.push(Triple::new(&enum_id, "ogar:enumSourceKind", "ogar:Unknown"));
+            }
         }
         if let Some(disabled) = enum_decl.scopes_disabled {
             triples.push(Triple::new(
@@ -562,7 +590,10 @@ mod tests {
     fn enum_emits_variant_name_and_value_separately() {
         let mut class = sample_work_package();
         let mut e = EnumDecl::new("status");
-        e.values = vec![("open".into(), "0".into()), ("closed".into(), "1".into())];
+        e.source = ogar_vocab::EnumSource::Static(vec![
+            ("open".into(), "0".into()),
+            ("closed".into(), "1".into()),
+        ]);
         e.scopes_disabled = Some(true);
         class.enums.push(e);
         let triples = TripleEmitter::emit_class(&class, "ogit-op");

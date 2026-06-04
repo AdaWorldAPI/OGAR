@@ -188,6 +188,114 @@ via a pure `From` impl. No new logic — just shape mapping.
 
 ---
 
+## Sprint 2 — Odoo carve-out + vocab gaps from brutal-review cycle 2 🟡
+
+**Goal**: lift the five BO1 gaps + the BO2 architectural decisions
+identified during the Odoo brutal-review cycle. Ships
+`docs/ODOO-TRANSCODING.md` (the carve-out doc) + vocab extensions
+covering full Odoo coverage.
+
+**Deliverables**
+- `docs/ODOO-TRANSCODING.md` — 18-section carve-out doc with 13
+  non-negotiable rules. Discovery algorithm, field-type mapping
+  table, decorator mapping, state-machine shape, `_inherit`
+  resolution algorithm, registered-prefix table sketch.
+- `crates/ogar-vocab` additions:
+  - `AttributeOptions` struct (required/default/translate/tracking/
+    digits/size/groups/company_dependent/...).
+  - `EnumSource` enum (Static / Computed / Add) replacing flat values.
+  - Class metadata: description, record_order, rec_name,
+    check_company_auto, log_access, auto_create_table,
+    abstract_model, transient, declared_in_module, source_version,
+    computed_fields, methods.
+  - `ComputedField` struct (lifted from ext to base).
+  - `MethodDecl` struct + `MethodKind` enum + `RecordSemantics` enum.
+  - Association: `ondelete`, `auto_join`, `context_source`,
+    `check_company`, `delegate`.
+- `vocab/ogar.ttl` — RDF predicates + OWL classes for all new types.
+- Cross-references in `docs/IDENTITY-MAPPING.md`.
+
+**Acceptance**
+- `cargo check --workspace` clean.
+- `cargo test --workspace` green.
+- Sprint 1 tests still pass after vocab additions.
+
+**Dependencies**: Sprint 1.
+
+---
+
+## Sprint 2.5 — `vocab/ogar-bridges.ttl` cross-vocabulary mappings ⬜
+
+**Goal**: implement the SKOS-design-paper principle "defer to
+existing vocabularies" by curating `owl:equivalentProperty` and
+`skos:exactMatch` mappings between OGAR terms and existing W3C /
+community vocabularies (PROV, Dublin Core, FOAF, SKOS).
+
+**Deliverables**
+- `vocab/ogar-bridges.ttl` with:
+  ```turtle
+  ogar:declaredIn owl:equivalentProperty prov:wasDerivedFrom .
+  ogar:description owl:equivalentProperty dc:description .
+  ogar:MemberOf skos:exactMatch ruby:belongs_to , odoo:Many2one ,
+                                 ecto:belongs_to , django:ForeignKey .
+  ogar:OwnsMany skos:exactMatch ruby:has_many , odoo:One2many ,
+                                 ecto:has_many .
+  ...
+  ```
+- A doc section in `docs/IDENTITY-MAPPING.md` referencing the
+  bridges file.
+- The "transitivity trap" warning from Freytag BA §6.2.3:
+  cross-vocab `skos:exactMatch` chains can produce false
+  equivalences. Document the limit; recommend `skos:closeMatch`
+  where semantics differ subtly.
+
+**Dependencies**: Sprint 2.
+
+---
+
+## Sprint 2.6 — `crates/ogar-conformance` fixture corpus ⬜
+
+**Goal**: build the producer-conformance test gate identified as
+BO2 #2. Every producer (`ogar-from-ruff`, `ogar-python`, future
+`ogar-sql-ddl`) runs this suite as a `cargo test` gate. Drift
+detection by construction.
+
+**Deliverables**
+- `crates/ogar-conformance/` with `fixtures/` directory containing
+  per-Role subdirectories: `member_of/`, `owns_many/`, etc.
+- Each fixture: source snippet + expected `ogar_vocab::Class` IR +
+  expected triples via `TripleEmitter`.
+- `assert_conforms!(producer, fixture_dir)` macro.
+- Initial fixture set: 5 fixtures per role (Ruby AR, Odoo, Django,
+  Ecto, SQL DDL) for the 4 core associations + Include + Attribute
+  + Enum + Validation + Callback.
+
+**Acceptance**
+- Fixtures parse cleanly.
+- The macro fails loudly on any mismatch with explanatory diff.
+
+**Dependencies**: Sprint 2.
+
+---
+
+## Sprint 2.7 — Registered-prefix table impl + producer integration ⬜
+
+**Goal**: implement the registered-prefix table sketched in
+ODOO-TRANSCODING.md §14 so cross-language identity collisions are
+impossible by construction (per BO2 #1).
+
+**Deliverables**
+- `ogar-ontology::REGISTRY` static table mapping prefix → source
+  language.
+- `validate_prefix_for_lang(prefix, lang) -> Result<(), PrefixError>`.
+- All producer crates call this before emitting any triples.
+- Error path: clear messages distinguishing "unregistered prefix"
+  from "language mismatch".
+
+**Dependencies**: Sprint 2.
+
+---
+
 ## Sprint 1g — API + perf refactor (from brutal-review CB2/CB3) ⬜
 
 **Goal**: apply the deferred API and performance fixes.
