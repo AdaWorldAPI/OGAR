@@ -34,40 +34,178 @@
 
 ---
 
-## Sprint 1 — `ogar-emitter` trait + ruff_ruby_spo adapter ⏳
+## Sprint 1 — `ogar-emitter` trait + vocab/ontology hardening 🟡
 
-**Goal**: prove the canonical IR by lifting a real producer onto it,
-keeping the existing producer code working unchanged.
+**Goal**: ship the emitter trait + a default SPO triple implementation,
+plus apply the brutal-review correctness fixes to vocab/ontology.
 
 **Deliverables**
-- `crates/ogar-emitter/` — defines `OgarEmitter` trait + `Triple` type:
-  ```rust
-  pub trait OgarEmitter {
-      fn emit_class(class: &ogar_vocab::Class, prefix: &str) -> Vec<Triple>;
-      fn emit_association(assoc: &ogar_vocab::Association, owner: &str, prefix: &str) -> Vec<Triple>;
-      // ... one method per top-level vocab type
-  }
-  ```
-- `crates/ogar-from-ruff/` — adapter crate that consumes
-  `ruff_ruby_spo::RubyClass` and produces `ogar_vocab::Class`. Pure
-  `From<&RubyClass> for Class` impl, no new logic.
-- Round-trip test: a real-OP `WorkPackage` model → OGAR IR → triples
-  matching the existing `op-codegen-pipeline` output (within the
-  fields that overlap).
+- `crates/ogar-emitter/` — `OgarEmitter` trait + `Triple` type +
+  `TripleEmitter` default implementation. 13 tests covering
+  rdf:type emission, association subgraphs, scope_source capture,
+  enum variant name/value separation, duplicate-callback indexing,
+  mixin-through-class-identity, scope_predeclaration, collection
+  callbacks (before/after_add/remove), Unknown-fallback discipline.
+- `crates/ogar-vocab/` — `#[non_exhaustive]` on every public struct
+  + enum (Class, Association, EnumDecl, StoreAccessor, Attribute,
+  Scope, Callback, Validation, AssociationKind, Language). Added
+  `Association.scope_source` for Rails `has_many :x, -> { ... }`,
+  Django `limit_choices_to`, Odoo `domain=[...]`. Constructors
+  (`Class::new(name)`, `Association::new(kind, name)`, etc.) for
+  external crates blocked by `#[non_exhaustive]`.
+- `crates/ogar-ontology/` — `class_identity_versioned()` for hot-
+  reload addressing, `tenant_prefix()` for multi-tenancy. Identity-
+  collision fixes for Enum/Store/Attribute on shared column names
+  (distinct `::enum::` / `::store::` / bare-attribute namespaces).
+- `vocab/ogar.ttl` — `ogar:scopeSource` predicate added.
+- `vocab/ogar.surql` — `scope_source` field added to ogar_association.
+- `docs/IDENTITY-MAPPING.md` — carved semantics for the Role enum,
+  Identity struct, path syntax variants, edge cases. The
+  drift-prevention contract.
 
 **Acceptance**
-- `cargo test -p ogar-from-ruff` passes.
-- `cargo test -p ogar-emitter` passes.
-- The triples emitted match `op-codegen-pipeline`'s current output
-  shape for at least one real model.
+- `cargo check --workspace` clean.
+- `cargo test --workspace` green (30+ tests).
+- All brutal-review CB1 correctness fixes landed (subject collisions
+  resolved, Unknown fallback explicit, mixins routed through
+  class_identity).
 
 **Dependencies**: Sprint 0.
 
-**Risks**
-- Field naming drift between `RubyClass` and `ogar::Class` — handled
-  by keeping the adapter pure `From` with no semantics change.
-- `body_source` opaqueness — fields stay verbatim strings on the OGAR
-  side too.
+**Deferred to follow-up sprints**
+- `crates/ogar-from-ruff/` (Ruby AR adapter) → split to Sprint 1f
+  due to cross-repo `ruff_ruby_spo` dependency.
+- API refactors from brutal-review CB2 (streaming sink, EmitContext,
+  Cow Triple) → deferred to Sprint 1g.
+- Perf wins from CB3 (with_capacity, owner_id reuse, #[inline]) →
+  partially landed (with_capacity in emit_class); rest deferred to
+  Sprint 1g.
+
+---
+
+## Sprint 1c — `Identity` struct + parser + serializers ⏳
+
+**Goal**: implement the canonical `Identity` IR (per
+`docs/IDENTITY-MAPPING.md`) so identity strings round-trip
+losslessly across compact / pathlike / Elixir / dotted forms. Each
+session writes the syntax that feels intuitive; the parser
+normalizes.
+
+**Deliverables**
+- `crates/ogar-ontology/` — add `Identity` struct + `Role` enum (full
+  variants from MAPPING.md §2). Replace the three free-function
+  helpers (`class_identity`, `field_identity`, `association_identity`)
+  with `Identity::class()`, `Identity::association()`, etc.
+- `Identity::parse(&str) -> Result<Identity, ParseError>` accepting
+  all five syntax variants from MAPPING.md §3.
+- Serializers: `to_canonical()`, `to_compact()`, `to_pathlike()`,
+  `to_dotted()`. Each round-trips: `parse(x.to_pathlike()) == x` for
+  any valid Identity x.
+- ROLE_KEYWORDS table from MAPPING.md §7.1 as a `phf` lookup.
+- Property-tests (proptest crate) over the round-trip invariant.
+
+**Acceptance**
+- Round-trip property tests pass for ≥1000 random identities.
+- Parser accepts every example string in MAPPING.md §3.
+- Cross-syntax equivalence:
+  `parse("ogit-op/WorkPackage->project") ==
+   parse("ogit-op::WorkPackage::memberof::project") ==
+   parse("OgitOp.WorkPackage.belongs_to.project")`.
+
+**Dependencies**: Sprint 1, `docs/IDENTITY-MAPPING.md`.
+
+---
+
+## Sprint 1d — Elixir module-path serializer + parser variant ⬜
+
+**Goal**: native Elixir/Ecto-style identity strings. PascalCase
+module paths, dotted role words, `use` instead of `include`,
+`many_to_many` instead of HABTM/through.
+
+**Deliverables**
+- `Identity::to_elixir() -> String` per MAPPING.md §3.3.
+- Parser variant accepting `Acme.OgitOp.WorkPackage.has_many.line_items`
+  and pinned form `OgitOp.WorkPackage.v3.has_many.line_items`.
+- Prefix PascalCase normalization (`ogit-op` ⇆ `OgitOp`,
+  `ogar-extensions` ⇆ `OgarExtensions`).
+- Bidirectional tests covering the four canonical Ecto association
+  macros + `use M` mixin.
+
+**Acceptance**
+- Round-trip with Sprint 1c canonical form.
+- Examples from MAPPING.md §3.3 all parse and re-emit identically.
+
+**Dependencies**: Sprint 1c.
+
+---
+
+## Sprint 1e — OTP `:via`-tuple emission helper ⬜
+
+**Goal**: produce Erlang-wire-compatible identity tuples for the
+eventual Elixir-side companion of `lance-graph-callcenter`. Same
+`Identity` struct can be serialized as an Erlang term for use with
+`{:via, Registry, ...}` GenServer naming.
+
+**Deliverables**
+- `Identity::to_erlang_via(registry: &str) -> String` emitting:
+  ```
+  {:via, OgitOp.Registry, {OgitOp.WorkPackage, :has_many, :line_items}}
+  ```
+- Optional: `Identity::to_erlang_term()` for raw term form (for
+  log/trace).
+- Smoke test against a hand-written Elixir parser fixture (no
+  Elixir build dependency — the test verifies the string matches
+  Elixir's syntax exactly).
+
+**Acceptance**
+- Output strings parse cleanly with Elixir's `Code.string_to_quoted/1`
+  (verified via fixture string-match).
+
+**Dependencies**: Sprint 1d.
+
+---
+
+## Sprint 1f — `ogar-from-ruff` adapter (ruff_ruby_spo → ogar::Class) ⬜
+
+**Goal**: lift the openproject-nexgen-rs C17a-c stable shape
+(`RubyClass`, `AssociationDecl`, `ScopeDecl`, etc.) into `ogar::Class`
+via a pure `From` impl. No new logic — just shape mapping.
+
+**Deliverables**
+- `crates/ogar-from-ruff/` with `From<&RubyClass> for ogar_vocab::Class`.
+- Git dependency on `openproject-nexgen-rs` (subdir crate via
+  `package = "ruff_ruby_spo"` Cargo hint).
+- Round-trip test: real OP WorkPackage model → RubyClass → OGAR IR
+  → triples (via TripleEmitter) → identity match against the
+  existing `op-codegen-pipeline` output.
+
+**Acceptance**
+- `cargo test -p ogar-from-ruff` passes.
+- Triple set for WorkPackage matches the C17c output for the
+  overlapping fields.
+
+**Dependencies**: Sprint 1, Sprint 1c.
+
+---
+
+## Sprint 1g — API + perf refactor (from brutal-review CB2/CB3) ⬜
+
+**Goal**: apply the deferred API and performance fixes.
+
+**Deliverables**
+- `OgarEmitter` becomes a `&mut self` sink trait:
+  ```rust
+  pub trait OgarEmitter {
+      fn emit(&mut self, item: Emit, ctx: &EmitContext);
+  }
+  ```
+- `EmitContext<'a>` carries prefix/tenant/owner.
+- `Triple<'a>` uses `Cow<'a, str>` + `&'static str` for predicates.
+- `Vec::with_capacity` everywhere; `#[inline]` on hot helpers.
+- Sink-API benchmark vs current Vec-API: target ≥30% allocation
+  reduction on a 100-class corpus.
+
+**Dependencies**: Sprint 1c.
 
 ---
 

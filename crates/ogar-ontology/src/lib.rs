@@ -95,6 +95,53 @@ pub fn association_identity(prefix: &str, class_name: &str, relation_name: &str)
     format!("{prefix}/{class_name}->{relation_name}")
 }
 
+/// Build a **versioned** class identity for ontology evolution and hot
+/// reload addressing. The `@v<n>` suffix distinguishes vocabulary
+/// versions of the same class so the runtime callcenter can route
+/// in-flight messages to the old actor version while new messages go
+/// to the new one.
+///
+/// Use the unversioned [`class_identity`] for the latest-version
+/// addressing pattern; use this when versioned addressing is required
+/// (callcenter dispatch, schema evolution audit, multi-version
+/// queries).
+///
+/// # Examples
+///
+/// ```
+/// use ogar_ontology::class_identity_versioned;
+/// assert_eq!(
+///     class_identity_versioned("ogit-op", "WorkPackage", 3),
+///     "ogit-op/WorkPackage@v3"
+/// );
+/// ```
+#[must_use]
+pub fn class_identity_versioned(prefix: &str, class_name: &str, version: u64) -> String {
+    format!("{prefix}/{class_name}@v{version}")
+}
+
+/// Build a **tenant-scoped** prefix for multi-tenancy isolation.
+/// Routes the same canonical OGAR identity to a per-tenant slice
+/// without leaking across tenants under the prefix-radix index.
+///
+/// The tenant segment leads, separated from the prefix by `.`, so
+/// `acme.ogit-op/WorkPackage` and `globex.ogit-op/WorkPackage`
+/// share the `ogit-op/WorkPackage` suffix for vocabulary lookup but
+/// route to distinct dataset partitions under the radix.
+///
+/// # Examples
+///
+/// ```
+/// use ogar_ontology::{tenant_prefix, class_identity};
+/// let acme = tenant_prefix("acme", "ogit-op");
+/// assert_eq!(acme, "acme.ogit-op");
+/// assert_eq!(class_identity(&acme, "WorkPackage"), "acme.ogit-op/WorkPackage");
+/// ```
+#[must_use]
+pub fn tenant_prefix(tenant: &str, prefix: &str) -> String {
+    format!("{tenant}.{prefix}")
+}
+
 /// Returns `true` if `prefix` is a reserved top-level OGAR prefix.
 #[must_use]
 pub fn is_reserved_prefix(prefix: &str) -> bool {
@@ -129,5 +176,30 @@ mod tests {
     fn dotted_names_preserved() {
         // Odoo class names like `sale.order` stay verbatim.
         assert_eq!(class_identity("ogit-erp", "sale.order"), "ogit-erp/sale.order");
+    }
+
+    #[test]
+    fn versioned_identity_format() {
+        assert_eq!(
+            class_identity_versioned("ogit-op", "WorkPackage", 1),
+            "ogit-op/WorkPackage@v1"
+        );
+        assert_eq!(
+            class_identity_versioned("ogit-op", "WorkPackage", 42),
+            "ogit-op/WorkPackage@v42"
+        );
+    }
+
+    #[test]
+    fn tenant_prefix_isolation() {
+        let acme = tenant_prefix("acme", "ogit-op");
+        let globex = tenant_prefix("globex", "ogit-op");
+        assert_ne!(
+            class_identity(&acme, "WorkPackage"),
+            class_identity(&globex, "WorkPackage")
+        );
+        // Same canonical suffix, distinct tenant prefixes.
+        assert!(class_identity(&acme, "WorkPackage").ends_with("/WorkPackage"));
+        assert!(class_identity(&globex, "WorkPackage").ends_with("/WorkPackage"));
     }
 }

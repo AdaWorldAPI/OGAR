@@ -53,6 +53,9 @@ DEFINE FIELD as_target   ON TABLE ogar_association TYPE option<string>;
 DEFINE FIELD dependent   ON TABLE ogar_association TYPE option<string>;
 DEFINE FIELD optional    ON TABLE ogar_association TYPE option<bool>;
 DEFINE FIELD inverse_of  ON TABLE ogar_association TYPE option<string>;
+DEFINE FIELD scope_source ON TABLE ogar_association TYPE option<string>;
+-- scope_source: Rails has_many :x, -> { where(...) } / Django limit_choices_to /
+-- Odoo Many2one(..., domain=[...]) — verbatim lambda body.
 DEFINE FIELD before_add    ON TABLE ogar_association TYPE option<string>;
 DEFINE FIELD after_add     ON TABLE ogar_association TYPE option<string>;
 DEFINE FIELD before_remove ON TABLE ogar_association TYPE option<string>;

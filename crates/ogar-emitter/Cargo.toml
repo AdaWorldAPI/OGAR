@@ -1,0 +1,18 @@
+[package]
+name = "ogar-emitter"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+description = "Open Graph of Active Record — Triple type and OgarEmitter trait for converting OGAR IR to graph triples"
+
+[features]
+default = []
+serde = ["dep:serde", "ogar-vocab/serde"]
+
+[dependencies]
+ogar-vocab = { path = "../ogar-vocab" }
+ogar-ontology = { path = "../ogar-ontology" }
+serde = { workspace = true, optional = true }
