@@ -1,0 +1,28 @@
+[package]
+name = "ogar-from-elixir"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+description = "SCAFFOLD: Elixir (Ecto / GenServer / gen_statem / Phoenix / Oban) frontend for OGAR-wide IR. Walks an Elixir source tree and fills Class + ActionDef per the OLD HIRO/Bardioc stack prefetch ledger (docs/ELIXIR-HIRO-PREFETCH.md §2). Extraction points are todo!() stubs documented with the exact Elixir construct to read; the target OGAR shape is already locked by passing tests."
+
+[features]
+default = []
+serde = ["dep:serde", "ogar-vocab/serde"]
+
+[dependencies]
+ogar-vocab = { path = "../ogar-vocab" }
+serde = { workspace = true, optional = true }
+
+# TODO(frontend): add an Elixir parser when wiring real extraction. Options:
+#   - tree-sitter + tree-sitter-elixir (recommended): battle-tested grammar,
+#     incremental, handles syntax variations across Elixir 1.13–1.18+.
+#   - A thin hand-written lexer if the production stays narrow (e.g. only
+#     defmodule + use + def signatures).
+# Neither is pulled in yet — the scaffold compiles with zero parser deps so
+# the target OGAR shape can be locked first.
+
+[lints]
+workspace = true
