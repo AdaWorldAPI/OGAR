@@ -114,7 +114,8 @@ Each AR callback / `acts_as_*` callback / business method becomes an
 | `before_save :update_done_ratio_from_status` (`work_package.rb:146`) | same shape; `on_enter = Some(EnterEffect { field: "done_ratio", to_value: <derived> })` for the structural transition |
 | `before_create :default_assign` (`work_package.rb:147`) | `kausal=LifecycleTrigger{event:"create"}`, `default_modal=Atomic` |
 | `around_destroy :save_agenda_item_journals, prepend: true, if: -> { … }` (`work_package.rb:150`) | `kausal=LifecycleTrigger{event:"destroy"}` + conditional guard → `KausalSpec::StateGuard` |
-| `after_save :unmark_old_default_value, if: :is_default?` (`status.rb:50`) | `default_temporal=OnCommit` (after_save fires post-commit in Rails), `kausal=StateGuard{field:"is_default", value:true}` |
+| `after_save :unmark_old_default_value, if: :is_default?` (`status.rb:50`) | `default_temporal=Immediate` (after_save runs **inside** the surrounding transaction; raising from it rolls back the save), `kausal=StateGuard{field:"is_default", value:true}` |
+| `after_commit :notify_subscribers` (Rails pattern) | `default_temporal=OnCommit` (runs **after** the transaction commits; cannot roll back the save). This is the only AR callback that maps to `OnCommit` — the `after_*` family without `_commit` all run in-transaction. |
 | `before_destroy :check_integrity` (`status.rb:33`) | `kausal=LifecycleTrigger{event:"destroy"}`; raises → `guard_failure_policy=Reject` → `Pending→Failed` |
 | `scope :visible, ->(user) { allowed_to(user, :view_work_packages) }` (`work_package.rb:85`) | not an `ActionDef` — scopes are query rewrites → `Scope` on the `Class` |
 | `validates :name, presence: true, ...` (`status.rb:41`) | `Validation`; if it fails, the producer emits an `ActionDef` for the failing-save path (`Pending→Failed`) |
@@ -173,12 +174,18 @@ CommitHook::on_commit(Pending, Committed, ctx) -> Result<(), ActorProcessingErr>
    3. self.membrane.commit_event(row);   // lance-graph PR #467 — returns new Lance version
    Ok(())
 
-After-commit cascade (after_save / after_commit callbacks fire AS Cascade ActionInvocations):
+In-transaction cascade (after_save callbacks fire AS Cascade ActionInvocations, default_temporal=Immediate;
+their failure rolls back the parent save):
    - unmark_old_default_value (Status side, on its own Pending→Committed lifecycle)
-   - notification side-effects (Notification model invocations)
    - paper-trail entry (has_paper_trail) — already absorbed into the Lance version log; the
      PaperTrail::Version row becomes a derived projection of the Lance version, not a
      separate write
+
+Post-commit cascade (only after_commit callbacks fire here, default_temporal=OnCommit;
+side-effects are observable to the world but no longer rollback-safe):
+   - notification side-effects (e.g. Notification model invocations triggered by after_commit)
+   - external integrations (webhooks, email enqueue) — anything that must not run during a
+     transaction that might still abort
 ```
 
 Key observation: **`has_paper_trail` + Lance versions are a degenerate
