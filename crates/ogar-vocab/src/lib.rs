@@ -327,6 +327,43 @@ pub struct ActionDef {
     /// Decorator names that drove the extraction (Odoo `@api.depends`,
     /// Rails callback macro name).
     pub decorators: Vec<String>,
+
+    // ── Rubicon statem carriers (OGAR-AST-CONTRACT §6) ──
+    // The three semantics that don't survive Action-flattening; each lowers
+    // onto `ractor_actors::state_machine` with `State = ActionState`.
+    /// Entry effect fired on entering `Committed` (the Rubicon crossing) —
+    /// typically the domain transition + side effects. Emitted as
+    /// `ogar:onEnter`; lowers to `StateMachine::on_enter` / the `CommitHook`.
+    /// Free-form today; a typed `EnterEffect` is a tracked follow-up.
+    pub on_enter: Option<String>,
+    /// Disposition when the Kausal `StateGuard` fails: `Postponable` (stay
+    /// `Pending`, replay) vs `Reject` (`Pending → Failed`, the default).
+    /// Emitted as `ogar:guardFailurePolicy`.
+    pub guard_failure_policy: Option<GuardFailurePolicy>,
+    /// Per-state SLA deadline on `Pending`, in milliseconds. Emitted as
+    /// `ogar:stateTimeoutMillis`; the gen-stamped timer auto-cancels at the
+    /// `Pending → Committed` crossing.
+    pub state_timeout_millis: Option<i64>,
+}
+
+/// Disposition when a `KausalSpec::StateGuard` is not satisfied — the Modal
+/// sub-property for the Rubicon statem lowering (OGAR-AST-CONTRACT §6).
+/// `#[non_exhaustive]` per the vocabulary forward-compat convention.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[non_exhaustive]
+pub enum GuardFailurePolicy {
+    /// Transient failure — stay `Pending` and replay after the next
+    /// transition. Lowers to `Transition::Postpone`.
+    Postponable,
+    /// Hard failure — `Pending → Failed` (the default).
+    Reject,
+}
+
+impl Default for GuardFailurePolicy {
+    fn default() -> Self {
+        Self::Reject
+    }
 }
 
 /// A runtime invocation of an `ActionDef` — one per (S, P, O, context)

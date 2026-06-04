@@ -440,6 +440,7 @@ fn language_tag(lang: ogar_vocab::Language) -> &'static str {
         Language::Sql => "sql_v1",
         Language::TypeScript => "typescript_v1",
         Language::SurrealQl => "surrealql_v1",
+        Language::Elixir => "elixir_v1",
         _ => "unknown_v1",
     }
 }

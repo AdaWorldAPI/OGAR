@@ -16,7 +16,7 @@ USE NS ogar DB ogar;
 -- ─────────────────────────────────────────────────────────────────────
 
 DEFINE FIELD language ON TABLE ogar_class TYPE option<string>
-    ASSERT $value IS NONE OR $value IN ['Ruby', 'Python', 'Sql', 'TypeScript', 'SurrealQl', 'Unknown'];
+    ASSERT $value IS NONE OR $value IN ['Ruby', 'Python', 'Sql', 'TypeScript', 'SurrealQl', 'Elixir', 'Unknown'];
 
 -- ─────────────────────────────────────────────────────────────────────
 -- The canonical Class table

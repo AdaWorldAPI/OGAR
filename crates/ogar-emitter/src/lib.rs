@@ -673,6 +673,21 @@ impl TripleEmitter {
         if let Some(ref k) = def.kausal {
             triples.extend(kausal_triples(&id, k));
         }
+        // Rubicon statem carriers (OGAR-AST-CONTRACT §6). Emitted only when
+        // present so non-statem ActionDefs stay clean.
+        if let Some(ref e) = def.on_enter {
+            triples.push(Triple::new(&id, "ogar:onEnter", e.clone()));
+        }
+        if let Some(p) = def.guard_failure_policy {
+            triples.push(Triple::new(
+                &id,
+                "ogar:guardFailurePolicy",
+                guard_failure_policy_to_ogar(p),
+            ));
+        }
+        if let Some(ms) = def.state_timeout_millis {
+            triples.push(Triple::new(&id, "ogar:stateTimeoutMillis", ms.to_string()));
+        }
         triples
     }
 
@@ -833,8 +848,19 @@ fn language_to_ogar(lang: ogar_vocab::Language) -> &'static str {
         Language::Sql => "ogar:Sql",
         Language::TypeScript => "ogar:TypeScript",
         Language::SurrealQl => "ogar:SurrealQl",
+        Language::Elixir => "ogar:Elixir",
         Language::Unknown => "ogar:Unknown",
         _ => "ogar:Unknown",
+    }
+}
+
+fn guard_failure_policy_to_ogar(p: ogar_vocab::GuardFailurePolicy) -> &'static str {
+    use ogar_vocab::GuardFailurePolicy;
+    match p {
+        GuardFailurePolicy::Postponable => "ogar:Postponable",
+        GuardFailurePolicy::Reject => "ogar:Reject",
+        // Forward-compat: unknown future policies emit the safe default.
+        _ => "ogar:Reject",
     }
 }
 
@@ -1268,6 +1294,42 @@ mod tests {
         assert!(triples.iter().any(|t| t.predicate == "ogar:parentInvocation"));
         assert!(triples.iter().any(|t| t.predicate == "ogar:idempotencyKey" && t.object == "confirm-sale-order-42"));
         assert!(triples.iter().any(|t| t.predicate == "ogar:actionTenant" && t.object == "acme"));
+    }
+
+    #[test]
+    fn action_def_emits_rubicon_statem_carriers() {
+        // Codex P2 (#10): the three §6 carriers must reach the triples.
+        let mut def = ogar_vocab::ActionDef::new(
+            "ogit-erp/sale.order::action_def::action_confirm",
+            "action_confirm",
+            "ogit-erp/sale.order",
+        );
+        def.on_enter = Some("draft-to-sale".into());
+        def.guard_failure_policy = Some(ogar_vocab::GuardFailurePolicy::Postponable);
+        def.state_timeout_millis = Some(30_000);
+        let t = TripleEmitter::emit_action_def(&def);
+        assert!(t.iter().any(|x| x.predicate == "ogar:onEnter" && x.object == "draft-to-sale"));
+        assert!(t
+            .iter()
+            .any(|x| x.predicate == "ogar:guardFailurePolicy" && x.object == "ogar:Postponable"));
+        assert!(t
+            .iter()
+            .any(|x| x.predicate == "ogar:stateTimeoutMillis" && x.object == "30000"));
+    }
+
+    #[test]
+    fn elixir_language_does_not_collapse_to_unknown() {
+        // Codex P2 (#10): Language::Elixir must propagate, not silently
+        // become ogar:Unknown.
+        let mut class = ogar_vocab::Class::new("Account");
+        class.language = ogar_vocab::Language::Elixir;
+        let triples = TripleEmitter::emit_class(&class, "ogit-hiro");
+        assert!(
+            triples
+                .iter()
+                .any(|t| t.predicate == "ogar:sourceLanguage" && t.object == "ogar:Elixir"),
+            "Elixir must emit ogar:Elixir, not ogar:Unknown"
+        );
     }
 
     #[test]
