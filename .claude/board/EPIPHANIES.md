@@ -15,6 +15,52 @@
 
 ## Entries (newest first)
 
+## 2026-06-04 — Sprint 7 muscle-memory is canonical; the OGAR#7 std::sync correction round-tripped
+**Status:** FINDING
+**Scope:** Sprint 7 wiring spec × three-way alignment (Kanban/ractor/SurrealQL) × cross-session correction round-trip
+
+The parallel session restructured to *"awareness IS the architecture;
+standing wave is emergent"* and handed back `STANDING_WAVE_ARCHITECTURE.md`
+§1.6 as ready-to-wire Sprint 7 **muscle memory** — the shape OGAR wires
+against without guessing.
+
+**The correction round-tripped (boundary working both ways):** OGAR#7
+corrected the tokio→std::sync hot-loop violation (I-2); the other
+session absorbed it into their canonical doc — their secondary ractor
+mailbox now uses `std::sync::{Mutex<VecDeque>, Condvar}`, never tokio in
+the hot loop. A correction OGAR surfaced flowed into the canonical
+architecture and back into OGAR's Sprint 7 spec.
+
+**The three-way alignment — one key, one axis, one schema:**
+all three Sprint 7 surfaces (Kanban / ractor mailbox / SurrealQL AST)
+share `class_id` (= OGAR `Identity`, NiblePath HHTL) + `lance_version`
+(= the awareness axis: commit / V_ref / `knowable_from`) +
+`CognitiveEventRow`. **OGAR's Identity is the join key across all
+three.**
+
+**OGAR-side Sprint 7 responsibilities (recorded, not built):**
+- `class_id` = OGAR `Identity` (shipped, Sprint 1).
+- DDL → `knowable_from`: the SurrealQL adapter (Sprint 4.5) parses
+  `DEFINE TABLE` → `ogar::Class`; the class-registry write at `V_class`
+  sets `knowable_from` for that class's rows. One extra `u64` column,
+  no new storage (time travel is free; `checkout_version(V_ref)` is the
+  primitive).
+- `ClassActor::run` = std::sync Condvar (park on `wait_changed()`,
+  epistemic filter per rung, dispatch with status tag).
+- Secondary ractor mailbox = `std::sync::{Mutex<VecDeque>, Condvar}`
+  for SLA-coord; never tokio in the hot loop.
+- No new contracts: existing crates (vocab / emitter / proposal /
+  vocab-soa) + upstream (`CognitiveEventRow` / `LanceVersionWatcher`)
+  provide every surface.
+
+**Posture:** ready-to-build, holding for the user's signal + the
+cross-repo protoc build. The muscle-memory means the eventual wiring is
+canonical, not a guess. Captured in `docs/TEMPORAL-TIME-TRAVEL.md` §5.
+
+**Cross-ref:** `docs/TEMPORAL-TIME-TRAVEL.md` §5, the other session's
+`STANDING_WAVE_ARCHITECTURE.md` §1.5/§1.6, OGAR#7 (the round-tripped
+correction), PLAN.md Sprint 7.
+
 ## 2026-06-04 — Decision #3 SHIPPED (LanceVersionWatcher/Condvar) + decision #4 surfaced (emitted_at→HLC)
 **Status:** FINDING
 **Scope:** Sprint 7 unblock+correction × temporal-epistemology boundary × ActionInvocation HLC alignment

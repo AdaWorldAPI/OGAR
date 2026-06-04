@@ -149,7 +149,69 @@ OGAR does NOT define the HLC type (that's the callcenter's
 | 6 (cache invalidation) | The version-tick → cache-invalidate reaction IS the `LanceVersionWatcher` subscription. OGAR owns the integration test that a tick fires the reaction. |
 | — (epistemology query layer) | NOT OGAR. `lance-graph-planner` owns `QueryReference`/`EpistemicMode`; `lance-graph-callcenter` owns the HLC stamp. OGAR consumes. |
 
-## 5. Holding pattern (matching the other session)
+## 5. Sprint 7 muscle-memory (canonical wiring — wire-against-on-signal)
+
+The parallel session promoted the awareness model to canonical
+(`STANDING_WAVE_ARCHITECTURE.md` §1.5/§1.6, *"awareness IS the
+architecture; standing wave is emergent"*) and handed back §1.6 as
+ready-to-wire Sprint 7 material. **The OGAR#7 std::sync correction
+round-tripped**: their secondary ractor mailbox now uses
+`std::sync::{Mutex<VecDeque>, Condvar}`, never tokio in the hot loop —
+the cross-session boundary working both ways.
+
+### 5.1 The three-way alignment (one key, one axis, one schema)
+
+All three Sprint 7 surfaces share the SAME key, axis, and schema:
+
+| | Kanban | ractor mailbox | SurrealQL AST |
+|---|---|---|---|
+| **Shared key** | `class_id` (NiblePath HHTL) | `class_id` (handles set) | `class_id` (OGAR resolves from `DEFINE TABLE` name) |
+| **Shared axis** | `lance_version` (commit) | `V_ref` (actor awareness) | `knowable_from` (DDL commit) |
+| **Shared schema** | `CognitiveEventRow` columns | reads `Arc<CognitiveEventRow>` | drives schema via `ogar-vocab-soa` |
+| **Mechanism** | Lance commit → `watcher.bump` | `wait_changed()` Condvar park | DDL commit → class-registry row |
+
+**The shared key is OGAR's `Identity` (NiblePath HHTL).** That confirms
+OGAR's Identity is the join key across all three surfaces — Sprint 7
+dispatch resolves everything through it.
+
+### 5.2 OGAR-side responsibilities (what Sprint 7 actually wires)
+
+- **`class_id` = OGAR `Identity`** — already shipped (Sprint 1). The
+  Kanban row, the ractor handle set, and the SurrealQL `DEFINE TABLE`
+  name all resolve to the same NiblePath.
+- **DDL → `knowable_from`**: OGAR's SurrealQL adapter (Sprint 4.5) parses
+  `DEFINE TABLE` → `ogar::Class`; the class-registry write at `V_class`
+  sets `knowable_from` for all rows of that class. So `knowable_from` is
+  populated at class-registration time — **one extra `u64` column, no
+  new storage** (per the awareness model: time travel is free,
+  `checkout_version(V_ref)` is the primitive).
+- **`ClassActor::run` is std::sync Condvar** (OGAR#7 correction, now
+  canonical): park on `wait_changed()`, apply the epistemic filter per
+  rung, dispatch with a status tag. No tokio in the hot loop.
+- **Secondary ractor bounded mailbox** (SLA-coord queueing, distinct
+  from the Lance subscription) uses `std::sync::{Mutex<VecDeque>,
+  Condvar}` — never tokio in the hot loop.
+
+### 5.3 No new contracts
+
+The existing crates already provide the surfaces: `ogar-vocab`
+(Class / Identity), `ogar-emitter` (triples), `ogar-proposal`
+(MappingProposal), `ogar-vocab-soa` (the RecordBatch schema that drives
+the SurrealQL DDL), plus the upstream `CognitiveEventRow` +
+`LanceVersionWatcher`. **Sprint 7 is wiring, not new contracts.**
+
+### 5.4 Ready-to-build, holding for signal
+
+This is the muscle-memory shape OGAR wires against WHEN signaled — no
+guessing. Building still waits for: (a) the user's signal, (b) the
+cross-repo protoc / fork-access build. Recorded now so the wiring is
+canonical when the signal comes.
+
+**Reference (canonical):** the other session's
+`STANDING_WAVE_ARCHITECTURE.md` §1.5 (awareness model) + §1.6 (the
+muscle-memory). OGAR references, does not duplicate.
+
+## 6. Holding pattern (matching the other session)
 
 Both sessions: **FYI absorbed; not building yet.** The standing-wave
 model meets the bar without the epistemic layer; it's additive once the
@@ -159,7 +221,7 @@ cross-server scenario shows up. OGAR's posture is identical:
 - Decision #4 (emitted_at → HLC) is surfaced, not actioned.
 - OGAR does not build the planner/callcenter epistemology layers.
 
-## 6. Cross-references
+## 7. Cross-references
 
 - `docs/SOA-IMPLEMENTATION.md` §5 — the corrected runtime layer (the
   tokio sketch there is superseded by §1.1 here).
