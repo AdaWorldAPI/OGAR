@@ -26,5 +26,3 @@ serde = { workspace = true, optional = true }
 #   surrealdb-parser = { git = "https://github.com/AdaWorldAPI/surrealdb", branch = "main", optional = true }
 # Until then, parse_surrealql_ddl is a todo!() stub.
 
-[lints]
-workspace = true
