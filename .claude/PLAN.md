@@ -480,22 +480,32 @@ Lance `versions()` watch.
 > those land — building against a guessed bus contract is the rework class
 > this session exists to avoid.
 
-**Goal**: BEAM-style actor runtime per R3 verdict (Ractor),
-organized around Kanban-bounded mailboxes per `SOA-IMPLEMENTATION.md`
-§5.
+**Goal**: `ogar-runtime` is the **cold / SLA-coordination subscriber**
+to the Lance-subscription bus — NOT a hot-dispatch actor runtime. On
+each Lance version bump it reacts (cache-invalidate + WIP pull). The
+hot path (`ActionInvocation` dispatch) rides the bus bardioc owns and
+does not touch a Ractor mailbox.
 
-**Deliverables**
-- `crates/lance-graph-callcenter/` with:
-  - `ClassActor` trait built on Ractor.
-  - `KanbanMailbox<M>` — bounded WIP + pull + backpressure.
-  - Class registration from ontology triples (no manual wiring).
-  - SPO+TeKaMoLo action dispatch routing through ontology cache.
-  - Cascade routing: actor emits `RecordBatch` of downstream
-    actions; receiving actor pulls when its WIP allows.
-- Default WIP=1024 per mailbox; configurable per-class via
-  `ogar:mailboxCapacity` triple.
+**Deliverables** — ALL BLOCKED pending the 3 surfaced decisions
+(registry append API, mailbox-home confirmation, subscription-bus API
+shape; see EPIPHANIES 2026-06-04 cross-session entry). Do NOT start
+until they land:
+- `crates/ogar-runtime/` (NOT `lance-graph-callcenter` — that exists
+  upstream) implementing the **subscriber** side of
+  `ExternalMembrane`/version-watch (per `LANCE-GRAPH-INTEGRATION.md`
+  §10.3): on lance version bump → invalidate the ontology cache slice
+  + pull newly-available work respecting WIP + re-evaluate backpressure.
+- `KanbanMailbox<M>` (bounded WIP + pull + backpressure) for the
+  **SLA-coordination / cold path ONLY**. Default WIP=1024,
+  configurable per-class via `ogar:mailboxCapacity` triple.
+- `ClassActor` (Ractor) for coord/cold dispatch only. Hot
+  `ActionInvocation` dispatch is the bus's job, not this crate's.
+- The end-to-end integration test that a lance version bump fires the
+  subscription and `ogar-runtime` reacts (cache invalidated + WIP
+  pulled) — OGAR owns this test (the upstream `subscribe()` path is
+  undertested).
 
-**Dependencies**: Sprints 5, 6.
+**Dependencies**: Sprints 5, 6 + the 3 surfaced decisions.
 
 ---
 
@@ -637,25 +647,16 @@ identities at sub-microsecond cost.
 
 ---
 
-## Sprint 7 — `lance-graph-callcenter` actor runtime skeleton ⬜
-
-**Goal**: the smallest possible actor-per-class runtime. Routes one
-message type (`Find { id }`) to the right `ogar/Class` actor and
-returns the row.
-
-**Deliverables**
-- Actor trait + supervisor scaffold (probably built on `tokio` + an
-  existing actor crate — Sprint 6 brutal review will resolve which).
-- Class registration via `ogar/Class` triples (no manual wiring).
-- Message dispatch routing through the ontology cache.
-
-**Acceptance**
-- A `Find { id: 42 }` message for `ogit-op/WorkPackage` is routed to
-  the registered actor, reads the row, returns it.
-- Actor supervisor restarts a failed actor without losing other
-  classes' state.
-
-**Dependencies**: Sprint 6.
+## Sprint 7 — `lance-graph-callcenter` actor runtime skeleton — SUPERSEDED ⬜
+> **SUPERSEDED-BY the rescoped Sprint 7 (`ogar-runtime`, RENAMED + RESCOPED)
+> earlier in this file.** This is the original Sprint-0-era sketch. It is
+> WRONG on three counts now: (1) `lance-graph-callcenter` already exists
+> upstream (name collision); (2) the hot path is the Lance-subscription bus,
+> not a `Find{id}` actor mailbox (bardioc grill #9); (3) it is BLOCKED on the
+> 3 surfaced decisions. **Do NOT use this entry as a work queue** — the live
+> Sprint 7 is the rescoped `ogar-runtime` entry above. Tombstone kept per the
+> append-only-at-sprint-level convention (correction is a new entry, the old
+> row stays marked).
 
 ---
 
