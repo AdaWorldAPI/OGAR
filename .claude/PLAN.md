@@ -369,6 +369,114 @@ HHTL pattern generalizes.
 
 ---
 
+## Sprint 4 — SoA implementation: `ogar-vocab-soa` ⬜
+
+**Goal**: implement Apache Arrow RecordBatch schemas + bidirectional
+conversions for the OGAR vocab types. Per `docs/SOA-IMPLEMENTATION.md`.
+
+**Deliverables**
+- `crates/ogar-vocab-soa/` — RecordBatch schema constants for
+  `Class` and `Action`; ArrayBuilder-based conversions both ways.
+- Nested ListArray handling for `associations` / `enums` /
+  `scopes` / `callbacks` / `computed_fields` / `methods` /
+  `validations`.
+- Property tests via proptest: `classes → batch → classes` is
+  identity for ≥1000 random classes.
+
+**Dependencies**: Sprint 2.
+
+---
+
+## Sprint 4.5 — `ogar-adapter-surrealql`: bidirectional DDL ⬜
+
+**Goal**: implement the SurrealQL adapter per R4 finding (depend
+on `surrealdb-core::sql::parse`). Both directions supported.
+
+**Deliverables**
+- `crates/ogar-adapter-surrealql/` with:
+  - `parse_surrealql_ddl(input) -> Vec<Class>` using
+    surrealdb-core's parser.
+  - `emit_surrealql_ddl(classes) -> String` reverse direction.
+  - `DEFINE TABLE`, `DEFINE FIELD`, `DEFINE INDEX`, `DEFINE EVENT`
+    coverage minimum.
+- Property test: `parse(emit(parse(x))) == parse(x)` for arbitrary
+  well-formed input.
+- Pinned surrealdb-core version; migration path noted to
+  `surrealdb-parser` + `surrealdb-ast` when crates.io-published.
+
+**Dependencies**: Sprint 4.
+
+---
+
+## Sprint 5 — `lance-graph-contract` SoA integration ⬜
+
+**Goal**: wire the contract layer (NiblePath identity routing,
+Lance versioning) over SoA RecordBatches.
+
+**Deliverables**
+- Identity column dictionary encoding (segment-level NiblePath
+  shared dictionary).
+- Lance dataset write path with v2 manifest paths from day one.
+- Append batching policy: ≥1 message/sec OR ≥100 messages/batch.
+- Cleanup policy: retain "frozen" ontology versions via tags;
+  cleanup unreferenced versions >1h old.
+
+**Dependencies**: Sprint 4.
+
+---
+
+## Sprint 6 — `lance-graph-ontology` reads SoA + cache integration ⬜
+
+**Goal**: per Sprint 6 placeholder above, but explicitly read
+RecordBatches from the contract layer. Cache invalidation via
+Lance `versions()` watch.
+
+**Deliverables**
+- Read path: scan Class RecordBatches, project identity column,
+  build ontology cache.
+- Watch path: Lance manifest watcher → cache invalidation event.
+- <1µs cached lookup target.
+
+**Dependencies**: Sprint 5.
+
+---
+
+## Sprint 7 (revised) — `lance-graph-callcenter` Ractor + Kanban ⬜
+
+**Goal**: BEAM-style actor runtime per R3 verdict (Ractor),
+organized around Kanban-bounded mailboxes per `SOA-IMPLEMENTATION.md`
+§5.
+
+**Deliverables**
+- `crates/lance-graph-callcenter/` with:
+  - `ClassActor` trait built on Ractor.
+  - `KanbanMailbox<M>` — bounded WIP + pull + backpressure.
+  - Class registration from ontology triples (no manual wiring).
+  - SPO+TeKaMoLo action dispatch routing through ontology cache.
+  - Cascade routing: actor emits `RecordBatch` of downstream
+    actions; receiving actor pulls when its WIP allows.
+- Default WIP=1024 per mailbox; configurable per-class via
+  `ogar:mailboxCapacity` triple.
+
+**Dependencies**: Sprints 5, 6.
+
+---
+
+## Sprint 7.5 — End-to-end SoA performance gate ⬜
+
+**Goal**: prove the full SoA flow performs under target latency.
+
+**Deliverables**
+- Benchmark: SurrealQL DDL → ogar-vocab-soa → lance-graph → actor
+  dispatch in <10ms p99 (cold cache: <50ms).
+- Memory benchmark: 100k classes + 1M actions fit in <500MB
+  RecordBatch arena.
+- Documented as `crates/benchmarks/`.
+
+**Dependencies**: Sprint 7.
+
+---
+
 ## Sprint 1g — API + perf refactor (from brutal-review CB2/CB3) ⬜
 
 **Goal**: apply the deferred API and performance fixes.

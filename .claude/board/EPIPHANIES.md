@@ -15,6 +15,85 @@
 
 ## Entries (newest first)
 
+## 2026-06-04 — SoA is the wire form at every OGAR layer (zero impedance mismatch)
+**Status:** FINDING
+**Scope:** Apache Arrow × Lance × surrealdb-core × Ractor × `docs/SOA-IMPLEMENTATION.md`
+
+The four-layer OGAR stack (storage / contract / IR / adapter /
+runtime) MUST use Structure-of-Arrays (Arrow RecordBatch) as the
+single wire form. No row-form conversions between layers.
+
+**Layer 0 (storage)**: Lance dataset, columnar Arrow IPC,
+v2 manifest paths from day one (per R2 gotcha #1).
+
+**Layer 1 (contract)**: NiblePath identity dictionary-encoded.
+Path-segment is a 27-bit identity (per cascade workstream).
+Storing N triples for the same class shares prefix bytes —
+compression-to-floor property.
+
+**Layer 2 (IR)**: One RecordBatch schema per top-level OGAR vocab
+type. `class_record_batch_schema()` and
+`action_record_batch_schema()` cover both ingestion arms.
+Nested `Vec<Association>` becomes Arrow `ListArray` natively
+(per R2 + Lance 2.2 VariablePackedStruct support).
+
+**Layer 3 (adapter)**: SurrealQL DDL bidirectional via
+`surrealdb-core::sql::parse` (per R4 verdict). Parse →
+RecordBatch → emit DDL is round-trip stable. surrealdb-core
+pinned exact-version until `surrealdb-parser` reaches crates.io.
+
+**Layer 4 (runtime)**: Ractor actors per `ogar:Class` (per R3
+verdict). Each actor's mailbox is **Kanban-bounded**: WIP limit
++ pull-based scheduling + backpressure signal. Inter-actor wire
+form is RecordBatch IPC (N actions = 1 batch, not N sends).
+
+**Carve-out**: SoA throughout. Identity columns ALWAYS dictionary
+encoded. Append granularity ≥1 msg/sec OR ≥100 msg/batch.
+Cleanup retains frozen versions via tags.
+
+**Cross-ref:** `docs/SOA-IMPLEMENTATION.md` (10 carve-outs),
+Sprint 4 / 4.5 / 5 / 6 / 7 / 7.5 in `.claude/PLAN.md`. R2 (Lance),
+R3 (Ractor), R4 (SurrealQL) research provenance in earlier
+EPIPHANIES entries.
+
+---
+
+## 2026-06-04 — Kanban mailbox: bounded WIP + pull + backpressure
+**Status:** FRAMING
+**Scope:** Ractor actor model × lance-graph-callcenter × ActiveRecord pool analog
+
+The "actor as pool worker" pattern from the BigBinary AR-
+connection-pool article maps directly: each `ClassActor` is a
+checked-out worker for its class. The Kanban mailbox is the
+pool's checkout/checkin discipline applied to async message
+dispatch.
+
+Three policies enforce production sanity:
+
+1. **WIP limit** — `mailbox_capacity` caps in-flight messages.
+   When full, sends reject with `KanbanBackpressure` error.
+   Default: 1024 per mailbox, configurable per-class via
+   `ogar:mailboxCapacity` triple.
+
+2. **Pull-based scheduling** — downstream actors PULL when their
+   WIP is below limit. No push-into-overload. Prevents
+   pipeline stalls under load spikes.
+
+3. **Backpressure signal** — full mailbox emits
+   `Backpressure(actor_identity)` upstream via `tokio::sync::watch`.
+   Producers pace emit rate accordingly.
+
+This is the BEAM-inspired discipline ("a process should not be
+overwhelmed by messages it cannot handle") realized in Rust via
+Ractor + Tokio. Hot reload is impossible in compiled Rust (R3
+finding); the Kanban discipline is how we get OPERATIONAL
+resilience even without hot-reload.
+
+**Cross-ref:** `docs/SOA-IMPLEMENTATION.md` §5, BigBinary AR-pool
+article (user-shared context), R3 Ractor verdict.
+
+---
+
 ## 2026-06-04 — SPO + TeKaMoLo: full sentence grammar for business actions
 **Status:** FRAMING
 **Scope:** behavior ingestion × action vocabulary × actor model × `docs/ADAPTERS-AND-ACTORS.md`
