@@ -360,6 +360,7 @@ pub struct ActionDef {
 /// values (beyond string-encoded `to_value`) is a tracked follow-up.
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[non_exhaustive]
 pub struct EnterEffect {
     /// Field on `object_instance` being set.
     pub field: String,
