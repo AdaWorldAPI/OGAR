@@ -491,11 +491,29 @@ Lance `versions()` watch.
 > a Ractor mailbox. Ractor + `KanbanMailbox` are the **SLA-coordination /
 > cold layer ONLY**. So `ogar-runtime` SUBSCRIBES to the bus (per §10.3 of
 > LANCE-GRAPH-INTEGRATION) and reacts (cache-invalidate + WIP pull); it is
-> not the hot dispatch path. BLOCKED on 3 surfaced decisions (see EPIPHANIES
-> 2026-06-04 cross-session entry): registry append API, mailbox home
-> confirmation, and the subscription-bus API shape. Do NOT build until
-> those land — building against a guessed bus contract is the rework class
-> this session exists to avoid.
+> not the hot dispatch path.
+>
+> UNBLOCKED + CORRECTED (2026-06-04, decision #3 SHIPPED): the bus is
+> `lance-graph-callcenter::version_watcher::LanceVersionWatcher`, and it is
+> **`std::sync::Condvar`-based, NOT tokio** (upstream I-2 invariant: tokio
+> is Layer-3 outbound only; the hot loop never uses `tokio::sync`). This
+> CORRECTS the design: the subscriber is `LanceVersionWatcher::subscribe()
+> → WatchReceiver → wait_changed()` (Condvar park) → `current()` returns
+> `Arc<CognitiveEventRow>`. The `tokio::sync` KanbanMailbox sketch in
+> SOA-IMPLEMENTATION §5.2 is SUPERSEDED — re-express in std::sync
+> (`Mutex<VecDeque> + Condvar`) on the hot path; tokio only on the cold
+> coord side. SoA bridge: ontology owns identity/classes/codebooks;
+> callcenter owns `LanceMembrane` (sole writer) + watcher + CognitiveEventRow;
+> `ogar-runtime` is a SUBSCRIBER, never a writer. Full corrected
+> integration in `docs/TEMPORAL-TIME-TRAVEL.md`.
+>
+> Decisions #1 (registry append API, Box::leak accepted) and #2 (mailbox
+> home, grill #9) already resolved; #3 now shipped. Remaining gate: the
+> cross-repo build (protoc / fork-access) + the user's signal to build.
+> Decision #4 surfaced (NOT blocking): `ActionInvocation.emitted_at_millis`
+> wall-clock vs HLC tuple for cross-server hindsight — only matters when
+> the cross-server workload lands; keep `emitted_at` an Option so an HLC
+> variant is a non-breaking add.
 
 **Goal**: `ogar-runtime` is the **cold / SLA-coordination subscriber**
 to the Lance-subscription bus — NOT a hot-dispatch actor runtime. On

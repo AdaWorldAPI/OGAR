@@ -15,6 +15,67 @@
 
 ## Entries (newest first)
 
+## 2026-06-04 — Decision #3 SHIPPED (LanceVersionWatcher/Condvar) + decision #4 surfaced (emitted_at→HLC)
+**Status:** FINDING
+**Scope:** Sprint 7 unblock+correction × temporal-epistemology boundary × ActionInvocation HLC alignment
+
+The parallel sessions shipped the Lance-subscription bus and placed the
+temporal-epistemology framework. Two things land on OGAR's side.
+
+**Decision #3 SHIPPED → Sprint 7 unblocked AND corrected.**
+The bus is `lance-graph-callcenter::version_watcher::LanceVersionWatcher`,
+built on **`std::sync::{Arc,RwLock,Mutex,Condvar}`, NOT tokio** (upstream
+**I-2 invariant**: tokio is Layer-3 outbound only — PhoenixServer,
+PostgRestHandler; the hot loop never uses `tokio::sync`). Hot path:
+`subscribe() → WatchReceiver → wait_changed()` (Condvar park) →
+`current()` returns `Arc<CognitiveEventRow>` (Arrow-scalar; BBB
+invariant).
+
+This CORRECTS OGAR's own design: `SOA-IMPLEMENTATION.md` §5.2 sketched
+`KanbanMailbox<M>` on `tokio::sync::mpsc + watch` — that VIOLATES I-2 and
+is superseded. Re-express the hot-path Kanban in std::sync
+(`Mutex<VecDeque> + Condvar`); tokio only on the cold/SLA-coord side.
+The WIP/pull/backpressure *policy* stands; the *mechanism* changes.
+Good thing Sprint 7 was held — building the tokio version would have
+been exactly the rework this discipline avoids.
+
+SoA bridge ownership (so OGAR doesn't rebuild): `lance-graph-ontology`
+owns identity register + classes + codebooks; `lance-graph-callcenter`
+owns `LanceMembrane` (SOLE writer) + watcher + `CognitiveEventRow`.
+`ogar-runtime` is a **std::sync subscriber**, never a writer.
+
+**Temporal-epistemology = planner-layer query annotation, NOT OGAR.**
+The parallel session mapped the Python framework (epistemology/detector/
+awareness/hydration) onto Lance versions: `KnowledgeHorizon` =
+`checkout_version(V_ref)`; `TemporalStatus` = version comparison;
+`EpistemicMode` = planner query annotation; `EpistemicPolicy.for_rung` =
+ThinkingStyle. It adds a `QueryReference{ref_version, mode, rung}` on
+`lance-graph-planner` queries — no new storage/contract. Cross-server
+hindsight = HLC tick `(server_id, local_lance_version, hlc_tick)` on
+`CognitiveEventRow`, sorted for causal-time ordering. **OGAR does NOT
+build any of this** — planner owns QueryReference, callcenter owns the
+HLC stamp. OGAR consumes.
+
+**Decision #4 surfaced (NOT blocking): emitted_at → HLC.**
+OGAR's `ActionInvocation.emitted_at_millis` is plain wall-clock `i64`.
+Cross-server causal ordering needs an HLC tuple, not wall-clock (which
+isn't causally ordered across servers). If cross-server hindsight
+becomes a real workload, `emitted_at` should align to / coexist with an
+HLC tick. OGAR's job: keep `emitted_at` an `Option` on the
+`#[non_exhaustive]` struct so an HLC variant is a non-breaking add —
+don't define the HLC type (that's callcenter's CognitiveEventRow),
+conform to it when the workload lands. Only matters cross-server;
+single-server causal order IS the Lance version sequence.
+
+**Posture:** matches the other session — FYI absorbed, not building yet.
+Sprint 7 unblocked-and-corrected but holds for the user's signal + the
+cross-repo protoc build. Decision #4 surfaced, not actioned.
+
+**Cross-ref:** `docs/TEMPORAL-TIME-TRAVEL.md` (full corrected
+integration), `docs/SOA-IMPLEMENTATION.md` §5 (correction banner),
+PLAN.md Sprint 7, the other session's `STANDING_WAVE_ARCHITECTURE.md`
+§13 (planned).
+
 ## 2026-06-04 — Decisions #1/#2 resolved, #3 surfaced: Sprint 5b unblocked, Sprint 7 still blocked
 **Status:** FINDING
 **Scope:** cross-session decision resolution (cites the 2026-06-04 cross-session entry below)
