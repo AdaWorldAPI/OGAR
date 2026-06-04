@@ -660,11 +660,15 @@ impl TripleEmitter {
             Triple::new(&id, "ogar:defaultTemporal", temporal_to_ogar(def.default_temporal)),
             Triple::new(&id, "ogar:defaultModal", modal_to_ogar(def.default_modal)),
         ];
+        // Action-scoped predicates — NOT the MethodDecl ones. Reusing
+        // ogar:methodBody / ogar:decoratorName (domain ogar:MethodDecl)
+        // would make every body-carrying ActionDef infer as a MethodDecl
+        // and pollute method-enumeration queries. Codex review 2026-06-04.
         if let Some(ref body) = def.body_source {
-            triples.push(Triple::new(&id, "ogar:methodBody", body.clone()));
+            triples.push(Triple::new(&id, "ogar:actionBody", body.clone()));
         }
         for d in &def.decorators {
-            triples.push(Triple::new(&id, "ogar:decoratorName", d.clone()));
+            triples.push(Triple::new(&id, "ogar:actionDecorator", d.clone()));
         }
         if let Some(ref k) = def.kausal {
             triples.extend(kausal_triples(&id, k));
@@ -731,17 +735,22 @@ fn kausal_triples(action_subject: &str, k: &ogar_vocab::KausalSpec) -> Vec<Tripl
             Triple::new(action_subject, "ogar:kausalKind", "ogar:LifecycleTrigger"),
             Triple::new(action_subject, "ogar:triggerEvent", event.clone()),
         ],
+        // Kausal-scoped dependency predicates — NOT the ComputedField ones.
+        // ogar:dependsPath / ogar:dependsContext have domain ogar:ComputedField;
+        // reusing them here would make a dependency-guarded action infer as a
+        // ComputedField and corrupt "enumerate all computed fields" queries.
+        // Codex review 2026-06-04.
         KausalSpec::Depends { paths } => {
             let mut v = vec![Triple::new(action_subject, "ogar:kausalKind", "ogar:Depends")];
             for p in paths {
-                v.push(Triple::new(action_subject, "ogar:dependsPath", p.clone()));
+                v.push(Triple::new(action_subject, "ogar:kausalDependsPath", p.clone()));
             }
             v
         }
         KausalSpec::ContextDepends { keys } => {
             let mut v = vec![Triple::new(action_subject, "ogar:kausalKind", "ogar:ContextDepends")];
             for k in keys {
-                v.push(Triple::new(action_subject, "ogar:dependsContext", k.clone()));
+                v.push(Triple::new(action_subject, "ogar:kausalDependsContext", k.clone()));
             }
             v
         }
@@ -1272,8 +1281,12 @@ mod tests {
         def.kausal = Some(ogar_vocab::KausalSpec::depends(vec!["partner_id".into(), "amount".into()]));
         let t = TripleEmitter::emit_action_def(&def);
         assert!(t.iter().any(|t| t.predicate == "ogar:kausalKind" && t.object == "ogar:Depends"));
-        let paths: Vec<_> = t.iter().filter(|t| t.predicate == "ogar:dependsPath").map(|t| t.object.as_str()).collect();
+        // Kausal-scoped predicate, distinct from ComputedField's ogar:dependsPath
+        // (so "enumerate computed fields" queries don't catch actions).
+        let paths: Vec<_> = t.iter().filter(|t| t.predicate == "ogar:kausalDependsPath").map(|t| t.object.as_str()).collect();
         assert_eq!(paths.len(), 2);
+        // The ComputedField predicate must NOT appear on an ActionDef.
+        assert!(!t.iter().any(|t| t.predicate == "ogar:dependsPath"));
 
         def.kausal = Some(ogar_vocab::KausalSpec::External);
         let t = TripleEmitter::emit_action_def(&def);

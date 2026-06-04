@@ -289,17 +289,28 @@ ogar:idempotencyKey   a rdf:Property ; rdfs:domain ogar:ActionInvocation ; rdfs:
 ogar:emittedAt        a rdf:Property ; rdfs:domain ogar:ActionInvocation ; rdfs:range xsd:long .
 ogar:failureReason    a rdf:Property ; rdfs:domain ogar:ActionInvocation ; rdfs:range xsd:string .
 
+# ActionDef-scoped body + decorator predicates — distinct from the
+# MethodDecl ones (ogar:methodBody / ogar:decoratorName) so a
+# body-carrying ActionDef is NOT inferred as a MethodDecl. Codex review.
+ogar:actionBody       a rdf:Property ; rdfs:domain ogar:ActionDef ; rdfs:range xsd:string .
+ogar:actionDecorator  a rdf:Property ; rdfs:domain ogar:ActionDef ; rdfs:range xsd:string .
+
 # KausalSpec sum type
-ogar:kausalKind         a rdf:Property ; rdfs:range ogar:KausalKind .
+ogar:kausalKind         a rdf:Property ; rdfs:domain ogar:ActionDef ; rdfs:range ogar:KausalKind .
 ogar:KausalKind         a owl:Class .
 ogar:StateGuard         a ogar:KausalKind .
 ogar:LifecycleTrigger   a ogar:KausalKind .
 ogar:Depends            a ogar:KausalKind .
 ogar:ContextDepends     a ogar:KausalKind .
 ogar:External           a ogar:KausalKind .
-ogar:guardField         a rdf:Property ; rdfs:range xsd:string .
-ogar:guardValue         a rdf:Property ; rdfs:range xsd:string .
-ogar:triggerEvent       a rdf:Property ; rdfs:range xsd:string .
+ogar:guardField         a rdf:Property ; rdfs:domain ogar:ActionDef ; rdfs:range xsd:string .
+ogar:guardValue         a rdf:Property ; rdfs:domain ogar:ActionDef ; rdfs:range xsd:string .
+ogar:triggerEvent       a rdf:Property ; rdfs:domain ogar:ActionDef ; rdfs:range xsd:string .
+# Kausal-scoped dependency predicates — distinct from the ComputedField
+# ones (ogar:dependsPath / ogar:dependsContext) so a dependency-guarded
+# action is NOT inferred as a ComputedField. Codex review.
+ogar:kausalDependsPath    a rdf:Property ; rdfs:domain ogar:ActionDef ; rdfs:range xsd:string .
+ogar:kausalDependsContext a rdf:Property ; rdfs:domain ogar:ActionDef ; rdfs:range xsd:string .
 
 # Enumerations
 ogar:ActionSubjectKind a owl:Class .
