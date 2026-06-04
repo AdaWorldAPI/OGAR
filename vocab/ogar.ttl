@@ -339,6 +339,60 @@ ogar:Failed     a ogar:ActionStateKind .
 ogar:Cancelled  a ogar:ActionStateKind .
 
 # ─────────────────────────────────────────────────────────────────────
+# Sprint 7 — Rubicon statem terms (per docs/OGAR-AST-CONTRACT.md §6)
+#
+# Three semantics that do not survive the Action-flattening; each is a
+# sub-property of an existing TeKaMoLo slot ("seven slots, no eighth").
+# They let the lance-graph-callcenter ractor codegen emit the Rubicon
+# state machine (enter-commit / postpone / SLA-timeout) faithfully.
+# Lowering target: `ractor_actors::state_machine` (the StateMachine shim,
+# runtime session). The lifecycle binding is `State = ActionState`:
+# Pending = pre-decision, Committed = the Rubicon crossing, Failed/
+# Cancelled = terminal. The domain workflow (draft→sale) rides as a
+# guarded effect on object_instance, NOT as the machine state.
+# ─────────────────────────────────────────────────────────────────────
+
+# (entry effect) Fires on entering the Committed state — the Rubicon
+# crossing. Value names the effect (typically the ActionDef.results_in
+# domain transition + side effects). Lowers to StateMachine::on_enter →
+# the CommitHook → the LanceMembrane append ("state history IS the
+# version log"). Carried on the ActionDef.
+ogar:onEnter a rdf:Property ;
+    rdfs:domain ogar:ActionDef ;
+    rdfs:range xsd:string ;
+    rdfs:label "Entry effect (on-enter commit)" ;
+    rdfs:comment "Effect fired on entering the Committed lifecycle state (the Rubicon crossing). Lowers to ractor_actors::state_machine on-enter / CommitHook → the Lance version append." .
+
+# (Modal sub-property) Disposition when a Kausal StateGuard is not
+# satisfied: transient (stay Pending + replay) vs hard (Pending→Failed).
+ogar:guardFailurePolicy a rdf:Property ;
+    rdfs:domain ogar:ActionDef ;
+    rdfs:range ogar:GuardFailurePolicyKind ;
+    rdfs:label "Guard-failure policy" ;
+    rdfs:comment "What happens when KausalSpec::StateGuard fails. Sub-property of the Modal slot." .
+
+ogar:GuardFailurePolicyKind a owl:Class ; rdfs:label "Guard failure policy" .
+ogar:Postponable a ogar:GuardFailurePolicyKind ;
+    rdfs:label "Postponable" ;
+    rdfs:comment "Transient failure — stay Pending and replay the event after the next transition. Lowers to Transition::Postpone." .
+ogar:Reject a ogar:GuardFailurePolicyKind ;
+    rdfs:label "Reject" ;
+    rdfs:comment "Hard failure — Pending → Failed (the default; e.g. Odoo raise UserError)." .
+
+# (Temporal sub-property) Per-state SLA deadline on the Pending /
+# deliberation state. The gen-stamped timer auto-cancels at the
+# Pending → Committed crossing.
+ogar:StateTimeout a ogar:TemporalSpecKind ;
+    rdfs:label "StateTimeout" ;
+    rdfs:comment "Per-state SLA deadline on Pending. Lowers to ractor_actors::state_machine timeout(); the gen-stamped timer auto-cancels at the crossing." .
+
+ogar:stateTimeoutMillis a rdf:Property ;
+    rdfs:domain ogar:ActionDef ;
+    rdfs:range xsd:long ;
+    rdfs:label "State timeout (millis)" ;
+    rdfs:comment "Deadline in milliseconds for an ogar:StateTimeout temporal spec." .
+
+# ─────────────────────────────────────────────────────────────────────
 # Properties — EnumDecl, Scope, Callback
 # ─────────────────────────────────────────────────────────────────────
 
@@ -367,5 +421,6 @@ ogar:Python     a ogar:Language ; rdfs:label "Python (Django, Odoo)" .
 ogar:Sql        a ogar:Language ; rdfs:label "SQL DDL" .
 ogar:TypeScript a ogar:Language ; rdfs:label "TypeScript (Prisma, TypeORM, Drizzle)" .
 ogar:SurrealQl  a ogar:Language ; rdfs:label "SurrealQL DDL" .
+ogar:Elixir     a ogar:Language ; rdfs:label "Elixir (Ecto schemas / Phoenix / OTP — the OLD HIRO/Bardioc stack; first-class for migration roundtrip)" .
 
 ogar:sourceLanguage a rdf:Property ; rdfs:domain ogar:Class ; rdfs:range ogar:Language .
