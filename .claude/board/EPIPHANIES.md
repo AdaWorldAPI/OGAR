@@ -15,6 +15,51 @@
 
 ## Entries (newest first)
 
+## 2026-06-04 — Decisions #1/#2 resolved, #3 surfaced: Sprint 5b unblocked, Sprint 7 still blocked
+**Status:** FINDING
+**Scope:** cross-session decision resolution (cites the 2026-06-04 cross-session entry below)
+
+The parallel session (bardioc) responded to OGAR's 3 surfaced decisions
+(prior entry) and mirrored the coordination record on its side
+(`bardioc/CROSS_SESSION_COORDINATION.md` — symmetric record + Lance-sub
+bus consumer API + ownership table). Net state change:
+
+**Decision #1 (registry append API) — RESOLVED.**
+The `Box::leak` interning workaround (`ogar_proposal::boundary`,
+shipped as the owned mirror in PR #5) is ACCEPTED. Sprint 5b proceeds
+WITHOUT waiting for an upstream `SchemaOwned`/runtime-schema variant.
+The upstream-level fix stays a nice-to-have-cleaner-later for both
+consumers (bardioc + OGAR), not a blocker. → **Sprint 5b UNBLOCKED**
+(now only gated on the cross-repo build: protoc / fork-access, not on a
+decision).
+
+**Decision #2 (mailbox home) — RESOLVED** (grill #9, prior entry):
+`ogar-runtime` is the SLA-coord/cold subscriber; the hot path is the
+Lance-subscription bus. Already absorbed into Sprint 7's rescope.
+
+**Decision #3 (Lance-sub bus API shape) — SURFACED, not yet shippable.**
+bardioc documented the **consumer API** in its coordination doc. But the
+upstream **symbol layout** (the concrete Rust types/signatures of the
+subscription surface) hasn't landed yet. → **Sprint 7 stays BLOCKED**
+until the symbol layout ships upstream. The API contract is known; the
+code to bind against isn't there yet. Correct to wait — binding against
+a documented-but-unshipped symbol layout is the same guess-the-contract
+rework this discipline avoids.
+
+**Discipline confirmed holding both ways:** each session surfaces
+decisions, neither edits the other's contract. OGAR#5 merged, OGAR#6
+(this record) open as the companion to bardioc's commit.
+
+**OGAR's active queue:** Sprint 5b (now unblocked, pending only protoc),
+Sprint 1c (Identity parser — unblocked, self-contained), Sprint 2.6
+(conformance corpus — unblocked). Sprint 7 BLOCKED on the bus symbol
+layout.
+
+**Cross-ref:** `bardioc/CROSS_SESSION_COORDINATION.md` (their side),
+the 2026-06-04 cross-session entry (below), PLAN.md Sprint 5b + 7.
+
+---
+
 ## 2026-06-04 — Cross-session coordination: 3 decisions I'm waiting on + 1 correction absorbed
 **Status:** FINDING
 **Scope:** OGAR ↔ bardioc ↔ lance-graph composition × Sprint 5b/7 inputs

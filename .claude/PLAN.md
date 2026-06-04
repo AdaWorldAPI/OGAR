@@ -419,25 +419,42 @@ on `surrealdb-core::sql::parse`). Both directions supported.
 
 ---
 
-## Sprint 5 — `ogar-to-proposal`: SchemaSource impl (REVISED) ⬜
-> REVISED: NOT "build SoA integration" — that exists. Implement
-> `impl SchemaSource for OgarSource` + `From<ogar::Class> for MappingProposal`
-> (Class→Schema, Association→LinkSpec, Attribute→SemanticType+Marking).
-> Resolve the `&'static str` impedance (intern vs owned vs proposal-only).
-> Land one real OpenProject WorkPackage into the existing OntologyRegistry.
+## Sprint 5 — `ogar-to-proposal`: SchemaSource impl (REVISED) 🟡
+> REVISED: NOT "build SoA integration" — that exists upstream. OGAR is a
+> `SchemaSource` producer into the existing `OntologyRegistry`. The OLD
+> deliverables here ("wire the contract layer / NiblePath dictionary / Lance
+> write path") were pre-correction and are DROPPED — that's upstream's job
+> (`lance-graph-contract` + `lance-graph-ontology`), not OGAR's. See
+> `docs/LANCE-GRAPH-INTEGRATION.md`.
 
-**Goal**: wire the contract layer (NiblePath identity routing,
-Lance versioning) over SoA RecordBatches.
+**Goal**: map OGAR IR → `MappingProposal` and feed it into the existing
+registry. Split into 5a (in-repo mapping) + 5b (cross-repo boundary).
 
-**Deliverables**
-- Identity column dictionary encoding (segment-level NiblePath
-  shared dictionary).
-- Lance dataset write path with v2 manifest paths from day one.
-- Append batching policy: ≥1 message/sec OR ≥100 messages/batch.
-- Cleanup policy: retain "frozen" ontology versions via tags;
-  cleanup unreferenced versions >1h old.
+**Sprint 5a — `ogar-proposal` owned mirror ✅ (PR #5, merged)**
+- `crates/ogar-proposal/` — `ProposalDraft`/`SchemaDraft`/`PropertyDraft`/
+  `LinkDraft` owned mirrors (String where contract uses `&'static str`).
+- `class_to_drafts(&Class, bridge_id)` mapping: Class→Entity{Schema},
+  Association→Edge{LinkSpec} (BelongsTo→OneToOne, HasMany→OneToMany,
+  HABTM→ManyToMany), Attribute→PropertyDraft + SemanticType + Marking
+  heuristics (heuristic semantics lower entity confidence <1.0).
+- 12 tests. Resolves the `&'static str` impedance via owned mirror +
+  documented `Box::leak` boundary sketch (`ogar_proposal::boundary`).
 
-**Dependencies**: Sprint 4.
+**Sprint 5b — thin `impl SchemaSource` (UNBLOCKED)**
+> Decision #1 RESOLVED (bardioc, 2026-06-04): the `Box::leak` interning
+> workaround is ACCEPTED — Sprint 5b proceeds without waiting for an
+> upstream `SchemaOwned` variant. (Upstream `SchemaOwned` stays a
+> nice-to-have-cleaner-later for both consumers, not a blocker.)
+- `crates/ogar-proposal/` gains a `lance-bind` feature: `impl SchemaSource
+  for OgarSource` interning `ProposalDraft` → real
+  `lance_graph_ontology::MappingProposal` via one `Box::leak` of a deduped
+  set (per `ogar_proposal::boundary`).
+- Cross-repo git dependency on `lance-graph-ontology` (needs protoc in CI).
+- Land one real OpenProject `WorkPackage` into a live `OntologyRegistry`;
+  assert the dictionary row appears.
+
+**Dependencies**: Sprint 4 (5a done); Sprint 5b needs the cross-repo build
+(protoc / fork-access) — but NO LONGER blocked on a decision.
 
 ---
 
