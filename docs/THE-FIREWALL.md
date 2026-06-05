@@ -179,8 +179,7 @@ bit-op, not a serialized lookup) *and* a durable immutable audit trail
 (every access logged → a boundary write). Inner = palette256 +
 Hamming-popcount row-level auth (no serialization); outer = audit-as-
 Lance-version append (serialized, at the firewall). The audit signature
-is the literal "crypto on the post stamp." MedCare-rs is the production
-instance that exercises both sides — detail in §7.2.
+is the literal "crypto on the post stamp." A production HIPAA instance exercises both sides — detail in §7.2.
 
 ## 4. Where every existing piece sits
 
@@ -243,25 +242,22 @@ this doc).
 
 ## 7. Precedent + cross-references
 
-### 7.1 OGAR domain instances (sibling AdaWorldAPI projects — private)
+### 7.1 OGAR domain instances (named by domain — per the "inherit schema via contract" rule)
 
-The two sibling projects aren't just "they have the membrane pattern" —
-they are **OGAR domain instances**: production-grade transcodes that the
-substrate (and this firewall principle) generalize. Catalogued in full
-in `docs/DOMAIN-INSTANCES.md`.
+These aren't just "they have the membrane pattern" — they are **OGAR
+domain instances**: production-grade transcodes the substrate (and this
+firewall principle) generalize. Named by *domain*, not project — the
+concrete label is consumer-rebindable via the `Adapter` contract (see
+`docs/DOMAIN-INSTANCES.md §0`). Full catalogue there.
 
-- **Woa-rs** = **OGAR for Odoo / ERP** (the `ogit-erp::` prefix made
-  real). SeaORM backend (`src/db.rs`, `src/migrations.rs`), Odoo
-  transcode plan + ledgers (`.claude/v0.2/RUST_TRANSCODE_PLAN.md`,
-  `.claude/odoo/L10-ANALYTIC.md`, `.claude/odoo/L14-HR-BASE.md`), the
-  ERP money/decimal RFC. The production Odoo instance behind
-  `docs/ODOO-TRANSCODING.md`.
-- **MedCare-rs** = **OGAR for HIPAA / healthcare**. `Membrane` pattern
-  (`crates/medcare-rbac/src/lib.rs`, `.claude/patterns.md`), `LazyLock`
-  (`crates/medcare-analytics`), `ExternalMembrane` references
-  (`docs/FUTURE_STACK_ADMIN.md`). The production healthcare instance
-  that exercises the substrate's **Security Mesh** (row-level
-  permissions + immutable audit).
+- **A production ERP deployment** = **OGAR for Odoo / ERP** (the
+  `ogit-erp::` prefix made real): SeaORM backend, Odoo transcode
+  (analytic accounting, HR), the ERP money/decimal model. The
+  production Odoo instance behind `docs/ODOO-TRANSCODING.md`.
+- **A production healthcare deployment** = **OGAR for HIPAA /
+  healthcare**: the `Membrane` + `LazyLock` + `ExternalMembrane`
+  outer-boundary pattern, exercising the substrate's **Security Mesh**
+  (row-level permissions + immutable audit).
 
 Both demonstrate the external-membrane-via-contract pattern in
 production; the firewall principle generalizes what they already do.
@@ -285,9 +281,9 @@ signed Lance append is the only way to have both. The audit record's
 signature is the literal "crypto on the post stamp" (§3) — expensive,
 acceptable, paid once per access crossing, never on the inner compute.
 
-**MedCare-rs is the production proof** that the firewall split isn't
-theoretical: a real HIPAA-compliant healthcare system needs precisely
-this inner-auth / outer-audit separation, and it ships.
+**A production HIPAA deployment is the proof** that the firewall split
+isn't theoretical: a real HIPAA-compliant healthcare system needs
+precisely this inner-auth / outer-audit separation, and it ships.
 
 ### 7.3 Cross-references
 
@@ -298,7 +294,7 @@ this inner-auth / outer-audit separation, and it ships.
 - `docs/SUBSTRATE-ENDGAME.md` §5 — the SDK seam the outer boundary enables.
 - `docs/SURREAL-AST-AS-ADAPTER.md` — the structural/behavioral split (inside the firewall).
 - `docs/SOA-IMPLEMENTATION.md` §5.3 — the RecordBatch-IPC clarification (see §5 here).
-- `docs/ODOO-TRANSCODING.md` — the Odoo transcoding spec (Woa-rs is its production instance).
+- `docs/ODOO-TRANSCODING.md` — the Odoo transcoding spec (its production instance is an ERP deployment).
 - `lance-graph-contract::ExternalMembrane` — the existing outer-boundary contract trait.
 - `crates/ogar-knowable-from` — the §10.3 `KnowableFromStore` outer-boundary seam.
 
