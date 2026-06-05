@@ -30,3 +30,9 @@ jobs:
         run: cargo check --workspace --all-targets
       - name: cargo test --workspace
         run: cargo test --workspace
+      # Exercise the feature-gated surrealql AST walk (lifts DDL ->
+      # Class via the surrealdb-parser fork). Crate-scoped because the
+      # parser dep is heavy and not needed by other workspace members;
+      # gating by feature keeps the default build lean.
+      - name: cargo test -p ogar-adapter-surrealql --features surrealdb-parser
+        run: cargo test -p ogar-adapter-surrealql --features surrealdb-parser
