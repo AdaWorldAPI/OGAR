@@ -47,3 +47,9 @@ jobs:
       # free, but the round-trip tests need the parser.
       - name: cargo test -p ogar-adapter-ttl --features ttl-parser
         run: cargo test -p ogar-adapter-ttl --features ttl-parser
+      # Exercise the `clickhouse-parser` feature on
+      # ogar-adapter-clickhouse-ddl — pulls in sqlparser-rs with the
+      # ClickHouseDialect for CREATE TABLE parsing. Same crate-scoped
+      # gating pattern as the other adapter feature tests.
+      - name: cargo test -p ogar-adapter-clickhouse-ddl --features clickhouse-parser
+        run: cargo test -p ogar-adapter-clickhouse-ddl --features clickhouse-parser

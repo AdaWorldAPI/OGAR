@@ -1,0 +1,26 @@
+[package]
+name = "ogar-adapter-clickhouse-ddl"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+description = "Bidirectional ClickHouse DDL bridge for OGAR. emit_clickhouse_ddl(Class) renders CREATE TABLE … ENGINE = MergeTree; parse_clickhouse_ddl (behind `clickhouse-parser`) drives sqlparser with the ClickHouseDialect and walks the AST back into Vec<Class>. Companion to ogar-adapter-surrealql + ogar-adapter-ttl; per Phase 2b of docs/RDF-OWL-ALIGNMENT.md §10. Composes with bardioc PR #19's substrate-b-shadow::ClickHouseQuery — the schema this adapter models is the schema the runtime decoder reads rows against."
+
+[features]
+default = []
+serde = ["dep:serde", "ogar-vocab/serde"]
+# Enables ClickHouse DDL parsing via sqlparser-rs. Emit is feature-
+# free; only the AST walk requires the parser dep. Mirrors the
+# surrealql / ttl adapter pattern (the parser dep is the heavy
+# subscriber; consumers who only need emit don't pay for it).
+clickhouse-parser = ["dep:sqlparser"]
+
+[dependencies]
+ogar-vocab = { path = "../ogar-vocab" }
+serde = { workspace = true, optional = true }
+# sqlparser 0.59 handles ClickHouse Nullable(X) cleanly under the
+# ClickHouseDialect (probed before adopting). Earlier versions
+# (≤0.50) choke on Nullable in CREATE TABLE.
+sqlparser = { version = "0.59", optional = true }
