@@ -36,3 +36,9 @@ jobs:
       # gating by feature keeps the default build lean.
       - name: cargo test -p ogar-adapter-surrealql --features surrealdb-parser
         run: cargo test -p ogar-adapter-surrealql --features surrealdb-parser
+      # Exercise the `surrealql-hint` feature on ogar-knowable-from
+      # — auto-renders the schema_ddl_hint via the adapter's
+      # emit_surrealql_ddl on register_class_knowable_from. Closes the
+      # self-describing-registry loop (ADR-023 receipt).
+      - name: cargo test -p ogar-knowable-from --features surrealql-hint
+        run: cargo test -p ogar-knowable-from --features surrealql-hint

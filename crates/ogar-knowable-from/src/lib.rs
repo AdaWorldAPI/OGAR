@@ -223,6 +223,25 @@ pub trait KnowableFromStore: Send + Sync {
 /// `NiblePath` identity, same VART-as-reference-backend pattern
 /// (see crate-level "Reference backends").
 ///
+/// # `schema_ddl_hint` — the self-describing-registry loop
+///
+/// With the **`surrealql-hint` feature ON**, this function renders the
+/// SurrealQL DDL for the class (via
+/// `ogar-adapter-surrealql::emit_surrealql_ddl`) and passes it to
+/// `store.register(class_identity, Some(ddl))`. The registry then
+/// carries the producer's view of the class shape alongside the
+/// `knowable_from` stamp — *"the registry is self-describing"* per
+/// the `KnowableFromStore::register` docstring, no longer aspirational.
+///
+/// With the feature OFF (the default), `None` is passed — the
+/// lightweight path. The feature is opt-in because the
+/// `ogar-adapter-surrealql` dep pulls the SurrealDB AST surface into
+/// the build graph.
+///
+/// Aligns with ADR-023 (IR-as-wire-truth): the canonical `Class` IR
+/// is the wire-truth carrier; the DDL string is its serialization for
+/// the registry. See `docs/ARCHITECTURAL-DECISIONS-2026-06-04.md`.
+///
 /// [1]: https://docs.rs/ogar-ontology
 pub fn register_class_knowable_from<S: KnowableFromStore>(
     class: &Class,
@@ -241,11 +260,23 @@ pub fn register_class_knowable_from<S: KnowableFromStore>(
              ogar_ontology::class_identity)".into(),
         ));
     }
-    // v1 minimum-shape: pass None for schema_ddl_hint. Future PRs can
-    // render via ogar-adapter-surrealql::emit_surrealql_ddl(&[class.clone()])
-    // — the `class` parameter is retained for that future expansion.
-    let _ = class; // keep the parameter live for forward compatibility
-    store.register(class_identity, None)
+    // The `schema_ddl_hint` parameter — `None` by default (lightweight
+    // path), auto-rendered via `ogar-adapter-surrealql::emit_surrealql_ddl`
+    // when the `surrealql-hint` feature is on. This closes the loop the
+    // `KnowableFromStore::register` docstring named: the trait carries a
+    // `schema_ddl_hint: Option<&str>` slot so the registry is
+    // self-describing; PR #32 landed the producer; this is where it
+    // gets wired into the call site.
+    #[cfg(feature = "surrealql-hint")]
+    {
+        let ddl = ogar_adapter_surrealql::emit_surrealql_ddl(std::slice::from_ref(class));
+        store.register(class_identity, Some(ddl.as_str()))
+    }
+    #[cfg(not(feature = "surrealql-hint"))]
+    {
+        let _ = class; // keep parameter live; not used in the default path
+        store.register(class_identity, None)
+    }
 }
 
 /// Errors from the [`KnowableFromStore`] operations and the
@@ -344,7 +375,10 @@ mod tests {
         let calls = store.register_calls.lock().unwrap();
         assert_eq!(calls.len(), 1);
         assert_eq!(calls[0].0, "ogit-erp/Account");
-        assert!(calls[0].1.is_none(), "v1 minimum-shape passes None for schema_ddl_hint");
+        // The schema_ddl_hint axis is feature-gated: dedicated tests
+        // for each path are below (`default_path_passes_none_for_…` and
+        // `surrealql_hint_feature_renders_ddl_into_registry`). This
+        // test stays axis-agnostic on the hint.
     }
 
     #[test]
@@ -460,5 +494,58 @@ mod tests {
         let b = KnowableFromError::Backend("nope".into());
         assert!(format!("{b}").contains("backend error"));
         assert!(format!("{b}").contains("nope"));
+    }
+
+    // ── `schema_ddl_hint` loop closure (ADR-023 / IR-as-wire-truth) ──
+    // Feature-off (default): `None` is passed to store.register, the
+    // lightweight path. Feature-on (`surrealql-hint`): the function
+    // renders the DDL via `ogar-adapter-surrealql::emit_surrealql_ddl`
+    // and passes it as `Some(&ddl)`. Two tests, conditionally compiled.
+    // ─────────────────────────────────────────────────────────────────
+
+    #[cfg(not(feature = "surrealql-hint"))]
+    #[test]
+    fn default_path_passes_none_for_schema_ddl_hint() {
+        let c = Class::new("Account");
+        let store = MockKnowableFromStore::new(0);
+        register_class_knowable_from(&c, "ogit-erp/Account", &store).unwrap();
+        let calls = store.register_calls.lock().unwrap();
+        assert_eq!(calls.len(), 1);
+        // Default path: the registry receives no DDL hint.
+        assert!(
+            calls[0].1.is_none(),
+            "default (feature-off) path must pass None for schema_ddl_hint, got: {:?}",
+            calls[0].1
+        );
+    }
+
+    #[cfg(feature = "surrealql-hint")]
+    #[test]
+    fn surrealql_hint_feature_renders_ddl_into_registry() {
+        // With the `surrealql-hint` feature on, the registry receives
+        // the SurrealQL DDL rendering of the class — the "self-
+        // describing registry" claim from KnowableFromStore::register's
+        // docstring becomes concrete.
+        let mut c = Class::new("Account");
+        let mut email = ogar_vocab::Attribute::new("email");
+        email.type_name = Some("string".into());
+        c.attributes.push(email);
+
+        let store = MockKnowableFromStore::new(0);
+        register_class_knowable_from(&c, "ogit-erp/Account", &store).unwrap();
+
+        let calls = store.register_calls.lock().unwrap();
+        assert_eq!(calls.len(), 1);
+        let hint = calls[0].1.as_deref().expect("feature-on path must populate the hint");
+        // The DDL must mention the table and the field — the canonical
+        // shape `emit_surrealql_ddl` produces.
+        assert!(
+            hint.contains("DEFINE TABLE Account SCHEMAFULL;"),
+            "expected DEFINE TABLE in the hint, got: {hint}"
+        );
+        assert!(
+            hint.contains("DEFINE FIELD email ON Account TYPE string;"),
+            "expected DEFINE FIELD in the hint, got: {hint}"
+        );
     }
 }

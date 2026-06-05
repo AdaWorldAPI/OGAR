@@ -50,6 +50,7 @@
 | ADR-020 | SDK endgame is deeper than Foundry going OSS via three structural differentiators (migration scaffold, self-hosting reference, substrate-layer OSS) | **Pinned** | OGAR PR #20 §5.3 |
 | ADR-021 | **Meta-hygiene**: always grep peer crates before copying manifest patterns (the `[lints] workspace = true` cascade lesson) | **Pinned** | OGAR PR #15 + PR #17/#18 follow-ups |
 | ADR-022 | **The Firewall** — absolute inner/outer boundary; no serialization in hot path; inner = compile-time HHTL; outer = contract-trait pluggable | **Pinned** | OGAR (this PR); `docs/THE-FIREWALL.md` |
+| ADR-023 | **IR-as-wire-truth** — the source-language AST is *input dialect*; the canonical `Class`/`Attribute`/`Association`/`EnumDecl`/`ActionDef` IR is *wire truth*. Adapters lift dialects into IR; the IR routes everything (registry key, actor mailbox, Lance version, audit-log dimension) | **Pinned** | OGAR (this PR); `crates/ogar-vocab/`; `bardioc/substrate-b-shadow::EdgeDecoder<E>` (PR #19) |
 
 ## ADR-001: `State = ActionState` (lifecycle), not domain state, for Rubicon binding
 
@@ -1057,6 +1058,114 @@ designed to produce.
   architectural-delta doc).
 - lance-graph PR #470 (`.claude/handovers/2026-06-05-0445-bardioc-to-
   lance-graph-bindspace-arch-delta.md` — the lance-graph-side pointer).
+
+## ADR-023: IR-as-wire-truth — Class is the wire format, not the source AST
+
+**Status:** Pinned (2026-06-05). Companion to ADR-022 (The Firewall);
+captures the framing principle the firewall's inner side has been
+operating under.
+
+**Context.** Cross-session conversation surfaced the question
+*"what's the wire format between source-language frontends and the
+substrate?"* — raised in the context of Elixir ASTs, ClickHouse DDL,
+SurrealQL DDL, FIBO/FMA TTL, and the planned `ch`/`ecto_ch` shadow
+extraction. The naive answer ("forward the source AST as-is") is
+wrong; the firewall's inner discipline already implies the right
+answer, but it hadn't been named explicitly.
+
+**Decision.** The canonical wire format is the OGAR IR — `Class`,
+`Attribute`, `Association`, `EnumDecl`, `ActionDef`, `KausalSpec`,
+`Identity` (the `NiblePath` prefix-radix). Source-language ASTs
+(Elixir quoted form, SurrealQL DDL AST, Ruby AR macro tree, Odoo
+Python `models.Model` shape, ClickHouse CREATE TABLE, OWL TTL
+triples) are *input dialects* — each lifted into the canonical IR
+by a dedicated **adapter crate**. Once lifted, everything downstream
+(registry key, actor mailbox routing, Lance version stamp,
+audit-log dimension, HHTL compile-time codegen) routes through the
+*same* IR.
+
+The aphorism: **"Elixir AST is input dialect; the canonical IR is
+wire truth."** Generalizes to any source dialect; the IR is the
+shared substrate.
+
+**Alternatives considered.**
+
+- *Forward the source AST as the wire format.* Rejected: leaks
+  source-language syntax + semantics into every downstream consumer;
+  breaks the firewall's "no serialization in hot path" invariant
+  (source ASTs are too rich + heterogeneous to be compile-time-
+  HHTL-resolvable); makes cross-source comparison (e.g. §14 oracle
+  equivalence-running between OLD-stack Elixir + NEW-stack Rust)
+  arbitrarily hard because the comparison surface differs per source.
+- *Use a "least common denominator" subset of OWL DL.* Rejected: OWL
+  doesn't model state machines or lifecycle behaviour (the
+  `ActionDef` + `KausalSpec` axis OGAR adds past OWL DL); the LCD
+  surface would be insufficient. OGAR sits *above* OWL DL (OWL is
+  one of OGAR's supported source dialects, not a constraint on the
+  IR).
+
+**Consequences.**
+
+- **Same IR → same hash → same actor routing → same Lance row →
+  same audit dimension.** Content-addressing primitive. Already
+  realized in code: `ogar-ontology::class_identity(prefix, name)`
+  produces the canonical identity string; PR #31 closed the
+  collision hazard; bardioc PR #19 (`substrate-b-shadow::EdgeDecoder<E>`)
+  consumes the IR as `ActionInvocation` at the OLD-stack-shadow seam.
+
+- **Adapters are pluggable, the IR is fixed.** New source dialects
+  ship as new adapter crates (`ogar-adapter-surrealql`,
+  `ogar-adapter-ttl` planned, `ogar-from-elixir`, `ogar-from-ecto`
+  proposed). The `Class` IR doesn't change; only the lift code does.
+
+- **Round-trip is the adapter contract.** `parse_<dialect>` →
+  `Vec<Class>` → `emit_<dialect>` should reproduce the source. OGAR
+  PR #32 demonstrated this for SurrealQL DDL; round-trip tests
+  are now part of the adapter contract.
+
+- **The `schema_ddl_hint` loop closes here.** PR #25 introduced
+  `KnowableFromStore::register(class_identity, schema_ddl_hint:
+  Option<&str>)` with the docstring claim *"so the registry is
+  self-describing"*. PR #32 landed `emit_surrealql_ddl`. This PR
+  wires the two together (feature-gated `surrealql-hint`): the
+  registry now carries the producer's `Class` IR projected into
+  SurrealQL DDL alongside the `knowable_from` stamp. The IR-as-wire-
+  truth claim is no longer aspirational.
+
+- **Cross-session triangulation receipt.** bardioc PR #19
+  (`substrate-b-shadow`) consumes `ogar-vocab` as a direct
+  dependency — its `EdgeDecoder<E>` trait IS the IR-as-wire-truth
+  pattern in code. The HIRO-Graph + ClickHouse decoders return
+  `ActionInvocation` regardless of source; the rest of the substrate
+  consumes one shape.
+
+**Change policy.** Adding a new source dialect (new adapter crate)
+is routine. Changing the IR — adding a field to `Class`,
+`AssociationKind`, `EnumSource`, `KausalSpec` — is a substrate-wide
+contract change requiring (a) backward-compatible default (typically
+`Option<…>` field), (b) round-trip preservation in all adapter
+crates, (c) consultation with the runtime session (bardioc /
+lance-graph) before merge.
+
+**References.**
+
+- `crates/ogar-vocab/` — the canonical IR.
+- `crates/ogar-ontology/` — identity routing + canonical-form helpers.
+- `crates/ogar-knowable-from/` — the registry seam; this PR wires
+  the `schema_ddl_hint` loop via the `surrealql-hint` feature.
+- `crates/ogar-adapter-surrealql/` — first round-trip adapter (PR
+  #24 wired the parser; PR #32 closed the walk + round-trip).
+- `crates/ogar-from-elixir/` — Elixir SchemaSource scaffold.
+- ADR-022 (The Firewall) — the invariant ADR-023 makes explicit.
+- ADR-016 (SurrealQL DDL AST is not the universal IR) — the
+  predecessor; ADR-023 generalizes ADR-016's claim from SurrealQL
+  to *all* source dialects.
+- bardioc PR #17 (Rubicon Phases 1-5) — consumer of `ogar-vocab`
+  for actor dispatch.
+- bardioc PR #19 (`substrate-b-shadow::EdgeDecoder<E>`) — the
+  pattern materialized in runtime-side code.
+- `docs/RDF-OWL-ALIGNMENT.md` §3 (OGAR's position in L1-L5) — the
+  IR sits at the AR-pattern lift seam.
 
 ## Implementation receipts — ADR ↔ commit cross-reference
 
