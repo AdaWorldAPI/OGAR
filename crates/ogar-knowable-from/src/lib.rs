@@ -312,6 +312,137 @@ impl std::fmt::Display for KnowableFromError {
 
 impl std::error::Error for KnowableFromError {}
 
+// ─────────────────────────────────────────────────────────────────────
+// VART backend (feature `vart-backend`)
+// ─────────────────────────────────────────────────────────────────────
+//
+// Reference backend impl named in PR #25's crate docs and ADR-024's
+// "VART pinned to the AdaWorldAPI mirror" cross-reference. Each
+// `register` call advances the trie's global version monotonically
+// and returns the new version as the `knowable_from` stamp.
+//
+// Architecture alignment:
+//   - The NiblePath-shaped `class_identity` (e.g. `ogit-erp/sale.order`)
+//     is prefix-radix-indexed natively by VART — same routing primitive
+//     the runtime side uses (bardioc PR #18 / lance-graph PR #470
+//     described the same trie-append pattern for `inv.object_instance`).
+//   - VART is immutable / copy-on-write with snapshot isolation — every
+//     register produces a new logical version; readers at any prior
+//     version see the world-as-of-that-version. Suits the "audit-as-
+//     version" discipline ADR-008 / ADR-013 already pin.
+//   - The `schema_ddl_hint` parameter is intentionally discarded in v1
+//     (VART's value type is `u64` to keep the trie homogeneous). A
+//     follow-up could wire a parallel `Tree<VariableSizeKey, String>`
+//     for hints if a real consumer needs them; today's `surrealql-hint`
+//     feature already renders DDL at the helper layer, so the hint
+//     lives upstream of the backend.
+/// VART-backed `KnowableFromStore` implementation — feature-gated
+/// (`vart-backend`). See [`vart_backend::VartKnowableFromStore`] for
+/// the full impl + design notes.
+#[cfg(feature = "vart-backend")]
+pub mod vart_backend {
+    use super::{KnowableFromError, KnowableFromStore};
+    use std::sync::Mutex;
+    use vart::art::Tree;
+    use vart::VariableSizeKey;
+
+    /// `KnowableFromStore` impl backed by an in-memory versioned
+    /// adaptive radix trie. Each [`register`] call advances the trie's
+    /// global version; the new version IS the `knowable_from` stamp
+    /// (value stored = version, so lookup returns it directly).
+    ///
+    /// The `class_identity` is encoded as a NULL-terminated byte
+    /// sequence before being keyed into VART. NULL termination prevents
+    /// prefix collisions per the variable-length-key discipline noted
+    /// in VART's `src/lib.rs` documentation — without it, `ogit-op/Work`
+    /// and `ogit-op/WorkPackage` would address overlapping subtrees.
+    ///
+    /// Thread-safe via internal [`Mutex`]; the trait bound
+    /// `Send + Sync` is satisfied.
+    ///
+    /// # Persistence (v1: in-memory only)
+    ///
+    /// v1 keeps the trie in memory. VART itself is *structurally*
+    /// persistable (immutable copy-on-write); wiring it to a Lance /
+    /// surrealkv / disk store is the natural next step but lives
+    /// behind a separate feature gate once a real consumer needs it.
+    ///
+    /// [`register`]: KnowableFromStore::register
+    pub struct VartKnowableFromStore {
+        tree: Mutex<Tree<VariableSizeKey, u64>>,
+    }
+
+    impl VartKnowableFromStore {
+        /// Build a new in-memory VART-backed store with an empty trie.
+        /// The first `register` call returns version `1` (VART's
+        /// `version()` starts at `0` for an empty trie).
+        #[must_use]
+        pub fn new() -> Self {
+            Self { tree: Mutex::new(Tree::new()) }
+        }
+
+        /// Current max version across the trie. `0` if no `register`
+        /// has been called yet.
+        #[must_use]
+        pub fn current_version(&self) -> u64 {
+            self.tree.lock().map(|t| t.version()).unwrap_or(0)
+        }
+
+        /// Build a VART `VariableSizeKey` from a class identity string,
+        /// appending the NULL byte per the variable-length-key
+        /// discipline (see struct-level doc).
+        fn make_key(class_identity: &str) -> VariableSizeKey {
+            let mut bytes = class_identity.as_bytes().to_vec();
+            bytes.push(0);
+            // VART's inherent `from(Vec<u8>)` constructor (the trait
+            // `From<&[u8]>` impl exists but is shadowed by the
+            // inherent method).
+            VariableSizeKey::from(bytes)
+        }
+    }
+
+    impl Default for VartKnowableFromStore {
+        fn default() -> Self {
+            Self::new()
+        }
+    }
+
+    impl KnowableFromStore for VartKnowableFromStore {
+        fn register(
+            &self,
+            class_identity: &str,
+            _schema_ddl_hint: Option<&str>,
+        ) -> Result<u64, KnowableFromError> {
+            let mut tree = self.tree.lock().map_err(|e| {
+                KnowableFromError::Backend(format!("vart mutex poisoned: {e}"))
+            })?;
+            // Advance the trie's logical version monotonically — the new
+            // version IS the knowable_from stamp we return. saturating_add
+            // guards the theoretical wrap (registering 2^64 times).
+            let new_version = tree.version().saturating_add(1);
+            let key = Self::make_key(class_identity);
+            // insert_or_replace is the upsert path: re-registering the same
+            // class identity advances its version (the registry behaviour
+            // the runtime side's `inv.object_instance` trie-append also uses
+            // — every commit is a new version of the entry).
+            tree.insert_or_replace(&key, new_version, new_version, 0)
+                .map_err(|e| {
+                    KnowableFromError::Backend(format!("vart insert: {e:?}"))
+                })?;
+            Ok(new_version)
+        }
+
+        fn knowable_from(&self, class_identity: &str) -> Option<u64> {
+            let tree = self.tree.lock().ok()?;
+            let key = Self::make_key(class_identity);
+            // Latest snapshot — pass the trie's current version so we get
+            // the freshest stamp for the key.
+            let latest = tree.version();
+            tree.get(&key, latest).map(|(v, _ts, _vsn)| v)
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -547,5 +678,96 @@ mod tests {
             hint.contains("DEFINE FIELD email ON Account TYPE string;"),
             "expected DEFINE FIELD in the hint, got: {hint}"
         );
+    }
+
+    // ── VART backend tests (feature `vart-backend`) ─────────────────────
+    // Exercise the reference-backend impl named in PR #25's crate docs.
+    // Verifies: monotonic version advance, lookup after register,
+    // prefix-collision safety (the NULL-byte termination discipline),
+    // and the composition with `register_class_knowable_from` (the
+    // PR #31 canonical-identity helper).
+    // ────────────────────────────────────────────────────────────────────
+
+    #[cfg(feature = "vart-backend")]
+    #[test]
+    fn vart_empty_returns_none_and_version_zero() {
+        let store = crate::vart_backend::VartKnowableFromStore::new();
+        assert_eq!(store.current_version(), 0);
+        assert!(store.knowable_from("ogit-erp/Account").is_none());
+    }
+
+    #[cfg(feature = "vart-backend")]
+    #[test]
+    fn vart_register_returns_monotonic_versions() {
+        let store = crate::vart_backend::VartKnowableFromStore::new();
+        let v1 = store.register("ogit-erp/A", None).unwrap();
+        let v2 = store.register("ogit-erp/B", None).unwrap();
+        let v3 = store.register("ogit-erp/C", None).unwrap();
+        assert!(v1 < v2 && v2 < v3, "versions not monotonic: {v1} {v2} {v3}");
+        // Empty trie's version() starts at 0, so first register lands at 1.
+        assert_eq!(v1, 1);
+    }
+
+    #[cfg(feature = "vart-backend")]
+    #[test]
+    fn vart_knowable_from_returns_latest_for_key() {
+        let store = crate::vart_backend::VartKnowableFromStore::new();
+        let v = store.register("ogit-op/WorkPackage", None).unwrap();
+        assert_eq!(store.knowable_from("ogit-op/WorkPackage"), Some(v));
+        // Unrelated class returns None.
+        assert!(store.knowable_from("ogit-op/Issue").is_none());
+    }
+
+    #[cfg(feature = "vart-backend")]
+    #[test]
+    fn vart_re_register_same_class_advances_version() {
+        // Upsert semantics: re-registering bumps the version (the trie's
+        // immutable-versioned shape — each register is a new logical
+        // moment in the registry).
+        let store = crate::vart_backend::VartKnowableFromStore::new();
+        let v_first = store.register("ogit-erp/Account", None).unwrap();
+        let v_second = store.register("ogit-erp/Account", None).unwrap();
+        assert!(v_second > v_first);
+        // Latest snapshot returns the most recent version.
+        assert_eq!(store.knowable_from("ogit-erp/Account"), Some(v_second));
+    }
+
+    #[cfg(feature = "vart-backend")]
+    #[test]
+    fn vart_prefix_keys_do_not_collide() {
+        // The NULL-byte-termination discipline: `ogit-op/Work` and
+        // `ogit-op/WorkPackage` differ only in suffix; without
+        // termination, the trie could conflate them at the radix
+        // boundary. With termination, distinct stamps.
+        let store = crate::vart_backend::VartKnowableFromStore::new();
+        let v_work = store.register("ogit-op/Work", None).unwrap();
+        let v_pkg = store.register("ogit-op/WorkPackage", None).unwrap();
+        assert_ne!(v_work, v_pkg);
+        assert_eq!(store.knowable_from("ogit-op/Work"), Some(v_work));
+        assert_eq!(store.knowable_from("ogit-op/WorkPackage"), Some(v_pkg));
+    }
+
+    #[cfg(feature = "vart-backend")]
+    #[test]
+    fn vart_same_name_different_prefixes_do_not_collide() {
+        // The Codex P2 motivating case from PR #31 — same class name
+        // (`WorkPackage`) under different OGIT prefixes must register
+        // as distinct entries when the canonical identity differs.
+        // VART-backed end-to-end through `register_class_knowable_from`.
+        use ogar_vocab::Class;
+        let store = crate::vart_backend::VartKnowableFromStore::new();
+        let v_op = register_class_knowable_from(
+            &Class::new("WorkPackage"),
+            "ogit-op/WorkPackage",
+            &store,
+        ).unwrap();
+        let v_erp = register_class_knowable_from(
+            &Class::new("WorkPackage"),
+            "ogit-erp/WorkPackage",
+            &store,
+        ).unwrap();
+        assert_ne!(v_op, v_erp);
+        assert_eq!(store.knowable_from("ogit-op/WorkPackage"), Some(v_op));
+        assert_eq!(store.knowable_from("ogit-erp/WorkPackage"), Some(v_erp));
     }
 }

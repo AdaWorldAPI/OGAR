@@ -53,3 +53,10 @@ jobs:
       # gating pattern as the other adapter feature tests.
       - name: cargo test -p ogar-adapter-clickhouse-ddl --features clickhouse-parser
         run: cargo test -p ogar-adapter-clickhouse-ddl --features clickhouse-parser
+      # Exercise the `vart-backend` feature on ogar-knowable-from —
+      # pulls in AdaWorldAPI/vart (versioned adaptive radix trie) as
+      # the reference KnowableFromStore impl. Same crate-scoped
+      # pattern as the other feature-gated test steps. Per-PR #25's
+      # "reference backend" promise, now real.
+      - name: cargo test -p ogar-knowable-from --features vart-backend
+        run: cargo test -p ogar-knowable-from --features vart-backend
