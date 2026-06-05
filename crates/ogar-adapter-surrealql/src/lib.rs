@@ -499,7 +499,8 @@ fn emit_class(class: &Class, out: &mut String) {
     // SCHEMAFULL is the safe default for OGAR-produced classes — they have
     // a typed shape. If a producer needs SCHEMALESS it can wire it through
     // a Class decorator and we extend here.
-    out.push_str(&format!("DEFINE TABLE {} SCHEMAFULL", class.name));
+    let table_ident = surrealql_ident(&class.name);
+    out.push_str(&format!("DEFINE TABLE {table_ident} SCHEMAFULL"));
     if let Some(desc) = &class.description {
         out.push_str(&format!(" COMMENT {}", surreal_string_literal(desc)));
     }
@@ -507,18 +508,22 @@ fn emit_class(class: &Class, out: &mut String) {
 
     // DEFINE FIELD per Attribute
     for attr in &class.attributes {
-        emit_field_attr(&class.name, attr, out);
+        emit_field_attr(&table_ident, attr, out);
     }
     // DEFINE FIELD per Association (renders as record<target>)
     for assoc in &class.associations {
-        emit_field_assoc(&class.name, assoc, out);
+        emit_field_assoc(&table_ident, assoc, out);
     }
     // DEFINE FIELD per EnumDecl (renders as string ASSERT $value IN [...])
     for enum_decl in &class.enums {
-        emit_field_enum(&class.name, enum_decl, out);
+        emit_field_enum(&table_ident, enum_decl, out);
     }
 }
 
+// NOTE: `table` arrives already passed through `surrealql_ident` at the
+// `emit_class` call site (each identifier quoted once at its source).
+// Field-side identifiers (`attr.name`, `assoc.name`, target record name,
+// enum column) are quoted locally here.
 fn emit_field_attr(table: &str, attr: &Attribute, out: &mut String) {
     let surreal_type = attr
         .type_name
@@ -537,7 +542,9 @@ fn emit_field_attr(table: &str, attr: &Attribute, out: &mut String) {
     };
     out.push_str(&format!(
         "DEFINE FIELD {} ON {} TYPE {};\n",
-        attr.name, table, wrapped
+        surrealql_ident(&attr.name),
+        table,
+        wrapped
     ));
 }
 
@@ -552,20 +559,27 @@ fn emit_field_assoc(table: &str, assoc: &Association, out: &mut String) {
                 .class_name
                 .as_deref()
                 .unwrap_or(&assoc.name); // fallback: relation name as target
+            // The record target is a SurrealQL identifier — quote if
+            // non-bare (Odoo `res.partner` → `` `res.partner` ``).
+            let target_ident = surrealql_ident(target);
             let ty = if assoc.optional.unwrap_or(false) {
-                format!("option<record<{target}>>")
+                format!("option<record<{target_ident}>>")
             } else {
-                format!("record<{target}>")
+                format!("record<{target_ident}>")
             };
             out.push_str(&format!(
                 "DEFINE FIELD {} ON {} TYPE {};\n",
-                assoc.name, table, ty
+                surrealql_ident(&assoc.name),
+                table,
+                ty
             ));
         }
         AssociationKind::HasOne | AssociationKind::HasMany | AssociationKind::HasAndBelongsToMany => {
             // Non-owning / join-table sides: no field on this table.
             // Roundtrip note for unmap: the inverse side reconstructs from
             // the owning side's `record<X>` field on the target table.
+            // The comment body isn't parsed; leave names un-quoted for
+            // readability.
             out.push_str(&format!(
                 "-- {} {:?} {} (no DEFINE FIELD — non-owning / join side)\n",
                 table, assoc.kind, assoc.name
@@ -582,6 +596,7 @@ fn emit_field_assoc(table: &str, assoc: &Association, out: &mut String) {
 fn emit_field_enum(table: &str, enum_decl: &EnumDecl, out: &mut String) {
     // Per `ogar-vocab::EnumDecl`: `column` names the field; `source`
     // carries the variant list (Static / Computed / Add).
+    let column_ident = surrealql_ident(&enum_decl.column);
     match &enum_decl.source {
         ogar_vocab::EnumSource::Static(items) => {
             let variants = items
@@ -590,8 +605,7 @@ fn emit_field_enum(table: &str, enum_decl: &EnumDecl, out: &mut String) {
                 .collect::<Vec<_>>()
                 .join(", ");
             out.push_str(&format!(
-                "DEFINE FIELD {} ON {} TYPE string ASSERT $value IN [{}];\n",
-                enum_decl.column, table, variants
+                "DEFINE FIELD {column_ident} ON {table} TYPE string ASSERT $value IN [{variants}];\n"
             ));
         }
         ogar_vocab::EnumSource::Add { items, parent_selection } => {
@@ -603,8 +617,7 @@ fn emit_field_enum(table: &str, enum_decl: &EnumDecl, out: &mut String) {
                 .collect::<Vec<_>>()
                 .join(", ");
             out.push_str(&format!(
-                "DEFINE FIELD {} ON {} TYPE string /* selection_add from {} */ ASSERT $value IN [{}];\n",
-                enum_decl.column, table, parent_selection, variants
+                "DEFINE FIELD {column_ident} ON {table} TYPE string /* selection_add from {parent_selection} */ ASSERT $value IN [{variants}];\n"
             ));
         }
         ogar_vocab::EnumSource::Computed(body) => {
@@ -613,8 +626,7 @@ fn emit_field_enum(table: &str, enum_decl: &EnumDecl, out: &mut String) {
             // side to reconstitute.
             let escaped = body.replace("*/", "* /");
             out.push_str(&format!(
-                "DEFINE FIELD {} ON {} TYPE string /* computed: {} */;\n",
-                enum_decl.column, table, escaped
+                "DEFINE FIELD {column_ident} ON {table} TYPE string /* computed: {escaped} */;\n"
             ));
         }
         // `EnumSource` is `#[non_exhaustive]` in `ogar-vocab`; the three arms
@@ -653,6 +665,39 @@ fn surreal_string_literal(s: &str) -> String {
     // SurrealQL string literal: single-quoted, single-quote escaped.
     let escaped = s.replace('\'', "''");
     format!("'{escaped}'")
+}
+
+/// Render a name as a SurrealQL identifier: bare if it matches the
+/// `[A-Za-z_][A-Za-z0-9_]*` bare-identifier subset, backtick-quoted
+/// otherwise.
+///
+/// OGAR class names can carry dots (Odoo dotted names like
+/// `sale.order` / `account.move.line`), hyphens, or other characters
+/// that aren't valid as SurrealQL bare identifiers. Closes Codex P2
+/// on PR #33: enabling `surrealql-hint` for Odoo-style classes was
+/// rendering invalid DDL (`DEFINE TABLE sale.order …` — the dot
+/// terminates the identifier).
+///
+/// The backtick-quoted form is the canonical SurrealQL non-bare
+/// identifier syntax; embedded backticks are escaped by doubling
+/// (`` `foo``bar` `` for an identifier containing one backtick).
+/// Round-trip safe: `parse_surrealql_ddl` reads the backtick-quoted
+/// form back into the same `Ident.text`.
+fn surrealql_ident(name: &str) -> String {
+    if is_bare_surrealql_identifier(name) {
+        name.to_string()
+    } else {
+        format!("`{}`", name.replace('`', "``"))
+    }
+}
+
+fn is_bare_surrealql_identifier(s: &str) -> bool {
+    let mut chars = s.chars();
+    match chars.next() {
+        Some(c) if c.is_ascii_alphabetic() || c == '_' => {}
+        _ => return false,
+    }
+    chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
 }
 
 // ─────────────────────────────────────────────────────────────────────
@@ -1082,5 +1127,125 @@ mod tests {
             }
             other => panic!("expected Unimplemented(feature off), got: {other:?}"),
         }
+    }
+
+    // ── Codex P2 fix (PR #33) ──────────────────────────────────────────
+    // OGAR class names like `sale.order` (Odoo dotted form) aren't
+    // valid SurrealQL bare identifiers — the dot terminates the
+    // identifier. `surrealql_ident()` quotes them with backticks; the
+    // emit sites use it everywhere a Class/Attribute/Association/Enum
+    // name lands in DDL.
+    // ───────────────────────────────────────────────────────────────────
+
+    #[test]
+    fn bare_identifier_passes_through_unquoted() {
+        assert_eq!(surrealql_ident("widget"), "widget");
+        assert_eq!(surrealql_ident("WorkPackage"), "WorkPackage");
+        assert_eq!(surrealql_ident("work_package"), "work_package");
+        assert_eq!(surrealql_ident("_internal"), "_internal");
+        assert_eq!(surrealql_ident("a1b2c3"), "a1b2c3");
+    }
+
+    #[test]
+    fn non_bare_identifier_gets_backtick_quoted() {
+        // Odoo dotted names — the Codex P2 motivating case.
+        assert_eq!(surrealql_ident("sale.order"), "`sale.order`");
+        assert_eq!(surrealql_ident("account.move.line"), "`account.move.line`");
+        assert_eq!(surrealql_ident("res.partner"), "`res.partner`");
+        // Hyphens, leading digits, spaces — all need quoting.
+        assert_eq!(surrealql_ident("kebab-case"), "`kebab-case`");
+        assert_eq!(surrealql_ident("3leading"), "`3leading`");
+        assert_eq!(surrealql_ident("with space"), "`with space`");
+    }
+
+    #[test]
+    fn embedded_backticks_get_doubled() {
+        // Pathological case: ident contains a backtick. Double it
+        // per SurrealQL convention.
+        assert_eq!(surrealql_ident("weird`name"), "`weird``name`");
+    }
+
+    #[test]
+    fn empty_string_is_not_a_bare_identifier() {
+        assert!(!is_bare_surrealql_identifier(""));
+        assert_eq!(surrealql_ident(""), "``");
+    }
+
+    #[test]
+    fn emit_class_with_odoo_dotted_name_quotes_the_table() {
+        let mut c = Class::new("sale.order");
+        let mut amount = Attribute::new("amount_total");
+        amount.type_name = Some("decimal".into());
+        c.attributes.push(amount);
+        let ddl = emit_surrealql_ddl(&[c]);
+        // Critical: the table identifier is backtick-quoted in BOTH
+        // the DEFINE TABLE and the DEFINE FIELD ON clause.
+        assert!(
+            ddl.contains("DEFINE TABLE `sale.order` SCHEMAFULL"),
+            "expected backtick-quoted DEFINE TABLE, got: {ddl}"
+        );
+        assert!(
+            ddl.contains("DEFINE FIELD amount_total ON `sale.order` TYPE decimal;"),
+            "expected backtick-quoted ON clause, got: {ddl}"
+        );
+    }
+
+    #[test]
+    fn emit_class_with_odoo_belongs_to_quotes_record_target() {
+        // The record target name also needs quoting: record<`res.partner`>
+        let mut c = Class::new("sale.order");
+        let mut partner = Association::new(AssociationKind::BelongsTo, "partner_id");
+        partner.class_name = Some("res.partner".into());
+        c.associations.push(partner);
+        let ddl = emit_surrealql_ddl(&[c]);
+        assert!(
+            ddl.contains("DEFINE FIELD partner_id ON `sale.order` TYPE record<`res.partner`>;"),
+            "expected quoted target in record<…>, got: {ddl}"
+        );
+    }
+
+    #[cfg(feature = "surrealdb-parser")]
+    #[test]
+    fn round_trip_odoo_dotted_table_name() {
+        // Build IR with an Odoo dotted name + a dotted-name record
+        // target. Emit → parse → assert the IR survives the trip.
+        // Without `surrealql_ident`, emit would produce invalid DDL
+        // (`DEFINE TABLE sale.order …`) and the parser would either
+        // reject it or mis-parse the dot as a path operator — the
+        // bug Codex P2 flagged on PR #33.
+        let mut order = Class::new("sale.order");
+        let mut partner_id = Association::new(AssociationKind::BelongsTo, "partner_id");
+        partner_id.class_name = Some("res.partner".into());
+        order.associations.push(partner_id);
+        let mut amount = Attribute::new("amount_total");
+        amount.type_name = Some("decimal".into());
+        order.attributes.push(amount);
+
+        let ddl = emit_surrealql_ddl(&[order]);
+        let recovered = parse_surrealql_ddl(&ddl).expect("parse OK");
+        assert_eq!(recovered.len(), 1);
+        let r = &recovered[0];
+        assert_eq!(r.name, "sale.order");
+        assert_eq!(r.attributes.len(), 1);
+        assert_eq!(r.attributes[0].name, "amount_total");
+        assert_eq!(r.attributes[0].type_name.as_deref(), Some("decimal"));
+        assert_eq!(r.associations.len(), 1);
+        assert_eq!(r.associations[0].name, "partner_id");
+        assert_eq!(r.associations[0].class_name.as_deref(), Some("res.partner"));
+    }
+
+    #[cfg(feature = "surrealdb-parser")]
+    #[test]
+    fn round_trip_three_segment_odoo_name() {
+        // `account.move.line` — three-segment dotted name.
+        let c = Class::new("account.move.line");
+        let ddl = emit_surrealql_ddl(&[c]);
+        assert!(
+            ddl.contains("`account.move.line`"),
+            "three-segment name must be quoted, got: {ddl}"
+        );
+        let recovered = parse_surrealql_ddl(&ddl).expect("parse OK");
+        assert_eq!(recovered.len(), 1);
+        assert_eq!(recovered[0].name, "account.move.line");
     }
 }
