@@ -1,0 +1,17 @@
+[package]
+name = "ogar-knowable-from"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+description = "OGAR-side producer seam for the §10.3 `knowable_from` meet-point. Defines the `KnowableFromWriter` trait + `register_class_knowable_from` generic. Runtime backends (e.g. `lance-graph-callcenter::LanceMembrane`) implement the trait; OGAR stays Lance-free. The returned `u64` becomes the `knowable_from` value `lance-graph-planner::temporal::classify` consumes (per ADR-010)."
+
+[features]
+default = []
+serde = ["dep:serde", "ogar-vocab/serde"]
+
+[dependencies]
+ogar-vocab = { path = "../ogar-vocab" }
+serde = { workspace = true, optional = true }
