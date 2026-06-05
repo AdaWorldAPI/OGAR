@@ -28,16 +28,16 @@
 
 | # | Decision | Status | PRs / refs |
 |---|---|---|---|
-| ADR-001 | `State = ActionState` (lifecycle), not domain state, for Rubicon binding | **Pinned** | OGAR PR #9 (contract §3); confirmed via Rubicon Phase 1 |
-| ADR-002 | `ActionDef` and `ActionInvocation` stay split — never collapse | **Pinned** | OGAR PR #13 (carve-out 5) |
+| ADR-001 | `State = ActionState` (lifecycle), not domain state, for Rubicon binding | **Pinned + Implemented** | OGAR PR #9 (contract §3); confirmed via Rubicon Phase 1 |
+| ADR-002 | `ActionDef` and `ActionInvocation` stay split — never collapse | **Pinned + Implemented** | OGAR PR #13 (carve-out 5) |
 | ADR-003 | `Class` field set 1:1 with `class_record_batch_schema` (full structural fidelity) | **Pinned** | OGAR PR #13 (Codex P2 #2) |
 | ADR-004 | Three §6 Rubicon-statem vocab terms as TeKaMoLo sub-properties (`onEnter` / `guardFailurePolicy` / `StateTimeout`) | **Pinned** | OGAR PR #10 |
-| ADR-005 | `EnterEffect { field, to_value }` is typed (not free-form `xsd:string`) | **Pinned** | OGAR PR #13 |
+| ADR-005 | `EnterEffect { field, to_value }` is typed (not free-form `xsd:string`) | **Pinned + Implemented** | OGAR PR #13 |
 | ADR-006 | `EnterEffect` is `#[non_exhaustive]` per vocab forward-compat convention | **Pinned** | OGAR PR #15 (Codex P2 follow-up) |
-| ADR-007 | §3 signatures = canonical `ractor_actors::state_machine` (`on_event` / `is_commit` / `timeout` / `on_timeout` / `Transition::{Goto,Stay,Postpone,Stop}` / sync-fallible `on_commit`) | **Pinned** | OGAR PR #11; ractor_actors `feat/state-machine-actor` @ `38a71a4` |
-| ADR-008 | `LanceMembrane::commit_event(row) -> u64` as the `CommitHook::on_commit` target (sibling to `ExternalMembrane::project`) | **Pinned** | lance-graph PR #467 (merged); OGAR PR #11 §7 item 2 |
-| ADR-009 | `lance-graph-planner::temporal` = the deinterlace engine with two causal axes (TIME via HLC + DATA via `DependsClosure`) | **Pinned** | lance-graph PR #468; OGAR PR #16 §10.3 |
-| ADR-010 | `knowable_from` meet-point single ownership: sourced by `ogar-adapter-surrealql`, consumed by `temporal::classify`, nowhere else | **Pinned** | OGAR PR #16 §10.3; lance-graph PR #468 |
+| ADR-007 | §3 signatures = canonical `ractor_actors::state_machine` (`on_event` / `is_commit` / `timeout` / `on_timeout` / `Transition::{Goto,Stay,Postpone,Stop}` / sync-fallible `on_commit`) | **Pinned + Implemented** | OGAR PR #11; ractor_actors `feat/state-machine-actor` @ `38a71a4` |
+| ADR-008 | `LanceMembrane::commit_event(row) -> u64` as the `CommitHook::on_commit` target (sibling to `ExternalMembrane::project`) | **Pinned + Implemented** | lance-graph PR #467 (merged); OGAR PR #11 §7 item 2 |
+| ADR-009 | `lance-graph-planner::temporal` = the deinterlace engine with two causal axes (TIME via HLC + DATA via `DependsClosure`) | **Pinned + Implemented** | lance-graph PR #468; OGAR PR #16 §10.3 |
+| ADR-010 | `knowable_from` meet-point single ownership: sourced by `ogar-adapter-surrealql`, consumed by `temporal::classify`, nowhere else | **Pinned (half-implemented)** | OGAR PR #16 §10.3; lance-graph PR #468 |
 | ADR-011 | Two-arm naming pattern for producers (`ruff_<lang>_spo` narrow + `ogar-from-<lang>` wide) | **Pinned** | OGAR PR #16 §10.1 |
 | ADR-012 | nexgen `op-surreal-ast` is a special case of `Class → catalog::TableDefinition`, not a collision | **Pinned** | OGAR PR #16 §10.2 |
 | ADR-013 | `has_paper_trail` is a duplicate of Lance versions — substrate consolidation | **Pinned** | OGAR PR #14 §4 observation |
@@ -950,6 +950,87 @@ hygiene PR if/when desired.
 
 **References.** OGAR PR #15 (placement fix + emitter cascade); PR
 #17 (Codex P1 fix); PR #18 (pre-emptive fix).
+
+## Implementation receipts — ADR ↔ commit cross-reference
+
+> **Added in follow-up addendum (2026-06-05).** Records the implementation
+> receipts for ADRs that moved from **Pinned** to **Pinned + Implemented**
+> via the runtime/bardioc session's Phase 1 → 4 work. Future sessions
+> citing an ADR can now resolve to both the architectural decision *and*
+> the executable proof.
+>
+> **Closed-loop end-to-end** (proven 2026-06-04):
+>
+> ```
+> ActionDef → RubiconMachine::on_event
+>   → evaluate_guard (StateGuard + Depends-via-DependsClosure)
+>   → Transition::Goto(Committed)
+>   → RubiconCommitHook::on_commit  (sync, fallible, I-2 preserved)
+>   → LanceMembraneWriter::commit
+>   → LanceMembrane::commit_event(row) -> u64
+>   → version bump + LanceVersionWatcher fan-out
+>   → next actor's Pending evaluates against post-commit deinterlace
+> ```
+>
+> Cumulative Rubicon test count progressed Phase 1 → 4: **6/6 → 13/13 → 20/20 → 25/25** (cumulative at each phase). The final substrate has 25 tests covering every link in the closed loop.
+
+### Receipt table
+
+| ADR | Decision | Implementation | Receipt | Tests |
+|---|---|---|---|---|
+| **ADR-001** | `State = ActionState` (lifecycle binding) | Rubicon Phase 1 — `RubiconMachine` over `State = ActionState` + the `one_machine_type_drives_every_domain` test (same machine drives Odoo + chess + OP) | bardioc `9412c68` (Phase 1 repoint into bardioc as excluded crate; consumes merged `lance_graph_planner::temporal`) | 6/6 |
+| **ADR-002** | `ActionDef` and `ActionInvocation` stay split | Rubicon Phase 1 — `Event = ActionDef`, `Context = ActionInvocation`, `realizes` link | bardioc `9412c68` | 6/6 |
+| **ADR-005** | `EnterEffect { field, to_value }` typed | Rubicon Phase 1 uses `EnterEffect::transition(field, to_value)` for the Rubicon crossing effect | bardioc `9412c68`; structural emission shipped in OGAR PR #15 (`ogar-emitter`) | 6/6 |
+| **ADR-007** | §3 signatures = canonical `ractor_actors::state_machine` | `ractor_actors` crate — `on_event` / `is_commit` / `timeout` / `on_timeout` / `Transition::{Goto,Stay,Postpone,Stop}` / sync-fallible `on_commit`; Rubicon Phase 1 binds against this surface | `AdaWorldAPI/ractor_actors` `feat/state-machine-actor @ 38a71a4` (incl. load-bearing `postponed_event_is_replayed_after_transition`); pinned via submodule | 7/7 (`ractor_actors`) + 6/6 (Phase 1 consuming) |
+| **ADR-008** | `LanceMembrane::commit_event(row) -> u64` sibling as the `CommitHook::on_commit` target | (a) lance-graph PR #467 adds the sibling on `LanceMembrane`; (b) Rubicon Phase 2 wires `RubiconWriter::commit` → `LanceMembrane::commit_event` via `LanceMembraneWriter` adapter (`gate_commit=true` marker, deterministic 128-bit content-address fingerprint) | lance-graph PR #467 (merged) + bardioc Phase 2 `8c74c18` | lance-graph #467: `commit_event_ticks_version_and_returns_new` green; bardioc Phase 2: 13/13 |
+| **ADR-009** | `lance-graph-planner::temporal` two-axis engine (TIME via HLC + DATA via `DependsClosure`) | (a) lance-graph PR #468 ships the engine (`classify` / `deinterlace` / `EpistemicMode` / `QueryReference` with HLC-aware signature + `DependsClosure` trait); (b) Rubicon Phase 3 implements `OgarDependsGuard: DependsClosure` for `KausalSpec::Depends { paths }`; `RubiconMachine<D>` generic with `NoDeps` default; full `KausalSpec` variant coverage — **the Room-2 unblock for Odoo `@api.depends` / Rails reactive callbacks** | lance-graph PR #468 (merged) + bardioc Phase 3 `b055bfc` | lance-graph #468: 13/13; bardioc Phase 3: 20/20 |
+| **ADR-010** | `knowable_from` meet-point single ownership | **Half-implemented**: consumer side is `temporal::classify(row_version, knowable_from, v_ref)` live on lance-graph `main` (PR #468); producer side `register_class_knowable_from` is a stub in OGAR PR #18's `ogar-adapter-surrealql` (gated by `lance-bind` Sprint-5b + OGAR rust-version bump per ADR-017). Meet-point closes end-to-end when producer side wires. | Consumer: lance-graph PR #468 `bardioc/MIGRATION_SPINE.md §2` lists this seam as one of five tracked cross-session meet-points | Consumer side: covered by lance-graph #468 tests; producer side: stub awaiting wiring |
+| **§14 acceptance gate** (referenced in ADR-018 migration scaffold + `SUBSTRATE-ENDGAME §2.4 / §6.2` + `CHESS-TRANSCODING §6` + `ELIXIR-HIRO-PREFETCH §2.4` + `OPENPROJECT-TRANSCODING §6`) | The oracle infrastructure for per-actor graduation verification (record migration form, replay native candidate, compare provenance-normalized, emit verdict bucket {PASS / DIVERGENT-RECONCILABLE / DIVERGENT-FAULTY / INDETERMINATE}) | Rubicon Phase 4 — `OracleSubstrate` trait + four `Verdict` outcomes + `compare_normalised` provenance-strip + `MinimalChessOracle` (drop-in for shakmaty) | bardioc Phase 4 `43b272a` | 25/25 |
+
+### What this enables
+
+Each "Pinned + Implemented" ADR now has bidirectional resolution:
+- **Forward** (decision → implementation): cite ADR-NNN, follow the
+  receipt to the commit + test count.
+- **Backward** (implementation → decision): from the bardioc commit
+  or the lance-graph PR, the relevant ADR explains *why* this shape.
+
+The bardioc-side `MIGRATION_SPINE.md §2` carries the parallel "five
+meet-points" table referencing OGAR's ADR numbers; both docs are
+mutually-anchored. `CROSS_SESSION_COORDINATION.md` (bardioc-owned)
+carries the cumulative Phase 1→4 + PR cascade record.
+
+### What remains "Pinned" (decision shipped, implementation pending)
+
+| ADR | Why still Pinned (not yet Implemented) |
+|---|---|
+| ADR-003 (Class field set 1:1) | Producer-arm completeness — the *consumers* of full `Class` fidelity (`ogar-from-ruby`, `ogar-from-elixir`, future `op-codegen-pipeline` integration) are scaffolds; producer extraction wiring is the gap |
+| ADR-004 (three §6 vocab terms as TeKaMoLo sub-properties) | Vocab shipped (OGAR #10); consumed by Rubicon via `ActionDef` carriers (covered by ADR-008/009 receipts); the term-vocabulary itself is the decision — no further "implementation receipt" beyond the vocab landing |
+| ADR-006 (`#[non_exhaustive]` on `EnterEffect`) | Convention-rule decision; "implementation" is the absence of a SemVer break + the constructor pattern in use; receipt is OGAR #15's correctness fix |
+| ADR-011 (two-arm naming pattern) | Naming convention decision; "implementation" is consistent producer crate naming across `ogar-from-elixir` (shipped scaffold, PR #17) and future `ogar-from-ruby` / `ruff_elixir_spo` |
+| ADR-012 (nexgen convergence) | Awaits nexgen's C16c sprint (`From<op_surreal_ast::*> for catalog::*` impls); architectural convergence is documented (`OPENPROJECT-TRANSCODING.md §10.2` + `SUBSTRATE-ENDGAME §1.5`); implementation is nexgen-side work |
+| ADR-013 (paper_trail consolidation) | Observation, not enforcement — applies during OP-graduation when the §14 oracle compares PaperTrail rows on Rails-side vs Lance versions on substrate-side |
+| ADR-014 (database hydrator pattern) | Generalizes existing TTL-hydrator pattern; first concrete implementation lands when `ogar-from-ruby` consumes OP's `workflows` table |
+| ADR-015 (`Language` extension point) | Convention; implementations land case-by-case (e.g. `Language::Elixir` shipped in PR #10) |
+| ADR-016 (SurrealQL DDL AST is not the universal IR) | Pure decision; "implementation" is the absence of the unification, which is the steady-state architecture |
+| ADR-017 (`surrealdb-parser` cross-repo dep deferred behind feature flag) | Awaits OGAR rust-version bump 1.85 → 1.95; `ogar-adapter-surrealql` (#18 merged) ships with the `parse_surrealql_ddl` `todo!()` stub + the `surrealdb-parser` feature flag reserved |
+| ADR-018 (Kanban-as-polyglot-dispatcher) | §14 oracle infrastructure shipped (Phase 4 receipt above); work-item-form trait + per-actor registration table + HTTP-sidecar bridge are the runtime-side next pieces |
+| ADR-019 (OP-as-operator-pane) | Gated by Room 2 (work-item-form trait + first OP class graduation); the destination is documented (`SUBSTRATE-ENDGAME §3`); implementation is months of per-class graduation work |
+| ADR-020 (SDK deeper than Foundry-OSS) | Vision; implementation is the cumulative outcome of all prior decisions reaching steady-state |
+| ADR-021 (meta-hygiene: always grep peer crates) | Process rule; "implementation" is the consistent practice (validated by the absence of further `[lints]`-style cascade bugs after PR #15/#17/#18 fixes) |
+
+### Cumulative ADR status as of 2026-06-05
+
+- **Pinned + Implemented**: 6 of 21 ADRs have executable receipts (ADR-001, ADR-002, ADR-005, ADR-007, ADR-008, ADR-009; plus the §14 protocol referenced by ADR-018).
+- **Pinned, half-implemented**: 1 (ADR-010 — consumer side live, producer side stubbed).
+- **Pinned, awaiting implementation**: 14 (the remaining ADRs, each with a clear unlock condition per the table above).
+
+This is the steady-state distribution: most ADRs are *architectural*
+decisions whose "implementation" lands incrementally as the
+substrate's wider ecosystem matures. The closed-loop core (ADR-001
+through ADR-009) is now fully wired; the migration scaffold, OP-
+graduation, and SDK-shape ADRs (ADR-018 through ADR-020) are
+forward-looking by design.
 
 ## Cross-references
 
