@@ -12,10 +12,13 @@
 //! # The §10.3 meet-point: `knowable_from`
 //!
 //! Per `docs/OPENPROJECT-TRANSCODING.md §10.3`, the SurrealQL frame's
-//! `knowable_from` is sourced here ([`register_class_knowable_from`])
-//! and consumed by `lance-graph-planner::temporal::classify` (runtime
-//! session). This crate is the *only* OGAR-side owner of that side of
-//! the seam.
+//! `knowable_from` is sourced by a dedicated OGAR producer crate
+//! ([`ogar-knowable-from`](../ogar_knowable_from/index.html), defines the
+//! `KnowableFromWriter` trait + the `register_class_knowable_from`
+//! generic) and consumed by `lance-graph-planner::temporal::classify`
+//! (runtime session). The producer-side seam moved out of this crate to
+//! keep the bridge Lance-free; trait-mediated, symmetric with how
+//! `CommitHook` hides the membrane from Rubicon.
 //!
 //! # Status (post PR #23 rust-version bump)
 //!
@@ -75,8 +78,6 @@
 
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
-
-use std::path::Path;
 
 use ogar_vocab::{Association, AssociationKind, Attribute, Class, EnumDecl};
 
@@ -176,37 +177,16 @@ pub fn parse_surrealql_ddl(_input: &str) -> Result<Vec<Class>, ParseError> {
     }
 }
 
-/// Register a `Class` and return its `knowable_from` Lance version —
-/// the timestamp at which this class became defined in the substrate.
-///
-/// This is the **producer side of the §10.3 meet-point** with
-/// `lance-graph-planner::temporal::classify`. Consumed by `classify` as
-/// one of three inputs:
-/// `classify(row_version, knowable_from, v_ref) -> {CONTEMPORARY | ANACHRONISTIC | SPOILER}`.
-///
-/// # Panics
-///
-/// Currently `todo!()` — requires a Lance dataset writer
-/// (`LanceMembrane::commit_event` or equivalent kv-lance backend).
-/// The `lance-bind` Sprint-5b boundary is the integration path.
-///
-/// # What to wire
-///
-/// Emit the class's `DEFINE TABLE` + field DDL via [`emit_surrealql_ddl`]
-/// (or build the equivalent typed `TableDefinition::new_for_ddl(...).with_*(...)`),
-/// commit it to the Lance dataset, and return the new monotonic
-/// `lance_version` as the `knowable_from` stamp. Persist the
-/// `(class_identity, knowable_from)` mapping in a dedicated Lance row
-/// so `temporal::classify` can join.
-pub fn register_class_knowable_from(
-    _class: &Class,
-    _lance_dataset: &Path,
-) -> Result<u64, RegisterError> {
-    todo!(
-        "needs Lance writer; gated by lance-bind Sprint-5b; the (class_identity, \
-         knowable_from) mapping is the §10.3 seam"
-    )
-}
+// `register_class_knowable_from` MOVED to the standalone crate
+// `ogar-knowable-from` (cross-ref via the crate-level docs above).
+// That crate defines the `KnowableFromWriter` trait + a generic
+// `register_class_knowable_from<W: KnowableFromWriter>(&Class, &W) -> Result<u64, _>`
+// that delegates the actual Lance write to the runtime side
+// (lance-graph-callcenter::LanceMembrane, in a small follow-up `impl`).
+//
+// Kept this crate Lance-free; the seam is trait-mediated symmetrically
+// with how CommitHook hides the membrane from Rubicon. See ADR-010 in
+// `docs/ARCHITECTURAL-DECISIONS-2026-06-04.md` for the meet-point pin.
 
 /// Errors from [`parse_surrealql_ddl`].
 #[derive(Debug, Clone)]
@@ -242,14 +222,8 @@ impl std::fmt::Display for ParseError {
 
 impl std::error::Error for ParseError {}
 
-/// Errors from [`register_class_knowable_from`].
-#[derive(Debug, Clone)]
-pub enum RegisterError {
-    /// Lance dataset write failed.
-    LanceWrite(String),
-    /// Class is missing required identity / name.
-    MalformedClass(String),
-}
+// `RegisterError` MOVED to `ogar-knowable-from`. See note above on
+// `register_class_knowable_from`.
 
 // ─────────────────────────────────────────────────────────────────────
 // emit — hand-written formatter (see crate-level docs on alignment)
