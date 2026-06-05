@@ -125,12 +125,21 @@ inner auth AND durable outer audit, and ships exactly that separation.
 
 ### 2.6 Geospatial / OSM — geographic calibration
 
-**What OSM proves: geography doesn't break the IR.** OSM IDs are
-*already* prefix-structured (`country/region/city/street/house`), so
-the adapter is doing identity-*extraction*, not identity-construction
-— a much smaller surface than typical. Three OSM Classes (`Node`,
-`Way`, `Relation`) lift via the queued `ogar-from-osm-pbf` adapter
+**What OSM proves: geography doesn't break the IR.** OSM elements use
+**per-element-type flat numeric ID spaces** ([OSM data model][osm-dm]
+— `Node 100`, `Way 100`, and `Relation 100` are unrelated; IDs are
+not hierarchical and carry no spatial information on their own). The
+adapter therefore does identity *construction*, not extraction: it
+computes the Cesium TMS quadkey **from the element's coordinates**
+(or, for `Relation`s without coordinates, from the centroid of its
+members or from an `admin_level`-boundary walk) and prepends it to
+the per-type OSM ID, yielding the `NiblePath` form
+`osm/<quadkey>/<type>/<id>`. The quadkey IS the spatial frame; the
+per-type ID is the leaf inside it. Three OSM Classes (`Node`, `Way`,
+`Relation`) lift via the queued `ogar-from-osm-pbf` adapter
 (`docs/RDF-OWL-ALIGNMENT.md §10` Phase 2c). Exercises:
+
+[osm-dm]: https://wiki.openstreetmap.org/wiki/Data_model
 
 - **Spatial prefix-locality** — Cesium TMS quadkey as `NiblePath`
   prefix, per Q2 coordination outcome locked in `lance-graph` PR #473
