@@ -121,6 +121,19 @@ per crossing.
   `std::sync::LazyLock` (read-once, lock-in), and the inner path then
   treats it as resolved. The boundary tax (the read + decode) is paid
   exactly once; the hot path never re-reads.
+- **Reference store backend — VART (timed radix trie) or Lance dataset.**
+  The outer-boundary schema/registry store has two natural reference
+  backends behind the contract trait: **VART** (`AdaWorldAPI/vart` —
+  the timed adaptive radix trie SurrealKV is built on, already in the
+  surrealdb-fork dep tree) and a **Lance dataset**. VART is the natural
+  fit for the registry: it's a prefix-radix trie (NiblePath-native, so
+  class identities compress to the floor), its *timed* version stamp
+  **is** the `knowable_from` value, and its append-only history is an
+  immutable audit trail for free (the §7.2 HIPAA need). Both are
+  outer-boundary — the append/serialize is *the firewall crossing*. The
+  same VART-append serves OGIT's identity register or OGAR's schema
+  registry ("~20-minute outer-boundary addon" per the operator;
+  detail in `crates/ogar-knowable-from`).
 - **Serialization happens HERE, and only here.** Writing a Lance row
   (`KnowableFromStore::register`, `LanceMembrane::commit_event`),
   encoding a cross-process message, talking to Redis — all serialize.
