@@ -734,7 +734,9 @@ same TTL.
 | Phase | Deliverable | Sized | Status |
 |---|---|---|---|
 | **1** | This doc (`docs/RDF-OWL-ALIGNMENT.md`) | 1 PR | **this PR** |
-| **2** | `ogar-adapter-ttl` crate scaffold — parse / emit / round-trip against `vocab/ogar.ttl` | 1 sprint | Next OGAR PR after #25 P2 fix + surrealql AST walk |
+| **2a** | `ogar-adapter-ttl` crate scaffold — parse / emit / round-trip against `vocab/ogar.ttl` | 1 sprint | **Shipped** (PR #37, merged 2026-06-05) |
+| **2b** | `ogar-adapter-clickhouse-ddl` crate — CREATE TABLE → `Class` + emit; sqlparser ClickHouseDialect; composes with bardioc PR #19's `substrate-b-shadow::ClickHouseQuery` | 1 sprint | **Shipped** (PR #38 + #40 dotted-name fix, merged 2026-06-05) |
+| **2c** | `ogar-from-osm-pbf` crate scaffold — consumes `osmpbf` (b-r-u) + `D-OSM-3`'s SPO triple lift contract from `lance-graph` PR #473 (`cesium-osm-substrate-v1.md`). Three fixed Classes (`Node`/`Way`/`Relation`); Cesium TMS quadkey as `NiblePath` prefix (Q2 outcome); Tag-as-Class final shape with Arrow `List<Struct>` v1 fallback (Q1 outcome). Reports ρ-vs-reference per ADR-024 adoption checklist on first per-country PBF run | 1 sprint | Queued — D-OSM-1/2/3 critical path upstream; landing after runtime-side D-OSM-3 SPO surface is observable |
 | **3** | `ogar-knowable-from::vart-backend` feature — wires VART as the cache | 1 sprint | Concurrent with phase 2 |
 | **4** | `ogar-pattern` crate — recognition library + confidence scoring + 10-15 patterns (FMA-D, FIBO-FND, schema.org, SKR, PROV-O-audit, etc.) | 2 sprints | After phase 2 |
 | **5** | `ogar-actionable` crate — lifecycle extraction + `ActionDef` / `KausalSpec` proposal | 2 sprints | After phase 4 |
