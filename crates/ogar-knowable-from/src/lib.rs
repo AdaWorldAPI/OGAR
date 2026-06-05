@@ -86,6 +86,43 @@
 //! deployment, etc.). The trait is the SDK seam; the Lance impl is the
 //! reference. Direct-Lance ownership in OGAR would foreclose that.
 //!
+//! # Reference backends — VART (radix trie) or Lance dataset
+//!
+//! The trait admits any backend; two natural reference impls (a
+//! deployment picks one — the firewall's outer-boundary pluggability):
+//!
+//! 1. **VART — timed adaptive radix trie** (`AdaWorldAPI/vart`,
+//!    `vart 0.9.3`, the structure SurrealKV is built on; already in the
+//!    surrealdb-fork dep tree via `surrealkv`). A near-perfect fit for
+//!    the registry specifically:
+//!    - **NiblePath-native** — VART *is* a (prefix) radix trie, and
+//!      class identities (`ogit-op::WorkPackage`, …) are prefix-radix
+//!      keys that share segments → compresses to the floor, exactly the
+//!      `ARCHITECTURE.md` "compression to the floor" property.
+//!    - **the trie version IS `knowable_from`** — VART is *timed* /
+//!      versioned, so the version stamp the registry must return is the
+//!      trie's own version. No separate counter.
+//!    - **append-only-versioned = immutable audit** — the version
+//!      history is a tamper-evident trail for free (the HIPAA need per
+//!      `THE-FIREWALL.md §7.2`).
+//!    - lightweight (a radix-trie crate, no protoc / heavy graph).
+//!      Could land as a feature-gated reference impl *in this crate*
+//!      (`--features vart-backend`) keeping the default trait-only; a
+//!      ~20-minute outer-boundary addon (per the operator). Deferred to
+//!      a focused follow-up that reads `AdaWorldAPI/vart`'s actual API
+//!      first (no guessed-API cascade).
+//! 2. **Lance dataset** (`ClassRegistryWriter` in
+//!    `lance-graph-callcenter`, the runtime session's committed backend)
+//!    — its own `AtomicU64` version counter + a dedicated `class_registry/`
+//!    Lance dataset; unifies the registry with the substrate's main
+//!    storage. Heavier; right when the registry should live alongside
+//!    the rest of the Lance data.
+//!
+//! Both are **outer-boundary** stores (serialize at the write — that's
+//! the firewall, per `THE-FIREWALL.md`). The trait is the seam; the
+//! backend is the deployment choice. (OGIT can use the same VART-append
+//! for its identity register — same pattern, same crate.)
+//!
 //! # Why a separate crate (not in `ogar-adapter-surrealql`)
 //!
 //! Architectural symmetry with `CommitHook` (the runtime side's
