@@ -17,8 +17,21 @@ serde = ["dep:serde", "ogar-vocab/serde"]
 # adapter pulls the SurrealDB-related dep graph; the default path
 # stays lightweight (only `ogar-vocab` + optional `serde`).
 surrealql-hint = ["dep:ogar-adapter-surrealql"]
+# Wires `VartKnowableFromStore` — a `KnowableFromStore` impl backed
+# by AdaWorldAPI/vart (the versioned adaptive radix trie from the
+# SurrealKV ecosystem). Each `register` call advances the trie's
+# global version and returns it as the `knowable_from` stamp; the
+# NiblePath-shaped `class_identity` is prefix-radix-indexed natively.
+# The runtime-session's "reference backend" promise from PR #25's
+# crate docs lands here.
+vart-backend = ["dep:vart"]
 
 [dependencies]
 ogar-vocab = { path = "../ogar-vocab" }
 ogar-adapter-surrealql = { path = "../ogar-adapter-surrealql", optional = true }
 serde = { workspace = true, optional = true }
+# AdaWorldAPI/vart — versioned adaptive radix trie, MIT/Apache-2 dual.
+# Zero runtime deps of its own (per its Cargo.toml `[dependencies]`
+# is empty); pure-Rust, std-only. Pinned to the AdaWorldAPI mirror to
+# inherit any fork patches without going via crates.io.
+vart = { git = "https://github.com/AdaWorldAPI/vart", optional = true }
