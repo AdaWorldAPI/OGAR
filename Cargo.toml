@@ -19,3 +19,37 @@ rust-version = "1.95"
 
 [workspace.dependencies]
 serde = { version = "1.0", features = ["derive"] }
+
+# ─────────────────────────────────────────────────────────────────────
+# Lance ecosystem pins — ALIGNED with AdaWorldAPI/lance-graph +
+# AdaWorldAPI/surrealdb forks. When OGAR crates take any of these
+# deps (e.g. `ogar-adapter-surrealql` wiring `parse_surrealql_ddl`
+# via surrealdb-parser; the eventual `lance-bind` boundary in
+# `ogar-proposal::boundary`), consume from the workspace
+# (`lance.workspace = true`) so the pin is canonical and matches the
+# rest of the AdaWorldAPI ecosystem.
+#
+# Strict pins (`=`) on lance + lancedb because lance-encoding's
+# format guarantees only hold across exact patch boundaries; caret
+# pins on datafusion + arrow because their crates follow SemVer and
+# minor bumps are deliberate.
+#
+# Cross-reference: lance-graph PR #467 commit notes
+# "kv-lance lance 6.0.0 -> =7.0.0, lancedb 0.29.0 -> =0.30.0";
+# surrealdb fork's surrealdb-core uses the same pins under the
+# kv-lance feature.
+# ─────────────────────────────────────────────────────────────────────
+lance        = "=7.0.0"
+lancedb      = "=0.30.0"
+datafusion   = "53"
+arrow        = "58"
+arrow-array  = "58"
+arrow-schema = "58"
+
+# surrealdb fork crates (git deps — for ogar-adapter-surrealql after
+# the rust-version bump in this PR clears the 1.85 -> 1.95 blocker).
+# Take via `surrealdb-ast.workspace = true` etc. in consumer crates;
+# the canonical fork ref is pinned here.
+surrealdb-ast    = { git = "https://github.com/AdaWorldAPI/surrealdb", branch = "main" }
+surrealdb-parser = { git = "https://github.com/AdaWorldAPI/surrealdb", branch = "main" }
+surrealdb-core   = { git = "https://github.com/AdaWorldAPI/surrealdb", branch = "main", default-features = false }
