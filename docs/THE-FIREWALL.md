@@ -142,10 +142,10 @@ per crossing.
   boundary without leaking into the hot path's dependency surface.
 
 **Proven precedent.** The external-membrane-via-contract pattern is
-already shipped in sibling AdaWorldAPI projects: **MedCare-rs**
-(the `Membrane` pattern in `crates/medcare-rbac/src/lib.rs` +
-`.claude/patterns.md`; `LazyLock` in `crates/medcare-analytics`) and
-**Woa-rs** (SeaORM backend in `src/db.rs` + `src/migrations.rs`). The
+already shipped in sibling AdaWorldAPI projects: **a production HIPAA instance**
+(the `Membrane` pattern in (consumer-side) +
+`.claude/patterns.md`; `LazyLock` in (consumer-side)) and
+**a production ERP instance** (SeaORM backend in `src/db.rs` + `src/migrations.rs`). The
 operator's estimate: "~20 minutes work" to add a given external
 membrane — *because it's outer-boundary caking, not inner
 architecture*. The pattern is a known quantity; the firewall is what
@@ -248,21 +248,23 @@ These aren't just "they have the membrane pattern" — they are **OGAR
 domain instances**: production-grade transcodes the substrate (and this
 firewall principle) generalize. Named by *domain*, not project — the
 concrete label is consumer-rebindable via the `Adapter` contract (see
-`docs/DOMAIN-INSTANCES.md §0`). Full catalogue there.
+`docs/DOMAIN-INSTANCES.md §0`), and a deployment's PII labels never enter
+OGAR's surface. Full catalogue there.
 
 - **A production ERP deployment** = **OGAR for Odoo / ERP** (the
-  `ogit-erp::` prefix made real): SeaORM backend, Odoo transcode
-  (analytic accounting, HR), the ERP money/decimal model. The
-  production Odoo instance behind `docs/ODOO-TRANSCODING.md`.
+  `ogit-erp::` prefix made real): Odoo models → `Class`, `@api.depends`
+  → `KausalSpec::Depends`, the ERP money/decimal model. The production
+  Odoo instance behind `docs/ODOO-TRANSCODING.md`.
 - **A production healthcare deployment** = **OGAR for HIPAA /
-  healthcare**: the `Membrane` + `LazyLock` + `ExternalMembrane`
-  outer-boundary pattern, exercising the substrate's **Security Mesh**
-  (row-level permissions + immutable audit).
+  healthcare**: the `ExternalMembrane` + `LazyLock` outer-boundary
+  pattern, exercising the substrate's **Security Mesh** (row-level
+  permissions + immutable audit). PII field labels stay consumer-side
+  (§7.2 + `DOMAIN-INSTANCES.md §0`).
 
 Both demonstrate the external-membrane-via-contract pattern in
 production; the firewall principle generalizes what they already do.
 
-### 7.2 MedCare-rs / HIPAA — the canonical firewall demonstration
+### 7.2 a production HIPAA instance / HIPAA — the canonical firewall demonstration
 
 Healthcare privacy demands two things that map *exactly* to the
 firewall's two sides, and HIPAA can't compromise either:
@@ -288,7 +290,7 @@ precisely this inner-auth / outer-audit separation, and it ships.
 ### 7.3 Cross-references
 
 - `docs/DOMAIN-INSTANCES.md` — the full catalog of OGAR domain
-  instances (Woa-rs/Odoo + MedCare-rs/HIPAA + the chess/OP/HIRO
+  instances (a production ERP instance/Odoo + a production HIPAA instance/HIPAA + the chess/OP/HIRO
   calibration set) mapped to substrate capabilities.
 - `docs/ARCHITECTURAL-DECISIONS-2026-06-04.md` ADR-022 — the decision record.
 - `docs/SUBSTRATE-ENDGAME.md` §5 — the SDK seam the outer boundary enables.
