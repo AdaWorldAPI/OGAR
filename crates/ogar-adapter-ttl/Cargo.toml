@@ -1,0 +1,31 @@
+[package]
+name = "ogar-adapter-ttl"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+description = "Bidirectional Turtle (RDF/OWL) bridge for OGAR. emit_ttl(Class, prefix) renders a canonical OGAR Turtle document by composing ogar-emitter's TripleEmitter output; parse_ttl (behind the `ttl-parser` feature) consumes Turtle via oxttl and lifts back into Vec<Class>. Companion to ogar-adapter-surrealql; together they cover the Morris-syntax axis for OGAR's two canonical wire formats (per docs/RDF-OWL-ALIGNMENT.md Phase 2a)."
+
+[features]
+default = []
+serde = ["dep:serde", "ogar-vocab/serde"]
+# Enable Turtle parsing (oxttl). Emit is feature-free — it's a
+# straightforward Turtle serialization of ogar-emitter::TripleEmitter
+# triples. Parsing requires the full oxttl streaming parser.
+ttl-parser = ["dep:oxttl", "dep:oxrdf"]
+
+[dependencies]
+ogar-vocab = { path = "../ogar-vocab" }
+ogar-emitter = { path = "../ogar-emitter" }
+ogar-ontology = { path = "../ogar-ontology" }
+serde = { workspace = true, optional = true }
+# Wired under the `ttl-parser` feature. oxttl is the oxigraph project's
+# streaming Turtle/N-Triples/N-Quads/TriG parser — pure Rust, RFC-
+# compliant, low dep footprint. oxrdf gives the typed Term/Triple
+# values oxttl yields.
+oxttl = { version = "0.2", optional = true }
+# oxrdf 0.3 matches oxttl 0.2.3's transitive version — both must
+# agree or Term/Subject types collide at the lift seam.
+oxrdf = { version = "0.3", optional = true }
