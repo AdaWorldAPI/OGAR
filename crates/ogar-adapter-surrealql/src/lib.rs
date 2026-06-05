@@ -296,6 +296,11 @@ fn emit_field_assoc(table: &str, assoc: &Association, out: &mut String) {
                 table, assoc.kind, assoc.name
             ));
         }
+        // `AssociationKind` is `#[non_exhaustive]` in `ogar-vocab`; the four
+        // arms above cover every variant defined today. The wildcard exists
+        // only so adding a variant in `ogar-vocab` produces a clean
+        // panic-on-first-emit instead of a silent miscompile elsewhere.
+        _ => unreachable!("vocab variant added without adapter update: AssociationKind"),
     }
 }
 
@@ -337,6 +342,11 @@ fn emit_field_enum(table: &str, enum_decl: &EnumDecl, out: &mut String) {
                 enum_decl.column, table, escaped
             ));
         }
+        // `EnumSource` is `#[non_exhaustive]` in `ogar-vocab`; the three arms
+        // above cover every variant defined today. The wildcard exists only
+        // so adding a variant in `ogar-vocab` produces a clean panic-on-first
+        // -emit instead of a silent miscompile elsewhere.
+        _ => unreachable!("vocab variant added without adapter update: EnumSource"),
     }
 }
 
@@ -377,7 +387,7 @@ fn surreal_string_literal(s: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ogar_vocab::{EnumVariant, Language};
+    use ogar_vocab::Language;
 
     #[test]
     fn emit_minimal_class_produces_define_table() {
@@ -438,14 +448,11 @@ mod tests {
     #[test]
     fn emit_class_with_static_enum_renders_assert_in_list() {
         let mut c = Class::new("ticket");
-        let status = EnumDecl {
-            column: "status".into(),
-            source: ogar_vocab::EnumSource::Static(vec![
-                ("open".into(), "Open".into()),
-                ("closed".into(), "Closed".into()),
-            ]),
-            scopes_disabled: None,
-        };
+        let mut status = EnumDecl::new("status");
+        status.source = ogar_vocab::EnumSource::Static(vec![
+            ("open".into(), "Open".into()),
+            ("closed".into(), "Closed".into()),
+        ]);
         c.enums.push(status);
         let ddl = emit_surrealql_ddl(&[c]);
         assert!(
@@ -457,13 +464,10 @@ mod tests {
     #[test]
     fn emit_class_with_add_enum_emits_parent_selection_marker() {
         let mut c = Class::new("account_move_line");
-        let parent_enum = EnumDecl {
-            column: "state".into(),
-            source: ogar_vocab::EnumSource::Add {
-                items: vec![("paid".into(), "Paid".into())],
-                parent_selection: "account.move.line".into(),
-            },
-            scopes_disabled: None,
+        let mut parent_enum = EnumDecl::new("state");
+        parent_enum.source = ogar_vocab::EnumSource::Add {
+            items: vec![("paid".into(), "Paid".into())],
+            parent_selection: "account.move.line".into(),
         };
         c.enums.push(parent_enum);
         let ddl = emit_surrealql_ddl(&[c]);
@@ -477,13 +481,10 @@ mod tests {
     #[test]
     fn emit_class_with_computed_enum_emits_lambda_marker() {
         let mut c = Class::new("address");
-        let country_enum = EnumDecl {
-            column: "country".into(),
-            source: ogar_vocab::EnumSource::Computed(
-                "lambda self: self.env[\'res.country\']...".into(),
-            ),
-            scopes_disabled: None,
-        };
+        let mut country_enum = EnumDecl::new("country");
+        country_enum.source = ogar_vocab::EnumSource::Computed(
+            "lambda self: self.env[\'res.country\']...".into(),
+        );
         c.enums.push(country_enum);
         let ddl = emit_surrealql_ddl(&[c]);
         assert!(

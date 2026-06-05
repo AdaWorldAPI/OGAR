@@ -1021,6 +1021,43 @@ crossing is fine; the same cost per inner operation is forbidden.
   (`knowable_from` — outer firewall seam), `lance-graph-contract::ExternalMembrane`.
 - Precedent: MedCare-rs (`Membrane` + `LazyLock`), Woa-rs (SeaORM backend).
 
+**Reception receipts — cross-session convergence (2026-06-05).** The
+runtime session — working independently on the BindSpace dissolution
+and the qualia codebook — arrived at the same inner/outer split this
+ADR pins, without coordination on the surface itself. Three independent
+landings now triangulate The Firewall:
+
+- **OGAR-side pin** (this ADR + `docs/THE-FIREWALL.md`): the boundary is
+  absolute; inner = compile-time HHTL, outer = contract-trait pluggable;
+  litmus = "crypto on post stamps".
+- **Runtime-side implementation** (bardioc PR #17, Rubicon Phases 1-5,
+  33 tests): `LanceMembraneWriter` carries the outer write surface, with
+  the hot path (Rubicon state-machine dispatch) sitting inside the
+  firewall.
+- **Runtime-side architectural handover** (bardioc PR #18 +
+  lance-graph PR #470, `BINDSPACE_DISSOLUTION_HANDOVER.md`): the
+  runtime session independently named the same split — *"Rubicon's
+  `LanceMembrane::commit_event` keyed on `inv.object_instance` becomes
+  a trie append"* (inner) over the outer `commit_event` write — and
+  cited `HEALTHCARE-TRANSCODING.md §3` (the row-level `_effectiveReaders`
+  mask) as the model for task-scoped qualia activation via `QualiaScope`.
+
+Triangulation matters because architectural axioms are only load-
+bearing if multiple sessions can re-derive them. Three sessions
+(OGAR docs, Rubicon implementation, runtime handover) now share the
+inner = trie-append / outer = `commit_event` boundary as common ground.
+Weakening The Firewall now requires re-coordinating across all three
+surfaces — exactly the friction this ADR's change-policy clause was
+designed to produce.
+
+**Reception references.**
+- bardioc PR #17 (Rubicon Phases 1-5; the Implementation Receipts
+  section below already cites its commits).
+- bardioc PR #18 (`BINDSPACE_DISSOLUTION_HANDOVER.md` — the canonical
+  architectural-delta doc).
+- lance-graph PR #470 (`.claude/handovers/2026-06-05-0445-bardioc-to-
+  lance-graph-bindspace-arch-delta.md` — the lance-graph-side pointer).
+
 ## Implementation receipts — ADR ↔ commit cross-reference
 
 > **Added in follow-up addendum (2026-06-05).** Records the implementation
