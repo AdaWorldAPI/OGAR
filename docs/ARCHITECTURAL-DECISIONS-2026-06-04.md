@@ -51,6 +51,7 @@
 | ADR-021 | **Meta-hygiene**: always grep peer crates before copying manifest patterns (the `[lints] workspace = true` cascade lesson) | **Pinned** | OGAR PR #15 + PR #17/#18 follow-ups |
 | ADR-022 | **The Firewall** — absolute inner/outer boundary; no serialization in hot path; inner = compile-time HHTL; outer = contract-trait pluggable | **Pinned** | OGAR (this PR); `docs/THE-FIREWALL.md` |
 | ADR-023 | **IR-as-wire-truth** — the source-language AST is *input dialect*; the canonical `Class`/`Attribute`/`Association`/`EnumDecl`/`ActionDef` IR is *wire truth*. Adapters lift dialects into IR; the IR routes everything (registry key, actor mailbox, Lance version, audit-log dimension) | **Pinned** | OGAR (this PR); `crates/ogar-vocab/`; `bardioc/substrate-b-shadow::EdgeDecoder<E>` (PR #19) |
+| ADR-024 | **Palette256 + HHTL codec** — the substrate's universal compression primitive. HHTL prefix establishes a frame; within the frame, values cluster; clustered values quantize to 256-index palette + const-table lookup. Names an existing primitive (Binary16K perms + bgz-tensor attention + arm-discovery aerial codebook, ρ=0.9973 vs cosine) rather than proposing one | **Pinned** | OGAR (this PR); `MedCare-rs/crates/medcare-analytics/src/{graph_contract.rs,column_mask_bridge.rs}`; `bgz-tensor/examples/compare_stacked_vs_i16.rs`; `lance-graph-arm-discovery` |
 
 ## ADR-001: `State = ActionState` (lifecycle), not domain state, for Rubicon binding
 
@@ -1166,6 +1167,185 @@ lance-graph) before merge.
   pattern materialized in runtime-side code.
 - `docs/RDF-OWL-ALIGNMENT.md` §3 (OGAR's position in L1-L5) — the
   IR sits at the AR-pattern lift seam.
+
+## ADR-024: Palette256 + HHTL codec — the substrate's universal compression primitive
+
+**Status:** Pinned (2026-06-05). Names an existing primitive (three
+independent deployments + one empirical anchor) rather than proposing
+one. Companion to ADR-022 (The Firewall — this ADR specifies one of
+its inner-side primitives) and ADR-023 (IR-as-wire-truth — palette256
+is the codec on the IR's wire form).
+
+**Context.** The substrate has accumulated three independent
+palette256 deployments developed for their own domains:
+
+- **Security mesh** — `Binary16K = [u64; 256]` in
+  `MedCare-rs/crates/medcare-analytics/src/graph_contract.rs:36`
+  (canonical home). The per-row `_effectiveReaders` bitmap; auth is
+  Hamming-popcount bit-intersection at the inner / hot path
+  (`HEALTHCARE-TRANSCODING.md §3.1`). Wired into production at
+  `MedCare-rs/crates/medcare-analytics/src/column_mask_bridge.rs` →
+  `medcare-server/state.rs:167, 265, 439`.
+- **Attention** — `bgz-tensor` `WeightPalette::build(…, 256)` +
+  `AttentionTable::build` (`crates/bgz-tensor/examples/
+  compare_stacked_vs_i16.rs:90-92`). Replaces dense FP weights with
+  256-index palette + precomputed distance table on the model's hot
+  path.
+- **Distance** — `lance-graph-arm-discovery` aerial codebook —
+  measured **ρ = 0.9973 vs cosine**. The empirical anchor: palette256
+  reproduces cosine distance with correlation 0.9973 (i.e. on a
+  scale where 1.0 = identical, palette256 is ~0.003 from cosine).
+
+Cross-domain analysis revealed all three are instances of the *same
+codec*: HHTL prefix establishes a frame; within frame, values
+cluster; clustered values quantize to a 256-index palette; decode is
+a const-table lookup. The runtime side's BindSpace dissolution work
+(bardioc PR #18 / lance-graph PR #470) hinted at this with the
+Quintenzirkel qualia codebook ("frozen set + circle-of-fifths
+progression → 8 B → 1-2 B per row") — same compression strategy,
+different domain.
+
+The proposal in the cross-session conversation (2026-06-05) was to
+name the primitive explicitly so:
+1. Future adopters don't reinvent it per domain.
+2. New adopters report a falsifiable measurement (ρ-vs-reference)
+   at adoption time rather than after the fact.
+3. The 256-ceiling escape hatches are documented before reviewers
+   ask.
+
+**Decision.** **The codec is:**
+
+```text
+HHTL prefix         (NiblePath / quadkey / class identity)
+  ↓  establishes spatial / semantic frame
+within-frame values cluster
+  ↓  quantize to 256-index palette
+  ↓  const-table lookup (compile-time HHTL where possible)
+1-byte index per element, sub-microsecond decode, zero heap allocation
+```
+
+**Adoption checklist** for a new domain:
+1. **Identify the prefix.** The NiblePath / quadkey / class identity
+   that establishes the frame the values live in.
+2. **Identify the palette domain.** Which values cluster within the
+   frame? (Closed-keyspace tags, quantized continuous values,
+   enumerated state, etc.)
+3. **Build the palette + measure ρ-vs-reference.** The reference is
+   the domain's full-precision metric (cosine for embeddings, L2 for
+   coordinates, exact-match for tags). Report ρ at adoption time as
+   the falsifiable property. Target: **ρ ≥ 0.99** to match the
+   arm-discovery anchor.
+4. **Decode = const-table lookup.** Compile-time HHTL if the palette
+   is static; runtime const-table if the palette is per-frame /
+   per-tile. Either way the decode path is zero-allocation.
+
+**The 256-ceiling escape hatches** (documented to avoid the
+predictable reviewer question):
+
+- **Per-tile / per-frame palettes** — the cheapest answer. Different
+  spatial-frame, different 256 entries. Used by Cesium tile codecs;
+  matches the quadkey-prefix discipline. Long-tail OSM tags inside a
+  zoom-21 tile rarely exceed 256.
+- **Hierarchical palettes** — coarser palette at higher quadkey
+  levels, finer per leaf. Mirrors the standard tile pyramid; the SH
+  L0/L1 vs L2/L3 split in `splat-fit` is the same pattern.
+- **Palette-64K upgrade** — 2-byte index instead of 1, for hot
+  palettes that genuinely exceed 256 distinct values (rare; reserve
+  for measured cases, not speculation).
+
+The escape hatches are part of the primitive, not exceptions to it.
+
+**Alternatives considered.**
+
+- *Continuous distributions that don't cluster* (e.g. timestamps in
+  microseconds, free-form text). Rejected as a counterargument to
+  the codec — these are out-of-domain. For them, use delta encoding
+  or VarInt or a different codec entirely. The codec applies to
+  *clustered* domains; the adoption checklist's step 2 is the filter.
+- *Domain-specific codecs per domain.* Rejected. Three independent
+  re-derivations of the same primitive (security / attention /
+  distance) is the receipt that the abstraction is real, not the
+  receipt that each domain should have its own. ADR-024 reduces
+  per-domain re-derivation.
+- *Skip the ρ-vs-reference measurement.* Rejected. The arm-discovery
+  ρ = 0.9973 is the existing FINDING-grade stake; new domains
+  reporting at adoption time keeps the empirical floor honest as the
+  primitive spreads.
+
+**Consequences.**
+
+- **The primitive is named.** Cross-domain reuse is now load-bearing,
+  not coincidental. New domains adopt the codec instead of inventing
+  their own quantization.
+- **ρ-vs-reference becomes the adoption contract.** Reported once at
+  adoption per domain. The arm-discovery 0.9973 is the existing
+  anchor; new adopters target ≥ 0.99 and document if they fall short.
+- **Two next-domain adopters are queued** (planned, not yet wired):
+  - **D-OSM-2** (OSM tag palette + tile-local coordinate
+    quantization) — per `lance-graph` PR #473 (`cesium-osm-substrate
+    -v1.md`). Reports ρ-vs-reference on first per-country PBF run per
+    the runtime session's §11 follow-up commitment.
+  - **D-SPLAT-4** (SH-aware palette extension on the
+    `Gaussian3D` carrier) — per the splat-native arc. Same codec; SH
+    coefficients are the long-tail-budget challenger.
+- **The 256-ceiling has three explicit escapes** in the ADR body
+  (per-tile / hierarchical / palette-64K). Reviewers don't need to
+  re-derive the answer.
+- **Cross-arc reuse argument is sharpened.** The substrate-reuse
+  framing in `docs/RDF-OWL-ALIGNMENT.md §10` (geographic litmus
+  complements anatomical) cashes out as: FMA-bones and OSM-vectors
+  use *the same codec* (palette256 + HHTL prefix), not just the same
+  IR. The §6 callout in `DOMAIN-INSTANCES.md` (queued, awaiting
+  lance-graph PR #473 land) will reference ADR-024 as the falsifiable
+  property.
+- **The falsifiable property** that ties the substrate-reuse claim
+  down: *"the same compile-time HHTL prefix + palette256 codec
+  decodes (a) `_effectiveReaders` for row auth, (b) OSM way
+  attributes at zoom-21 tile, and (c) FMA-bone SH coefficients at
+  sub-microsecond per element with zero heap allocation."* If that
+  property holds across all three, the substrate is doing its job.
+  If it fails on one, the substrate is leaking dialect into the codec.
+
+**Change policy.** Adding a new palette256 adopter (new domain) is
+routine — follow the adoption checklist + report ρ-vs-reference.
+Changing the codec itself (e.g. palette-64K becoming default, or a
+new escape-hatch added) is a substrate-wide concern and requires
+consultation with the runtime session.
+
+**References.**
+
+- `lance-graph/.claude/board/EPIPHANIES.md:28` — FINDING-grade
+  anchor for palette256 + Hamming popcount on `_effectiveReaders`.
+- `lance-graph/.claude/knowledge/old-stack-capability-parity.md §3.39`
+  — knowledge-doc record of the same primitive.
+- `MedCare-rs/crates/medcare-analytics/src/graph_contract.rs:36` —
+  `Binary16K = [u64; 256]` canonical home.
+- `MedCare-rs/crates/medcare-analytics/src/column_mask_bridge.rs` —
+  production wire-up; `redaction_mode_for` (line 128),
+  `column_mask_policy_for_table` (line 165),
+  `build_medcare_column_mask_registry` (line 192).
+- `MedCare-rs/crates/medcare-server/src/state.rs:167, 265, 439` —
+  F2-E install sites consuming the column-mask registry.
+- `bgz-tensor/examples/compare_stacked_vs_i16.rs:90-92` —
+  `WeightPalette::build(…, 256)` + `AttentionTable::build`.
+- `lance-graph-arm-discovery` — aerial codebook with ρ = 0.9973 vs
+  cosine measurement.
+- ADR-022 (The Firewall) — the inner-side discipline this ADR
+  specifies a primitive for.
+- ADR-023 (IR-as-wire-truth) — palette256 is the codec on the IR's
+  wire form.
+- `docs/THE-FIREWALL.md` §3 (the inner/hot side) — palette256 + HHTL
+  is one of its load-bearing primitives.
+- `docs/HEALTHCARE-TRANSCODING.md §3.1` — palette256 + Hamming
+  popcount on Binary16K named as the inner-side security mesh.
+- `docs/RDF-OWL-ALIGNMENT.md §10` — the brutal-upgrade sequencing
+  context (Phase 2c geospatial adopts the codec).
+- `bardioc` PR #18 + `lance-graph` PR #470 — Quintenzirkel qualia
+  codebook (8 B → 1-2 B per row) as the same compression strategy in
+  a different domain.
+- `lance-graph` PR #473 (forthcoming) `cesium-osm-substrate-v1.md`
+  §11 — runtime-side commitment to a follow-up callout on this ADR
+  once D-OSM-2 / D-SPLAT-4 wire.
 
 ## Implementation receipts — ADR ↔ commit cross-reference
 
