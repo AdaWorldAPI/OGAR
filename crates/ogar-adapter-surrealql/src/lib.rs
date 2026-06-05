@@ -270,9 +270,14 @@ mod walk {
                 });
 
                 match lift_field_type(ast, df.ty) {
-                    FieldShape::Primitive(type_name) => {
+                    FieldShape::Primitive { type_name, optional } => {
                         let mut attr = Attribute::new(&field);
                         attr.type_name = Some(type_name);
+                        if optional {
+                            // IR-canonical optional-primitive marker —
+                            // emit-side wraps with SurrealQL `option<…>`.
+                            attr.options.required = Some(false);
+                        }
                         class.attributes.push(attr);
                     }
                     FieldShape::Record { target, optional } => {
@@ -332,15 +337,19 @@ mod walk {
 
     enum FieldShape {
         /// Primitive — `string`, `int`, `bool`, `datetime`, `float`,
-        /// `decimal`, `uuid`, `binary`, `object`. For optional
-        /// primitives the type is rendered as `"option<X>"`.
-        Primitive(String),
+        /// `decimal`, `uuid`, `bytes`, `object`, `duration`, `any`.
+        /// Optional is carried as `AttributeOptions.required = Some(false)`
+        /// (not baked into `type_name` — keeps the IR-canonical
+        /// representation that survives `emit_field_attr`'s round-trip).
+        Primitive { type_name: String, optional: bool },
         /// `record<X>` (or `option<record<X>>`) — BelongsTo association.
         Record { target: String, optional: bool },
         /// `DEFINE FIELD … TYPE` clause absent.
         Untyped,
-        /// Union types, geometry, complex literals — out of scope for
-        /// the v1 walk.
+        /// Union types, multi-target records, geometry, complex literals
+        /// — out of scope for the v1 walk. Codex P2 (#32) flagged
+        /// silent narrowing of multi-target `record<a | b>` to the first
+        /// target; rejecting as `Other` is correct here.
         Other,
     }
 
@@ -350,7 +359,10 @@ mod walk {
             None => return FieldShape::Untyped,
         };
         let prime_list_id = match &ast[ty_id] {
-            Type::Any(_) => return FieldShape::Primitive("any".into()),
+            Type::Any(_) => return FieldShape::Primitive {
+                type_name: "any".into(),
+                optional: false,
+            },
             Type::Prime(list_id) => *list_id,
         };
 
@@ -385,17 +397,29 @@ mod walk {
             PrimeType::Object(_) => primitive("object", optional),
             PrimeType::Duration(_) => primitive("duration", optional),
             PrimeType::Record(ident_list_id) => {
+                // Reject multi-target `record<a | b>` rather than
+                // silently narrowing to the first target (Codex P2 on
+                // PR #32). OGAR's `Association::class_name: Option<String>`
+                // can't represent a union; an honest `Other` keeps the
+                // round-trip from mutating the schema. Future PR can
+                // grow union-target support if a real consumer needs it.
                 let ident_list = &ast[*ident_list_id];
-                let target = ident_list
+                let mut iter = ident_list
                     .idents
-                    .and_then(|ids| iter_node_list(ast, ids).next())
-                    .map(|id| {
-                        let ident = &ast[id];
-                        ast[ident.text].clone()
-                    });
-                match target {
-                    Some(t) => FieldShape::Record { target: t, optional },
-                    None => FieldShape::Other,
+                    .map(|ids| iter_node_list(ast, ids))
+                    .into_iter()
+                    .flatten();
+                let first = match iter.next() {
+                    Some(id) => id,
+                    None => return FieldShape::Other, // record<> with no target
+                };
+                if iter.next().is_some() {
+                    return FieldShape::Other; // multi-target — preserve faithfully or reject
+                }
+                let ident = &ast[first];
+                FieldShape::Record {
+                    target: ast[ident.text].clone(),
+                    optional,
                 }
             }
             _ => FieldShape::Other,
@@ -403,10 +427,9 @@ mod walk {
     }
 
     fn primitive(name: &str, optional: bool) -> FieldShape {
-        if optional {
-            FieldShape::Primitive(format!("option<{name}>"))
-        } else {
-            FieldShape::Primitive(name.to_string())
+        FieldShape::Primitive {
+            type_name: name.to_string(),
+            optional,
         }
     }
 
@@ -502,9 +525,19 @@ fn emit_field_attr(table: &str, attr: &Attribute, out: &mut String) {
         .as_deref()
         .map(map_type_to_surrealql)
         .unwrap_or_else(|| "string".to_string());
+    // `options.required = Some(false)` is the IR-canonical "this field
+    // is nullable / optional" marker (per `ogar-vocab::AttributeOptions`).
+    // Wrap with SurrealQL's `option<…>` so the round-trip through
+    // `parse_surrealql_ddl` preserves nullability. `None` means "unset"
+    // (the producer didn't say), not "required=true" — leave unwrapped.
+    let wrapped = if attr.options.required == Some(false) {
+        format!("option<{surreal_type}>")
+    } else {
+        surreal_type
+    };
     out.push_str(&format!(
         "DEFINE FIELD {} ON {} TYPE {};\n",
-        attr.name, table, surreal_type
+        attr.name, table, wrapped
     ));
 }
 
@@ -952,6 +985,86 @@ mod tests {
         assert_eq!(classes.len(), 1);
         assert_eq!(classes[0].name, "account");
         assert_eq!(classes[0].attributes.len(), 1);
+    }
+
+    // ── Codex P2 fix #1 (PR #32) ────────────────────────────────────────
+    // Optional primitives round-trip correctly. Walker stores the bare
+    // type_name + AttributeOptions.required = Some(false); emit wraps
+    // with SurrealQL `option<…>` on egress.
+    // ────────────────────────────────────────────────────────────────────
+
+    #[cfg(feature = "surrealdb-parser")]
+    #[test]
+    fn walk_table_with_optional_primitive_uses_required_false() {
+        let ddl = "\
+            DEFINE TABLE account SCHEMAFULL;\n\
+            DEFINE FIELD email ON account TYPE option<string>;\n";
+        let classes = parse_surrealql_ddl(ddl).expect("parse OK");
+        assert_eq!(classes.len(), 1);
+        let attr = &classes[0].attributes[0];
+        assert_eq!(attr.name, "email");
+        // IR-canonical: bare type + required=Some(false), NOT
+        // type_name="option<string>" (which would round-trip wrong).
+        assert_eq!(attr.type_name.as_deref(), Some("string"));
+        assert_eq!(attr.options.required, Some(false));
+    }
+
+    #[cfg(feature = "surrealdb-parser")]
+    #[test]
+    fn walk_round_trip_optional_primitive() {
+        // Build IR with the canonical optional-primitive shape, emit,
+        // re-parse, assert the same shape comes back.
+        let mut original = Class::new("account");
+        let mut email = Attribute::new("email");
+        email.type_name = Some("string".into());
+        email.options.required = Some(false);
+        original.attributes.push(email);
+
+        let ddl = emit_surrealql_ddl(&[original]);
+        // Emit must produce option<string>, not a bare "string" or an
+        // unmapped /* … */ comment.
+        assert!(
+            ddl.contains("DEFINE FIELD email ON account TYPE option<string>;"),
+            "expected option<string> in DDL, got: {ddl}"
+        );
+
+        let recovered = parse_surrealql_ddl(&ddl).expect("parse OK");
+        assert_eq!(recovered.len(), 1);
+        let attr = &recovered[0].attributes[0];
+        assert_eq!(attr.type_name.as_deref(), Some("string"));
+        assert_eq!(attr.options.required, Some(false));
+    }
+
+    // ── Codex P2 fix #2 (PR #32) ────────────────────────────────────────
+    // Multi-target `record<a | b>` is rejected (FieldShape::Other) rather
+    // than silently narrowed to the first target. The placeholder
+    // Attribute with type "any" lands so the consumer sees the field
+    // exists without OGAR misrepresenting the union constraint.
+    // ────────────────────────────────────────────────────────────────────
+
+    #[cfg(feature = "surrealdb-parser")]
+    #[test]
+    fn walk_multi_target_record_returns_other_not_first_target() {
+        // The Codex P2 motivating case: `record<user | administrator>`
+        // would silently become BelongsTo→user, losing administrator.
+        // The fix rejects with FieldShape::Other → typeless "any"
+        // Attribute. NOT an Association — the schema constraint isn't
+        // narrowed.
+        let ddl = "\
+            DEFINE TABLE auditable SCHEMAFULL;\n\
+            DEFINE FIELD actor ON auditable TYPE record<user | administrator>;\n";
+        let classes = parse_surrealql_ddl(ddl).expect("parse OK");
+        let c = &classes[0];
+        // CRITICAL: no Association was emitted (no silent BelongsTo→user).
+        assert!(
+            c.associations.is_empty(),
+            "multi-target record must not become an Association — would mutate schema. got: {:?}",
+            c.associations
+        );
+        // Placeholder Attribute records the field's existence.
+        assert_eq!(c.attributes.len(), 1);
+        assert_eq!(c.attributes[0].name, "actor");
+        assert_eq!(c.attributes[0].type_name.as_deref(), Some("any"));
     }
 
     #[cfg(not(feature = "surrealdb-parser"))]
