@@ -159,6 +159,16 @@ The single question that decides any case: **how often is this paid —
 once per firewall crossing, or once per inner operation?** Boundary →
 fine. Hot path → forbidden.
 
+**Canonical worked example — HIPAA (see §7).** Healthcare privacy is
+the textbook firewall case: it demands *both* ultra-fast inner access
+control (every PHI field access is authorized → must be a hot-path
+bit-op, not a serialized lookup) *and* a durable immutable audit trail
+(every access logged → a boundary write). Inner = palette256 +
+Hamming-popcount row-level auth (no serialization); outer = audit-as-
+Lance-version append (serialized, at the firewall). The audit signature
+is the literal "crypto on the post stamp." MedCare-rs is the production
+instance that exercises both sides — detail in §7.2.
+
 ## 4. Where every existing piece sits
 
 | Component | Side | Serializes? | Notes |
@@ -220,15 +230,64 @@ this doc).
 
 ## 7. Precedent + cross-references
 
-### Precedent (sibling AdaWorldAPI projects)
-- **MedCare-rs** — `Membrane` pattern (`crates/medcare-rbac/src/lib.rs`,
-  `.claude/patterns.md`), `LazyLock` (`crates/medcare-analytics`),
-  `ExternalMembrane` references (`docs/FUTURE_STACK_ADMIN.md`).
-- **Woa-rs** — SeaORM backend (`src/db.rs`, `src/migrations.rs`),
-  the membrane transcode plan (`.claude/v0.2/RUST_TRANSCODE_PLAN.md`).
+### 7.1 OGAR domain instances (sibling AdaWorldAPI projects — private)
+
+The two sibling projects aren't just "they have the membrane pattern" —
+they are **OGAR domain instances**: production-grade transcodes that the
+substrate (and this firewall principle) generalize. Catalogued in full
+in `docs/DOMAIN-INSTANCES.md`.
+
+- **Woa-rs** = **OGAR for Odoo / ERP** (the `ogit-erp::` prefix made
+  real). SeaORM backend (`src/db.rs`, `src/migrations.rs`), Odoo
+  transcode plan + ledgers (`.claude/v0.2/RUST_TRANSCODE_PLAN.md`,
+  `.claude/odoo/L10-ANALYTIC.md`, `.claude/odoo/L14-HR-BASE.md`), the
+  ERP money/decimal RFC. The production Odoo instance behind
+  `docs/ODOO-TRANSCODING.md`.
+- **MedCare-rs** = **OGAR for HIPAA / healthcare**. `Membrane` pattern
+  (`crates/medcare-rbac/src/lib.rs`, `.claude/patterns.md`), `LazyLock`
+  (`crates/medcare-analytics`), `ExternalMembrane` references
+  (`docs/FUTURE_STACK_ADMIN.md`). The production healthcare instance
+  that exercises the substrate's **Security Mesh** (row-level
+  permissions + immutable audit).
 
 Both demonstrate the external-membrane-via-contract pattern in
 production; the firewall principle generalizes what they already do.
+
+### 7.2 MedCare-rs / HIPAA — the canonical firewall demonstration
+
+Healthcare privacy demands two things that map *exactly* to the
+firewall's two sides, and HIPAA can't compromise either:
+
+| HIPAA requirement | Firewall side | Mechanism | Serialization? |
+|---|---|---|---|
+| **Minimum-necessary access control** — every PHI field access authorized | **inner / hot** | palette256 `_effectiveReaders` bitmap + Hamming-popcount bit-intersection (the parity matrix's "Security Mesh, shape-exact") | **none** — a bit-op, checked per access, must be serialization-free |
+| **Immutable audit trail** — who-accessed-what-when, tamper-evident | **outer / firewall** | audit-as-Lance-version append (the audit-log ↔ Lance-version consolidation) | **yes** — serialized + signed, once per access crossing |
+
+The tension HIPAA creates is the exact tension the firewall resolves:
+auth must be *fast* (it gates every PHI field read — if it serialized,
+PHI-heavy queries would crawl) **and** audit must be *durable +
+tamper-evident* (it's a legal requirement — must be written + signed).
+Putting auth on the hot path as a bit-op and audit at the firewall as a
+signed Lance append is the only way to have both. The audit record's
+signature is the literal "crypto on the post stamp" (§3) — expensive,
+acceptable, paid once per access crossing, never on the inner compute.
+
+**MedCare-rs is the production proof** that the firewall split isn't
+theoretical: a real HIPAA-compliant healthcare system needs precisely
+this inner-auth / outer-audit separation, and it ships.
+
+### 7.3 Cross-references
+
+- `docs/DOMAIN-INSTANCES.md` — the full catalog of OGAR domain
+  instances (Woa-rs/Odoo + MedCare-rs/HIPAA + the chess/OP/HIRO
+  calibration set) mapped to substrate capabilities.
+- `docs/ARCHITECTURAL-DECISIONS-2026-06-04.md` ADR-022 — the decision record.
+- `docs/SUBSTRATE-ENDGAME.md` §5 — the SDK seam the outer boundary enables.
+- `docs/SURREAL-AST-AS-ADAPTER.md` — the structural/behavioral split (inside the firewall).
+- `docs/SOA-IMPLEMENTATION.md` §5.3 — the RecordBatch-IPC clarification (see §5 here).
+- `docs/ODOO-TRANSCODING.md` — the Odoo transcoding spec (Woa-rs is its production instance).
+- `lance-graph-contract::ExternalMembrane` — the existing outer-boundary contract trait.
+- `crates/ogar-knowable-from` — the §10.3 `KnowableFromStore` outer-boundary seam.
 
 ### OGAR / substrate cross-references
 - `docs/ARCHITECTURAL-DECISIONS-2026-06-04.md` ADR-022 — the decision record.
