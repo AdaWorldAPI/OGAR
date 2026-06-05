@@ -173,12 +173,60 @@ pub trait KnowableFromStore: Send + Sync {
 /// Register a class with the substrate's schema registry and return its
 /// `knowable_from` stamp.
 ///
-/// Constructs the registration data from the [`Class`] + delegates the
-/// actual write to a [`KnowableFromStore`] implementation. Validates
-/// the class has a non-empty name (an empty-name class is malformed at
-/// the IR level and shouldn't reach the registry).
+/// Constructs the registration from the [`Class`] + the caller-supplied
+/// **OGIT-prefixed canonical identity** + delegates the actual write to
+/// a [`KnowableFromStore`] implementation.
+///
+/// # The `class_identity` parameter
+///
+/// The caller must supply the OGIT-prefixed canonical identity — e.g.
+/// `"ogit-erp/sale.order"`, `"ogit-op/WorkPackage"`, `"ogit-healthcare/Patient"`.
+/// Construct via [`ogar_ontology::class_identity(prefix, &class.name)`][1]
+/// (which formats as `"{prefix}/{class_name}"`) — duplicated here as
+/// `format!("{prefix}/{}", class.name)` if you prefer not to take the
+/// `ogar-ontology` dep.
+///
+/// The prefix is REQUIRED because two producers may emit classes with
+/// the same unqualified name under different application prefixes
+/// (`ogit-op/WorkPackage` vs `ogit-erp/WorkPackage`). Keying the
+/// registry by bare `class.name` would conflate them and return the
+/// wrong `knowable_from` stamp on join — closed Codex P2 on PR #25.
+///
+/// # Validation
+///
+/// - `class.name` must be non-empty (IR-level invariant).
+/// - `class_identity` must be non-empty (registry-key invariant).
+///
+/// Both produce [`KnowableFromError::MalformedClass`] before any store
+/// call is made.
+///
+/// # Canonical-form invariant — caller's responsibility
+///
+/// This function does **NOT** canonicalize `class_identity` (no
+/// case-fold, no slash-trim, no NiblePath normalization). The string
+/// is passed through to `store.register(class_identity, …)` byte-
+/// identical. The caller MUST use one consistent canonicalization
+/// pipeline across all `register` *and* `knowable_from` lookup sites
+/// — typically `ogar_ontology::class_identity(prefix, &class.name)` —
+/// or distinct-but-equivalent identities (`Ogit-Op/WorkPackage` vs
+/// `ogit-op/WorkPackage`) will register under separate keys.
+///
+/// # Architectural alignment
+///
+/// The prefix-radix shape of `class_identity` (`ogit-erp/sale.order/…`)
+/// matches the **runtime-side trie-append surface** named in
+/// `bardioc` PR #18 / `lance-graph` PR #470: *"Rubicon's
+/// `LanceMembrane::commit_event` keyed on `inv.object_instance`
+/// becomes a trie append; standing-wave reads at `v_ref =
+/// traverse_subtree(prefix, v_ref)`."* The OGAR-side registry shape
+/// is the producer mirror of that consumer surface — same
+/// `NiblePath` identity, same VART-as-reference-backend pattern
+/// (see crate-level "Reference backends").
+///
+/// [1]: https://docs.rs/ogar-ontology
 pub fn register_class_knowable_from<S: KnowableFromStore>(
     class: &Class,
+    class_identity: &str,
     store: &S,
 ) -> Result<u64, KnowableFromError> {
     if class.name.is_empty() {
@@ -186,25 +234,18 @@ pub fn register_class_knowable_from<S: KnowableFromStore>(
             "Class.name is empty; refusing to register".into(),
         ));
     }
-    let identity = class_identity_string(class);
+    if class_identity.is_empty() {
+        return Err(KnowableFromError::MalformedClass(
+            "class_identity is empty; pass an OGIT-prefixed canonical \
+             identity such as \"ogit-erp/sale.order\" (see \
+             ogar_ontology::class_identity)".into(),
+        ));
+    }
     // v1 minimum-shape: pass None for schema_ddl_hint. Future PRs can
-    // render via ogar-adapter-surrealql::emit_surrealql_ddl(&[class.clone()]).
-    store.register(&identity, None)
-}
-
-/// Compute the OGAR-canonical identity string for a [`Class`].
-///
-/// For v1, returns `class.name` (the unqualified class name). Future
-/// versions extend this to include prefix segments (per
-/// `docs/IDENTITY-MAPPING.md`'s canonical Identity grammar); the
-/// minimum-shape v1 keeps the registry working with whatever name the
-/// producer populated.
-fn class_identity_string(class: &Class) -> String {
-    // TODO(identity): when ogar-vocab grows a typed Identity carrier
-    // for Class (today it has `identity: String` + `name: String`),
-    // prefer `class.identity` when populated, fall back to `class.name`.
-    // For v1 minimum, just `name`.
-    class.name.clone()
+    // render via ogar-adapter-surrealql::emit_surrealql_ddl(&[class.clone()])
+    // — the `class` parameter is retained for that future expansion.
+    let _ = class; // keep the parameter live for forward compatibility
+    store.register(class_identity, None)
 }
 
 /// Errors from the [`KnowableFromStore`] operations and the
@@ -297,11 +338,12 @@ mod tests {
     fn register_simple_class_returns_store_version() {
         let c = Class::new("Account");
         let store = MockKnowableFromStore::new(42);
-        let v = register_class_knowable_from(&c, &store).expect("register OK");
+        let v = register_class_knowable_from(&c, "ogit-erp/Account", &store)
+            .expect("register OK");
         assert_eq!(v, 42);
         let calls = store.register_calls.lock().unwrap();
         assert_eq!(calls.len(), 1);
-        assert_eq!(calls[0].0, "Account");
+        assert_eq!(calls[0].0, "ogit-erp/Account");
         assert!(calls[0].1.is_none(), "v1 minimum-shape passes None for schema_ddl_hint");
     }
 
@@ -311,29 +353,65 @@ mod tests {
         // of temporal::classify fetch knowable_from via the same store.
         let c = Class::new("WorkPackage");
         let store = MockKnowableFromStore::new(7);
-        let v = register_class_knowable_from(&c, &store).unwrap();
-        assert_eq!(store.knowable_from("WorkPackage"), Some(v));
+        let v = register_class_knowable_from(&c, "ogit-op/WorkPackage", &store).unwrap();
+        assert_eq!(store.knowable_from("ogit-op/WorkPackage"), Some(v));
     }
 
     #[test]
     fn knowable_from_lookup_unregistered_returns_none() {
         let store = MockKnowableFromStore::new(0);
-        assert_eq!(store.knowable_from("NotRegistered"), None);
+        assert_eq!(store.knowable_from("ogit-erp/NotRegistered"), None);
+    }
+
+    #[test]
+    fn same_class_name_under_different_prefixes_does_not_collide() {
+        // The Codex P2 motivating case: two producers emit a class
+        // with the same unqualified name (e.g. `WorkPackage`) under
+        // different OGIT prefixes. Keying by bare class.name would
+        // conflate them; the new prefix-aware identity keeps them
+        // distinct.
+        let store = MockKnowableFromStore::new(50);
+        let v_op = register_class_knowable_from(
+            &Class::new("WorkPackage"),
+            "ogit-op/WorkPackage",
+            &store,
+        ).unwrap();
+        let v_erp = register_class_knowable_from(
+            &Class::new("WorkPackage"),
+            "ogit-erp/WorkPackage",
+            &store,
+        ).unwrap();
+        assert_ne!(v_op, v_erp, "different prefixes must produce distinct versions");
+        assert_eq!(store.knowable_from("ogit-op/WorkPackage"), Some(v_op));
+        assert_eq!(store.knowable_from("ogit-erp/WorkPackage"), Some(v_erp));
     }
 
     #[test]
     fn register_empty_class_name_rejects_without_storing() {
         let c = Class::new("");
         let store = MockKnowableFromStore::new(0);
-        match register_class_knowable_from(&c, &store) {
+        match register_class_knowable_from(&c, "ogit-erp/X", &store) {
             Err(KnowableFromError::MalformedClass(msg)) => {
-                assert!(msg.contains("empty"), "expected empty-name message, got: {msg}");
+                assert!(msg.contains("Class.name"), "expected Class.name message, got: {msg}");
             }
             other => panic!("expected MalformedClass, got: {other:?}"),
         }
         // Confirm the store was NOT touched (validation rejected before write).
         assert_eq!(store.register_calls.lock().unwrap().len(), 0);
-        assert_eq!(store.knowable_from(""), None);
+    }
+
+    #[test]
+    fn register_empty_class_identity_rejects_without_storing() {
+        let c = Class::new("Account");
+        let store = MockKnowableFromStore::new(0);
+        match register_class_knowable_from(&c, "", &store) {
+            Err(KnowableFromError::MalformedClass(msg)) => {
+                assert!(msg.contains("class_identity"),
+                    "expected class_identity message, got: {msg}");
+            }
+            other => panic!("expected MalformedClass, got: {other:?}"),
+        }
+        assert_eq!(store.register_calls.lock().unwrap().len(), 0);
     }
 
     #[test]
@@ -352,7 +430,7 @@ mod tests {
             }
         }
         let c = Class::new("X");
-        match register_class_knowable_from(&c, &FailingStore) {
+        match register_class_knowable_from(&c, "ogit-erp/X", &FailingStore) {
             Err(KnowableFromError::Backend(msg)) => assert_eq!(msg, "disk full"),
             other => panic!("expected propagated Backend error, got: {other:?}"),
         }
@@ -361,16 +439,16 @@ mod tests {
     #[test]
     fn register_multiple_classes_gets_monotonic_versions() {
         let store = MockKnowableFromStore::new(100);
-        let v1 = register_class_knowable_from(&Class::new("A"), &store).unwrap();
-        let v2 = register_class_knowable_from(&Class::new("B"), &store).unwrap();
-        let v3 = register_class_knowable_from(&Class::new("C"), &store).unwrap();
+        let v1 = register_class_knowable_from(&Class::new("A"), "ogit-erp/A", &store).unwrap();
+        let v2 = register_class_knowable_from(&Class::new("B"), "ogit-erp/B", &store).unwrap();
+        let v3 = register_class_knowable_from(&Class::new("C"), "ogit-erp/C", &store).unwrap();
         assert_eq!(v1, 100);
         assert_eq!(v2, 101);
         assert_eq!(v3, 102);
         // Lookups return each class's registered version.
-        assert_eq!(store.knowable_from("A"), Some(100));
-        assert_eq!(store.knowable_from("B"), Some(101));
-        assert_eq!(store.knowable_from("C"), Some(102));
+        assert_eq!(store.knowable_from("ogit-erp/A"), Some(100));
+        assert_eq!(store.knowable_from("ogit-erp/B"), Some(101));
+        assert_eq!(store.knowable_from("ogit-erp/C"), Some(102));
         let calls = store.register_calls.lock().unwrap();
         assert_eq!(calls.len(), 3);
     }
