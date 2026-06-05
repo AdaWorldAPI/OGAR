@@ -42,3 +42,8 @@ jobs:
       # self-describing-registry loop (ADR-023 receipt).
       - name: cargo test -p ogar-knowable-from --features surrealql-hint
         run: cargo test -p ogar-knowable-from --features surrealql-hint
+      # Exercise the `ttl-parser` feature on ogar-adapter-ttl — pulls
+      # in oxttl / oxrdf for Turtle parsing. The emit path is feature-
+      # free, but the round-trip tests need the parser.
+      - name: cargo test -p ogar-adapter-ttl --features ttl-parser
+        run: cargo test -p ogar-adapter-ttl --features ttl-parser
