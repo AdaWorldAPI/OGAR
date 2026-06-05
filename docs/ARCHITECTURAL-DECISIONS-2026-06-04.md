@@ -49,6 +49,7 @@
 | ADR-019 | OP-as-operator-pane is the substrate's self-hosting destination (Room 3 of endgame) | **Pinned** | OGAR PR #20 §3 |
 | ADR-020 | SDK endgame is deeper than Foundry going OSS via three structural differentiators (migration scaffold, self-hosting reference, substrate-layer OSS) | **Pinned** | OGAR PR #20 §5.3 |
 | ADR-021 | **Meta-hygiene**: always grep peer crates before copying manifest patterns (the `[lints] workspace = true` cascade lesson) | **Pinned** | OGAR PR #15 + PR #17/#18 follow-ups |
+| ADR-022 | **The Firewall** — absolute inner/outer boundary; no serialization in hot path; inner = compile-time HHTL; outer = contract-trait pluggable | **Pinned** | OGAR (this PR); `docs/THE-FIREWALL.md` |
 
 ## ADR-001: `State = ActionState` (lifecycle), not domain state, for Rubicon binding
 
@@ -951,6 +952,75 @@ hygiene PR if/when desired.
 **References.** OGAR PR #15 (placement fix + emitter cascade); PR
 #17 (Codex P1 fix); PR #18 (pre-emptive fix).
 
+## ADR-022: The Firewall — absolute inner/outer boundary, no serialization in hot path
+
+**Status:** Pinned (2026-06-05). **Absolute invariant** — full treatment in `docs/THE-FIREWALL.md`.
+
+**Context.** The substrate has a hot path (Rubicon dispatch, identity
+resolution, intra-process actor messaging) and an outer boundary
+(external storage, external schema, cross-process/server, wire formats).
+Without an explicit, named, absolute boundary, the hot path erodes one
+"small" serialization / runtime-lookup / heavy-dep at a time. The
+operator declared the boundary **absolute** and named it **The
+Firewall**, with the enforcement rule **"no serialization in the hot
+path."**
+
+**Decision.** The Firewall is the absolute boundary between:
+- **Inner** = compile-time HHTL. Identity/ontology resolution is
+  resolved at compile time (const/typestate generated at build time via
+  jinja/xml/whatever templating), exactly as OGIT is compile-time-
+  checked. The hot path does **no serialization, no serde, no
+  trait-object dispatch for known classes, no tokio (I-2), Arrow-scalar
+  values (BBB), `Arc` zero-copy**.
+- **Outer** = contract-trait pluggable backends. `ExternalMembrane`
+  (`lance-graph-contract`) + `KnowableFromStore` (`ogar-knowable-from`)
+  are the firewall interfaces; Redis / SeaORM / Postgres /
+  schema-from-whatever implement them at `lance-graph-callcenter` +
+  `lance-graph-contract`. Boundary tax (serialization, crypto, network,
+  external reads) is acceptable here — **paid once per crossing**, then
+  cached (`LazyLock` fallback for unknown schema).
+
+The litmus ("crypto on post stamps"): a cost paid once per firewall
+crossing is fine; the same cost per inner operation is forbidden.
+
+**Alternatives considered.**
+- Runtime-trait inner architecture (pluggable all the way down) —
+  rejected: puts trait-object dispatch + potential serialization on the
+  hot path. Pluggability is a boundary feature, not an inner one.
+- "Serialization is fine if it's fast" — rejected: the operator
+  declared the firewall absolute; "fast enough" is how hot paths erode.
+- No named principle (rely on convention) — rejected: the boundary is
+  too load-bearing to leave implicit.
+
+**Consequences.**
+- **Compile-time HHTL codegen is a required build-time step** for OGAR
+  (net-new — OGAR has no `build.rs` today). Lowers `Class`/`ActionDef`
+  IR into compile-time-resolvable structures.
+- **`serde` stays feature-gated** across OGAR crates — boundary use
+  only, never a hot-path dependency.
+- **`KnowableFromStore` (ADR-010) confirmed outer-boundary** — its
+  Lance-row serialization is correct *because it's the firewall*.
+  Same for `LanceMembrane::commit_event` (ADR-008).
+- **`SOA-IMPLEMENTATION §5.3` clarified**: intra-process actor
+  messaging is zero-copy `Arc<RecordBatch>` (no serialization); the
+  "RecordBatch IPC" framing applies only cross-instance (a firewall
+  crossing).
+- **The Firewall is the umbrella** that I-2 (no tokio on hot loop) +
+  BBB (Arrow-scalar on hot loop) are facets of; "no serialization" is
+  the new facet.
+- **Enforcement aspiration**: a future CI lint denying `serde` reachable
+  from hot-path entry points would make it mechanical. Noted, not built.
+- **Change policy**: weakening the Firewall requires an explicit
+  superseding ADR with measured justification, not incremental erosion.
+
+**References.**
+- `docs/THE-FIREWALL.md` (full treatment).
+- `docs/SUBSTRATE-ENDGAME.md` §5 (the SDK seam the outer boundary enables).
+- `docs/SOA-IMPLEMENTATION.md` §5.3 (the RecordBatch-IPC clarification).
+- ADR-008 (`commit_event` — outer firewall write), ADR-010
+  (`knowable_from` — outer firewall seam), `lance-graph-contract::ExternalMembrane`.
+- Precedent: MedCare-rs (`Membrane` + `LazyLock`), Woa-rs (SeaORM backend).
+
 ## Implementation receipts — ADR ↔ commit cross-reference
 
 > **Added in follow-up addendum (2026-06-05).** Records the implementation
@@ -1021,7 +1091,7 @@ carries the cumulative Phase 1→4 + PR cascade record.
 
 ### Cumulative ADR status as of 2026-06-05
 
-- **Pinned + Implemented**: 6 of 21 ADRs have executable receipts (ADR-001, ADR-002, ADR-005, ADR-007, ADR-008, ADR-009; plus the §14 protocol referenced by ADR-018).
+- **Pinned + Implemented**: 6 of 22 ADRs have executable receipts (ADR-001, ADR-002, ADR-005, ADR-007, ADR-008, ADR-009; plus the §14 protocol referenced by ADR-018).
 - **Pinned, half-implemented**: 1 (ADR-010 — consumer side live, producer side stubbed).
 - **Pinned, awaiting implementation**: 14 (the remaining ADRs, each with a clear unlock condition per the table above).
 
