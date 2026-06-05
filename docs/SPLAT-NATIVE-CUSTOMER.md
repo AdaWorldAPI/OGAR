@@ -242,8 +242,16 @@ arc.
   (per HEALTHCARE-TRANSCODING.md §1).
 - **IEC 62366 (usability) + IEC 80001 (risk) + ISO 14971 (risk mgmt)** —
   SaMD certification standards referenced by D-SPLAT-14.
-- **IVD-MDR Rule 11** — EU SaMD risk classification (Class IIa for
-  diagnostic-software with non-critical decision support).
+- **MDR Annex VIII Rule 11** — EU SaMD risk classification. Software
+  intended to provide information used to make decisions for
+  diagnostic or therapeutic purposes is Class IIa (or higher); the
+  splat-native ultrasound SaMD path lands here per the canonical
+  plan's §3.14 (D-SPLAT-14). **Note:** IVDR (the in-vitro diagnostic
+  regulation 2017/746) is a separate framework for in-vitro
+  diagnostics and uses A–D risk classes; it does NOT govern this
+  device. The MDR (regulation 2017/745) is the correct framework
+  for ultrasound SaMD; Annex VIII Rule 11 is the classification
+  rule that applies.
 
 ---
 
