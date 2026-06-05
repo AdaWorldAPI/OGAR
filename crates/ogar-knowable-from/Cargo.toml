@@ -11,7 +11,14 @@ description = "OGAR-side producer seam for the §10.3 `knowable_from` meet-point
 [features]
 default = []
 serde = ["dep:serde", "ogar-vocab/serde"]
+# Auto-render the `schema_ddl_hint` parameter from the `Class` via
+# `ogar-adapter-surrealql::emit_surrealql_ddl(&[class.clone()])` on
+# every `register_class_knowable_from` call. Opt-in because the
+# adapter pulls the SurrealDB-related dep graph; the default path
+# stays lightweight (only `ogar-vocab` + optional `serde`).
+surrealql-hint = ["dep:ogar-adapter-surrealql"]
 
 [dependencies]
 ogar-vocab = { path = "../ogar-vocab" }
+ogar-adapter-surrealql = { path = "../ogar-adapter-surrealql", optional = true }
 serde = { workspace = true, optional = true }
