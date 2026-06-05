@@ -51,6 +51,7 @@
 | **Elixir / HIRO** | migration target (OLD stack) | `docs/ELIXIR-HIRO-PREFETCH.md` + `crates/ogar-from-elixir` | scaffold; merged |
 | **Odoo / ERP** | **production instance** | `docs/ODOO-TRANSCODING.md` + a production ERP deployment | shipping |
 | **HIPAA / healthcare** | **production instance** | a production healthcare (HIPAA) deployment | shipping |
+| **Geospatial / OSM** | calibration (geographic) | `docs/RDF-OWL-ALIGNMENT.md §10` Phase 2c + `lance-graph` PR #473 `cesium-osm-substrate-v1.md` (D-OSM-1..7) | spec'd; runtime addendum shipped; `ogar-from-osm-pbf` queued |
 
 The first three are how the substrate is *calibrated* (chess proves the
 Semantik/Syntax/Pragmatik trichotomy separates cleanly; OpenProject
@@ -122,31 +123,92 @@ A production HIPAA deployment proves the firewall split is a
 *requirement*, not a nicety: a real HIPAA-compliant system needs fast
 inner auth AND durable outer audit, and ships exactly that separation.
 
+### 2.6 Geospatial / OSM — geographic calibration
+
+**What OSM proves: geography doesn't break the IR.** OSM IDs are
+*already* prefix-structured (`country/region/city/street/house`), so
+the adapter is doing identity-*extraction*, not identity-construction
+— a much smaller surface than typical. Three OSM Classes (`Node`,
+`Way`, `Relation`) lift via the queued `ogar-from-osm-pbf` adapter
+(`docs/RDF-OWL-ALIGNMENT.md §10` Phase 2c). Exercises:
+
+- **Spatial prefix-locality** — Cesium TMS quadkey as `NiblePath`
+  prefix, per Q2 coordination outcome locked in `lance-graph` PR #473
+  §2. HHTL trie routes `osm/<quadkey>/way/123` byte-identically to
+  `ogit-erp/sale.order/42` and `fma/Femur`. The *runtime session's*
+  Cesium tile pyramid math (`crates/cesium/src/sse.rs` +
+  `implicit_tiling.rs`) already uses quadkey addressing; aligning
+  OGAR routes both sides through the same address arithmetic.
+
+- **Tag-as-Class final / Arrow-list v1 fallback** — Q1 coordination
+  outcome locked in `lance-graph` PR #473 §2. Final shape: Tag is a
+  `Class` related via `has_tag: HasMany<Tag>` (SPO-natural emission
+  `(Way#123, ogar:hasTag, Tag#building=yes)`); v1 implementation
+  ships the Arrow `List<Struct>` fallback in `D-OSM-1/2` for
+  cardinality control while Tag interning matures. The IR (`Class`
+  shape) carries no OSM-specific dialect — same ADR-023 discipline
+  Odoo's `_inherit`/`_inherits` already follows.
+
+- **Palette256 codec (ADR-024) adopts its third domain.** OSM tag
+  values cluster within a tile (most zoom-21 tiles have ≤256
+  distinct tag values); per-tile palette + const-table lookup
+  yields ~5-10× compression on way attributes. The `D-OSM-2`
+  Arrow→Lance ingest reports ρ-vs-reference per the ADR-024
+  adoption checklist (lance-graph PR #473's §11 callout — the
+  runtime session's commitment after ADR-024 merged in PR #39).
+
+- **The OGAR-crossing deliverable is `D-OSM-3`** — the SPO triple
+  lift in `lance-graph-ontology`. That's the producer-side contract
+  the `ogar-from-osm-pbf` adapter consumes. OGAR session signed off
+  on the surface in 2026-06-05 cross-session coordination; the
+  adapter is unblocked.
+
+**The geographic litmus complements the anatomical one: the same
+compile-time HHTL primitive resolves `Femur is_a LongBone` AND
+`Marienplatz is_in Munich` in sub-microsecond.** That's the
+falsifiable property — measurable, not aspirational. If it holds,
+*"instance proves universality"* is non-trivial; if it fails on
+either, the substrate is leaking dialect into the codec.
+
+The OSM instance is calibration-grade like Chess and OpenProject (no
+production deployment owned by the workspace yet), but the *runtime
+side* — Cesium tilesets, Lance-backed OSM datasets, 3DGS splat
+batches over OSM building footprints — is shipping per the
+`cesium-osm-substrate-v1.md` deliverable line. The OGAR side
+contributes the schema lift; the runtime side contributes the
+rendering substrate; together they form the geographic counterpart
+to the FMA-bones anatomical case (`docs/RDF-OWL-ALIGNMENT.md §6`).
+
 ## 3. Capability coverage matrix
 
 Which domain proves which substrate capability (Foundry-parity columns
 from `SUBSTRATE-ENDGAME.md §5.2`):
 
-| Capability | Chess | OpenProject | Elixir/HIRO | Odoo/ERP | HIPAA |
-|---|:--:|:--:|:--:|:--:|:--:|
-| Ontology (Class/Association) | ✓ | ✓ | ✓ | ✓ | ✓ |
-| Action types / lifecycle FSM | ✓ | ✓ | ✓ (gen_statem) | ✓ (workflows) | ✓ |
-| `Postpone` / `StateTimeout` | ✓ (premove/clock) | partial | ✓ | — | — |
-| `Depends` (data-causal) | — | ✓ (reactive) | ✓ | ✓ (`@api.depends`) | — |
-| Time-versioned / time-travel | ✓ | ✓ (paper-trail) | ✓ | ✓ | ✓ (audit) |
-| **Row-level permissions** | — | partial (RBAC) | — | partial | **✓ (HIPAA, palette256)** |
-| **Immutable audit** | — | ✓ (journals) | — | ✓ | **✓ (HIPAA, signed)** |
-| Multi-language frontends | (Rust) | Ruby | Elixir | Python (Odoo)+SeaORM | Rust |
-| Money/decimal fidelity | — | — | — | **✓ (ERP)** | — |
-| Migration scaffold | — | ✓ (target) | ✓ (spine) | (already Rust) | (already Rust) |
+| Capability | Chess | OpenProject | Elixir/HIRO | Odoo/ERP | HIPAA | OSM |
+|---|:--:|:--:|:--:|:--:|:--:|:--:|
+| Ontology (Class/Association) | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Action types / lifecycle FSM | ✓ | ✓ | ✓ (gen_statem) | ✓ (workflows) | ✓ | — |
+| `Postpone` / `StateTimeout` | ✓ (premove/clock) | partial | ✓ | — | — | — |
+| `Depends` (data-causal) | — | ✓ (reactive) | ✓ | ✓ (`@api.depends`) | — | — |
+| Time-versioned / time-travel | ✓ | ✓ (paper-trail) | ✓ | ✓ | ✓ (audit) | ✓ (changesets) |
+| **Row-level permissions** | — | partial (RBAC) | — | partial | **✓ (HIPAA, palette256)** | — (ODbL-public) |
+| **Immutable audit** | — | ✓ (journals) | — | ✓ | **✓ (HIPAA, signed)** | ✓ (OSM changeset history) |
+| Multi-language frontends | (Rust) | Ruby | Elixir | Python (Odoo)+SeaORM | Rust | Rust (via `osmpbf`) |
+| Money/decimal fidelity | — | — | — | **✓ (ERP)** | — | — |
+| Migration scaffold | — | ✓ (target) | ✓ (spine) | (already Rust) | (already Rust) | (already Rust) |
+| **Spatial prefix routing** (Cesium TMS quadkey via NiblePath) | — | — | — | — | — | **✓ (OSM)** |
+| **Palette256 codec adoption** (ADR-024) | — | — | — | — | ✓ (security) | **✓ (tag values + tile-local coords)** |
 
 **Coverage observation:** no single domain exercises everything, but the
-five together cover the full surface. The HIPAA instance is the *only*
+six together cover the full surface. The HIPAA instance is the *only*
 one that hard-proves row-level perms + signed audit (the Security Mesh);
 the Odoo/ERP instance is the *only* one that hard-proves money/decimal
-fidelity + production `@api.depends`. The calibration trio
-(chess/OP/HIRO) proves the lifecycle + migration core. **That's why all
-five matter** — drop any and a capability loses its production witness.
+fidelity + production `@api.depends`; the OSM instance is the *only*
+one that hard-proves spatial prefix routing (Cesium TMS quadkey as
+`NiblePath`) AND drives the second production adoption of the
+palette256 codec from ADR-024. The calibration trio (chess/OP/HIRO)
+proves the lifecycle + migration core. **That's why all six matter**
+— drop any and a capability loses its production witness.
 
 ## 4. Why the two production instances change the Foundry argument
 
