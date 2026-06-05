@@ -8,6 +8,7 @@ members = [
     "crates/ogar-proposal",
     "crates/ogar-adapter-surrealql",
     "crates/ogar-adapter-ttl",
+    "crates/ogar-adapter-clickhouse-ddl",
     "crates/ogar-knowable-from",
 ]
 
