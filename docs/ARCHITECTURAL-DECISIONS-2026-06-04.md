@@ -52,6 +52,7 @@
 | ADR-022 | **The Firewall** — absolute inner/outer boundary; no serialization in hot path; inner = compile-time HHTL; outer = contract-trait pluggable | **Pinned** | OGAR (this PR); `docs/THE-FIREWALL.md` |
 | ADR-023 | **IR-as-wire-truth** — the source-language AST is *input dialect*; the canonical `Class`/`Attribute`/`Association`/`EnumDecl`/`ActionDef` IR is *wire truth*. Adapters lift dialects into IR; the IR routes everything (registry key, actor mailbox, Lance version, audit-log dimension) | **Pinned** | OGAR (this PR); `crates/ogar-vocab/`; `bardioc/substrate-b-shadow::EdgeDecoder<E>` (PR #19) |
 | ADR-024 | **Palette256 + HHTL codec** — the substrate's universal compression primitive. HHTL prefix establishes a frame; within the frame, values cluster; clustered values quantize to 256-index palette + const-table lookup. Names an existing primitive (Binary16K perms + bgz-tensor attention + arm-discovery aerial codebook, ρ=0.9973 vs cosine) rather than proposing one | **Pinned** | OGAR (this PR); `MedCare-rs/crates/medcare-analytics/src/{graph_contract.rs,column_mask_bridge.rs}`; `bgz-tensor/examples/compare_stacked_vs_i16.rs`; `lance-graph-arm-discovery` |
+| ADR-025 | **Probe-free hot path** — *address arithmetic (helix + HHTL) gives geometry; Jirak certificate (jc) gives error; together they give level — and the level is the only thing the hot path picks.* Closed-form LOD/level selection replaces empirical probing; the hot path takes zero data-dependent branches. Completes the substrate-doctrine canon (022 boundary / 023 IR / 024 codec / 025 selection) | **Pinned** | OGAR (this PR); runtime: `crates/helix`, `crates/jc` (`jc::weyl` + `jc::jirak`), `crates/cesium/src/{sse,implicit_tiling}.rs` |
 
 ## ADR-001: `State = ActionState` (lifecycle), not domain state, for Rubicon binding
 
@@ -1346,6 +1347,247 @@ consultation with the runtime session.
 - `lance-graph` PR #473 (forthcoming) `cesium-osm-substrate-v1.md`
   §11 — runtime-side commitment to a follow-up callout on this ADR
   once D-OSM-2 / D-SPLAT-4 wire.
+
+## ADR-025: Probe-free hot path — address arithmetic + Jirak certificate give the level
+
+**Status:** Pinned (2026-06-05). Completes the substrate-doctrine
+canon (ADR-022 boundary / ADR-023 IR / ADR-024 codec / ADR-025
+selection). Names an existing capability surface — three independent
+address-as-geometry deployments + one independent bound machinery,
+all already in production — rather than proposing a new mechanism.
+
+**The one-sentence statement:** *Address arithmetic (helix + HHTL)
+gives geometry; Jirak certificate (jc) gives error; together they
+give level — and the level is the only thing the hot path picks.*
+
+**Context.** The substrate has accumulated three independent
+**address-as-geometry** surfaces:
+
+- **Cesium 3D Tiles 1.1 implicit-tiling** (`crates/cesium/src/
+  implicit_tiling.rs`) — child bounds are derived from parent + child
+  index by closed-form arithmetic, not stored per-tile. The OGC
+  spec §7.3.1 already specifies this.
+- **Helix half-orb placement** (`crates/helix`) — golden-stride
+  hemisphere; centroid + Σ at every cell are derived from the
+  prefix-bit-pattern's projection through the helix template; no
+  per-scene fit.
+- **HHTL radix-prefix routing** (`NiblePath`) — identity-IS-address;
+  the same primitive routes actor mailbox, registry key, Lance
+  version, audit dimension (ADR-023 / ADR-024).
+
+And one independent **bound machinery**:
+
+- **`jc::weyl`** — proves 1-D `{k·φ⁻¹ mod 1}` star-discrepancy at
+  representative N (e.g. N=144, N=1000), supplying the constructive
+  certificate that golden-stride sampling achieves Jirak-grade
+  concentration. *[citation per runtime session — not personally
+  verified from the OGAR side]*
+- **`jc::jirak`** — supplies the rate `n^{-(p/2-1)}` for p ∈ (2,3]
+  and `n^{-1/2}` in L^q for p ≥ 4 under weak dependence. Pinned as
+  the **`I-NOISE-FLOOR-JIRAK` iron rule** in the workspace's root
+  CLAUDE.md. *[citation per runtime session]*
+
+Cross-domain analysis (runtime session, 2026-06-05) revealed: when
+address arithmetic gives geometry (helix + HHTL) AND a Jirak-grade
+error bound gives the level (jc), the hot path becomes **probe-free**
+by construction — no residual-check branch, no metadata-fetch round-
+trip, no fallback path. The empirical-probe pattern collapses into
+closed-form level selection.
+
+**Decision.** Three composable primitives form the address-and-error
+substrate; their composition is **the** mechanism the hot path uses
+to pick its work, with zero data-dependent branches:
+
+```text
+  Address arithmetic    →  geometry  (closed-form, branch-free)
+       │
+       │  (helix + HHTL)
+       ▼
+  Jirak certificate     →  error    (predicted per-level, deployment-
+       │                            static; not per-query)
+       │  (jc::weyl + jc::jirak)
+       ▼
+  Together              →  level    (smallest L where predicted_error_L
+                                     < tolerance)
+       ↓
+  The level is the only thing the hot path picks.
+       ↓
+  Single address-arithmetic pass → single Lance column read → render.
+```
+
+**The three primitives in detail.**
+
+1. **Helix + HHTL = bounds are addresses, not negotiations.**
+   At any HHTL depth L, cells are partitioned by NiblePath prefix at
+   depth L with identical templated geometry inside each cell.
+   Boundary = address-prefix change. No fuzzy edges; no overlap-and-
+   blend at tile borders; no per-tile metadata about where it ends.
+   **Tile `bounding_volume` becomes a derived field, not a stored
+   field** — both producer and renderer compute it from the same
+   NiblePath arithmetic; no float-rounding daylight between them.
+
+2. **Jirak says which level L the cheap path will succeed at.**
+   For the LOD pyramid:
+     `n` = current sample size at level L (e.g. n ≈ 16^r for a
+     4-ary radix pyramid)
+     `predicted_error_L = C · n^{-1/2}` (L^q regime, which the
+     Σ-sandwich Mahalanobis distance lives in)
+     `r* = ⌈log₄(C/τ)⌉` for clinical tolerance τ — closed-form,
+     evaluated once per task class.
+   No per-frame probing; the LOD pick is `r*` directly.
+
+3. **HHTL routes the prefix at the picked level.**
+   Standard radix-trie traversal. The hot path does the address
+   arithmetic to get `(prefix_at_L, cell_centroid, cell_Σ,
+   palette_window, predicted_error)` in one closed-form pass, then
+   one read of the Lance column at that prefix.
+
+**The falsifiable property.** The hot path takes **zero data-
+dependent branches**. Verified by *absence*:
+
+- No `if residual < threshold` patterns in `crates/cesium/src/sse.rs`
+  after `D-CESIUM-IMPLICIT-HELIX` lands.
+- No `try_then_fallback` patterns in registration solvers after
+  `D-JC-PREDICT-LOD` lands (the ICP-Σ-sandwich path in particular).
+- No bounds-check branch / metadata-fetch round-trip in the Cesium
+  tileset consumer path after `D-HELIX-HHTL-BOUNDS` lands.
+
+If the absence holds across the three sites, the substrate is doing
+its job. If `if`-branches reappear on data, the substrate is leaking
+probing into the codec.
+
+**Three queued deliverables** (runtime-side; mirror ADR-024's
+D-OSM-2 / D-SPLAT-4 adoption pattern):
+
+| D-id | What | Repo |
+|---|---|---|
+| **D-HELIX-HHTL-BOUNDS** | `helix::bounds(nibblepath) → BoundingVolume` and `helix::centroid(nibblepath) → Vec3` as closed-form bounds/centroid derivation | `crates/helix` (ndarray-hpc feature) |
+| **D-CESIUM-IMPLICIT-HELIX** | Extend `crates/cesium/src/implicit_tiling.rs` to consume the helix-bounds derivation as one of its tiling backends, alongside the OGC §7.3.1 uniform-subdivision backend already there | ndarray cesium crate |
+| **D-JC-PREDICT-LOD** | `jc::predict_lod(scene_cert, tolerance) → level` — consumed by SSE, registration, and tile-pyramid LOD selectors | `crates/jc` |
+
+Each is small (50-200 LOC); each gates only its own concern; each is
+consumed by D-SPLAT-12 + D-OSM-* + the existing 3DGS-ArcGIS-Cesium
+plan as additive deliverables, not redesigns. The runtime session
+committed in their preceding analysis to file a §11 ADR-025 callout
+on both `cesium-osm-substrate-v1.md` and `splat-native-ultrasound
+-v1.md` once this ADR lands (same cross-arc symmetry pattern as
+ADR-024 → §11 callouts in PR #475 + PR #476).
+
+**Alternatives considered.**
+
+- *Empirical calibration per scene class.* Rejected: collapses the
+  predictive-bound win and reverses the architectural payoff. The
+  whole point is the wasted-cheap-try + the failure-detection branch
+  going away; empirical calibration keeps both.
+- *Stored bounds in tileset JSON.* Rejected: bounds drift across LOD
+  levels (parent must contain children; floating-point error in the
+  union accumulates), producer/renderer disagreement (server says
+  `[-1.2, 1.3]`; renderer rounds to `[-1.19, 1.29]` and the missing
+  strip is a visible seam), mandatory bounds-composition pass at
+  producer time. Derived bounds via helix+HHTL eliminate all three.
+- *Per-frame LOD probing.* Rejected: the branch becomes data-
+  dependent on residual; branch predictor mispredicts; pipeline
+  stalls. Every miss is a cache-line read on the expensive path.
+  The Jirak-bound variant pays one constant-time check (data-
+  INdependent: function of L and n at that level, not of the
+  specific query).
+
+**Honest scope — what this ADR does NOT do.**
+
+- *Doesn't make the bad-case work go away.* When `predicted_error
+  > tolerance` the expensive path is taken directly. What's saved
+  is the wasted cheap-try + the fallback branch. If 95% of queries
+  are bad-case, the savings are noise.
+- *Needs the jc certificate per scene class.* Medical splat volumes,
+  OSM tile aggregates, and ArcGIS scene layers each need their `p`
+  parameter (the moment-bound order) measured once at substrate-
+  build time. The certificate is deployment-static (per scene class,
+  not per query); but it must exist. This is what `crates/jc` is
+  *for* — and it's why the substrate has the certificate path
+  explicitly named (CLAUDE.md `I-NOISE-FLOOR-JIRAK`).
+- *Doesn't help if the dependence structure changes at scale.*
+  Locality probe (e.g. 98.6% intra-basin at ~10³-class ontologies,
+  unproven at 10⁸ per the relevant tracking PR) is still the slab.
+  If Wikidata-scale locality degrades, the `p` parameter shifts and
+  the bound loosens. Separate concern; doesn't invalidate ADR-025
+  but does bound where it applies cleanly.
+
+**Consequences.**
+
+- **The substrate is probe-free in the hot path** is no longer a
+  slogan — it's a deliverable name (the three D-* above) and a
+  falsifiable property (the three absences above).
+- **Cesium tileset `bounding_volume` becomes a derived field** for
+  helix+HHTL-shaped tilesets. Producer/renderer round-trip lossless
+  by construction.
+- **5-12 hop range = `r* = ⌈log₄(C/τ)⌉`** evaluated against
+  clinical (FMA registration), pixel (Cesium SSE), and tile (OSM
+  pyramid) tolerances. Same formula across the three domains; the
+  per-domain Jirak certificate supplies `C`.
+- **theta ∈ [1.45, 1.6] window** is the regime where the Jirak
+  bound applies cleanly to palette256 distances (ADR-024 codec).
+  Outside it, the bound loosens and the predictive guarantee
+  degrades. The window is the empirical regime the substrate's
+  codec is calibrated in.
+- **The four ADRs form the substrate-doctrine canon**:
+    - **022** — boundary (no serialization in hot path)
+    - **023** — IR (Class is wire truth; dialects absorbed by
+      adapters)
+    - **024** — codec (palette256 + HHTL = 1-byte index, sub-µs
+      decode, ρ ≥ 0.99)
+    - **025** — selection (address gives geometry, certificate
+      gives error, together give level; hot path picks level only,
+      branch-free)
+  Each closes a different floor; together they describe a substrate
+  whose hot path is deterministic by construction.
+
+**Change policy.** Adding a new adopter of the codec (palette256)
+or of the selection mechanism (helix+HHTL+jc) is routine. Changing
+the mechanism itself — adopting a different bound machinery (e.g.
+moving from Jirak to a different concentration inequality), or
+changing the closed-form address arithmetic at the helix or HHTL
+layer — is a substrate-wide concern and requires consultation with
+the runtime session.
+
+**References.**
+
+- ADR-022 (The Firewall) — "no serialization in hot path" sister
+  claim; ADR-025 closes the loop on "no probing in hot path."
+- ADR-023 (IR-as-wire-truth) — semantic substrate the level picks
+  navigate over.
+- ADR-024 (Palette256 + HHTL codec) — the codec the level decode
+  consumes; theta ∈ [1.45, 1.6] window is the regime where the bound
+  applies cleanly to palette256 distances.
+- `crates/helix` (runtime) — golden-stride hemisphere placement.
+  *[per runtime session]*
+- `crates/jc` — `jc::weyl` + `jc::jirak` certificate machinery.
+  *[per runtime session]*
+- `crates/cesium/src/sse.rs` — SSE LOD math (will lose probing
+  branches per `D-CESIUM-IMPLICIT-HELIX`). *[per runtime session]*
+- `crates/cesium/src/implicit_tiling.rs` — 3D Tiles 1.1 implicit
+  tiling (`D-CESIUM-IMPLICIT-HELIX` entry point). *[per runtime
+  session]*
+- CLAUDE.md (workspace root) `I-NOISE-FLOOR-JIRAK` — the iron rule
+  that gates the bound machinery. *[per runtime session]*
+- `bardioc` PR #18 + `lance-graph` PR #470 (BindSpace dissolution
+  handover) — runtime-side trie-append pattern that helix+HHTL
+  composes with.
+- `lance-graph` PR #475 + PR #476 — the §11 ADR-024 callout
+  symmetry pattern (D-OSM-2 + D-SPLAT-4 both routed through ADR-024
+  contract); ADR-025 follows the same shape — `lance-graph` PR
+  #475 + #476 forthcoming amendments for §11 ADR-025 callouts on
+  `cesium-osm-substrate-v1.md` + `splat-native-ultrasound-v1.md`
+  per the runtime session's explicit commitment.
+
+**Honest discipline note.** I have not personally verified the
+runtime-side artifacts cited (`crates/jc`, `crates/helix`,
+`crates/cesium/src/{sse,implicit_tiling}.rs`, CLAUDE.md
+`I-NOISE-FLOOR-JIRAK`). Citations are taken as authoritative from
+the runtime session's 2026-06-05 cross-session analysis (the same
+verification pattern that ADR-024's three deployments + ρ = 0.9973
+anchor were carried under). The §11 amendments the runtime session
+will file once this ADR lands are the receipts that close the
+verification loop from their side.
 
 ## Implementation receipts — ADR ↔ commit cross-reference
 
