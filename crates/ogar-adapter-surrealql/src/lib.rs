@@ -143,14 +143,6 @@ pub fn emit_surrealql_ddl(classes: &[Class]) -> String {
 pub fn parse_surrealql_ddl(_input: &str) -> Result<Vec<Class>, ParseError> {
     #[cfg(feature = "surrealdb-parser")]
     {
-        // Wire-up complete (PR #23 bumped rust-version + this PR added
-        // the deps under the surrealdb-parser feature). Currently
-        // drives the parser for syntax validation; the AST -> Class
-        // walk is the substantive follow-up sprint.
-        //
-        // Drive the parser to catch syntax errors; on success, return
-        // Unimplemented (with the parse-was-fine info) rather than a
-        // bogus empty Vec.
         use surrealdb_parser::{Config, Parser};
         let cfg = Config {
             depth_limit: 1000,
@@ -158,14 +150,9 @@ pub fn parse_surrealql_ddl(_input: &str) -> Result<Vec<Class>, ParseError> {
             feature_bearer_access: false,
             feature_surrealism: false,
         };
-        match Parser::enter_parse::<surrealdb_ast::Query>(_input, cfg) {
-            Ok(_) => Err(ParseError::Unimplemented(
-                "DDL parsed successfully; AST -> Class walk pending follow-up sprint \
-                 (see crate-level docs for the canonical walk pattern)"
-                    .into(),
-            )),
-            Err(e) => Err(ParseError::Parse(format!("{e:?}"))),
-        }
+        let (query, ast) = Parser::enter_parse::<surrealdb_ast::Query>(_input, cfg)
+            .map_err(|e| ParseError::Parse(format!("{e:?}")))?;
+        Ok(walk::walk_query(&ast, query))
     }
     #[cfg(not(feature = "surrealdb-parser"))]
     {
@@ -187,6 +174,284 @@ pub fn parse_surrealql_ddl(_input: &str) -> Result<Vec<Class>, ParseError> {
 // Kept this crate Lance-free; the seam is trait-mediated symmetrically
 // with how CommitHook hides the membrane from Rubicon. See ADR-010 in
 // `docs/ARCHITECTURAL-DECISIONS-2026-06-04.md` for the meet-point pin.
+
+// ─────────────────────────────────────────────────────────────────────
+// AST walk — surrealdb_ast::Query -> Vec<Class>
+// ─────────────────────────────────────────────────────────────────────
+// Behind the `surrealdb-parser` feature. Walks a parsed SurrealQL Query
+// node-by-node and lifts the supported DDL subset into the OGAR IR.
+//
+// Supported today:
+//   - DEFINE TABLE <name>                                  -> Class
+//   - DEFINE FIELD <field> ON <table> TYPE string|int|bool|...
+//                                                         -> Attribute
+//   - DEFINE FIELD <field> ON <table> TYPE record<X>       -> Association(BelongsTo)
+//   - DEFINE FIELD <field> ON <table> TYPE option<record<X>>
+//                                                         -> Association(BelongsTo, optional=true)
+//   - DEFINE FIELD <field> ON <table> TYPE option<<primitive>>
+//                                                         -> Attribute(type=option<primitive>)
+//
+// Not yet supported (intentional — separate sprint per the closure of
+// ADR-017 in stages):
+//   - DEFINE FIELD … ASSERT $value IN [...]  (EnumDecl::Static lift)
+//   - VALUE / DEFAULT / COMPUTED clauses
+//   - PERMISSIONS / FLEXIBLE / READONLY
+//   - DEFINE EVENT (lifecycle -> ActionDef)
+//   - DEFINE INDEX (not part of OGAR IR; ignored)
+//   - Comment-marker recovery for non-owning sides (`-- {table} HasMany {name}`)
+//     — emit_field_assoc emits these but the parser doesn't see them
+//     (they're SurrealQL comments, not AST nodes). The non-owning side
+//     of an association is recoverable from the owning side's record<X>
+//     in a separate post-pass over the full Vec<Class>.
+//
+// The IR field that holds the resolved type for primitives uses the
+// SurrealQL canonical name (`"string"`, `"int"`, `"bool"`, `"datetime"`,
+// `"float"`, `"decimal"`, `"uuid"`, `"binary"`, `"object"`) — the
+// emit-side `map_type_to_surrealql` lookup handles these as-is.
+#[cfg(feature = "surrealdb-parser")]
+mod walk {
+    use ogar_vocab::{Association, AssociationKind, Attribute, Class};
+    use std::collections::HashMap;
+    use surrealdb_ast::{
+        Ast, Expr, NodeId, NodeListId, PrimeType, Query, TopLevelExpr, Type,
+    };
+
+    pub(super) fn walk_query(ast: &Ast, query: Query) -> Vec<Class> {
+        // Pass 1: visit DefineTable to register class order.
+        // Pass 2: visit DefineField, attaching to the matching class.
+        // Both passes share a HashMap<String, Class> + order Vec.
+        let mut by_name: HashMap<String, Class> = HashMap::new();
+        let mut order: Vec<String> = Vec::new();
+
+        if let Some(list_id) = query.exprs {
+            for tle_id in iter_node_list(ast, list_id) {
+                let tle = &ast[tle_id];
+                if let TopLevelExpr::Expr(expr_id) = tle {
+                    visit_define(ast, *expr_id, &mut by_name, &mut order);
+                }
+            }
+        }
+
+        order.into_iter().filter_map(|n| by_name.remove(&n)).collect()
+    }
+
+    fn visit_define(
+        ast: &Ast,
+        expr_id: NodeId<Expr>,
+        by_name: &mut HashMap<String, Class>,
+        order: &mut Vec<String>,
+    ) {
+        match &ast[expr_id] {
+            Expr::DefineTable(dt_id) => {
+                let dt = &ast[*dt_id];
+                if let Some(name) = expr_to_simple_name(ast, dt.name) {
+                    by_name.entry(name.clone()).or_insert_with(|| {
+                        order.push(name.clone());
+                        Class::new(&name)
+                    });
+                }
+            }
+            Expr::DefineField(df_id) => {
+                let df = &ast[*df_id];
+                let table = match expr_to_simple_name(ast, df.table) {
+                    Some(t) => t,
+                    None => return, // can't anchor a field whose table isn't a simple name
+                };
+                let field = match expr_to_simple_name(ast, df.name) {
+                    Some(f) => f,
+                    None => return, // dotted-paths on the field side aren't OGAR-IR-shaped
+                };
+                // Get-or-create the class entry (field may appear before
+                // its DefineTable in the input, or the table may be
+                // implicit-defined).
+                let class = by_name.entry(table.clone()).or_insert_with(|| {
+                    order.push(table.clone());
+                    Class::new(&table)
+                });
+
+                match lift_field_type(ast, df.ty) {
+                    FieldShape::Primitive { type_name, optional } => {
+                        let mut attr = Attribute::new(&field);
+                        attr.type_name = Some(type_name);
+                        if optional {
+                            // IR-canonical optional-primitive marker —
+                            // emit-side wraps with SurrealQL `option<…>`.
+                            attr.options.required = Some(false);
+                        }
+                        class.attributes.push(attr);
+                    }
+                    FieldShape::Record { target, optional } => {
+                        let mut assoc =
+                            Association::new(AssociationKind::BelongsTo, &field);
+                        assoc.class_name = Some(target);
+                        if optional {
+                            assoc.optional = Some(true);
+                        }
+                        class.associations.push(assoc);
+                    }
+                    FieldShape::Untyped => {
+                        // DEFINE FIELD f ON t  (no TYPE clause) — emit
+                        // a typeless Attribute; consumers infer.
+                        let attr = Attribute::new(&field);
+                        class.attributes.push(attr);
+                    }
+                    FieldShape::Other => {
+                        // Complex/union type — leave a placeholder
+                        // Attribute with type "any" so the consumer sees
+                        // the field exists. Future PR closes this with
+                        // proper lifting (EnumDecl from ASSERT, etc.).
+                        let mut attr = Attribute::new(&field);
+                        attr.type_name = Some("any".into());
+                        class.attributes.push(attr);
+                    }
+                }
+            }
+            _ => {} // ignore non-DDL exprs (Create, Update, etc.)
+        }
+    }
+
+    // ─────────────────────────────────────────────────────────────────
+    // Name extraction
+    // ─────────────────────────────────────────────────────────────────
+
+    /// Extract a simple (one-segment) identifier name from an Expr.
+    /// Returns `None` for compound paths, expressions, anything that's
+    /// not just `Ident`.
+    fn expr_to_simple_name(ast: &Ast, expr_id: NodeId<Expr>) -> Option<String> {
+        match &ast[expr_id] {
+            Expr::Path(path_id) => {
+                let path = &ast[*path_id];
+                if path.parts.is_some() {
+                    return None; // multi-segment path
+                }
+                let ident = &ast[path.start];
+                Some(ast[ident.text].clone())
+            }
+            _ => None,
+        }
+    }
+
+    // ─────────────────────────────────────────────────────────────────
+    // Type extraction
+    // ─────────────────────────────────────────────────────────────────
+
+    enum FieldShape {
+        /// Primitive — `string`, `int`, `bool`, `datetime`, `float`,
+        /// `decimal`, `uuid`, `bytes`, `object`, `duration`, `any`.
+        /// Optional is carried as `AttributeOptions.required = Some(false)`
+        /// (not baked into `type_name` — keeps the IR-canonical
+        /// representation that survives `emit_field_attr`'s round-trip).
+        Primitive { type_name: String, optional: bool },
+        /// `record<X>` (or `option<record<X>>`) — BelongsTo association.
+        Record { target: String, optional: bool },
+        /// `DEFINE FIELD … TYPE` clause absent.
+        Untyped,
+        /// Union types, multi-target records, geometry, complex literals
+        /// — out of scope for the v1 walk. Codex P2 (#32) flagged
+        /// silent narrowing of multi-target `record<a | b>` to the first
+        /// target; rejecting as `Other` is correct here.
+        Other,
+    }
+
+    fn lift_field_type(ast: &Ast, ty_id_opt: Option<NodeId<Type>>) -> FieldShape {
+        let ty_id = match ty_id_opt {
+            Some(id) => id,
+            None => return FieldShape::Untyped,
+        };
+        let prime_list_id = match &ast[ty_id] {
+            Type::Any(_) => return FieldShape::Primitive {
+                type_name: "any".into(),
+                optional: false,
+            },
+            Type::Prime(list_id) => *list_id,
+        };
+
+        // The parser encodes `option<X>` as a NodeList prefixed with
+        // PrimeType::None (see surrealdb/parser/src/parse/kind.rs at
+        // the T![OPTION] arm). So a NodeList starting with None means
+        // optional; the rest are the effective type(s).
+        let primes: Vec<&PrimeType> =
+            iter_node_list(ast, prime_list_id).map(|p| &ast[p]).collect();
+        if primes.is_empty() {
+            return FieldShape::Untyped;
+        }
+
+        let optional = matches!(primes[0], PrimeType::None(_));
+        let effective_start = if optional { 1 } else { 0 };
+        let effective_len = primes.len() - effective_start;
+
+        if effective_len != 1 {
+            return FieldShape::Other; // union, or empty after option-strip
+        }
+
+        let p = primes[effective_start];
+        match p {
+            PrimeType::String(_) => primitive("string", optional),
+            PrimeType::Integer(_) => primitive("int", optional),
+            PrimeType::Bool(_) => primitive("bool", optional),
+            PrimeType::DateTime(_) => primitive("datetime", optional),
+            PrimeType::Float(_) => primitive("float", optional),
+            PrimeType::Decimal(_) | PrimeType::Number(_) => primitive("decimal", optional),
+            PrimeType::Uuid(_) => primitive("uuid", optional),
+            PrimeType::Bytes(_) => primitive("bytes", optional),
+            PrimeType::Object(_) => primitive("object", optional),
+            PrimeType::Duration(_) => primitive("duration", optional),
+            PrimeType::Record(ident_list_id) => {
+                // Reject multi-target `record<a | b>` rather than
+                // silently narrowing to the first target (Codex P2 on
+                // PR #32). OGAR's `Association::class_name: Option<String>`
+                // can't represent a union; an honest `Other` keeps the
+                // round-trip from mutating the schema. Future PR can
+                // grow union-target support if a real consumer needs it.
+                let ident_list = &ast[*ident_list_id];
+                let mut iter = ident_list
+                    .idents
+                    .map(|ids| iter_node_list(ast, ids))
+                    .into_iter()
+                    .flatten();
+                let first = match iter.next() {
+                    Some(id) => id,
+                    None => return FieldShape::Other, // record<> with no target
+                };
+                if iter.next().is_some() {
+                    return FieldShape::Other; // multi-target — preserve faithfully or reject
+                }
+                let ident = &ast[first];
+                FieldShape::Record {
+                    target: ast[ident.text].clone(),
+                    optional,
+                }
+            }
+            _ => FieldShape::Other,
+        }
+    }
+
+    fn primitive(name: &str, optional: bool) -> FieldShape {
+        FieldShape::Primitive {
+            type_name: name.to_string(),
+            optional,
+        }
+    }
+
+    // ─────────────────────────────────────────────────────────────────
+    // NodeList iteration (linked-list — see surrealdb/ast/src/types/mod.rs)
+    // ─────────────────────────────────────────────────────────────────
+
+    /// Iterate a `NodeListId<T>` linked-list, yielding each cell's
+    /// `cur: NodeId<T>`.
+    fn iter_node_list<T: std::any::Any>(
+        ast: &Ast,
+        list_id: NodeListId<T>,
+    ) -> impl Iterator<Item = NodeId<T>> + '_ {
+        let mut cur = Some(list_id);
+        std::iter::from_fn(move || {
+            let lid = cur?;
+            let node = &ast[lid];
+            cur = node.next;
+            Some(node.cur)
+        })
+    }
+}
 
 /// Errors from [`parse_surrealql_ddl`].
 #[derive(Debug, Clone)]
@@ -260,9 +525,19 @@ fn emit_field_attr(table: &str, attr: &Attribute, out: &mut String) {
         .as_deref()
         .map(map_type_to_surrealql)
         .unwrap_or_else(|| "string".to_string());
+    // `options.required = Some(false)` is the IR-canonical "this field
+    // is nullable / optional" marker (per `ogar-vocab::AttributeOptions`).
+    // Wrap with SurrealQL's `option<…>` so the round-trip through
+    // `parse_surrealql_ddl` preserves nullability. `None` means "unset"
+    // (the producer didn't say), not "required=true" — leave unwrapped.
+    let wrapped = if attr.options.required == Some(false) {
+        format!("option<{surreal_type}>")
+    } else {
+        surreal_type
+    };
     out.push_str(&format!(
         "DEFINE FIELD {} ON {} TYPE {};\n",
-        attr.name, table, surreal_type
+        attr.name, table, wrapped
     ));
 }
 
@@ -545,14 +820,11 @@ mod tests {
     }
 
     /// The full roundtrip property (`parse(emit(parse(x))) == parse(x)`)
-    /// can't be asserted until the AST -> Class walk lands in the
-    /// follow-up sprint. This test asserts emit-only determinism + the
-    /// feature-gated parser smoke tests below cover syntax validation.
+    /// Emit + parse round-trip: emitting a Class and parsing the
+    /// result should reconstruct the structural shape. Asserts the
+    /// minimum-shape walk per ADR-017.
     #[test]
     fn roundtrip_intent_documented() {
-        // Once parse_surrealql_ddl is wired, replace this with:
-        //   let parsed = parse_surrealql_ddl(emit_surrealql_ddl(&[c]))?;
-        //   assert_eq!(parsed, vec![c]);  // modulo identity prefix
         let mut c = Class::new("widget");
         let mut size = Attribute::new("size");
         size.type_name = Some("int".into());
@@ -564,38 +836,235 @@ mod tests {
     }
 
     // ─────────────────────────────────────────────────────────────────
-    // Feature-gated smoke tests for the parse wire-up (PR #24)
+    // Feature-gated smoke + round-trip tests for the AST walk
     // ─────────────────────────────────────────────────────────────────
 
     #[cfg(feature = "surrealdb-parser")]
     #[test]
-    fn parser_wired_returns_unimplemented_on_valid_ddl() {
-        // Syntactically valid DDL parses cleanly; we then return Unimplemented
-        // (with the parse-OK info) because the AST -> Class walk is the
-        // follow-up sprint. This confirms the dep wiring + parser drive
-        // works end-to-end.
-        let valid = "DEFINE TABLE account SCHEMAFULL;";
-        match parse_surrealql_ddl(valid) {
-            Err(ParseError::Unimplemented(msg)) => {
-                assert!(
-                    msg.contains("DDL parsed successfully"),
-                    "expected Unimplemented(parsed-OK msg), got: {msg}"
-                );
-            }
-            other => panic!("expected Unimplemented on valid DDL, got: {other:?}"),
+    fn walk_minimal_table_produces_class() {
+        let ddl = "DEFINE TABLE account SCHEMAFULL;";
+        let classes = parse_surrealql_ddl(ddl).expect("parse OK");
+        assert_eq!(classes.len(), 1, "got: {classes:?}");
+        assert_eq!(classes[0].name, "account");
+        assert!(classes[0].attributes.is_empty());
+        assert!(classes[0].associations.is_empty());
+    }
+
+    #[cfg(feature = "surrealdb-parser")]
+    #[test]
+    fn walk_table_with_string_attribute() {
+        let ddl = "\
+            DEFINE TABLE account SCHEMAFULL;\n\
+            DEFINE FIELD email ON account TYPE string;\n";
+        let classes = parse_surrealql_ddl(ddl).expect("parse OK");
+        assert_eq!(classes.len(), 1);
+        let c = &classes[0];
+        assert_eq!(c.name, "account");
+        assert_eq!(c.attributes.len(), 1, "expected one attribute, got: {c:?}");
+        assert_eq!(c.attributes[0].name, "email");
+        assert_eq!(c.attributes[0].type_name.as_deref(), Some("string"));
+    }
+
+    #[cfg(feature = "surrealdb-parser")]
+    #[test]
+    fn walk_table_with_belongs_to_record_field() {
+        let ddl = "\
+            DEFINE TABLE work_package SCHEMAFULL;\n\
+            DEFINE FIELD owner ON work_package TYPE record<user>;\n";
+        let classes = parse_surrealql_ddl(ddl).expect("parse OK");
+        assert_eq!(classes.len(), 1);
+        let c = &classes[0];
+        assert_eq!(c.name, "work_package");
+        assert!(c.attributes.is_empty(), "record<X> should NOT become an attribute");
+        assert_eq!(c.associations.len(), 1);
+        let a = &c.associations[0];
+        assert_eq!(a.name, "owner");
+        assert!(matches!(a.kind, AssociationKind::BelongsTo));
+        assert_eq!(a.class_name.as_deref(), Some("user"));
+        assert!(a.optional.unwrap_or(false) == false, "non-optional record<X>");
+    }
+
+    #[cfg(feature = "surrealdb-parser")]
+    #[test]
+    fn walk_table_with_optional_belongs_to() {
+        let ddl = "\
+            DEFINE TABLE work_package SCHEMAFULL;\n\
+            DEFINE FIELD assignee ON work_package TYPE option<record<user>>;\n";
+        let classes = parse_surrealql_ddl(ddl).expect("parse OK");
+        assert_eq!(classes.len(), 1);
+        let a = &classes[0].associations[0];
+        assert_eq!(a.name, "assignee");
+        assert!(matches!(a.kind, AssociationKind::BelongsTo));
+        assert_eq!(a.class_name.as_deref(), Some("user"));
+        assert_eq!(a.optional, Some(true));
+    }
+
+    #[cfg(feature = "surrealdb-parser")]
+    #[test]
+    fn walk_multi_table_preserves_definition_order() {
+        let ddl = "\
+            DEFINE TABLE a SCHEMAFULL;\n\
+            DEFINE TABLE b SCHEMAFULL;\n\
+            DEFINE TABLE c SCHEMAFULL;\n";
+        let classes = parse_surrealql_ddl(ddl).expect("parse OK");
+        let names: Vec<&str> = classes.iter().map(|c| c.name.as_str()).collect();
+        assert_eq!(names, vec!["a", "b", "c"]);
+    }
+
+    #[cfg(feature = "surrealdb-parser")]
+    #[test]
+    fn walk_round_trip_simple_class() {
+        // Build a Class via the IR, emit DDL, parse it, verify the
+        // recovered Class matches structurally on the supported subset.
+        let mut original = Class::new("account");
+        let mut email = Attribute::new("email");
+        email.type_name = Some("string".into());
+        let mut age = Attribute::new("age");
+        age.type_name = Some("int".into());
+        original.attributes.push(email);
+        original.attributes.push(age);
+
+        let ddl = emit_surrealql_ddl(&[original.clone()]);
+        let recovered = parse_surrealql_ddl(&ddl).expect("parse OK");
+        assert_eq!(recovered.len(), 1);
+        let r = &recovered[0];
+        assert_eq!(r.name, "account");
+        assert_eq!(r.attributes.len(), 2);
+        assert_eq!(r.attributes[0].name, "email");
+        assert_eq!(r.attributes[0].type_name.as_deref(), Some("string"));
+        assert_eq!(r.attributes[1].name, "age");
+        assert_eq!(r.attributes[1].type_name.as_deref(), Some("int"));
+    }
+
+    #[cfg(feature = "surrealdb-parser")]
+    #[test]
+    fn walk_round_trip_belongs_to_association() {
+        let mut original = Class::new("work_package");
+        let mut owner = Association::new(AssociationKind::BelongsTo, "owner");
+        owner.class_name = Some("user".into());
+        let mut assignee = Association::new(AssociationKind::BelongsTo, "assignee");
+        assignee.class_name = Some("user".into());
+        assignee.optional = Some(true);
+        original.associations.push(owner);
+        original.associations.push(assignee);
+
+        let ddl = emit_surrealql_ddl(&[original]);
+        let recovered = parse_surrealql_ddl(&ddl).expect("parse OK");
+        assert_eq!(recovered.len(), 1);
+        let r = &recovered[0];
+        assert_eq!(r.name, "work_package");
+        assert_eq!(r.associations.len(), 2);
+        assert_eq!(r.associations[0].name, "owner");
+        assert_eq!(r.associations[0].class_name.as_deref(), Some("user"));
+        assert!(r.associations[0].optional.unwrap_or(false) == false);
+        assert_eq!(r.associations[1].name, "assignee");
+        assert_eq!(r.associations[1].class_name.as_deref(), Some("user"));
+        assert_eq!(r.associations[1].optional, Some(true));
+    }
+
+    #[cfg(feature = "surrealdb-parser")]
+    #[test]
+    fn walk_returns_parse_error_on_invalid_ddl() {
+        // Genuine syntax errors are reported as ParseError::Parse.
+        let invalid = "DEFINE TBLE missing keyword;"; // typo "TBLE"
+        match parse_surrealql_ddl(invalid) {
+            Err(ParseError::Parse(_)) => {} // expected
+            other => panic!("expected Parse error on invalid DDL, got: {other:?}"),
         }
     }
 
     #[cfg(feature = "surrealdb-parser")]
     #[test]
-    fn parser_wired_returns_parse_error_on_invalid_ddl() {
-        // Genuine syntax errors are reported as ParseError::Parse, not
-        // Unimplemented. Verifies the parser is actually driving the input.
-        let invalid = "DEFINE TBLE missing keyword;";  // typo "TBLE"
-        match parse_surrealql_ddl(invalid) {
-            Err(ParseError::Parse(_)) => {} // expected
-            other => panic!("expected Parse error on invalid DDL, got: {other:?}"),
-        }
+    fn walk_implicit_table_from_field_alone() {
+        // DEFINE FIELD without a preceding DEFINE TABLE — the walker
+        // still creates the class (the table is named by the field's
+        // ON clause). The parser may accept this even without an
+        // explicit DEFINE TABLE; the walker is robust to either order.
+        let ddl = "DEFINE FIELD email ON account TYPE string;\n";
+        let classes = parse_surrealql_ddl(ddl).expect("parse OK");
+        assert_eq!(classes.len(), 1);
+        assert_eq!(classes[0].name, "account");
+        assert_eq!(classes[0].attributes.len(), 1);
+    }
+
+    // ── Codex P2 fix #1 (PR #32) ────────────────────────────────────────
+    // Optional primitives round-trip correctly. Walker stores the bare
+    // type_name + AttributeOptions.required = Some(false); emit wraps
+    // with SurrealQL `option<…>` on egress.
+    // ────────────────────────────────────────────────────────────────────
+
+    #[cfg(feature = "surrealdb-parser")]
+    #[test]
+    fn walk_table_with_optional_primitive_uses_required_false() {
+        let ddl = "\
+            DEFINE TABLE account SCHEMAFULL;\n\
+            DEFINE FIELD email ON account TYPE option<string>;\n";
+        let classes = parse_surrealql_ddl(ddl).expect("parse OK");
+        assert_eq!(classes.len(), 1);
+        let attr = &classes[0].attributes[0];
+        assert_eq!(attr.name, "email");
+        // IR-canonical: bare type + required=Some(false), NOT
+        // type_name="option<string>" (which would round-trip wrong).
+        assert_eq!(attr.type_name.as_deref(), Some("string"));
+        assert_eq!(attr.options.required, Some(false));
+    }
+
+    #[cfg(feature = "surrealdb-parser")]
+    #[test]
+    fn walk_round_trip_optional_primitive() {
+        // Build IR with the canonical optional-primitive shape, emit,
+        // re-parse, assert the same shape comes back.
+        let mut original = Class::new("account");
+        let mut email = Attribute::new("email");
+        email.type_name = Some("string".into());
+        email.options.required = Some(false);
+        original.attributes.push(email);
+
+        let ddl = emit_surrealql_ddl(&[original]);
+        // Emit must produce option<string>, not a bare "string" or an
+        // unmapped /* … */ comment.
+        assert!(
+            ddl.contains("DEFINE FIELD email ON account TYPE option<string>;"),
+            "expected option<string> in DDL, got: {ddl}"
+        );
+
+        let recovered = parse_surrealql_ddl(&ddl).expect("parse OK");
+        assert_eq!(recovered.len(), 1);
+        let attr = &recovered[0].attributes[0];
+        assert_eq!(attr.type_name.as_deref(), Some("string"));
+        assert_eq!(attr.options.required, Some(false));
+    }
+
+    // ── Codex P2 fix #2 (PR #32) ────────────────────────────────────────
+    // Multi-target `record<a | b>` is rejected (FieldShape::Other) rather
+    // than silently narrowed to the first target. The placeholder
+    // Attribute with type "any" lands so the consumer sees the field
+    // exists without OGAR misrepresenting the union constraint.
+    // ────────────────────────────────────────────────────────────────────
+
+    #[cfg(feature = "surrealdb-parser")]
+    #[test]
+    fn walk_multi_target_record_returns_other_not_first_target() {
+        // The Codex P2 motivating case: `record<user | administrator>`
+        // would silently become BelongsTo→user, losing administrator.
+        // The fix rejects with FieldShape::Other → typeless "any"
+        // Attribute. NOT an Association — the schema constraint isn't
+        // narrowed.
+        let ddl = "\
+            DEFINE TABLE auditable SCHEMAFULL;\n\
+            DEFINE FIELD actor ON auditable TYPE record<user | administrator>;\n";
+        let classes = parse_surrealql_ddl(ddl).expect("parse OK");
+        let c = &classes[0];
+        // CRITICAL: no Association was emitted (no silent BelongsTo→user).
+        assert!(
+            c.associations.is_empty(),
+            "multi-target record must not become an Association — would mutate schema. got: {:?}",
+            c.associations
+        );
+        // Placeholder Attribute records the field's existence.
+        assert_eq!(c.attributes.len(), 1);
+        assert_eq!(c.attributes[0].name, "actor");
+        assert_eq!(c.attributes[0].type_name.as_deref(), Some("any"));
     }
 
     #[cfg(not(feature = "surrealdb-parser"))]
