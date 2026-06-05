@@ -17,19 +17,50 @@
 //! session). This crate is the *only* OGAR-side owner of that side of
 //! the seam.
 //!
-//! # The rust-version blocker on `parse_surrealql_ddl`
+//! # Status (post PR #23 rust-version bump)
 //!
-//! `AdaWorldAPI/surrealdb` pins `rust-version = "1.95"`; OGAR's workspace
-//! is on `1.85`. A direct git dep on `surrealdb-ast` + `surrealdb-parser`
-//! won't build in OGAR's CI today. The `surrealdb-parser` feature flag in
-//! `Cargo.toml` documents the wiring intent; the actual `dependencies`
-//! entries land alongside an OGAR `rust-version` bump.
+//! OGAR workspace bumped to `rust-version = "1.95"` in PR #23, lifting the
+//! prior blocker on `surrealdb-ast` + `surrealdb-parser` (both require
+//! `1.95+`). The deps are now wired in this crate under the
+//! `surrealdb-parser` feature flag (taking from the workspace's pinned
+//! git refs on `AdaWorldAPI/surrealdb#main`).
 //!
-//! Until then:
+//! Implementation state:
 //! - [`emit_surrealql_ddl`] is fully implemented (hand-written formatter).
-//! - [`parse_surrealql_ddl`] is `todo!()` with documented parser wiring.
-//! - [`register_class_knowable_from`] is `todo!()` (needs a Lance writer
-//!   too — that's the `lance-bind` Sprint-5b boundary).
+//! - [`parse_surrealql_ddl`] is **wired but not yet walking**: under the
+//!   `surrealdb-parser` feature, it drives `Parser::enter_parse::<Query>`
+//!   for syntax validation; on parse-OK, returns
+//!   [`ParseError::Unimplemented`] (the AST→`Class` walk is a substantive
+//!   follow-up sprint). Without the feature, it returns
+//!   [`ParseError::Unimplemented`] noting the feature must be enabled.
+//! - [`register_class_knowable_from`] is `todo!()` (also needs a Lance
+//!   writer — that's the `lance-bind` Sprint-5b boundary).
+//!
+//! # Canonical parser invocation pattern (for the follow-up walk impl)
+//!
+//! From `surrealdb/parser/src/test/mod.rs` (the parser's own test
+//! harness), the canonical entry is:
+//!
+//! ```ignore
+//! use surrealdb_parser::{Parser, Config};
+//! use surrealdb_ast::Query;
+//!
+//! let (root_id, ast) = Parser::enter_parse::<Query>(
+//!     input,
+//!     Config {
+//!         depth_limit: 1000,
+//!         generate_warnings: false,
+//!         feature_bearer_access: false,
+//!         feature_surrealism: false,
+//!     },
+//! )?;
+//! let query: &Query = root_id.index(&ast);
+//! // query.exprs: Option<NodeListId<TopLevelExpr>>
+//! // walk: TopLevelExpr::Expr(NodeId<Expr>) -> Expr::DefineTable(NodeId<DefineTable>)
+//! //                                       \-> Expr::DefineField(NodeId<DefineField>)
+//! // DefineTable.name: NodeId<Expr> (typically Expr::Ident(NodeId<Ident>) -> Ident.text: NodeId<String>)
+//! // DefineField.{name, table, ty, ...}: similar arena-indirection pattern
+//! ```
 //!
 //! # Alignment with `surrealdb-core::catalog::TableDefinition::new_for_ddl`
 //!
@@ -109,9 +140,40 @@ pub fn emit_surrealql_ddl(classes: &[Class]) -> String {
 /// should hold for any well-formed SurrealQL DDL `x`. Proptest fixture
 /// lands alongside the parser wiring.
 pub fn parse_surrealql_ddl(_input: &str) -> Result<Vec<Class>, ParseError> {
-    todo!(
-        "wire surrealdb-parser; pending OGAR rust-version bump to 1.95+; see crate-level docs"
-    )
+    #[cfg(feature = "surrealdb-parser")]
+    {
+        // Wire-up complete (PR #23 bumped rust-version + this PR added
+        // the deps under the surrealdb-parser feature). Currently
+        // drives the parser for syntax validation; the AST -> Class
+        // walk is the substantive follow-up sprint.
+        //
+        // Drive the parser to catch syntax errors; on success, return
+        // Unimplemented (with the parse-was-fine info) rather than a
+        // bogus empty Vec.
+        use surrealdb_parser::{Config, Parser};
+        let cfg = Config {
+            depth_limit: 1000,
+            generate_warnings: false,
+            feature_bearer_access: false,
+            feature_surrealism: false,
+        };
+        match Parser::enter_parse::<surrealdb_ast::Query>(_input, cfg) {
+            Ok(_) => Err(ParseError::Unimplemented(
+                "DDL parsed successfully; AST -> Class walk pending follow-up sprint \
+                 (see crate-level docs for the canonical walk pattern)"
+                    .into(),
+            )),
+            Err(e) => Err(ParseError::Parse(format!("{e:?}"))),
+        }
+    }
+    #[cfg(not(feature = "surrealdb-parser"))]
+    {
+        Err(ParseError::Unimplemented(
+            "surrealdb-parser feature not enabled; build with \
+             --features surrealdb-parser to wire the parser deps"
+                .into(),
+        ))
+    }
 }
 
 /// Register a `Class` and return its `knowable_from` Lance version —
@@ -160,7 +222,25 @@ pub enum ParseError {
         /// Why mapping failed.
         reason: String,
     },
+    /// The function is wired but the requested capability is pending a
+    /// follow-up sprint. Carries a short rationale.
+    Unimplemented(String),
 }
+
+impl std::fmt::Display for ParseError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ParseError::Parse(msg) => write!(f, "surrealql parse error: {msg}"),
+            ParseError::UnmappableField { table, field, reason } => write!(
+                f,
+                "unmappable field {field} on table {table}: {reason}"
+            ),
+            ParseError::Unimplemented(msg) => write!(f, "not yet implemented: {msg}"),
+        }
+    }
+}
+
+impl std::error::Error for ParseError {}
 
 /// Errors from [`register_class_knowable_from`].
 #[derive(Debug, Clone)]
@@ -489,10 +569,10 @@ mod tests {
         assert!(ddl.contains("DEFINE FIELD email ON account TYPE string;"));
     }
 
-    /// The roundtrip property (`parse(emit(parse(x))) == parse(x)`)
-    /// can't be tested until parse_surrealql_ddl is wired (pending the
-    /// rust-version bump). This test is a placeholder that documents
-    /// the intent and asserts the emit-only direction is stable.
+    /// The full roundtrip property (`parse(emit(parse(x))) == parse(x)`)
+    /// can't be asserted until the AST -> Class walk lands in the
+    /// follow-up sprint. This test asserts emit-only determinism + the
+    /// feature-gated parser smoke tests below cover syntax validation.
     #[test]
     fn roundtrip_intent_documented() {
         // Once parse_surrealql_ddl is wired, replace this with:
@@ -506,5 +586,57 @@ mod tests {
         // Emit is deterministic — same input twice gives same output:
         let ddl2 = emit_surrealql_ddl(&[c]);
         assert_eq!(ddl, ddl2);
+    }
+
+    // ─────────────────────────────────────────────────────────────────
+    // Feature-gated smoke tests for the parse wire-up (PR #24)
+    // ─────────────────────────────────────────────────────────────────
+
+    #[cfg(feature = "surrealdb-parser")]
+    #[test]
+    fn parser_wired_returns_unimplemented_on_valid_ddl() {
+        // Syntactically valid DDL parses cleanly; we then return Unimplemented
+        // (with the parse-OK info) because the AST -> Class walk is the
+        // follow-up sprint. This confirms the dep wiring + parser drive
+        // works end-to-end.
+        let valid = "DEFINE TABLE account SCHEMAFULL;";
+        match parse_surrealql_ddl(valid) {
+            Err(ParseError::Unimplemented(msg)) => {
+                assert!(
+                    msg.contains("DDL parsed successfully"),
+                    "expected Unimplemented(parsed-OK msg), got: {msg}"
+                );
+            }
+            other => panic!("expected Unimplemented on valid DDL, got: {other:?}"),
+        }
+    }
+
+    #[cfg(feature = "surrealdb-parser")]
+    #[test]
+    fn parser_wired_returns_parse_error_on_invalid_ddl() {
+        // Genuine syntax errors are reported as ParseError::Parse, not
+        // Unimplemented. Verifies the parser is actually driving the input.
+        let invalid = "DEFINE TBLE missing keyword;";  // typo "TBLE"
+        match parse_surrealql_ddl(invalid) {
+            Err(ParseError::Parse(_)) => {} // expected
+            other => panic!("expected Parse error on invalid DDL, got: {other:?}"),
+        }
+    }
+
+    #[cfg(not(feature = "surrealdb-parser"))]
+    #[test]
+    fn parser_not_wired_returns_unimplemented_feature_off() {
+        // Without the feature flag, parse_surrealql_ddl returns
+        // Unimplemented with a "feature off" rationale.
+        let any = "DEFINE TABLE x;";
+        match parse_surrealql_ddl(any) {
+            Err(ParseError::Unimplemented(msg)) => {
+                assert!(
+                    msg.contains("feature not enabled"),
+                    "expected feature-off message, got: {msg}"
+                );
+            }
+            other => panic!("expected Unimplemented(feature off), got: {other:?}"),
+        }
     }
 }
