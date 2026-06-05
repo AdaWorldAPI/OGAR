@@ -29,6 +29,17 @@
 > genericisation here is the worked example: you can't tell which project
 > it is, because the architecture doesn't depend on which project it is.
 >
+> **This is also a confidentiality property, not just hygiene.** Because
+> the contract carries the schema *shape* and never the labels, a
+> deployment's **PII field captions** (e.g. a healthcare deployment's
+> German field labels) are consumer-bound via the `Adapter` and **never
+> enter OGAR's contract surface**. The substrate holds "there is a
+> protected field here, with these access controls," not "the field is
+> called `<PII caption>`." For PII / GDPR / HIPAA that's a *guarantee by
+> construction*: the labels can't leak through OGAR because OGAR never
+> holds them. (The firewall's outer boundary — `THE-FIREWALL.md` — is
+> where a consumer's labelled schema is read; it stays consumer-side.)
+>
 > Status: **CARVED v0** (2026-06-05).
 
 ## 1. The instances
