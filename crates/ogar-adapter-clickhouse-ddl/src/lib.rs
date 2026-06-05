@@ -242,7 +242,7 @@ fn quote_ch_ident(name: &str) -> String {
 mod walk {
     use super::*;
     use ogar_vocab::Attribute;
-    use sqlparser::ast::{ColumnDef, DataType, Statement};
+    use sqlparser::ast::{ColumnDef, DataType, ObjectName, Statement};
     use sqlparser::dialect::ClickHouseDialect;
     use sqlparser::parser::Parser;
 
@@ -253,7 +253,7 @@ mod walk {
         let mut classes = Vec::new();
         for stmt in stmts {
             if let Statement::CreateTable(ct) = stmt {
-                let name = last_ident(&ct.name.to_string());
+                let name = last_ident_from_object_name(&ct.name);
                 let mut class = Class::new(name);
                 for col in &ct.columns {
                     class.attributes.push(lift_column(col));
@@ -359,10 +359,31 @@ mod walk {
         )
     }
 
-    /// Get the last `.`-separated segment of an identifier — handles
-    /// fully qualified names like `database.table`.
-    fn last_ident(s: &str) -> String {
-        s.rsplit('.').next().unwrap_or(s).trim_matches('`').to_string()
+    /// Get the table name from an `ObjectName` — handles both:
+    /// 1. **Multi-part qualified names** like `database.table` —
+    ///    sqlparser surfaces this as `ObjectName(vec![db_part,
+    ///    table_part])`; the table name is the last segment.
+    /// 2. **Backtick-quoted dotted single names** like
+    ///    `` `sale.order` `` (Odoo convention) — sqlparser surfaces
+    ///    this as `ObjectName(vec![one_part_with_value="sale.order"])`;
+    ///    the dot is INSIDE the identifier value, not a separator.
+    ///
+    /// Closes Codex P2 on PR #38: the previous `last_ident(&str)`
+    /// converted the `ObjectName` to a string and then split on `.`
+    /// before stripping backticks, which silently turned
+    /// `` `sale.order` `` into `order` and broke the round-trip the
+    /// PR claimed to support for Odoo dotted class names.
+    ///
+    /// Using `Ident.value` directly bypasses the string round-trip
+    /// — `value` is the *unquoted* text, so backtick-quoting and the
+    /// `.` ambiguity are resolved structurally by the parser before
+    /// this helper sees it.
+    fn last_ident_from_object_name(name: &ObjectName) -> String {
+        name.0
+            .last()
+            .and_then(|part| part.as_ident())
+            .map(|ident| ident.value.clone())
+            .unwrap_or_default()
     }
 }
 
@@ -503,6 +524,78 @@ mod tests {
             Err(ParseError::Parse(_)) => {}
             other => panic!("expected Parse error, got: {other:?}"),
         }
+    }
+
+    // ── Codex P2 fix (PR #38) ───────────────────────────────────────────
+    // Backtick-quoted dotted table names (Odoo `sale.order` convention)
+    // round-trip correctly. Previously `last_ident` split on `.` BEFORE
+    // stripping backticks, silently truncating `` `sale.order` `` to
+    // `order` and breaking the round-trip the PR claimed to support.
+    // ────────────────────────────────────────────────────────────────────
+
+    #[cfg(feature = "clickhouse-parser")]
+    #[test]
+    fn parse_backtick_quoted_dotted_table_keeps_full_name() {
+        let ddl = "CREATE TABLE `sale.order` (id UInt64) ENGINE = MergeTree ORDER BY id;";
+        let classes = parse_clickhouse_ddl(ddl).expect("parse OK");
+        assert_eq!(classes.len(), 1);
+        // CRITICAL: must be "sale.order", not "order" (the Codex P2
+        // motivating case).
+        assert_eq!(classes[0].name, "sale.order");
+    }
+
+    #[cfg(feature = "clickhouse-parser")]
+    #[test]
+    fn parse_qualified_db_table_takes_last_segment() {
+        // Multi-part qualified name `db.table` (unquoted) — sqlparser
+        // surfaces as ObjectName with two parts; the table name is the
+        // last segment.
+        let ddl = "CREATE TABLE my_db.users (id UInt64) ENGINE = MergeTree ORDER BY id;";
+        let classes = parse_clickhouse_ddl(ddl).expect("parse OK");
+        assert_eq!(classes.len(), 1);
+        assert_eq!(classes[0].name, "users");
+    }
+
+    #[cfg(feature = "clickhouse-parser")]
+    #[test]
+    fn round_trip_odoo_dotted_table_name() {
+        // The load-bearing round-trip: build IR with an Odoo dotted
+        // name, emit, parse, assert the name survives byte-identical.
+        let mut original = Class::new("sale.order");
+        let mut amount = Attribute::new("amount_total");
+        amount.type_name = Some("decimal".into());
+        original.attributes.push(amount);
+
+        let ddl = emit_clickhouse_ddl(&[original]);
+        // Emit must produce backtick-quoted form (per the existing
+        // emit_quotes_non_bare_table_name test).
+        assert!(
+            ddl.contains("CREATE TABLE `sale.order` ("),
+            "expected backtick-quoted CREATE TABLE, got: {ddl}"
+        );
+
+        let recovered = parse_clickhouse_ddl(&ddl).expect("parse OK");
+        assert_eq!(recovered.len(), 1);
+        assert_eq!(recovered[0].name, "sale.order");
+        assert_eq!(recovered[0].attributes.len(), 1);
+        assert_eq!(recovered[0].attributes[0].name, "amount_total");
+        assert_eq!(recovered[0].attributes[0].type_name.as_deref(), Some("decimal"));
+    }
+
+    #[cfg(feature = "clickhouse-parser")]
+    #[test]
+    fn round_trip_three_segment_odoo_name() {
+        // `account.move.line` — three-segment dotted name backtick-
+        // quoted as a single identifier (no qualified-db semantics).
+        let c = Class::new("account.move.line");
+        let ddl = emit_clickhouse_ddl(&[c]);
+        assert!(
+            ddl.contains("`account.move.line`"),
+            "three-segment name must be quoted, got: {ddl}"
+        );
+        let recovered = parse_clickhouse_ddl(&ddl).expect("parse OK");
+        assert_eq!(recovered.len(), 1);
+        assert_eq!(recovered[0].name, "account.move.line");
     }
 
     // ── Round-trip tests (the load-bearing ones) ──────────────────────
