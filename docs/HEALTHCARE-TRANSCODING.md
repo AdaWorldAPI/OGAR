@@ -109,6 +109,43 @@ audit must be durable + tamper-evident (legal). Inner bit-op auth +
 outer signed audit-append is the only way to have both — and a real
 HIPAA system ships exactly that.
 
+### 3.3 Production-instance reference — MedCare-rs's `column_mask_bridge`
+
+The §3.1 inner-side perms surface above (`palette256 + Hamming popcount
+on Binary16K _effectiveReaders`) is the *minimal* shape. A production
+HIPAA deployment ships a *richer* category-aware variant.
+
+The OGAR domain-instance reference is MedCare-rs's
+`crates/medcare-analytics/src/column_mask_bridge.rs` — pinned here in the
+same way `ODOO-TRANSCODING.md` pins Woa-rs as the ERP production
+instance. The production refinement carries the redaction *category*
+explicitly through to DataFusion plan rewriting:
+
+| MedCare-rs symbol | Role |
+|---|---|
+| `column_mask_bridge.rs::redaction_mode_for(reason: SensitivityReason) -> RedactionMode` (line 128) | Reason-to-transform mapping — the heart of the bridge |
+| `column_mask_bridge.rs::column_mask_policy_for_table(table: &str) -> Option<ColumnMaskPolicy>` (line 165) | Per-table dispatch — composes per-column redaction policies |
+| `column_mask_bridge.rs::build_medcare_column_mask_registry() -> ColumnMaskRegistry` (line 192) | Registry wiring — Arc-wrapped, consumed by `medcare-server` F2-E install |
+| `RedactionMode::{Hash, Constant, Null, Truncate(n)}` (4 variants) | The production-richness delta over the §3.1 bare-bitmap sketch |
+
+The bridge's reason enum carries the clinical / legal category
+(`HivAidsStatus`, `MentalHealth`, `Financial`, `MedicalNarrative`, …);
+the redaction-mode carries the rewriter transform; the lossy mapping
+between them is the production HIPAA review surface (a single
+function reviewable in one pass per `redaction_mode_for`). The
+`_effectiveReaders` palette256 + Hamming popcount sketch (§3.1) is
+the *fast-path inner gate*; the category-aware `RedactionMode` is the
+*plan-rewrite transform layer* installed on the DataFusion
+`SessionContext` — the two compose in the query path.
+
+**Closing the attestation loop**: the cross-session triangulation
+recorded in ADR-022 reception receipts (OGAR docs / Rubicon impl /
+runtime handover) extends here with the *production-instance receipt*
+— OGAR's §3 sketch and MedCare-rs's production bridge name the same
+inner / hot perms surface; the production refinement is the next
+shape OGAR's `Attribute` IR could carry (see MedCare-rs handover
+C-3 — queue as a low-priority OGAR follow-up).
+
 ## 4. The label-free contract IS the PII guarantee
 
 The reason this entire spec can map the healthcare domain without
