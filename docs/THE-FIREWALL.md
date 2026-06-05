@@ -142,14 +142,13 @@ per crossing.
   boundary without leaking into the hot path's dependency surface.
 
 **Proven precedent.** The external-membrane-via-contract pattern is
-already shipped in sibling AdaWorldAPI projects: **a production HIPAA instance**
-(the `Membrane` pattern in (consumer-side) +
-`.claude/patterns.md`; `LazyLock` in (consumer-side)) and
-**a production ERP instance** (SeaORM backend in `src/db.rs` + `src/migrations.rs`). The
-operator's estimate: "~20 minutes work" to add a given external
-membrane — *because it's outer-boundary caking, not inner
-architecture*. The pattern is a known quantity; the firewall is what
-keeps it from leaking inward.
+already shipped in sibling AdaWorldAPI production deployments — an ERP
+deployment (SeaORM-backed) and a HIPAA healthcare deployment (the
+`Membrane` + `LazyLock` + `ExternalMembrane` pattern). The operator's
+estimate: "~20 minutes work" to add a given external membrane —
+*because it's outer-boundary caking, not inner architecture*. The
+pattern is a known quantity; the firewall is what keeps it from leaking
+inward.
 
 ## 3. The litmus test — "crypto on post stamps"
 
