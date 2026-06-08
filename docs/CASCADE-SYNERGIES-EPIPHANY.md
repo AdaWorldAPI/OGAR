@@ -285,6 +285,83 @@ amortization gate" is that same discipline, named.
 
 ---
 
+## 7.5 The immaterialized cascade as storage — the Morton-keyed columnar grid-pyramid  **[storage synthesis, 2026-06-08]**
+
+**The operator's framing:** the Morton cascade is a **coordinate transform,
+not a stored grid** — exactly as `(lat, lon) → quadkey` is a cheap
+closed-form bit-interleave with no materialized grid. The cascade computes
+cell membership on demand; it is never *built*. That makes it a **reusable
+addressing layer** any payload can hang off.
+
+**Address vs payload (ADR-023) at storage scale:**
+- **ADDRESS** = the Morton prefix — immaterialized, computed cheap, never
+  stored as a grid. Amortizes to ≈ 0 (it's arithmetic, not data) — the §7
+  gate's best case.
+- **PAYLOAD** = columnar (Lance / Parquet-family / the PR #477 SoA register
+  file), with rows in Morton order.
+
+**The columnar-pushdown identity  [G — deployed lakehouse tech]:** ordering
+a columnar table's rows by a space-filling curve (Z-order / Hilbert) so
+range-predicates skip non-matching pages is **production tech** (Databricks
+Delta `ZORDER`, Iceberg/Hudi clustering, BigQuery clustering all ship it).
+The substrate is the same move:
+
+| Columnar concept | Cascade concept |
+|---|---|
+| row keyed by Morton prefix | a cell |
+| row-group / fragment over a Morton-prefix range | **a tile** |
+| predicate pushdown on a Morton-prefix range | **the tile fetch** (subtree scan = data-skipping) |
+| column-chunk | a per-role / per-level SoA column (PR #477 `SoaEnvelope`) |
+| page | the leaf nibble |
+| column projection | fetch only the roles you need |
+
+So the columnar format's **own machinery** (row-groups, pushdown,
+projection, data-skipping) *is* the cascade's storage + tile-fetch — free,
+on production-proven tech.
+
+**One sharpening (honest):** classic Parquet row-groups are **scan**-
+optimized; the cascade wants **random** tile access (jump to any prefix,
+any version). That is precisely **Lance's** advantage over classic Parquet
+(fragment/page random-access for ML workloads). So "parquet-shaped" is the
+right *family* (columnar + Z-ordered); **Lance is the substrate's actual
+instance**, chosen because the shader needs random access, not sequential
+scans.
+
+**Four payloads, one immaterialized address:**
+
+| Payload | What it is | Grade |
+|---|---|---|
+| **delta frames** | a version-diff = the Morton cells whose payload changed since the reference version (Lance versioning) — the codec P-frame (§1). I-frame = a materialized version (vacuum point); P-frame = a version-delta. *(B-frames / bidirectional refs don't map onto an append-only version log — honest limit.)* | [H] |
+| **radix trie** | VART lazy-materialized prefix nodes — only touched paths stored; the trie *is* the cascade | [G] |
+| **HHTL / OGIT / helix** | one Morton address = compile-time HHTL identity + OGIT class identity + helix placement seed (ADR-023/024/025) | [G] |
+| **CAM-PQ** | 6 roles × 256 centroids = the semantic column values (§3, §7) | [G] |
+
+**The unifying shape — "parquet-shaped grid-pyramid shader":**
+
+```
+columnar storage (Lance / Parquet-family / SoA)   ← the parquet
+   + rows in Morton order (Z-ordered)             ← the grid
+   + level cascade (mip pyramid)                  ← the pyramid
+   + closed-form per-cell from address (§5)       ← the shader
+```
+
+The address is the cheap deterministic transform (free — §7 best case); the
+columns are the amortized payload (build-once, query-many — §7 gate). **The
+whole substrate storage layer is one Z-ordered columnar grid-pyramid,
+queried by Morton-prefix pushdown, executed shader-style** — every layer
+production-proven (Lance columnar + lakehouse Z-order + GPU shader), just
+composed.
+
+**Honest limit (the immaterialization isn't total):** the *address* is
+immaterialized (arithmetic); the *payload* is materialized in the columns
+(it has to live somewhere). "Immaterialized cascade" = immaterialized
+*addressing* over materialized *columnar payload*. The grid is free; the
+data is the SoA-headroom spend (§7). The precise claim: you never store the
+grid; you always store the (Morton-ordered, palette-coded, amortized)
+columns.
+
+---
+
 ## 8. The synergy matrix (everything against everything)
 
 | | Morton cascade | golden helix | palette256/CAM | attention | Cesium | x265/x266 |
@@ -360,6 +437,12 @@ Ordered by leverage (highest first):
   mode; ITU‑T H.266 (VVC/x266) CTU + QTMT; Fuji X‑Trans CFA;
   Vogel/phyllotaxis golden‑angle anti‑aliasing; Product Quantization
   (Jégou et al.).
+- Deployed columnar / space‑filling‑curve clustering (the §7.5
+  storage anchor): Databricks Delta `ZORDER BY`, Apache Iceberg /
+  Hudi clustering, BigQuery clustering — all production data‑skipping
+  by Z‑order/Hilbert row ordering. Lance (the substrate's columnar
+  instance) — fragment/page random‑access columnar format, chosen over
+  classic Parquet row‑groups for random tile access.
 
 ---
 
