@@ -138,7 +138,7 @@ the spacing constant; the *mechanism* is `[H]`.
 |---|:--:|---|
 | palette256 = one PQ subspace's 256 centroids | **[G]** | `nsm_word.rs`: CAM codebook = **6 subspaces × 256 centroids**; `cam_codes.bin` = N words × 6 bytes (lance‑graph PR #477) |
 | palette256 ↔ indexed‑color codec palette | **[G]** | HEVC‑SCC + VVC ship an indexed‑palette mode (the codec's own ≤‑256‑ish codebook for screen content) |
-| palette256 ↔ OLED subpixel emission | **[S]** | OLED PenTile RGBG is a palette‑on‑a‑lattice for *perceived* resolution; shape‑match only, no structural identity yet |
+| palette256 ↔ OLED subpixel emission | **[S — weakest leg; candidate for demotion]** | OLED PenTile RGBG is a palette‑on‑a‑lattice for *perceived* resolution; shape‑match only. **Operator (2026‑06‑08): "not sure what we can learn from excitons in OLED" — agreed.** The *only* defensible exciton→substrate map is **exciton diffusion length ↔ neighborhood kernel width** (§6 — how far a cell's influence propagates before it "recombines"), and possibly **density quenching / efficiency droop ↔ a saturation limit on useful cell density** (diminishing returns past a refinement depth). Both are thin analogies, not structural. **Recommendation: keep [S], do not build on it; promote only if a measured exciton parameter maps to a measured substrate parameter.** The subpixel *layout* (not the exciton physics) is the part that's even shape‑relevant, and that's already covered by Morton tiling. |
 
 **The convergence number is 256 = 2⁸ = one byte.** PQ centroids, codec
 palette indices, attention weight buckets (§4), and Binary16K lane
@@ -283,6 +283,17 @@ spends freely on anything that amortizes over the framebuffer (build a LUT
 once, sample it per‑pixel forever). The substrate's "SoA headroom +
 amortization gate" is that same discipline, named.
 
+**The gate is fractal — it applies at three scales:**
+
+| Scale | Spend unit | "Amortize or don't spend" test |
+|---|---|---|
+| **storage** (§7.5) | a column / Z‑ordered row‑group | reused across all queries that scan the tile |
+| **cascade** (§7) | a precomputed level / centroid | reused across all levels (mipmap) / queries (centroid) |
+| **bit** (§9.6) | the 48→64 headroom bits in `CausalEdge64` | spend on the seed **iff** it's irreducible‑beyond‑the‑address (else compute, don't store) |
+
+Same gate, three granularities. The "right reasons" the operator names for
+the bit budget (§9.6) are the bit‑scale instance of this one rule.
+
 ---
 
 ## 7.5 The immaterialized cascade as storage — the Morton-keyed columnar grid-pyramid  **[storage synthesis, 2026-06-08]**
@@ -404,6 +415,29 @@ Ordered by leverage (highest first):
    role‑structure for everything below it. So the 64‑level is **structural,
    not decorative**, and it is *meta‑structural*, which is why both readings
    are correct simultaneously.
+
+   **The third "both" — the bit budget** (operator, 2026‑06‑08): the CAM‑PQ
+   code is `6 roles × 8 bits = 48 bits`; in a 64‑bit word that leaves
+   **16 bits headroom**. Candidate spend: the **irrational placement /
+   X‑sensor anti‑moiré seed** (§2) — so one 64‑bit word would carry the
+   role‑mask (meta) + the 48‑bit CAM‑PQ (semantic) + a 16‑bit seed
+   (placement/anti‑collapse). **But "only for the right reasons"** — and
+   this is **the amortization gate at the bit level** (§7, now fractal:
+   storage §7.5 / cascade §7 / bit §9.6):
+
+   > Spend the 16 headroom bits on the seed **iff the seed carries
+   > information not in the address.** A golden‑ratio seed that is
+   > *derivable from the Morton prefix* must be **computed, not stored** —
+   > storing it is redundant‑with‑address padding (the wrong reason). A
+   > *per‑tile measured/learned* moiré perturbation that is **not**
+   > prefix‑derivable is irreducible information → store it (the right
+   > reason).
+
+   So the test for the 48→64 headroom is sharp: **irreducible‑beyond‑the‑
+   address ⟹ store; address‑derivable ⟹ compute.** This is the same
+   "amortize‑or‑don't‑spend" gate, applied to bits instead of columns or
+   levels. `[per runtime session]` on the actual 64‑bit layout + whether the
+   seed is derivable or measured.
 
 ---
 
