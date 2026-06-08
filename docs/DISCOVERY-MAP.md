@@ -85,7 +85,7 @@ two halves of a cell. ADR‑026 names the cascade that ties them.
 | D‑PAL256 | palette256 = one PQ subspace's 256 centroids (CAM = 6×256, PR #477) | G | ADR | ADR‑024 | — |
 | D‑CAM | CAM‑PQ = 6 roles × 256 = 48‑bit fingerprint per word (`cam_codes.bin`) | G | EPIPHANY | SYN §3 | D‑PAL256 |
 | D‑CARD | cascade per‑axis cardinality ↔ codebook size: 256↔palette, 4096↔`MAX_VOCAB` | G | EPIPHANY | SYN §3,§7 | D‑CASCADE, D‑CAM |
-| D‑META64 | `CausalEdge64` = meta: `2⁶` role‑mask **+** 48‑bit CAM + 16‑bit headroom, one 64‑bit word | H | EPIPHANY | SYN §9.6 | D‑CAM, `[per rt]` CausalEdge64 |
+| D‑META64 | meta = `2⁶` role‑mask + 48‑bit CAM + 16‑bit headroom. **⚠ PR #477 revises:** `MailboxSoA` has **separate** `edges [CausalEdge64;N]` *and* `meta [MetaWord;N]` columns → **the meta is `MetaWord`, not `CausalEdge64`** (the edge encoding). Reconcile (§4.1). | H → REVISE | SYN §9.6 + §4.1 | D‑CAM, `[per rt]` |
 | D‑BITGATE | 48→64 headroom: store the seed **iff** irreducible‑beyond‑the‑address (else compute) | H | EPIPHANY | SYN §9.6 | D‑META64, D‑AMORT |
 | D‑RHO | ρ = 0.9973 vs cosine (arm‑discovery aerial codebook) — the empirical anchor | G | ADR | ADR‑024 | D‑PAL256 |
 
@@ -202,6 +202,61 @@ OGAR owns + verifies the **left**; the **right** is `[per runtime session]`
 §10`): helix spacing · θ‑window/ρ envelope · `blasgraph` scope ·
 shader tile‑contract · SoA headroom budget. (`CausalEdge64` cardinality
 + the nesting‑axis fork are **closed** — operator‑resolved.)
+
+---
+
+## 4.1 Runtime synergy receipts — lance‑graph PR #477 / #478
+
+Cross‑reference of the runtime‑shipped contract against today's findings.
+Several findings are now **confirmed by runtime code** (promotes their
+grade/status); one is **revised**; one gradient is **convergent‑but‑unwired
+on both sides** (the next materialization).
+
+### Confirmations — runtime code grounds the OGAR finding  [G]
+
+| Finding | Runtime receipt (PR #477) | Verdict |
+|---|---|---|
+| **D‑MORTON, D‑CASCADE, D‑XOR2 (containment)** | `lance-graph-contract/src/hhtl.rs`: `NiblePath { path:u64, depth:u8 }`, `FAN_OUT=16`, `MAX_DEPTH=16` (16 nibbles = 64 bits), `parent()=path>>4`, `child(n)=(path<<4)\|n`, `is_ancestor_of` = a single prefix‑shift kernel, `common_ancestor` = LCA. (q4‑hhtl‑audit) | **the runtime SHIPS the nibble address algebra** — these are CODED runtime‑side, not just EPIPHANY |
+| **D‑IMMAT, D‑COLUMNAR, ADR‑022** | `soa-three-tier-model.md` invariant: *"zero‑copy from creation to Lance tombstone … no bytes leave the backing store … even then the in‑memory store is unchanged, not serialized and freed."* `MailboxSoA::emit()` + `CollapseGateEmission` **scheduled for removal** | the "immaterialized, never serialized" finding IS the runtime's ONE invariant; the serialization path is being **deleted** |
+| **D‑COLUMNAR, D‑LANCE (column projection)** | `soa_envelope.rs`: `SoaEnvelope` trait — `columns()->&[ColumnDescriptor]`, `ColumnDescriptor{name_id,kind,elems_per_row,row_offset}` (`repr(C)`), zero‑copy `row_le`/`column_le` views, `as_le_bytes()`, `verify_layout()` gate | the "Morton‑keyed columnar + projection" framing is the `SoaEnvelope` ABI, line‑for‑line |
+| **D‑DELTA (delta frames = version‑diff)** | `cycle()->u32` stamp; *"a Lance version IS a coherent LE envelope"* (soa_envelope L16); `last_active_cycle [u32;N]` = per‑row same‑cycle write guard; `DatasetVersion(v)→(v+1)` | a Lance version = a frame; the per‑row cycle stamp = the changed‑cell delta → **D‑DELTA promotes [H]→[G]** |
+| **D‑AMORT (amortize‑or‑don't‑spend)** | PR #478 mechanical test: *never‑mutated → const codebook, **keep**; mutated‑after‑init → SoA snapshot, **nudge**.* Read‑only codebooks (role keys, UDFs, `simd_caps`) stay const | the gate's storage instance, **operationalized** — const codebooks = the amortized build‑once structures; SoA = per‑cycle mutable |
+
+### Revision — runtime evidence corrects a finding  ⚠
+
+- **D‑META64.** `MailboxSoA` columns include **both** `edges [CausalEdge64;N]`
+  **and** `meta [MetaWord;N]` as *separate* columns. So **the meta layer is a
+  dedicated `MetaWord`, not `CausalEdge64`** (which is the causal‑edge
+  encoding). The operator's "CausalEdge64 = meta" is contradicted by the
+  shipped column layout. **Reconcile:** the `2⁶`/48/16 bit‑budget reasoning
+  (D‑BITGATE) most likely applies to `MetaWord`; `CausalEdge64` is the edge.
+  `[per runtime session]` on the `MetaWord` layout + whether `CausalEdge64`
+  feeds it.
+
+### Convergent but unwired — both sides describe it; neither built it  [the next step]
+
+- **D‑MAXAMORT / D‑CARD / D‑PAL256** (the meta→content→spatial gradient) ↔
+  `high_heel.rs` module‑doc legend **"HHTL cascade mapping: HEEL=scent /
+  HIP=palette / TWIG=SpoBase17 / LEAF=full planes."** The q4 audit's verdict:
+  *"this is a layout legend in a comment. **No code routes by prefix.**"* So
+  the coarse→fine cascade (HEEL→HIP→TWIG→LEAF ≈ meta→**palette**→SPO→full) is
+  **convergent intent on both sides and wired on neither.** `HIP = palette`
+  is literally D‑PAL256 at a cascade level. **This is the highest‑value
+  next materialization:** route `high_heel.rs`'s commented cascade by the
+  `hhtl.rs` `NiblePath` prefix — the two files "communicate in module docs,
+  not in code" (audit), and today's findings are the spec that joins them.
+
+### Related structure (resonant, different decomposition)
+
+- **Three‑tier model** (Tier 1 `MailboxSoA` data / Tier 2 Kanban‑Rubicon
+  lifecycle / Tier 3 ractor supervision) is a *data / lifecycle /
+  supervision* split, **orthogonal** to the meta→content→spatial gradient —
+  note both, don't conflate. The Kanban 6‑phase (Planning → CognitiveWork →
+  Evaluation → Commit → Plan → Prune) = the `ActionState` lifecycle (the
+  OGAR Rubicon binding, ADR‑001).
+- `qualia [QualiaI4_16D;N]` (4‑bit, 16‑D) = the Quintenzirkel qualia codebook
+  (BindSpace dissolution, lance‑graph #470) — a codebook column alongside
+  `edges`/`meta`; relates to D‑CARD's codebook cascade.
 
 ---
 
