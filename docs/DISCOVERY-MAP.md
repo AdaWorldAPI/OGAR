@@ -31,6 +31,50 @@
 
 ---
 
+## 0. The endgame — what the whole substrate is *for*
+
+> **Operator, 2026‑06‑08:** *"endgame is actually getting DeepNSM + AriGraph
+> as a meta vs episodic basins and supporters, meaning vectors, and then
+> later extraction of AST‑shaped named facts — **do vs think**."*
+
+Everything in §1 (the doctrine) and §2 (the discoveries) is the **foundation
+for a cognitive memory architecture.** The teleology, named — and it
+reprioritizes the queue.
+
+**THINK — the DeepNSM + AriGraph memory** (the substrate's *world model*):
+
+| AriGraph (arXiv 2407.04363, Anokhin et al. 2024 — semantic + episodic KG world‑model with associative retrieval, for LLM‑agent planning) | Substrate realization | Grade |
+|---|---|---|
+| **semantic memory** (the world model) | **META = `MetaWord`** (the §4.1 layer — structural awareness) | mapping H |
+| **episodic memory** (event sequence) | **EPISODIC = delta frames** = `DatasetVersion(v)→(v+1)` + per‑row `cycle` stamp (D‑DELTA) | H |
+| **associative retrieval of interconnected concepts** | **basins + supporters**: basins = palette256/CAM centroids + Semantik volumetric centroids + Morton‑prefix subtrees (D‑PAL256, D‑CAM, D‑AMORT‑AXES; the intra‑basin locality probe); supporters = the neighbor‑XOR retrieval (D‑NEIGH) | H |
+| **the encoded concepts** | **meaning vectors** = DeepNSM 4096‑dim (63 primes) → CAM‑PQ 6×256 (D‑NSM, D‑CAM) — *shipping* in lance‑graph `nsm/` | G (DeepNSM), G (AriGraph public) |
+
+**DO — the extracted AST‑shaped named facts** (the substrate's *actions*):
+*"later extraction of AST‑shaped named facts"* = the OGAR IR (`Class` /
+`ActionDef` / `Association` — D‑VOCAB), **extracted from the meaning‑vector
+memory** by the recognition + lifecycle pipeline (D‑PATTERN, D‑ACTION). The
+named fact is the wire (ADR‑023): the point where THINK (vectors) becomes
+DO (action).
+
+**The master axis — DO vs THINK:**
+
+| | THINK | DO |
+|---|---|---|
+| substrate | DeepNSM + AriGraph meaning‑vector memory (meta / episodic / basins / supporters) | `ActionDef` / Rubicon lifecycle / Kanban 6‑phase |
+| OGAR IR arm | structural (`Class`/`Association`) | behavioral (`ActionDef`/`ActionInvocation`) |
+| trichotomy | **Semantik** (what is known) | **Pragmatik** (what is done) |
+| membrane | — | **AST‑named‑fact extraction is the membrane between them** |
+
+**What this reprioritizes.** `D‑NSM`, `D‑PATTERN`, `D‑ACTION` (listed
+`IDEA`/queued in §2.8) are **not optional extras — they are the
+endgame‑critical path** (the *think → do* extraction). The
+addressing / codec / storage floors (§2.1–§2.6, §1) are the **foundation
+they stand on**, not the destination. The destination is: *the substrate
+thinks in meaning‑vector basins and acts via extracted AST‑named‑facts.*
+
+---
+
 ## 1. The doctrine spine — the load‑bearing floors
 
 The ADR canon is the spine; every discovery in §2 hangs off the floor it
@@ -321,3 +365,10 @@ isolation. The map's job is to keep them visible.
 - `docs/THE-FIREWALL.md`, `HEALTHCARE-TRANSCODING.md` — ADR‑022 + PII floor.
 - lance‑graph PR #470/#473/#474/#475/#476/#477/#478, bardioc #17/#18/#19 —
   the runtime‑side receipts (`[per runtime session]` sources).
+- **The endgame references (§0):** AriGraph — *Learning Knowledge Graph
+  World Models with Episodic Memory for LLM Agents*, Anokhin, Semenov,
+  Sorokin, Evseev, Burtsev, Burnaev, arXiv **2407.04363** (2024). DeepNSM
+  — lance‑graph `crates/lance-graph/src/nsm/` (`MAX_VOCAB=4096`,
+  `NUM_PRIMES=63`, `NUM_ROLES=6`, CAM 6×256; PR #477). The `think`/`do`
+  axis ↔ OGAR structural/behavioral IR arms (`ogar-vocab`) + the
+  Semantik/Pragmatik trichotomy (`CHESS-TRANSCODING.md §0`).
