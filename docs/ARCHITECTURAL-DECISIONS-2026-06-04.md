@@ -1427,13 +1427,29 @@ to pick its work, with zero data-dependent branches:
    NiblePath arithmetic; no float-rounding daylight between them.
 
 2. **Jirak says which level L the cheap path will succeed at.**
-   For the LOD pyramid:
-     `n` = current sample size at level L (e.g. n ≈ 16^r for a
-     4-ary radix pyramid)
-     `predicted_error_L = C · n^{-1/2}` (L^q regime, which the
-     Σ-sandwich Mahalanobis distance lives in)
-     `r* = ⌈log₄(C/τ)⌉` for clinical tolerance τ — closed-form,
+   For the LOD pyramid, sample size grows by a fixed branching factor
+   `b` per hop-radius increment: `n = b^r`. Then:
+     `predicted_error_L = C · n^{-1/2} = C · b^{-r/2}`
+   (L^q regime, which the Σ-sandwich Mahalanobis distance lives in).
+   Solving `predicted_error_L < τ` for the smallest accepting level:
+     `C · b^{-r/2} < τ  ⟹  b^{r/2} > C/τ  ⟹  r > 2·log_b(C/τ)`
+     **`r* = ⌈2·log_b(C/τ)⌉`** for clinical tolerance τ — closed-form,
      evaluated once per task class.
+   The helix pyramid ships **`b = 16`** (16-way per-hop sample growth
+   — the pyramid increases resolution ×4 in **both** x and y per hop,
+   so `4 × 4 = 16` samples per level; per the runtime session's
+   helix-pyramid spec), so `n = 16^r`, `n^{-1/2} = 4^{-r}`, and the
+   general formula reduces to the canonical anchor:
+     `r* = ⌈2·log_16(C/τ)⌉ = ⌈log₄(C/τ)⌉`.
+   **Implementer note for `D-JC-PREDICT-LOD`:** build the level
+   formula on the pyramid's true per-level *sample* growth, not its
+   per-axis fan-out. Here the ×4 per-axis fan-out gives `n = 16^r`
+   (`= 4 × 4` per level) → `r* = ⌈log₄(C/τ)⌉`. The trap Codex flagged:
+   pairing that `⌈log₄⌉` pick with a pyramid that actually grows only
+   `n = 4^r` selects a level **half as deep as that pyramid needs** —
+   a 4-ary pyramid needs `r* = ⌈log₂(C/τ)⌉` (since `log₂ = 2·log₄`) —
+   and so leaves the predicted error above tolerance. Verify the real
+   `b` before wiring the formula.
    No per-frame probing; the LOD pick is `r*` directly.
 
 3. **HHTL routes the prefix at the picked level.**
@@ -1520,9 +1536,10 @@ ADR-024 → §11 callouts in PR #475 + PR #476).
 - **Cesium tileset `bounding_volume` becomes a derived field** for
   helix+HHTL-shaped tilesets. Producer/renderer round-trip lossless
   by construction.
-- **5-12 hop range = `r* = ⌈log₄(C/τ)⌉`** evaluated against
-  clinical (FMA registration), pixel (Cesium SSE), and tile (OSM
-  pyramid) tolerances. Same formula across the three domains; the
+- **5-12 hop range = `r* = ⌈log₄(C/τ)⌉`** (the `b = 16` reduction of
+  `r* = ⌈2·log_b(C/τ)⌉`) evaluated against clinical (FMA
+  registration), pixel (Cesium SSE), and tile (OSM pyramid)
+  tolerances. Same formula across the three domains; the
   per-domain Jirak certificate supplies `C`.
 - **theta ∈ [1.45, 1.6] window** is the regime where the Jirak
   bound applies cleanly to palette256 distances (ADR-024 codec).
