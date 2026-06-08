@@ -230,27 +230,58 @@ is therefore as fast as a blur kernel.
 
 ---
 
-## 7. The nesting precondition — what's free vs paid (carried from prior turn)
+## 7. The amortization gate — *not* "free vs paid", and *not* one axis  **[corrected 2026-06-08]**
 
-The "self‑fulfilling cascade" is free **only along one Morton‑nested axis.**
-lance‑graph PR #477 ships **two different orderings of the same 4096 words**:
+> The prior framing of this section ("free along **one** Morton‑nested axis;
+> the other is a reluctant stored CAM lookup; **pick** frequency *xor*
+> semantic") was **over‑cautious and is superseded.** Operator correction:
+> *"we have SoA with enough headroom for a reason — we can spend whatever
+> we need as long as it amortizes on mipmap cascade or Semantik volumetric
+> centroid."* The right gate is **amortization, not free.**
 
-- `word_rank_lookup.csv` — **frequency** order (`MAX_VOCAB = 4096`).
-- `cam_codes.bin` — **semantic** PQ order (6 × 256).
+**The mechanical fact stands:** lance‑graph PR #477 ships two orderings of
+the same 4096 words — `word_rank_lookup.csv` (frequency, `MAX_VOCAB=4096`)
+and `cam_codes.bin` (semantic PQ, 6×256) — which **don't** nest into one
+Morton order. The prior turn concluded "so pick one." **That conclusion was
+wrong.** The SoA register‑file (PR #477 `SoaEnvelope`) has deliberate
+headroom; you **store both cascades**, because each **amortizes** on its own
+reuse axis.
 
-These don't nest into one Morton order (frequency‑rank ≠ semantic‑centroid).
-So:
+**The amortization gate (the real admission test):** a cost `C` is
+admissible iff it amortizes over **either** reuse axis:
 
-- **Free (one‑time, build):** lay the codebook out in Morton/Hilbert order
-  on the *chosen* axis → prefix‑truncation = coarsening → the vertical
-  shader cascade (mip / trilinear / DLSS‑upscale) is free at runtime.
-- **Paid (stored):** the *other* axis's relationship stays a CAM lookup
-  (`cam_codes.bin` *is* that stored freq↔semantic map). You cannot
-  Morton‑nest both on one axis.
+| Reuse axis | Pay `C` once per… | Reused across… | Amortized cost |
+|---|---|---|---|
+| **Mipmap cascade** (spatial) | build / level | all levels × all queries at them | `C / (levels × queries) ≈ 0` |
+| **Semantik volumetric centroid** (semantic) | semantic centroid | all queries falling in that centroid's volume | `C / (queries‑per‑centroid) ≈ 0` |
 
-**The design decision §3 of ADR‑026 must record:** *which* axis gets the
-free cascade — **frequency** (common‑words‑first LOD) or **semantic**
-(palette‑coherent LOD). Mutually exclusive on one Morton order.
+A cost that amortizes on **neither** — paid per‑query, no reuse — is the
+*only* forbidden thing. That is exactly the "serialization in the hot path"
+(ADR‑022) and the "probe" (ADR‑025) the floors already ban. **So the
+amortization gate is not a new rule — it is the unifying statement of
+ADR‑022 + ADR‑025:** the hot path forbids *non‑amortized per‑query* cost;
+everything build‑time, per‑level, or per‑centroid is affordable because the
+SoA headroom holds it and it amortizes to ≈ 0.
+
+**Consequences for the cascade:**
+
+- **Store both orderings.** The frequency cascade (common‑words‑first LOD)
+  *and* the semantic cascade (palette‑coherent LOD) both live in the SoA —
+  each is built once (amortizes on the mipmap axis) and each is reused
+  across all queries (amortizes on the centroid axis). `cam_codes.bin` is
+  **not** a reluctant compromise; it is the deliberately‑stored second
+  cascade.
+- **The "nesting axis" decision dissolves.** There is no frequency‑*xor*‑
+  semantic fork. ADR‑026 records *both* cascades + the amortization gate as
+  the admission test, not a single chosen axis.
+- **The budget is the SoA headroom, not zero.** "Spend whatever amortizes"
+  is bounded by SoA capacity — generous, but finite. The discipline is:
+  *amortize or don't spend*; within amortizable spends, bounded by headroom.
+
+This is strictly stronger than the GPU‑shader analogy (§1–§6): a GPU also
+spends freely on anything that amortizes over the framebuffer (build a LUT
+once, sample it per‑pixel forever). The substrate's "SoA headroom +
+amortization gate" is that same discipline, named.
 
 ---
 
@@ -277,17 +308,25 @@ Ordered by leverage (highest first):
    (near‑orthogonal codebook) + golden placement (aperiodic lattice) are
    one story — no degenerate beat in value‑space or position‑space. One
    precondition, two guards.
-2. **Pick the nesting axis** (ADR‑026 §3): frequency vs semantic free
-   cascade. Blocks all vertical‑shader optimization until chosen.
+2. **Store both cascades under the amortization gate** (ADR‑026 §3,
+   §7‑corrected): frequency *and* semantic cascades both live in the SoA;
+   each amortizes (mipmap / centroid). No "pick one axis" fork — the gate
+   is *amortize‑or‑don't‑spend*, bounded by SoA headroom.
 3. **Attention‑driven LOD** (§4): wire the bgz‑tensor WeightPalette rank
    into the `r*` pick — saliency‑ordered lazy materialization.
 4. **Borrow codec silicon** (§1): map Morton addressing onto x265/x266 CTU
    hardware quadtree; evaluate HEVC‑SCC/VVC palette mode for the leaf codec.
 5. **Structured‑sparse neighborhood BLAS** (§6): implement the neighbor
    walk as a block‑banded stencil, not a sparse GEMM.
-6. **Confirm `CausalEdge64 = 2⁶`** (prior turn): if the 64 is the 6‑role
-   mask space, the 64‑level is structural and the codebook cascade is
-   complete; if it's a 64‑bit word, the 64‑level is decorative.
+6. **`CausalEdge64` = the meta layer** (operator‑resolved 2026‑06‑08):
+   the 64 is **both** — `2^NUM_ROLES = 2⁶ = 64` role‑participation masks
+   (which of the 6 semantic roles this causal edge binds) carried *within*
+   a 64‑bit word. It is the cascade's **meta level**: the coarsest level is
+   not spatial content but **structural awareness** ("which roles
+   participate"), amortizing maximally — one `CausalEdge64` describes the
+   role‑structure for everything below it. So the 64‑level is **structural,
+   not decorative**, and it is *meta‑structural*, which is why both readings
+   are correct simultaneously.
 
 ---
 
@@ -296,10 +335,11 @@ Ordered by leverage (highest first):
 | Claim | Owner | Confirms |
 |---|---|---|
 | helix golden‑stride spacing constant | `crates/helix` | §2 X‑Trans‑grade moiré protection |
-| `CausalEdge64` cardinality (2⁶ mask vs 64‑bit) | lance‑graph‑contract | §0 64‑level structural vs decorative |
+| ~~`CausalEdge64` cardinality~~ — **resolved** (operator): `2⁶` role‑mask meta *within* a 64‑bit word; structural + meta (§9.6) | — | §0/§9 — closed |
 | θ‑window [1.45,1.6] + ρ 0.93–0.9973 envelope | `crates/jc` | §2/§9 the no‑collapse precondition |
 | `blasgraph` actual scope | runtime | §6 neighborhood‑BLAS framing |
 | cognitive‑shader‑driver tile contract | bardioc/lance‑graph | §5 consumer interface |
+| SoA headroom budget (the amortization‑gate ceiling, §7) | lance‑graph `SoaEnvelope` (PR #477) | §7 how much "spend‑if‑amortizes" the register file affords |
 
 ---
 
