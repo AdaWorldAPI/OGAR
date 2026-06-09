@@ -1408,7 +1408,7 @@ to pick its work, with zero data-dependent branches:
        │  (jc::weyl + jc::jirak)
        ▼
   Together              →  level    (smallest L where predicted_error_L
-                                     < tolerance)
+                                     ≤ tolerance)
        ↓
   The level is the only thing the hot path picks.
        ↓
@@ -1431,10 +1431,16 @@ to pick its work, with zero data-dependent branches:
    `b` per hop-radius increment: `n = b^r`. Then:
      `predicted_error_L = C · n^{-1/2} = C · b^{-r/2}`
    (L^q regime, which the Σ-sandwich Mahalanobis distance lives in).
-   Solving `predicted_error_L < τ` for the smallest accepting level:
-     `C · b^{-r/2} < τ  ⟹  b^{r/2} > C/τ  ⟹  r > 2·log_b(C/τ)`
+   Solving `predicted_error_L ≤ τ` for the smallest accepting level
+   (acceptance is **inclusive** — error *within* tolerance — matching
+   Cesium SSE's `sse ≤ maximumScreenSpaceError`):
+     `C · b^{-r/2} ≤ τ  ⟹  b^{r/2} ≥ C/τ  ⟹  r ≥ 2·log_b(C/τ)`
      **`r* = ⌈2·log_b(C/τ)⌉`** for clinical tolerance τ — closed-form,
-     evaluated once per task class.
+     evaluated once per task class. (Inclusive acceptance is what makes
+     `⌈⌉` exact: at the boundary `C/τ = b^k`, `r* = 2k` gives
+     `predicted_error = τ`, which is accepted. A deployment that needs
+     *strictly* below tolerance uses `r* = ⌊2·log_b(C/τ)⌋ + 1` — one
+     level deeper at that boundary.)
    The helix pyramid ships **`b = 16`** (16-way per-hop sample growth
    — the pyramid increases resolution ×4 in **both** x and y per hop,
    so `4 × 4 = 16` samples per level; per the runtime session's
