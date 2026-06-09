@@ -148,6 +148,7 @@ two halves of a cell. ADR‑026 names the cascade that ties them.
 | D‑GOLDEN | golden‑stride helix placement controls θ into the window **by construction** | H | EPIPHANY | SYN §2 | `[per rt]` helix |
 | D‑MOIRE | golden irrationality = X‑Trans‑grade anti‑moiré interlace ("x256 that can't collapse") | H | EPIPHANY | SYN §2 | D‑GOLDEN |
 | D‑NOCOLLAPSE | unify: near‑orthogonal **codebook** + aperiodic **lattice** = no degenerate beat in value‑ or position‑space | H | EPIPHANY → ADR‑026 §2 | SYN §9.1 | D‑THETA, D‑MOIRE |
+| D‑MANTISSA | a cell address **is a float**: `(exponent = Morton level, mantissa = golden sub‑placement)`; the mantissa is **irrational** (φ recurrence) + **implied** (generated from the address, not stored — the hidden‑bit spirit). X‑Trans "in spirit" = an *implied irrational mantissa*; the **anti‑moiré** function stays `[H]` (§2 caveat). Unifies D‑CASCADE (exponent) + D‑GOLDEN (mantissa) + D‑BITGATE (implied) + D‑NOCOLLAPSE | H | EPIPHANY | SYN §2 | D‑CASCADE, D‑GOLDEN, D‑BITGATE |
 
 ### 2.5 Amortization gate
 
