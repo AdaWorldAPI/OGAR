@@ -35,6 +35,10 @@
 >   D‑EXCITON revert). "Reverted/graded by the 5+3 review" = the receipts are
 >   those agents' findings; the apparatus is in this repo, the per‑run
 >   transcripts are session‑local.
+> - **`INTEGRATION-MAP.md`** = the composition companion (2026‑06‑09): this
+>   map indexes *what was found*; that one maps *how it composes* — layers,
+>   seams (each with its contract TYPE), the merged phase DAG, and the
+>   falsification gates F1–F9. Discovery → there; sequencing → here.
 >
 > **Status: LIVING INDEX** (2026‑06‑08). Update entry *status* on
 > materialization; never delete (append‑only). One entry per discovery;
