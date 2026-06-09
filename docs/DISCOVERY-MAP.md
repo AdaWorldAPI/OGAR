@@ -24,6 +24,12 @@
 >   captured in a synergy/epiphany doc) → `ADR` (pinned contract) → `CODED`
 >   (crate + tests + CI).
 > - **`[per runtime session]`** = runtime‑owned; OGAR cannot verify.
+> - **`SYN §…` = `docs/CASCADE-SYNERGIES-EPIPHANY.md` §…** — the synergy /
+>   epiphany source doc that holds most `EPIPHANY`‑status entries. **It is
+>   introduced in OGAR PR #47 and co‑merges with this map (PR #48); the
+>   `SYN` links resolve once both land.** Until then a reviewer auditing
+>   from `main` alone will not find it — that is expected (cross‑PR
+>   dependency), not a dangling link. (Flagged by Codex on PR #48.)
 >
 > **Status: LIVING INDEX** (2026‑06‑08). Update entry *status* on
 > materialization; never delete (append‑only). One entry per discovery;
@@ -357,8 +363,9 @@ isolation. The map's job is to keep them visible.
 ## 7. Cross‑references
 
 - `docs/ARCHITECTURAL-DECISIONS-2026-06-04.md` — ADR‑022..025 (+ 026 pending).
-- `docs/CASCADE-SYNERGIES-EPIPHANY.md` — the synergy catalog + amortization
-  gate + storage synthesis (the source of most §2 `EPIPHANY` entries).
+- `docs/CASCADE-SYNERGIES-EPIPHANY.md` **(introduced in OGAR PR #47, co‑merges
+  with this map)** — the synergy catalog + amortization gate + storage
+  synthesis (the source of most §2 `EPIPHANY` entries; the `SYN §…` links).
 - `docs/RDF-OWL-ALIGNMENT.md` — the brutal‑upgrade sequencing (§10 phases)
   + Deep‑NSM (§4.10).
 - `docs/DOMAIN-INSTANCES.md` — the 6 universality witnesses.
