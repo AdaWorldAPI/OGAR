@@ -314,6 +314,81 @@ on both sides** (the next materialization).
 
 ---
 
+## 4.2 Test mapping — the validation suite (jc *proofs* × hpc *empirics*)
+
+> **The anti‑dilution gate at the validation layer:** every `[H]` claim
+> here names the test that would confirm or falsify it. Without a named
+> test, an epiphany is assertion — *that's* how a map collapses. Two
+> runtime‑owned pillar sets bind the claims to runnable validation:
+>
+> - **`jc` — the proofs** (`lance-graph/crates/jc`, "Jirak‑Cartan:
+>   five‑pillar [now 11] proof‑in‑code"). Run: `cargo run -p jc --example
+>   prove_it`; each yields a `PillarResult`. Pillars used below: **P3
+>   φ‑Weyl** (*optimal collocation without aliasing*), **P5 Jirak 2016**
+>   (*bounded noise floor under the dependence model*), **P5b Pearl 2³**
+>   (*three‑plane Index vs CAM‑PQ‑bundled regime*), **P7
+>   Köstenberger‑Stark** (*Hadamard‑space concentration*), **P9/9b
+>   EWA‑sandwich** (*Σ push‑forward; P9b explicitly certifies
+>   `ndarray::hpc::splat3d`*), **P10 Pflug‑Pichler** (*CAM‑PQ tree
+>   quantization preserves FreeEnergy within Lε*).
+> - **`ndarray::hpc` — the empirics** (`ndarray/src/hpc/`, behind the
+>   `hpc`/`hpc-extras` feature). Modules used: `fft` (spectral),
+>   `lapack` (Cholesky 3×3 SPD), `quantized` (Int8/BF16 GEMM, the
+>   palette/CAM regime), `cascade` (the Morton cascade), `plane` (the
+>   Base17 / 16Kbit planes), `fingerprint` (CAM), `soa` (the envelope),
+>   `blas_level2/3` (neighborhood), `simd_dispatch` (the three‑backend
+>   parity).
+>
+> **Division of labour:** OGAR *maps* claim → test (this table); the
+> runtime session *runs* the pillars (jc + ndarray::hpc are `[per rt]`).
+> A claim is **validated** when its jc pillar proves the bound **and** its
+> hpc primitive measures within it.
+
+| Claim (D‑*) | jc pillar (proof) | `ndarray::hpc` (empiric) | measures | pass criterion |
+|---|---|---|---|---|
+| D‑MORTON / D‑CASCADE / D‑XOR2 | P1 (substrate‑Markov) | `cascade` + `hhtl.rs::NiblePath` | `parent∘child = id`; `is_ancestor` prefix‑exact | round‑trip exact — **already CODED** (q4 audit) |
+| D‑RSTAR / D‑PROBEFREE | **P5 Jirak** | `cascade` + `reductions` | measured error at `r* = ⌈log₄(C/τ)⌉` | error `≤ τ` (inclusive boundary, PR #46) |
+| D‑PAL256 / D‑CAM / D‑RHO | **P10 Pflug** | `quantized` + `fingerprint` | ρ(palette256‑reconstructed distance vs cosine) | **ρ ≥ 0.99** (anchor 0.9973) |
+| D‑THETA / D‑RHOENV | **P5b Pearl 2³** + **P7** | `quantized` (θ sweep) | ρ(θ) across θ ∈ [1.45, 1.6] | **ρ ≥ 0.93** band‑wide; ≈ 0.9973 at θ ≈ π/2 |
+| **D‑MANTISSA / D‑MOIRE / D‑NOCOLLAPSE** (golden anti‑moiré) | **P3 φ‑Weyl** | **`fft`** (spectrum of the golden tile vs the LOD lattice) | star‑discrepancy + FFT peak amplitude at the lattice frequency | discrepancy < Jirak bound **and** no FFT peak above noise at the lattice freq → **this is the "spectral validation" the §2/#47 Codex caveat demanded** |
+| **D‑BGZ17** (Base17 coprime) | **P3 φ‑Weyl** (discrete) + **P10** | `plane` (Base17) + `fft` | beat spectrum of the 16×17 lattice; ρ(SpoBase17 vs full planes) | dominant beat at **period 272** (lowest freq); **ρ ≥ 0.965** (the TWIG anchor) |
+| **D‑QUANTGATE** (quant kills continuous aperiodicity) | **P3 (continuous) vs P10 (quantized)** — the *contrast* | `fft` pre‑ vs post‑quantization | golden‑tile spectral aperiodicity, continuous vs lattice‑rounded | post‑quant peak **appears** for the continuous golden (it fails) **while** Base17 retains aperiodicity → confirms the **layered rule** |
+| D‑SPLAT Σ‑sandwich / D‑NEIGH | **P9 / 9b EWA‑sandwich** (certifies `hpc::splat3d`) | `lapack` (Cholesky 3×3) + `blas_level2/3` | Σ stays SPD through `J·W·Σ·Wᵀ·Jᵀ`; neighborhood push‑forward | Cholesky succeeds (SPD preserved); within the P9b Lipschitz bound |
+| D‑COLUMNAR / D‑LANCE / D‑IMMAT | P1 (structural) | `soa` + `SoaEnvelope::verify_layout()` | stride/overlap/version conformance; zero‑copy view exactness | `verify_layout()` Ok; `row_le`/`column_le` byte‑exact |
+| **all CODED primitives** (correctness floor) | — | **`simd_dispatch`** (the W1c contract) | AVX‑512 vs NEON vs scalar parity | **identical within 1 ULP** across all three backends |
+| D‑META64 (revised) | — | read `MailboxSoA` column layout | `edges[CausalEdge64]` vs `meta[MetaWord]` separateness | **confirmed separate** (§4.1) → reconcile the 48/16 bit‑budget to `MetaWord` |
+| D‑EXCITON | — *(external)* | — *(external OLED physics)* | — | **no internal test** — literature‑grounded `[H]` only (§3 sources); a *precedent*, not a substrate measurement |
+
+**Audit conclusions (the "double‑check" the operator asked for):**
+
+1. **All pillars cited are real.** `crates/jc/src/lib.rs` (11 pillars +
+   `PillarResult`); `ndarray/src/hpc/mod.rs` (`fft`/`lapack`/`quantized`/
+   `cascade`/`plane`/`fingerprint`/`soa`/`simd_dispatch`). Not invented.
+2. **The jc↔hpc bridge is in code, not asserted.** jc **P9b** doc‑comment:
+   *"certifies J·W·Σ·Wᵀ·Jᵀ for `ndarray::hpc::splat3d`."* The proof layer
+   already names the empiric layer.
+3. **The Codex anti‑moiré caveat is now a *named test*, not an open
+   `[H]`.** "Requires spectral validation" = **run jc P3 (φ‑Weyl) +
+   `hpc::fft`.** If they pass, D‑MOIRE/D‑MANTISSA promote `[H]→[G]`; if the
+   FFT peak appears, they're falsified — either outcome ends the dilution.
+4. **D‑QUANTGATE gets a falsifiable contrast test** (P3 continuous vs P10
+   quantized; `fft` pre/post). Its `[G]` is the *principle*; this test is
+   the *demonstration*.
+5. **`[per runtime session]` numbers become reproducible.** ρ = 0.9973
+   (HIP) and ρ = 0.965 (TWIG) and θ ∈ [1.45, 1.6] stop being *cited* and
+   become *re‑measured* by `hpc::quantized` + P10 — so the map can't drift
+   from the runtime's actual numbers.
+6. **D‑EXCITON is honestly fenced.** It has **no internal test** — it's an
+   external physical analog. Marked as such so it can't masquerade as a
+   substrate‑validated claim. (This is the "doesn't dilute" line: not every
+   `[H]` earns a test; external analogs are grounded by literature only.)
+
+**No claim collapses** under this audit; the two that needed it
+(D‑MOIRE absolutism — fixed in #47; D‑META64 — fixed in §4.1) were already
+corrected. The rest are either CODED, ADR‑pinned, or `[H]`‑with‑a‑named‑test.
+
+---
+
 ## 5. The shape graph — the topology individual ADRs lose
 
 ```
@@ -383,3 +458,11 @@ isolation. The map's job is to keep them visible.
   `NUM_PRIMES=63`, `NUM_ROLES=6`, CAM 6×256; PR #477). The `think`/`do`
   axis ↔ OGAR structural/behavioral IR arms (`ogar-vocab`) + the
   Semantik/Pragmatik trichotomy (`CHESS-TRANSCODING.md §0`).
+- **The test‑mapping pillars (§4.2):** `jc` — lance‑graph
+  `crates/jc/src/lib.rs` ("Jirak‑Cartan five‑pillar [11] proof‑in‑code";
+  `cargo run -p jc --example prove_it`; pillars P1/P3‑φ‑Weyl/P5‑Jirak/
+  P5b‑Pearl/P7/P9‑9b‑EWA‑sandwich/P10‑Pflug/P11). `ndarray::hpc` —
+  `ndarray/src/hpc/` (`fft`/`lapack`/`quantized`/`cascade`/`plane`/
+  `fingerprint`/`soa`/`blas_level2-3`/`simd_dispatch`; `hpc`/`hpc-extras`
+  feature). Both `[per runtime session]`‑owned; this map specifies the
+  claim→pillar binding, the runtime session executes.
