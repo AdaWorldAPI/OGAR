@@ -107,26 +107,39 @@ The helix golden‑stride placement inherits this for free.
 | Sense | What it is | Golden helix's role |
 |---|---|---|
 | **Good collapse** (LOD) | intentional coarsening: use a parent tile when SSE permits (ADR‑025) | unaffected — still closed‑form |
-| **Bad collapse** (moiré) | degenerate aliasing: periodic sampling beats against periodic content → the 256‑palette tile aliases into a false pattern | **prevented** — irrational placement has no period to beat, so the palette tile *can't* alias‑collapse |
+| **Bad collapse** (moiré) | degenerate aliasing: periodic sampling beats against periodic content → the 256‑palette tile aliases into a false pattern | **hypothesized to resist** — irrational placement *weakens* the rational period that drives the beat |
 
-So a 256‑cell palette tile placed on the golden lattice carries an
-**anti‑degeneracy guarantee**: it can be intentionally LOD‑collapsed
-(good) but cannot moiré‑collapse (bad). The irrationality is the guard.
+So a 256‑cell palette tile on the golden lattice is **hypothesized to
+resist moiré‑collapse** (while still admitting intentional LOD‑collapse).
+**This is `[H]`, not a guarantee** — see the caveat.
 
-**What's `[H]` here:** the phyllotaxis anti‑moiré math is established; the
-specific claim that the helix's *actual* golden‑stride spacing delivers
-X‑Trans‑grade protection for the palette tiles needs the runtime session's
-helix geometry to confirm the exact stride. **`[per runtime session]`** on
-the spacing constant; the *mechanism* is `[H]`.
+**What's `[H]` here — and the caveat Codex flagged (PR #47):** the
+phyllotaxis anti‑moiré *tendency* is established, but it is **not an
+absolute "cannot".** Two reasons it must stay a *measured* hypothesis:
+1. **X‑Trans is itself a *repeating* 6×6 tile** — a finite aperiodic cell
+   tiled periodically, not a globally aperiodic field. Its moiré reduction
+   is empirical and partial, not a theorem.
+2. **Irrational placement *inside* a repeated tile / LOD lattice can still
+   have spectral peaks** from the tiling and pyramid lattices. "No rational
+   period" is a property of the *infinite* golden sequence; a bounded
+   256‑cell tile has a finite spectrum and can beat against the LOD lattice.
 
-**Optimization unlocked (later):**
-- Skip the optical‑low‑pass‑filter analog entirely (X‑Trans's whole point):
-  no separate anti‑alias pass needed if placement is golden.
+So: **`[H]` pending spectral / aliasing validation.** **ADR‑026 must NOT
+skip an anti‑alias pass on the strength of this** until the helix's actual
+golden‑stride spacing is measured against the tile + LOD spectra. The
+spacing constant is `[per runtime session]`; the *guarantee* is `[H]` and
+explicitly **unmeasured**.
+
+**Optimization candidate (gated on measurement):**
+- *If* a spectral test confirms it, the optical‑low‑pass‑filter analog
+  could be skipped — **only after** that measurement, never before.
 - The θ‑window (ADR‑025/026, [1.45,1.6] near‑orthogonal) and the
   irrational placement are the **same conditioning story from two angles**:
-  near‑orthogonal *codebook* + aperiodic *lattice* = no degenerate beat in
-  either the value space (palette) or the position space (tile). Worth
-  unifying as "the no‑collapse precondition" in ADR‑026.
+  near‑orthogonal *codebook* + aperiodic *lattice* = *hypothesized* to
+  suppress the degenerate beat in both value space (palette) and position
+  space (tile). Worth unifying as "the no‑collapse precondition" in
+  ADR‑026 — **as a measured hypothesis, with the spectral validation as
+  its receipt.**
 
 ---
 
@@ -394,8 +407,11 @@ Ordered by leverage (highest first):
 
 1. **Unify the "no‑collapse precondition"** (ADR‑026 §2+): θ‑window
    (near‑orthogonal codebook) + golden placement (aperiodic lattice) are
-   one story — no degenerate beat in value‑space or position‑space. One
-   precondition, two guards.
+   one story — *hypothesized* to suppress the degenerate beat in value‑ and
+   position‑space. One precondition, two guards — **both requiring
+   measurement** (ρ‑vs‑reference for θ; spectral/aliasing test for the
+   golden lattice — §2 caveat). Pin as a *measured* precondition, not a
+   guarantee.
 2. **Store both cascades under the amortization gate** (ADR‑026 §3,
    §7‑corrected): frequency *and* semantic cascades both live in the SoA;
    each amortizes (mipmap / centroid). No "pick one axis" fork — the gate
