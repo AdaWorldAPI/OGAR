@@ -30,6 +30,11 @@
 >   `SYN` links resolve once both land.** Until then a reviewer auditing
 >   from `main` alone will not find it — that is expected (cross‑PR
 >   dependency), not a dangling link. (Flagged by Codex on PR #48.)
+> - **`5+3 review` = the agent‑hardening apparatus** at `.claude/agents/`
+>   (5 research + 3 brutal‑review charters; introduced 2026‑06‑09 with the
+>   D‑EXCITON revert). "Reverted/graded by the 5+3 review" = the receipts are
+>   those agents' findings; the apparatus is in this repo, the per‑run
+>   transcripts are session‑local.
 >
 > **Status: LIVING INDEX** (2026‑06‑08). Update entry *status* on
 > materialization; never delete (append‑only). One entry per discovery;
@@ -151,7 +156,7 @@ two halves of a cell. ADR‑026 names the cascade that ties them.
 | D‑MANTISSA | a cell address **is a float**: `(exponent = Morton level, mantissa = golden sub‑placement)`; the mantissa is **irrational** (φ recurrence) + **implied** (generated from the address, not stored — the hidden‑bit spirit). X‑Trans "in spirit" = an *implied irrational mantissa*; the **anti‑moiré** function stays `[H]` (§2 caveat). Unifies D‑CASCADE (exponent) + D‑GOLDEN (mantissa) + D‑BITGATE (implied) + D‑NOCOLLAPSE | H | EPIPHANY | SYN §2 | D‑CASCADE, D‑GOLDEN, D‑BITGATE |
 | D‑BGZ17 | the **discrete/immutable** counterpart to D‑MANTISSA: not "irrational" but **coprime‑aperiodic** — Base17 (`SpoBase17 = [i16;17]×3`, prime 17 ⊥ base‑16 Morton) ⟹ beat period `LCM(16,17)=272` (longest → lowest‑freq moiré). **Anti‑moiré upgrades `[H]`‑unmeasured → `[H]` with a *provable bound*** (number theory, not spectral) — still "longest‑period beat," not "no beat" (§2 caveat persists). `HighHeelBGZ` (basin + ≤240 edges) **realizes §0 AriGraph basin+supporters**; the "quorum" = the L1‑threshold basin‑merge consensus set. **Resolves the §4.1 unwired gap** (route the HEEL/HIP/TWIG/LEAF container by the `hhtl.rs` NiblePath; Base17=TWIG is the anti‑moiré layer). ρ=0.965 (TWIG) joins ρ=0.9973 (HIP) as measured anchors. For *immutable*, prefer this over D‑MANTISSA (exact/hashable vs float). | H | EPIPHANY | SYN §2 + §4.1 + §0 | D‑MANTISSA, D‑CAM, `[per rt]` `bgz17`/`HighHeelBGZ`/`SpoBase17` |
 | D‑QUANTGATE | **the quantization principle** (operator, 2026‑06‑08): **whenever there is quantization, the irrational does not have the Morton tile cascade guarantee.** Continuous irrationals (golden mantissa / D‑MANTISSA) lose their aperiodicity when quantized onto a lattice — the rounded value re‑acquires the period of the grid. So at every quantized layer, the substrate must use the **discrete coprime route** (D‑BGZ17, Base17×Morton) to preserve aperiodicity. The continuous irrational only survives as a *muscle‑memory* mantissa quorum: pre‑computed at codebook build time and **never re‑quantized in the hot path** (consistent with the amortization gate D‑AMORT). This **promotes ADR‑026's no‑collapse precondition (D‑NOCOLLAPSE) into a layered rule**: discrete‑coprime at every quantized boundary; muscle‑memory irrationals only at build‑time / continuous layers. **Reframes the §2 anti‑moiré caveat as architectural, not just unmeasured.** | G (the principle is structural) | EPIPHANY → ADR‑026 §2 | SYN §2 | D‑MANTISSA, D‑BGZ17, D‑AMORT, D‑NOCOLLAPSE |
-| D‑EXCITON | OLED **excitons as irrational bundling** (operator + measured: web search 2026‑06‑08, [noctiluca / ScienceDirect / PMC] — see §7). The 1:3 singlet:triplet ratio is *quantum spin statistics*, not aperiodic; **but** under bias the formation ratio **deviates from 1:3** (singlets scale with bias, triplets are bias‑independent — PMC4614446), giving a continuously‑variable non‑integer S:T ratio per operating point — *that's* the irrational bundling. Plus the singlet/triplet **binding energies differ irreducibly** (~0.5 eV vs up to 1.5 eV — ScienceDirect/noctiluca), an energetic aperiodicity per exciton. So the OLED leg is **not** "exciton physics maps to substrate" (which I had as `[S]` in SYN §3) but: **under bias, OLEDs ship the *same* discrete coprime aperiodicity we just named in D‑BGZ17 — non‑commensurate spin populations, non‑commensurate binding energies, broken from the rational 1:3 by a continuous control parameter.** That's a `[H]` shape‑match, **not** `[S]`. Promotes the SYN §3 OLED leg. | H | EPIPHANY | SYN §3 (revise) | D‑BGZ17, D‑QUANTGATE |
+| D‑EXCITON | OLED exciton ↔ anti‑moiré: **REVERTED `[H]→[S]`** by the 5+3 agent review (2026‑06‑09; apparatus `.claude/agents/`, provenance §7). The `[H]` "OLEDs ship the same coprime aperiodicity as D‑BGZ17" was a **category error + a number mis‑label**: (a) the 1:3 S:T ratio is **exactly rational** — the SU(2) microstate count (1 vs 3), a *definitional identity, not a measurement* (`[G]` definitional), so *not* irrational; (b) **a scalar has no period to be aperiodic about** — aperiodicity is a property of an infinite tiling/sequence, and a bias‑shifted ratio or two energy scalars are points, not lattices; (c) the "~1.5 eV triplet *binding* energy" was the **T1 excited‑state energy mis‑labelled** — literature triplet E_b is sub‑eV (≈0.3–0.6 eV, arXiv 2311.03927), so the ratio is order ~1 **not** 3, and the *specific 1:3‑energy coincidence* that motivated the link does not survive. **Kept (`[G]`‑real legs, held apart from the dead analogy):** rational 1:3 (above); and the *harvest‑the‑dark physics* — phosphorescence (heavy‑metal SOC) + TADF (small ΔE_ST RISC) reach ~100% IQE (Baldo/Adachi; Uoyama 2012). Bias‑dependence (PMC4614446) is a **real but material‑specific** observation (`[G]` in its own literature) that carries **no aperiodicity and no substrate test** → its *link* value is `[S]`. **A `[G]` mechanism does not lend its grade to the `[S]` rhyme.** **Rejected re‑links (logged so they're not re‑proposed):** A = anti‑moiré ladder (no lattice/beat); B = amortization gate (no reuse axis — 1‑use recovery ≠ 1/N reuse). **Surviving reframe → `D‑LOSSCHAN` (§2.7), `[S]` do‑not‑build.** | S | EPIPHANY (reverted) | `.claude/agents/` 5+3 review; SYN §3 = also revert | — (anti‑moiré deps removed) |
 | **D‑MONOTILE** | **the *third* anti‑moiré route — strongest, by theorem.** An **aperiodic monotile** (the "hat," Smith‑Myers‑Kaplan‑Goodman‑Strauss 2023; arXiv **2509.12216** Kaplan) is a *single shape that tiles the plane only non‑periodically* → it has **no translational period → no moiré beat, by a tiling theorem**, not by placement (D‑MANTISSA, `[H]` continuous) or by base‑coprimality (D‑BGZ17, `[H]`‑bounded). **The anti‑moiré is `[G]` (proven), and it survives quantization (a fixed discrete shape, immutable)** — so it satisfies D‑QUANTGATE *intrinsically*. **Cost / open question (`[H]`):** the hat is a **polykite on a hexagon+triangle lattice**, not the square Morton quadtree; adopting it changes the cascade geometry. Its **substitution (inflation) hierarchy** *is* a cascade — the open test is whether that hierarchy is **generalized‑Morton/Hilbert‑addressable** (arXiv 2309.15199, Walker — non‑power‑of‑2 + 3D Morton/Hilbert). If yes: anti‑moiré‑by‑theorem **+** cascade addressing. Hexagonal substrate ties to the `m²−mn+n²` (Eisenstein) covering norm of arXiv 2203.09323 (Richter). | anti‑moiré **G**; cascade‑addressability **H** | EPIPHANY | §7 papers | D‑BGZ17, D‑QUANTGATE, D‑CASCADE |
 
 ### 2.5 Amortization gate
@@ -180,7 +185,8 @@ two halves of a cell. ADR‑026 names the cascade that ties them.
 | D‑CTU | Morton cascade = x265/x266 CTU quadtree; codec RDO split = the probe | G | EPIPHANY | SYN §1 | D‑CASCADE, D‑CESIUM‑PROBE |
 | D‑ATTN | attention (bgz‑tensor WeightPalette 256) ranks tiles → drives `r*`; τ = min(certificate, attention) | H | EPIPHANY | SYN §4 | D‑RSTAR, D‑PAL256 |
 | D‑CONVERGE | 6 lineages (codecs/sensors/displays/attention/PQ/Cesium) → quadtree + 256‑palette + irrational | G | EPIPHANY | SYN §0 | — |
-| D‑OLED | OLED exciton ↔ substrate = weakest leg; only candidate diffusion‑length ↔ neighborhood; **do not build on** | S | EPIPHANY | SYN §3 | — |
+| D‑OLED | OLED exciton ↔ substrate = weakest leg; **do not build on**. (The `D‑EXCITON` `[H]` promotion attempt was **reverted to `[S]`** by the 5+3 review — §2.4 + `.claude/agents/`; this row was right all along.) | S | EPIPHANY | SYN §3 | — |
+| D‑LOSSCHAN | the one surviving exciton reframe: **loss‑channel suppression** — radiative yield `η = k_prod/(k_prod+k_loss)` (Stern‑Volmer) ↔ cascade **early‑exit** yield (terminate‑cheap vs escalate). *Conjecture to test*, not a shape‑match yet: do TADF IQE and the bgz17 HEEL/Scent early‑exit rate both track that η‑form? Untested → **do‑not‑build**. | S | EPIPHANY | SYN §3 | D‑EXCITON, D‑AMORT |
 
 ### 2.8 IR & adapters — the coded layer
 
@@ -236,7 +242,9 @@ lands these with `[per rt]` marks, receipts fill later:
 **Queued code** (`IDEA`, gated): D‑OSM (runtime D‑OSM‑3), D‑PATTERN,
 D‑ACTION, D‑NSM.
 
-**Do‑not‑build** (`S`): D‑OLED — catalog only.
+**Do‑not‑build** (`S`): D‑OLED / D‑EXCITON / D‑LOSSCHAN — catalog only
+(D‑EXCITON `[H]→[S]` reverted by the 5+3 review; D‑LOSSCHAN = its one
+untested survivor).
 
 ---
 
@@ -358,7 +366,7 @@ on both sides** (the next materialization).
 | D‑COLUMNAR / D‑LANCE / D‑IMMAT | P1 (structural) | `soa` + `SoaEnvelope::verify_layout()` | stride/overlap/version conformance; zero‑copy view exactness | `verify_layout()` Ok; `row_le`/`column_le` byte‑exact |
 | **all CODED primitives** (correctness floor) | — | **`simd_dispatch`** (the W1c contract) | AVX‑512 vs NEON vs scalar parity | **identical within 1 ULP** across all three backends |
 | D‑META64 (revised) | — | read `MailboxSoA` column layout | `edges[CausalEdge64]` vs `meta[MetaWord]` separateness | **confirmed separate** (§4.1) → reconcile the 48/16 bit‑budget to `MetaWord` |
-| D‑EXCITON | — *(external)* | — *(external OLED physics)* | — | **no internal test** — literature‑grounded `[H]` only (§3 sources); a *precedent*, not a substrate measurement |
+| D‑EXCITON | — *(external)* | — *(external OLED physics)* | — | **`[S]` (reverted from `[H]`)** — the aperiodic reading is literature‑**un**supported (no source calls the 1:3 aperiodic; it is rational SU(2)) and rested on a T1‑vs‑binding‑energy mis‑label; no substrate test. Catalog only; survivor = `D‑LOSSCHAN`. |
 
 **Audit conclusions (the "double‑check" the operator asked for):**
 
@@ -379,14 +387,23 @@ on both sides** (the next materialization).
    (HIP) and ρ = 0.965 (TWIG) and θ ∈ [1.45, 1.6] stop being *cited* and
    become *re‑measured* by `hpc::quantized` + P10 — so the map can't drift
    from the runtime's actual numbers.
-6. **D‑EXCITON is honestly fenced.** It has **no internal test** — it's an
-   external physical analog. Marked as such so it can't masquerade as a
-   substrate‑validated claim. (This is the "doesn't dilute" line: not every
-   `[H]` earns a test; external analogs are grounded by literature only.)
+6. **D‑EXCITON was reverted `[H]→[S]` by the 5+3 agent review (2026‑06‑09).**
+   The `[H]` "same coprime aperiodicity as D‑BGZ17" rested on a **category
+   error** (a scalar ratio / two energy levels have no period to be aperiodic
+   about) **+ a T1‑vs‑binding‑energy mis‑label** (the "1.5 eV" was the T1
+   excited‑state energy, not E_b ≈0.3–0.6 eV; corrected, the 1:3‑energy
+   coincidence does not survive). The `[S]→[H]` jump had itself violated §6.3
+   (promotion needs a *measurement*, not a mechanism story) — so reverting
+   **restores** the discipline. Entry **kept** (append‑only); the two
+   `[G]`‑real legs (rational 1:3; ~100% IQE harvest physics) preserved,
+   reframes A/B logged rejected, the one untested survivor split out as
+   `D‑LOSSCHAN` (`[S]`). The apparatus (5 research + 3 brutal‑review agents)
+   is committed at `.claude/agents/`.
 
-**No claim collapses** under this audit; the two that needed it
-(D‑MOIRE absolutism — fixed in #47; D‑META64 — fixed in §4.1) were already
-corrected. The rest are either CODED, ADR‑pinned, or `[H]`‑with‑a‑named‑test.
+**No claim *collapses*** (append‑only); but the 5+3 review **reverted** one
+overclaim — D‑EXCITON `[H]→[S]` (this §, #6) — and split out its one survivor
+(`D‑LOSSCHAN`), joining the prior fixes (D‑MOIRE absolutism — #47; D‑META64 —
+§4.1). The rest are either CODED, ADR‑pinned, or `[H]`‑with‑a‑named‑test.
 
 ---
 
@@ -480,3 +497,15 @@ isolation. The map's job is to keep them visible.
     Polyominoes* (ribbon‑tile covering; the `⌈(2/3)(m+n−√(m²−mn+n²))⌉`
     cardinality with the **Eisenstein / hexagonal norm** `m²−mn+n²` — ties
     the square cover to the hat's hexagonal substrate).
+- **The OLED‑exciton papers (D‑EXCITON revert / D‑LOSSCHAN; 5+3 review
+  2026‑06‑09):** the 1:3 singlet:triplet ratio is rational SU(2) spin
+  statistics, *not* aperiodic — the `[H]` "coprime aperiodicity" reading was
+  reverted to `[S]`.
+  - **PMC4614446** — Takahashi et al., *Sci. Rep.* 5:15533 (2015):
+    bias‑dependent S:T formation ratio (real but material‑specific).
+  - **arXiv 2311.03927** — triplet‑exciton binding energies in organic
+    semiconductors are sub‑eV (≈0.3–0.6 eV) — refutes the "~1.5 eV E_b" (that
+    figure is the T1 excited‑state energy, not a binding energy).
+  - **Baldo/Adachi/Forrest** (~100% internal phosphorescence, *J. Appl.
+    Phys.* 90:5048, 2001) + **Uoyama/Adachi** (TADF, *Nature* 492:234, 2012)
+    — the harvest‑the‑dark physics (`[G]`‑real, ≠ the substrate link).
