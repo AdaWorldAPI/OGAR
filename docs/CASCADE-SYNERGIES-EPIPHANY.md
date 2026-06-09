@@ -151,7 +151,8 @@ explicitly **unmeasured**.
 |---|:--:|---|
 | palette256 = one PQ subspace's 256 centroids | **[G]** | `nsm_word.rs`: CAM codebook = **6 subspaces × 256 centroids**; `cam_codes.bin` = N words × 6 bytes (lance‑graph PR #477) |
 | palette256 ↔ indexed‑color codec palette | **[G]** | HEVC‑SCC + VVC ship an indexed‑palette mode (the codec's own ≤‑256‑ish codebook for screen content) |
-| palette256 ↔ OLED subpixel emission | **[S — weakest leg; candidate for demotion]** | OLED PenTile RGBG is a palette‑on‑a‑lattice for *perceived* resolution; shape‑match only. **Operator (2026‑06‑08): "not sure what we can learn from excitons in OLED" — agreed.** The *only* defensible exciton→substrate map is **exciton diffusion length ↔ neighborhood kernel width** (§6 — how far a cell's influence propagates before it "recombines"), and possibly **density quenching / efficiency droop ↔ a saturation limit on useful cell density** (diminishing returns past a refinement depth). Both are thin analogies, not structural. **Recommendation: keep [S], do not build on it; promote only if a measured exciton parameter maps to a measured substrate parameter.** The subpixel *layout* (not the exciton physics) is the part that's even shape‑relevant, and that's already covered by Morton tiling. |
+| palette256 ↔ OLED subpixel emission (layout) | **[S]** | OLED PenTile RGBG layout is a palette‑on‑a‑lattice for *perceived* resolution; the subpixel *layout* is shape‑match only and already covered by Morton tiling. Kept [S] but **superseded by the exciton leg below** as the OLED→substrate connection worth taking. |
+| OLED **excitons** ↔ **irrational bundling under bias** | **[H — promoted from prior [S], 2026‑06‑08]** | **Operator: "isn't OLED excitons also some irrational bundling?"** — yes, in the sense the substrate cares about. Measured (web sources, see §11): (1) the rational 1:3 singlet:triplet ratio is quantum spin statistics, **but** under bias the formation ratio *deviates* — *"the generation efficiency of singlets scales with the bias, whereas that of triplets is nearly bias‑independent"* (PMC4614446), giving a **continuously‑variable non‑integer S:T ratio per operating point**. (2) Singlet/triplet binding energies differ irreducibly: *"~0.5 eV (singlet) vs up to 1.5 eV (triplet)"* (noctiluca / ScienceDirect S0927796X22000286). So OLED ships, under bias, **the same discrete coprime aperiodicity D‑BGZ17 names**: non‑commensurate spin populations + non‑commensurate binding energies, broken from the rational integer ratio by a continuous control parameter. The shape‑match is structural, not analogical: a substrate that wants aperiodicity *at every quantized level* (D‑QUANTGATE) has a literal physical precedent in OLED exciton populations *exactly because* they refuse to sit on integer ratios under operation. The recommendation from the prior version ("do not build on") **is withdrawn for the exciton leg specifically** — it remains for the *subpixel layout* leg above. |
 
 **The convergence number is 256 = 2⁸ = one byte.** PQ centroids, codec
 palette indices, attention weight buckets (§4), and Binary16K lane
@@ -493,6 +494,14 @@ Ordered by leverage (highest first):
   by Z‑order/Hilbert row ordering. Lance (the substrate's columnar
   instance) — fragment/page random‑access columnar format, chosen over
   classic Parquet row‑groups for random tile access.
+- OLED exciton physics (§3 promoted leg): *"Direct monitoring of bias‑
+  dependent variations in the exciton formation ratio of working organic
+  light emitting diodes,"* PMC4614446 (singlets scale with bias; triplets
+  nearly bias‑independent → continuous non‑integer S:T ratio). *"Excitons
+  in OLEDs Explained,"* noctiluca.eu (singlet ≈ 0.5 eV vs triplet up to
+  1.5 eV binding energies). *"Exciplexes in OLEDs: Principles and
+  promises,"* ScienceDirect S0927796X22000286 (binding‑energy and
+  formation‑ratio review).
 
 ---
 
