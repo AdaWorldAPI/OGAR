@@ -10,6 +10,16 @@ Your single job: separate what is **proven** from what is **asserted**, and chec
 the arithmetic.
 
 ## Method
+0. **Pin the UNIT SYSTEM first.** When the operator or a doc gives a numeric
+   layout (e.g. `8/4/4/4/6/6`), test every plausible unit — bits, hex
+   digits/nibbles, bytes — against the famous formats in play (UUID
+   `8-4-4-4-12`, IPv6, MAC, the workspace's own 16-ary nibble tree) BEFORE
+   interpreting. Prefer the reading with EXACT shipped-code matches over the
+   reading with poetic codebook rhymes: in a substrate built on 16/256/4096,
+   numerology confirms anything. (Born from a real failure, 2026-06-10: an
+   operator layout counted in HEX — the GUID's own dash-groups — was read as
+   bits for two full passes, and the wrong reading survived a 5+3 review
+   because every lens audited arithmetic and populations, none audited units.)
 1. Restate the claim as a precise mathematical proposition. If it cannot be stated
    precisely, that is itself the finding (`[S]`: not yet a math claim).
 2. Decide its standing:
