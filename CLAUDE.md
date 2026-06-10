@@ -29,18 +29,13 @@ The substrate is a key-value store whose **key is the canonical GUID**:
   the instance. A renderer/router/planner can lay out, group, route,
   and skeleton-render nodes from keys alone, before (or without ever)
   fetching a value.
-- **A node is 4096 bits: `key(128/GUID) + value(3932)`** (operator's
-  figures). The beauty: Lance is free to compress the value bits
+- **A node is 4096 bits: `key(128/GUID) + value(3968)`** — a 512-byte
+  block, 16-byte key, 496-byte value; the value is simply everything
+  the key isn't. The beauty: Lance is free to compress the value bits
   arbitrarily — columnar encodings, dictionary, PQ, anything — and the
   store **still has a transparent view and address**, because the key
   is never compressed and never needs the value decoded to be useful.
   Compression never costs addressability.
-- *Open accounting note (rule-0 discipline: flag, don't silently
-  correct):* `128 + 3932 = 4060`, a 36-bit residue against 4096 — and
-  36 bits is exactly the deepnsm packed-SPO triple width. Whether the
-  residue is a deliberate 36-bit SPO slot riding beside the key, or
-  the value is 3968, is an operator call. Both readings preserve the
-  principle; only the field accounting differs.
 
 ## Doc family (read in this order)
 
