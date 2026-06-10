@@ -19,17 +19,24 @@ Widths are codebook cardinalities; **scale = the next cascade level,
 never field-widening.** Wrappers (e.g. lance-graph `NodeGuid`, #480) are
 audited against this canon group-by-group — never the reverse.
 
-**RFC-9562-v8-NATIVE** (pinned 2026-06-10, autoresolve; one operator
-word reverses): the version hex (group 3, first digit = `8`) and the
-variant hex (group 4, first digit ∈ {8,9,A,B}) are the substrate's
-**signature** — a free native/foreign key discriminator at every
-membrane. One skip-rule, stated once: *the first hex of groups 3 and 4
-is the RFC mark; path nibbles skip it.* Path budget: HEEL 4 + HIP 3 +
-TWIG 3 = 10 native levels (16¹⁰ ≈ 10¹²); deeper chains overflow to the
-hierarchy (registry resolve + ref-escape) — which is why Wikidata-HHTL
-is the same canon, not a different scheme. Entropy rationale: constants
-are zero-entropy structure; one rule beats per-tool interop friction
-paid forever.
+**3×4 PATH — UNIFORM, RFC-WAIVED** (reversed 2026-06-10; the operator's
+word arrived — the brief v8-native pin broke the uniform Morton stride):
+HEEL/HIP/TWIG are each **4 full nibbles** — 3 tiers × 4 nibbles = 12
+path levels, uniform. **Tier-of-level = `level >> 2` — a shift, never a
+branch.** The cascade's shift/mask arithmetic is canon. The GUID is NOT
+RFC-stamped: **RFC 9562 is a WRAPPER format, and wrappers adapt to the
+canon, never the reverse** — any boundary that genuinely requires
+RFC-valid UUIDs owns that adaptation at its membrane and pays it
+explicitly; the canon does not pre-pay it in every key. Native/foreign
+discrimination lives where semantics live: in `classid` (foreign keys
+get a foreign family), not in a format constant. Wikidata-HHTL is the
+same canon either way — depth beyond 12 native levels was always the
+hierarchy's job (registry resolve + ref-escape). (The v8-native episode
++ reversal reasoning: INTEGRATION-MAP §9.10. The 4/3/3 carving was
+never codebook-motivated — it fell out of RFC mark positions — but it
+traded concrete hot-path uniformity for mostly-hypothetical interop:
+the key's real consumers — Lance, SurrealDB, `EntityKey` — are
+byte-agnostic.)
 
 ## P0 — THE GUID IS THE KEY OF KEY-VALUE (operator-pinned, 2026-06-10)
 
