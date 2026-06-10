@@ -56,6 +56,27 @@ The substrate is a key-value store whose **key is the canonical GUID**:
   is never compressed and never needs the value decoded to be useful.
   Compression never costs addressability.
 
+## Standing watch — 3×4 vs 4×3 (operator mandate, 2026-06-10)
+
+**"Correct me at any time":** if evidence ever shows 3 tiers × 4 nibbles
+to be more expensive, lower-synergy, or higher-entropy than 4 tiers × 3
+nibbles, say so immediately — standing permission and obligation.
+
+Operator's rationale (recorded so it doesn't dilute): *3×4 is a modesty
+in levels that buys radix-tree cheapness and less horizontal difference,
+but a wider spread.* Calculation ledger (2026-06-10) confirms it in
+mechanism: tier-of-nibble = `n >> 2` (shift) vs `n/3`; tiers are
+u16-aligned vs 1.5-byte-straddling; dash-groups = tiers (self-describing
+print) vs dashes lying; Morton de-interleave = one byte per axis per
+tier vs sub-byte masking; 3 hops vs 4 (wide-radix cheapness); sibling
+XOR localizes to one aligned group. The one 4×3 synergy (tier index =
+one 4096-codebook slot) is recoverable inside 3×4 for free — codebooks
+attach at any nibble depth, so a 3-nibble prefix indexes a 4096
+sub-table whenever wanted; the reverse recovery is impossible.
+**Flip condition (falsifiable):** a measured workload where 4-tier
+granularity beats 3-tier on the radix/de-interleave benches despite the
+alignment costs. Until measured: 3×4 stands.
+
 ## Doc family (read in this order)
 
 1. `docs/DISCOVERY-MAP.md` — the discovery ledger (D-* entries, graded
