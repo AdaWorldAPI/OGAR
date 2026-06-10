@@ -56,6 +56,27 @@ The substrate is a key-value store whose **key is the canonical GUID**:
   is never compressed and never needs the value decoded to be useful.
   Compression never costs addressability.
 
+## Tier interpretation — 256×256 CENTROID TILE (operator, 2026-06-10; [H] + named test)
+
+Each tier's 64k space (4 nibbles = 16 bits) is read as a **256×256
+centroid tile**: two axes, each a byte-index into a 256-entry centroid
+codebook, nibble-interleaved. Receipts: path = HEEL+HIP+TWIG = 6 bytes
+= exactly the CAM-PQ **6×256** code (3 tiers × 2 axes = 6 subspaces);
+the 256×256 LUT is the stack's recurring structure (bgz17 palette
+distance/compose tables, helix DistanceLut, bgz-tensor attention-as-
+lookup) → **path distance = 3 tier-table lookups, O(1)**; the HHTL
+legend already says HIP = palette. **Condition that keeps prefix
+routing rigorous: 256 = 4⁴ — each codebook is built as a 4-level 4-ary
+centroid HIERARCHY**, so a byte's nibbles are the centroid's ancestry
+(coarse→fine) and `is_ancestor_of` = centroid-tree containment; the
+x/y nibble-interleave = alternating-axis refinement (Morton in centroid
+space). Flat k-means-256 breaks this; hierarchical 4⁴ preserves it.
+**Named test (F11-adjacent):** hierarchical-4⁴ vs flat-256 fidelity ρ
+against the 0.9973/0.965 anchors. Consequence: D-BOTHCASC collapses —
+spatial mipmap and semantic centroid cascade are ONE address; domains
+bind the axes (OSM: literal x/y; semantic: PQ subspace pairs); the
+algebra is identical and domain-agnostic.
+
 ## Standing watch — 3×4 vs 4×3 (operator mandate, 2026-06-10)
 
 **"Correct me at any time":** if evidence ever shows 3 tiers × 4 nibbles
