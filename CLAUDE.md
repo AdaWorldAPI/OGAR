@@ -19,6 +19,18 @@ Widths are codebook cardinalities; **scale = the next cascade level,
 never field-widening.** Wrappers (e.g. lance-graph `NodeGuid`, #480) are
 audited against this canon group-by-group — never the reverse.
 
+**RFC-9562-v8-NATIVE** (pinned 2026-06-10, autoresolve; one operator
+word reverses): the version hex (group 3, first digit = `8`) and the
+variant hex (group 4, first digit ∈ {8,9,A,B}) are the substrate's
+**signature** — a free native/foreign key discriminator at every
+membrane. One skip-rule, stated once: *the first hex of groups 3 and 4
+is the RFC mark; path nibbles skip it.* Path budget: HEEL 4 + HIP 3 +
+TWIG 3 = 10 native levels (16¹⁰ ≈ 10¹²); deeper chains overflow to the
+hierarchy (registry resolve + ref-escape) — which is why Wikidata-HHTL
+is the same canon, not a different scheme. Entropy rationale: constants
+are zero-entropy structure; one rule beats per-tool interop friction
+paid forever.
+
 ## P0 — THE GUID IS THE KEY OF KEY-VALUE (operator-pinned, 2026-06-10)
 
 The substrate is a key-value store whose **key is the canonical GUID**:
