@@ -1,6 +1,11 @@
 # INTEGRATION MAP — how the substrate composes across repos
 
-> **Status: LIVING MAP** (2026‑06‑09). Companion to `DISCOVERY-MAP.md` —
+> **Status: LIVING MAP v1.1** (2026‑06‑09; v1.1 = hardened by the 5+3
+> savant pass — capacity ceilings L0b, delegation lineage corrected, gates
+> F10–F14, Track O7 promoted — **plus the G-pass logic audit**: B joined
+> the critical path, diamond ≠ prefix-tree named, shape_hash risk-model
+> corrected, F2 bridge condition, F14 run-gate, NiblePath flavor check).
+> Companion to `DISCOVERY-MAP.md` —
 > the discovery map indexes *what was found*; **this maps *how it
 > composes*: layers, seams, phases, gates.** Implementation follows this
 > map; the map precedes the code (the "document before it dilutes"
@@ -30,7 +35,10 @@ SOURCES      Odoo 17 (Python)        OpenProject (Ruby/Rails)      SurrealQL DDL
 PRODUCERS ───────────────────────────────────────────────────────────────────────────────────────────────────────────────
                               ╔════════════════════ OGAR IR (the spine) ════════════════════╗
 THINK arm     Class { attributes, associations (4× AR kinds), enums, scopes, mixins,
-              parent: Option<Identity>  ←  "subClassOf == SUPERVISION EDGE" }
+              methods, callbacks, validations, computed_fields,
+              parent — SHIPPED: Option<String> (ogar-vocab lib.rs:95) · CONTRACT-SPEC:
+              Option<Identity> ("subClassOf == supervision edge"); the String→Identity
+              lift is Track O7 — ★CRITICAL PATH, gates R2/R4 }
 DO arm        ActionDef (separate SPO node, object_class → Class) + ActionInvocation (state: ActionState)
 MEMBRANE      KausalSpec { StateGuard | LifecycleTrigger | Depends{paths} }  ← the only place domain
               workflow survives IR flattening (OGAR-AST-CONTRACT §3)
@@ -44,7 +52,8 @@ CONTRACT      lance-graph-contract: TripletProjection · SoaEnvelope · ClassVie
 RUNTIME       ractor: generic state_machine (OGAR-agnostic) + OGAR/Rubicon binding [R1 unverified]
               · MailboxSoA columns (edges/meta/qualia/entity_type) · supervision routing by NiblePath
               prefix (is_ancestor_of = one bit-shift) · commit_event sole-writer membrane
-STORAGE       Lance (DatasetVersion = frame; per-row cycle stamp = delta) · SurrealDB
+STORAGE       Lance (DatasetVersion = self-contained snapshot, the "frame" of other docs;
+              last_active_cycle = per-row RECENCY stamp, not a delta) · SurrealDB
               (TableDefinition::new_for_ddl → ToSql; kv-lance) · consumer stores via EntityKey(&[u8])
 CONSUMERS     openproject-nexgen-rs · woa-rs (Odoo) · MedCare-rs (HIPAA, label-free) · smb-office-rs · q2
 ```
@@ -71,18 +80,28 @@ enter the SoA (§4).
 | `class_id` **aliases** the `entity_type` slot on the SoA row — no new column | soa_view.rs:47 `[per xs]` | **[G] CODED** |
 | Cold-path identity TODAY: `node_id:u32` + String labels (MetadataStore), `u64` content `dn_hash` (SpoStore), `CogRecord` id-less | metadata.rs:60,86 · spo/store.rs:38 · cogrecord.rs:56 | **[G] CODED but the gap NodeGuid fills** → Phase F migration |
 
+### L0b — capacity ceilings (derived + theorem-checked, 2026‑06‑09; volume rows are estimates with stated assumptions)
+
+| Field | Width | Ceiling | First-consumer impact | Escape |
+|---|---|---|---|---|
+| `entity_type` | u16 | 65,536 classes | Odoo ~3.1k ✓; SNOMED ~350k / planet-scale ✗ | TD‑WIKI‑SCALE family; widen at the registry mint when a >64k ontology lands |
+| `shape_hash` | 22 b | **G-pass risk-model correction:** comparisons are SAME-CLASS, temporal only (stored vs current hash of one class) — cross-class hashes are never compared (`entity_type` discriminates). Relevant miss = h(old)=h(new) per schema change ≈ 2⁻²² (~2.4e‑7), **negligible** | the birthday-over-all-classes figure (50% @ ~2,411) answered the wrong population | keep 22 b; PIN the use-invariant "never compare cross-class" — if that is ever violated, the birthday math applies and 22 b is too small (§9.6) |
+| `local` | 24 b | 16,777,216 per minting scope — **the scope itself is UNSPECIFIED** (global per (ns, entity_type)? per tenant? per prefix?) | IF global per (ns, entity_type): `account.move.line` exceeds in ~10 tenant-years (assumes ~1.7M lines/tenant-yr vs 2²⁴ ≈ 16.8M — an estimate, not a theorem) | §9.7 = first PIN the minting scope, THEN pick the escape (prefix-shard / widen / per-tenant ns) |
+| `FieldMask` | u64 | **64 fields**; positions ≥64 silently IGNORED (#441 N3, class_view.rs:76) | **BLOCKER: `account.move` carries 109 field declarations (counted first-hand, account_move.py Odoo 17 — auditor-measured) → THINK render silently drops 45+** | multi-word / paged presence — **Track X7 + gate F14** |
+| `niblepath_prefix` | 16 b / 4 nibbles | depth >4 → prefix-only routing | none — falls back to `entity_type` resolve (documented in identity.rs) | ✓ |
+
 ### L1 — The OGAR IR (the two arms + the membrane)
 
 | Piece | Shape | Status |
 |---|---|---|
-| **THINK arm** `Class` | `{identity, name, parent: Option<Identity> ("subClassOf == supervision edge"), language, mixins: Vec<Identity>, store_accessors, associations, enums, scopes, callbacks, computed_fields, methods, validations, attributes}` | **[G] CODED** (`OGAR-AST-CONTRACT.md §1`; mirrors `ogar-vocab-soa` RecordBatch 1:1) |
+| **THINK arm** `Class` | contract §1: `{identity, name, parent: Option<Identity> ("subClassOf == supervision edge"), language, mixins, store_accessors, associations, enums, scopes, callbacks, computed_fields, methods, validations, attributes}`. **Shipped `ogar-vocab::Class.parent` is `Option<String>` (lib.rs:95)** — the typed edge is SPEC, not shipped (the contract's "mirrors the RecordBatch schemas 1:1" claim holds *except* this parent type — that exception IS the O7 divergence) | **[G] CODED (vocab) / [H] typed-edge** — the supervision-edge binding is real only after Track O7 |
 | **DO arm — static** `ActionDef` | separate SPO node: `{identity, predicate, object_class → Class, default_subject/temporal/modal, kausal: KausalSpec, method_body, results_in: StateTransition, on_enter: EnterEffect, guard_failure_policy, state_timeout_millis}` | **[G] CODED** (§1; statem terms landed OGAR PR #10) |
 | **DO arm — dynamic** `ActionInvocation` | `{identity, realizes → ActionDef, state: ActionState (Pending→Committed/Failed/Cancelled), subject, object_instance, lokal, idempotency_key, trace_id, parent_invocation, emitted_at_millis, failure_reason}` | **[G] CODED** (§1) |
 | **The membrane** `KausalSpec` | `StateGuard{field,value} \| LifecycleTrigger \| DependsPath \| None` — *"the only place a domain workflow survives the IR flattening"*; lifecycle (machine) ≠ workflow (data) | **[G] CODED + doctrine** (§3: *"Lifecycle formalized; workflow as data"*) |
 | **The four AR primitives** `AssociationKind` | `BelongsTo / HasOne / HasMany / HasAndBelongsToMany` — cross‑ORM: Rails verbatim; Odoo `Many2one/One2many/Many2many` (has_one = One2many constrained to 1) | **[G] CODED** `ogar-vocab/src/lib.rs:655-664` |
 | `Association` full option set | `class_name, foreign_key, polymorphic, through, source, as_target, dependent` (app-level) **separate from** `ondelete` (DB-level), `optional, inverse_of, before/after_add/remove, scope_source, auto_join, context_source, check_company, delegate` | **[G] CODED** `lib.rs:672-732` |
 | **Traversal vocabulary** `::includes / ::memberof() / ::members() / ::groups::members()` | methods on `Class` (`member_of(name)`, `members(name)`, `group_members(name)`, `includes()`, `associations_of(kind)`, `members_through(name)`) — per The Click: methods on the carrier, never free functions | **ABSENT** — the data is there, the API isn't. **Track O1**, ~50 LOC |
-| **Two `Class` shapes** | producer-side `ogar-vocab::Class` (`parent: Option<String>`) vs canonical contract §1 (`parent: Option<Identity>`) — the String→Identity lift | **[G] divergence named** `[per xs]` → **Track O7** (pairs with registry mint + lance-graph D-ODOO-BP-1c/d/e) |
+| **Two `Class` shapes** | producer-side `ogar-vocab::Class.parent: Option<String>` (**verified first-hand, lib.rs:95**) vs canonical contract §1 `Option<Identity>` — the String→Identity lift | **[G] divergence** → **Track O7, ★PROMOTED to critical path**: until it lands, the IR carries no typed edge — R2/R4 would lean on mint-side name resolution; land O7 or name that coupling (pairs with the registry mint + D-ODOO-BP-1c/d/e) |
 
 ### L2 — Producers (source → IR)
 
@@ -108,11 +127,11 @@ enter the SoA (§4).
 | Piece | Status |
 |---|---|
 | `TripletProjection` + `roundtrip_eq → RoundTripFailure` (codegen_spine.rs:107) | **[G] trait** — impls: `op-codegen-projection` **[G per xs]**; odoo blueprint **CLAIMED**; cognitive-write **ABSENT → Phase D** |
-| `SoaEnvelope` + `ColumnDescriptor` (byte-geometry ONLY; "width only — no domain meaning"; `name_id` is an ordinal, NOT a string) | **[G] trait / [H] ZERO impls** → **Phase C is the keystone gate** |
+| `SoaEnvelope` + `ColumnDescriptor` (byte-geometry ONLY; "width only — no domain meaning"; `name_id` is an ordinal, NOT a string) | **[G] trait / [H] zero PRODUCTION impls** (only `#[cfg(test)] TestEnvelope`, soa_envelope.rs:266) → **Phase C is the keystone gate** |
 | `ClassView` (resolve-late from OGIT cache) + `FieldMask(u64)` presence + `FieldMask::inherit(delta)` = the HHTL `subClassOf` walk as bitwise parent-OR-delta | **[G] CODED** (#441) |
 | Rubicon kanban: `KanbanColumn`(6: Planning/CognitiveWork/Evaluation/Commit/Plan/Prune), `KanbanMove ≤16B`, `ExecTarget`(Native/Jit/SurrealQl/Elixir), `MailboxSoaOwner::try_advance_phase()` (checked DAG), Libet −550 ms anchor | **[G] CODED** (#437) |
 | 34 `Tactic` kernels over `ThoughtCtx` (the executable bodies DO dispatches into) | **[G] CODED** (#411) |
-| Batons: `CollapseGateEmission` `(u16, CausalEdge64)`; `wire_cost_bytes()=13+10·n` | **[G] CODED** — the Firewall's hot-path carrier |
+| Batons: `CollapseGateEmission` `(u16, CausalEdge64)`; `wire_cost_bytes()=13+10·n` — header 13 B = `source_mailbox u32 + chain_position u32 + merge_mode u8 + 4 B reserved` (**verified** collapse_gate.rs:114-124); 10 B/baton = u16+u64 | **[G] CODED + arithmetic verified** — the Firewall's hot-path carrier |
 
 ### L5 — Runtime (ractor + mailbox + membrane)
 
@@ -120,8 +139,8 @@ enter the SoA (§4).
 |---|---|
 | Generic `state_machine` crate (ractor_actors) — OGAR-agnostic; `Context` opaque; `on_enter` → `CommitHook` | **CLAIMED** (contract §0; runtime-session-owned) → **Track R1: verify first-hand** |
 | OGAR/Rubicon binding (fills Context/Event/State; the callcenter codegen lands here; "the class IS the actor spec — the actor is *generated from* the `Class`") | **CLAIMED** → **R2** |
-| Supervision routing by NiblePath prefix (`route` reading of NodeGuid; one bit-shift) | **[G] mechanism** (identity.rs + hhtl.rs) / **[H] wiring** → R2/R4 |
-| `MailboxSoA` columns `edges[CausalEdge64;N]` / `meta[MetaWord;N]` / `qualia` / `entity_type` — edges and meta SEPARATE (D‑META64 revision holds) | **[G] CODED** `[per rt]` (#477) |
+| Routing-on-miss up the parent edge by NiblePath prefix (`route` reading of NodeGuid; one bit-shift) — **prototype-chain DELEGATION semantics (Self/Smalltalk lineage), NOT OTP message routing**: OTP supervisors restart on failure, they do not dispatch | **[G] mechanism** (identity.rs + hhtl.rs) / **[H] wiring** → R2/R4 must wire delegation explicitly; restart coverage ≠ dispatch coverage |
+| `MailboxSoA` columns `edges[CausalEdge64;N]` / `meta[MetaWord;N]` / `qualia` / `entity_type` — edges and meta SEPARATE (**that fact is [G]**; D‑META64's bit-budget reconciliation to `MetaWord` is **still [H]/REVISE** — this row does not close it) | **[G] CODED** `[per rt]` (#477) |
 | `commit_event` sole-writer + `ExternalMembrane::project` + `CommitFilter`/`MembraneGate`; today emits scalar `CognitiveEventRow` | **[G] CODED** (lance_membrane.rs:315) — node/edge `project_graph` **ABSENT → Phase E** |
 | HEEL/HIP/TWIG/LEAF cascade legend in `high_heel.rs` | **CLAIMED only** — "no code routes by prefix" (q4‑hhtl‑audit) → **Track X4** (also resolves D‑BGZ17's §4.1 unwired gap) |
 
@@ -129,7 +148,7 @@ enter the SoA (§4).
 
 | Piece | Status |
 |---|---|
-| Lance: `DatasetVersion(v)→(v+1)` = frame; `last_active_cycle[u32;N]` per-row stamp = changed-cell delta (D‑DELTA `[G]`) | **[G] CODED** `[per rt]` |
+| Lance: `DatasetVersion(v)→(v+1)` = **self-contained immutable snapshot** (the "frame" of other docs; no delta chain — any version readable alone); `last_active_cycle[u32;N]` = **per-row RECENCY stamp** (WHEN last changed, not WHAT — consumers watermark-filter `WHERE cycle > watermark`, never diff-reconstruct; Phase E depends on this reading) (**D‑DELTA's mechanism stays [G]** — only the "changed-cell delta" *label* is corrected; fold owed, H2) | **[G] CODED** `[per rt]` |
 | SurrealDB fork (local `/home/user/surrealdb`): `surrealdb/{ast,parser,core}`; `TableType::{Normal,Relation,Any}` (table_type.rs:8); `TableDefinition::new_for_ddl` (catalog/table.rs:161) | **[G] CODED** upstream |
 | `kv-lance` pins `lance =6.0.0` vs workspace `=7.0.0` | **[G] debt** TD‑SURREALDB‑KVLANCE‑LANCE7 — blocks the kv-lance storage engine resolving; companion fork PR owed |
 | Consumer stores via `EntityKey<'a>(&'a [u8])` — length-agnostic; smb `key_to_filter` branches on length (12→ObjectId, else Binary); a 16-byte GUID is "just another length" | **[G] CODED** (repository.rs:12; smb mongo.rs:79/lance.rs:92; MedCare dms.rs:14) → **Phase G** wiring |
@@ -149,17 +168,17 @@ enter the SoA (§4).
 
 | # | Seam | Producer side | Consumer side | Contract type | Status |
 |---|---|---|---|---|---|
-| S1 | **class identity ↔ instance identity** | OGAR `Identity` (NiblePath) | lance-graph `NodeGuid` | registry mint `(entity_type ↔ NiblePath)` bijection | **[G] type / [H] mint** (Phase B) |
+| S1 | **class identity ↔ instance identity** | OGAR `Identity` (NiblePath) | lance-graph `NodeGuid` | registry mint `(entity_type ↔ NiblePath)` bijection | **[G] type / [H] mint** (Phase B) — **G-pass OPEN CHECK: "NiblePath" may be two structures sharing one name** (OGAR contract §1: "27-bit segments"; lance hhtl.rs: 4-bit nibbles ×16) — confirm same-or-mapped BEFORE the mint (§9.9; the CausalEdge64 name-collision lesson, applied preemptively) |
 | S2 | **IR → SurrealQL DDL** | `emit_surrealql_ddl` | SurrealDB `DEFINE TABLE/FIELD` | DDL string; future body = `TableDefinition::new_for_ddl` | **[G] wired** |
 | S3 | **SurrealQL DDL → IR** | surrealdb-parser AST | `walk_query → Vec<Class>` | `Parser::enter_parse::<Query>` (depth 1000) | **[H] partial walk** (O2) |
 | S4 | **knowable_from** (the four-clock pin) | `ogar-adapter-surrealql` stamps at DDL registration | `lance-graph-planner::temporal::classify` deinterlaces (lance version / schema / awareness / thinking) | `LanceVersion` via `KnowableFromWriter` | **[G] pin (ADR‑010) / [H] Lance writer impl**; consumer `temporal.rs` landed #479 |
-| S5 | **AR source → SPO → DDL** | `ruff_openproject` | `op-codegen-projection` | `lance_graph_contract::codegen_spine::TripletProjection` | **[G] CODED** `[per xs]` |
-| S6 | **ActionDef → runtime** | OGAR DO arm | `ractor_actors::state_machine` via the OGAR/Rubicon binding (`CommitHook`; Context opaque) | the §0 two-layer contract | **CLAIMED → R1/R2** |
+| S5 | **AR source → SPO → DDL** | `ruff_openproject` | `op-codegen-projection` | `lance_graph_contract::codegen_spine::TripletProjection` | **[G] CODED first-hand** — `impl TripletProjection for OpSurrealProjection`, op-codegen-projection/src/lib.rs:213 |
+| S6 | **ActionDef → runtime** | OGAR DO arm | `ractor_actors::state_machine` via the OGAR/Rubicon binding (`CommitHook`; Context opaque) — delegation-on-miss is OGAR's own dispatch design, **not** an OTP behavior; R1 verifies the binding wires it explicitly | the §0 two-layer contract | **CLAIMED → R1/R2** |
 | S7 | **mailbox bytes ↔ cold bytes** | `MailboxSoA<N>` | Lance columnar | `SoaEnvelope` (`as_le_bytes().as_ptr()==backing`; `verify_layout()`) | **[H] ZERO impls → Phase C (keystone)** |
-| S8 | **cycle → graph** | committed cycle | queryable `NodeGuid` nodes + `EdgeGuid` edges | `project_graph` through `commit_event`+gate | **ABSENT → Phase E** |
+| S8 | **cycle → graph** | committed cycle | queryable `NodeGuid` nodes + edge ids (**`EdgeGuid` itself ABSENT** — only `NodeGuid` shipped; EdgeGuid is Phase‑E design surface, not code) | `project_graph` through `commit_event`+gate | **ABSENT → Phase E** |
 | S9 | **GUID → consumer store** | any | smb/MedCare/Lance | `EntityKey(guid.as_bytes())` | **[G] transport / [H] 16-byte wiring** (Phase G) |
 | S10 | **content display** | SoA refs | rendered strings | `ClassView::render_rows` + tier dispatch (§4) | **[G] render / [H] tier byte** (O5) |
-| S11 | **kind-generic codegen** | non-Odoo targets | `RouteBucketTyped<Kind>` (sidecar WIP, +228 uncommitted, other session's) | blanket impl preserves `RouteBucket` | **[H] WIP — needs first consumer** |
+| S11 | **kind-generic codegen** | non-Odoo targets | `RouteBucketTyped<Kind>` | blanket impl preserves `RouteBucket` | **ABSENT on main @ `62bca5e`** — the +228 working-tree WIP did not land (superseded or dropped); re-confirm with its session before planning on it |
 | S12 | **PII boundary** | OGAR/OGIT labels | MedCare | label-free leaf-rename at adapter (D‑PII) | **[G] CODED** |
 
 ---
@@ -171,7 +190,12 @@ aggregate `{attributes, associations, computed_fields, enums, scopes}`
 over `parent` + `mixins` edges; child shadows parent by identity slot
 (Odoo `_inherit` semantics); presence at the row = `FieldMask`, and
 `FieldMask::inherit(delta)` IS the subClassOf walk done as bitwise
-parent-OR-delta. Pre-computable per class at OGIT-classification time.
+parent-OR-delta — **structural presence only** (monotone union; a child
+cannot structurally remove a parent field, and view-layer hiding like
+Odoo `invisible=` is a display-side concern NOT representable in the
+mask). Pre-computable per class at OGIT-classification time. Capacity
+caveat: the mask is u64 — see **L0b / gate F14** for the >64-field
+blocker on wide Odoo models.
 Labels resolve LATE from the OGIT cache (`ClassView`); **zero labels in
 the SoA bytes**.
 
@@ -179,10 +203,25 @@ the SoA bytes**.
 `action_defs` — that model is **dead** (corrected from source).
 `ActionDef`s are independent SPO nodes keyed `object_class → Class`.
 Resolution = *runtime routing*: lookup `WHERE object_class = me`; on
-miss, the **supervisor routes the invocation up the `parent` edge**
-("subClassOf == supervision edge") — OTP's "route up" doctrine as
-substrate topology, mechanically a NiblePath-prefix `is_ancestor_of`
-bit-shift (NodeGuid's `route` reading). Effects land as `CausalEdge64`
+miss, **walk the `parent` edge upward** — mechanically a NiblePath-prefix
+`is_ancestor_of` bit-shift (NodeGuid's `route` reading). **Lineage
+correction (5+3 pass): this is prototype-chain DELEGATION (Self,
+Lieberman 1986; JS `__proto__`; Smalltalk's `doesNotUnderstand:` as the
+class-chain cousin) carried
+ON the supervision topology — it is NOT an OTP behavior.** OTP
+supervisors restart on failure; they do not route unhandled messages.
+One tree serves two orthogonal semantics (fault containment AND
+delegation); R2/R4 must wire delegation explicitly — restart coverage
+does not grant dispatch coverage. **Two G-pass invariants:** (1) prefix
+ancestry is a TREE relation — the `is_ancestor_of` bit-shift covers only
+the single-`parent` spine; **diamonds (multi-`_inherit`) have no prefix
+encoding** and require an ORDERED `mixins` traversal — a second
+mechanism, currently ABSENT, and precisely what F1(b) gates (the
+bit-shift alone cannot pass it). (2) A delegated fire makes
+`ActionDef.object_class` an ANCESTOR of the instance's class —
+invocation validity must check `object_class is_ancestor_of
+instance.class`, not equality, or every inherited fire is rejected.
+Effects land as `CausalEdge64`
 batons; lifecycle = `ActionState` on `ActionInvocation`; domain workflow
 = guarded `on_enter` effect at the `Pending→Committed` crossing.
 
@@ -195,18 +234,31 @@ ground-truth / dispatch-to-store — five register reads of one frozen
 key; write-once; drift repair = new immutable Lance version.
 
 **Open falsification (the architecture's make-or-break):** does
-supervisor routing reproduce Odoo `_inherit` MRO (C3 linearization)
-across mixin diamonds? `[H]` — gate F1 below. Named failure mode: if C3
-order matters where parent-first routing differs, the fix is
-`Class.mixins` **ordering** doing C3, not the supervisor.
+delegation routing reproduce Odoo `_inherit` resolution? `[H]` — gate F1.
+Two grounded sharpenings (5+3 pass): **(1) Odoo is NOT naive C3 over the
+source hierarchy** — `_build_model` assembles bases in `LastOrderedSet`
+declaration/install order, then Python's C3 runs over THAT tuple; F1 must
+replicate the assembly, not assume source-order C3. **(2) The fixture
+needs a diamond**: D(B,C), B(A), C(A), method on A and C only — C3 order
+`[D,B,C,A]` picks **C**; naive parent-first `[D,B,A,C]` picks **A**. A
+single-chain `mail.thread` test cannot falsify. Named failure mode: if
+the orders diverge, the fix is `Class.mixins` **ordering** carrying the
+linearization — not the delegation walk itself.
 
 ---
 
-## 4. Content — strings become as cheap as CAM-PQ (the tier cascade)
+## 4. Content — strings become as cheap as CAM-PQ (the tier ROUTING table)
 
-The SoA row never carries a string; it carries a **ref + tier byte**
-(12 B fixed): `{class_id:u16, field_id:u16, tier:u8, value_ref:u64}`.
-Resolution happens only at the display edge (`render_rows`, O(window)).
+**Framing correction (5+3 pass): T0–T5 are routing buckets by value
+POPULATION, not fidelity tiers of one object.** A T4 dict entry is not a
+lossy T5; there is no early-exit certificate. The codec cascade
+(Full→…→Scent) downsamples the SAME object; this table PARTITIONS the
+value space — related in spirit, different in mechanism. The SoA row
+never carries a string; it carries a **ref-cell**
+`{class_id:u16, field_id:u16, tier:u8, value_ref:u64}` — **13 B packed /
+16 B `repr(C)`** (state the layout attribute explicitly; "12 B" was an
+arithmetic error caught by the pass). Resolution happens only at the
+display edge (`render_rows`, O(window)).
 
 | Tier | Stores | Ref | Backend | Status |
 |---|---|---|---|---|
@@ -228,7 +280,9 @@ Iron rule throughout: **bundle identities, never content**
 ## 5. The phased dependency DAG (one merged sequence)
 
 ```
-                      ┌── Q1 quasicryth vs D-MONOTILE (leaf, read-only) ──→ feeds O6
+                      ┌── Q1 quasicryth vs D-MONOTILE (leaf; the crate self-identifies as the
+                      │     Quasicryth transcode, arXiv 2603.14999 — substitution hierarchy +
+                      │     deep-position, purpose-built for F2) ──→ feeds O6
 THEORY                ├── Q2 spectral anti-moiré (jc P3 + hpc::fft)  [per rt]
                       └── Q3 helix fidelity ≥0.9980 (TD-HELIX-OVERLAP-1)  [per rt]
 
@@ -244,12 +298,17 @@ IDENTITY   A NodeGuid ✅(#480) ──→ B SchemaSig→ClassView live ─┐
                                                             F MetadataStore string→identity
                         H SurrealQL read glove ─ BLOCKED(C) fork coords (only blocked phase)
 
-OGAR       O1 Class traversal API (leaf, ~50 LOC) ──→ O3 ogar-python (Odoo)
-                                              └────→ O4 ruby producer decision
+OGAR       O1 Class traversal API (leaf, ~50 LOC) ──→ O2's non-owning post-pass
+              (G-pass: the real dependent — producers BUILD, consumers NAVIGATE;
+              O3/O4 benefit from O1 but are not gated by it)
            O2 parse walk completion (EnumDecl lift · DEFINE EVENT→ActionDef · non-owning post-pass)
+           O3 ogar-python (Odoo) · O4 ruby producer decision (build vs reuse nexgen ruff)
            O5 content_tier + ContentResolver (needs T-backends: all exist)
            O6 ADR-026 draft (ready bucket; enriched by Q1's verdict)
-           O7 String→Identity lift (pairs with Phase B mint)
+           O7 String→Identity lift — ★PROMOTED TO CRITICAL PATH: shipped parent is
+              Option<String> (lib.rs:95); until O7, the IR carries no typed edge —
+              routing would lean on mint-side name resolution (Phase B); land O7
+              or name that coupling explicitly
 
 DO-AXIS    R1 verify state_machine + Rubicon binding (other session has the ball)
            R2 ActionDef → state_machine lowering codegen (needs R1)
@@ -262,17 +321,33 @@ RECONV     X1 rename thinking_engine::CausalEdge64 → CascadeEvent64 (feature-g
  debt)     X4 HEEL/HIP/TWIG/LEAF route-by-prefix (closes q4 audit + D-BGZ17 §4.1 gap)
            X5 TD-UNBUNDLE-FROM-1 raw-sum+count fix
            X6 TD-ARIGRAPH-EPISODIC-FIDELITY-1 (Option B = W-slot convergence, D-CSV-6/7)
+           X7 FieldMask widening — multi-word / paged presence (the >64-field
+              BLOCKER, L0b; gates F14 and real Odoo THINK rendering)
 
 HYGIENE    H1 SYN §3 co-revert on OGAR #47 (D-EXCITON mirror — outstanding)
-           H2 DISCOVERY-MAP folds: D-IDENTITY-PIN [G] · §4.1 supervisor-edge promotion ·
-              D-META64 rename cross-note · this map's cross-link
+           H2 DISCOVERY-MAP folds: D-IDENTITY-PIN [G] · §4.1 wording → delegation-on-
+              supervision-topology (5+3 lineage fix) · D-META64 split note (separate
+              columns [G]; bit-budget reconciliation still [H]) · D-DELTA rewording
+              (recency stamp, not delta — enumerate ALL its sites in the map, 4+) ·
+              D-MONOTILE promotion-condition tightening (Walker-addressable leg
+              required; a 5+3 pass alone does not promote — mirror of F2) ·
+              birth D-DELEG-INHERIT (né D-OTP-INHERIT) · this map's cross-link
            H3 lance-graph board prepends #477-480 (CLAUDE.md mandate; formally incomplete until done)
            H4 merge order: #47 before #48 (SYN links)
 ```
 
-**Critical path to the falsification that matters:**
-`C → D → (R1 → R2) → R3`. Everything else is parallel or feeds ADR-026.
-**Leaf bricks available today:** Q1, O1, C, X1, H1–H4.
+**Critical path to the falsification that matters (G-pass corrected):**
+`(C → D)` ∥ `((R1 ∥ O7 ∥ B) → R2)` → **R3**. Two fixes over v1.1: **B
+(the registry mint) joins the path** — O7 types OGAR's edge, but B is
+what makes the lance-side GUID prefix agree (S1); without B, R2's
+routing and the instance GUIDs can disagree silently. And **R1 is a
+parallel read, not downstream of O7**. Coordination risk: R1/R2 are the
+only critical-path items owned by no present session (§7). Everything
+else is parallel or feeds ADR-026. (Upstream nit, keeper-found: the
+identity plan's prose path `A→(B,C)→D` conflicts with its own Phase-D
+dep row `A, C` — this map follows the dep rows; B gates F, S1, and now
+R2 — not D.)
+**Leaf bricks available today:** Q1, O1, C, X1, X7-spec, H1–H4.
 
 ---
 
@@ -280,8 +355,8 @@ HYGIENE    H1 SYN §3 co-revert on OGAR #47 (D-EXCITON mirror — outstanding)
 
 | # | Gate | Test | Promotes / falsifies |
 |---|---|---|---|
-| F1 | **MRO/supervision equivalence** | `account.move` fixture: parent=`mail.thread`; send `message_post` (must escalate up the edge and fire there) + `action_post` (must fire locally; `on_enter` writes `state→posted`; `results_in` lands as a baton) | D‑OTP‑INHERIT `[H]→[G]` or names the C3-ordering fix |
-| F2 | **Monotile addressability** | read `quasicryth-research/{tiling,hierarchy}.rs` + run `tests/paper_theorems.rs`; 5+3 pass vs the Kaplan/Walker/Richter ladder | D‑MONOTILE cascade-addressability `[H]→[G]` or concrete failure shape |
+| F1 | **Delegation ≡ Odoo `_inherit`** | fixture MUST include **(a)** the single chain (`mail.thread`→`account.move`: `message_post` escalates and fires on the parent; `action_post` fires locally, `on_enter` writes `state→posted`, `results_in` lands as a baton) **AND (b) a diamond** D(B,C),B(A),C(A) with the method on A and C — C3-over-`LastOrderedSet` picks C, naive parent-first picks A; replicate Odoo's declaration-order base assembly, not source-order C3 | D‑DELEG‑INHERIT (né D‑OTP‑INHERIT — lineage corrected) `[H]→[G]`, or names the mixins-ordering fix |
+| F2 | **Monotile addressability** | read `quasicryth-research/{tiling,hierarchy}.rs` + run `tests/paper_theorems.rs` (crate self-identifies, lib.rs:1-42, as the Quasicryth transcode, arXiv 2603.14999 — substitution hierarchy + deep-position, purpose-described for exactly this); cross-examine vs Kaplan/Walker/Richter | promotes `[H]→[G]` **only if the substitution hierarchy is shown generalized-Morton/Hilbert-addressable (the Walker leg) AND the crate's tiling is the hat / hat-equivalent class (or the addressing provably generalizes)** — otherwise the pass is vacuous for D‑MONOTILE (G-pass bridge condition); a 5+3 pass alone does NOT promote; failure = a concrete shape |
 | F3 | **Spectral anti-moiré** | jc P3 (φ-Weyl) + `hpc::fft`: golden-tile spectrum pre/post quantization vs Base17 | D‑MOIRE/D‑MANTISSA `[H]→[G]` or falsified; D‑QUANTGATE contrast demo |
 | F4 | **Eineindeutigkeit** | registry mint uniqueness + build-time `(entity_type ↔ NiblePath)` round-trip (Phase B); GUID prefix-consistency already green (Phase A) | S1 `[H] mint → [G]` |
 | F5 | **Round-trip integrity** | `roundtrip_eq` over the identity graph; corrupt-pack must FAIL; NARS `(f,c)` within 1/1023 (Phase D DoD) | S8 path trustworthy |
@@ -289,6 +364,16 @@ HYGIENE    H1 SYN §3 co-revert on OGAR #47 (D-EXCITON mirror — outstanding)
 | F7 | **Content cascade round-trip** | build row → ref in SoA → `render_rows` → decode across T0–T5 → byte-equal | O5 ships or tier table revises |
 | F8 | **Helix fidelity** | naive-u8 floor ≥0.9980 Pearson vs ground truth (CONJECTURE — NOT RUN) | helix graduates clean-room |
 | F9 | **kv-lance resolution** | fork PR bumps the three `=6.0.0` pins → workspace `=7.0.0` resolves | unblocks the Surreal storage leg (and de-risks N8) |
+| F10 | **Probe-free depth law** | jc P5 (Jirak) + `hpc::cascade`/`reductions`: `r* = ⌈log₄(C/τ)⌉`, inclusive ≤τ acceptance | D‑RSTAR / D‑PROBEFREE `[H]→[G]` (ADR‑025 demonstrated) |
+| F11 | **Palette/CAM fidelity floor** | jc P10 (Pflug) + `hpc::quantized`/`fingerprint`: re-measure the ρ anchors | ρ ≥ 0.99 against 0.9973 (HIP) / 0.965 (TWIG) — D‑PAL256/D‑CAM/D‑RHO stop being *cited*, become *re-measured* |
+| F12 | **θ conditioning window** | jc P5b (Pearl 2³) + `hpc::quantized` θ-sweep | θ ∈ [1.45, 1.6] with ρ envelope [0.93..0.9973] — D‑THETA/D‑RHOENV `[H]→[G]` |
+| F13 | **Backend parity** | `hpc::simd_dispatch` W1c: AVX‑512 vs NEON vs scalar | identical within **1 ULP** — the correctness floor under every gate above |
+| F14 | **Wide-model render** | render `account.move` through `ClassView` with full presence (**>64 is the load-bearing bound; 109 declarations counted** in account_move.py, Odoo 17) | **gated: cannot RUN until Phase B** wires the field-enum into `RegistryClassView`; once runnable, fails by construction (FieldMask u64, L0b) until presence exceeds u64 — **Track X7 is the named path** |
+
+(F3 already carries the D‑QUANTGATE pre/post-quantization contrast.
+F10–F13 restore the DISCOVERY-MAP §4.2 jc×hpc floor that v1.0 omitted —
+the doctrine-keeper's reverse-miss finding: v1.0 gated the identity arc
+but left the codec/no-collapse chain ungated.)
 
 **Discipline** (the lance-graph probe rule, adopted): *if the relevant
 probe is NOT RUN, the next deliverable is the probe, not more synthesis.*
@@ -305,11 +390,14 @@ probe is NOT RUN, the next deliverable is the probe, not more synthesis.*
 | F9 (kv-lance pins) | **surrealdb fork session** | one Cargo.toml PR |
 | N8 / fork-coords, ADR-026 go, O4 build-vs-reuse | **operator decisions** | the only human gates |
 
-**Not read first-hand yet (honest fence):** `quasicryth-research/*`
-contents; `ractor_actors::state_machine` internals; #480's `mul.rs` /
-`recipes.rs` / `savants.rs` bodies (diffstat only); nexgen's
-`INTEGRATION_PLAN.md` (other session read it). Nothing in this map
-*depends* on their contents; F2/R1 read them before any regrade.
+**Not read first-hand yet (honest fence):** `quasicryth-research` beyond
+its crate-doc (lib.rs:1-42 now read; the F2 deep-read of
+tiling/hierarchy/tests is still owed); `ractor_actors::state_machine`
+internals; #480's `mul.rs` / `recipes.rs` / `savants.rs` bodies (diffstat
+only); nexgen's `INTEGRATION_PLAN.md` (other session read it); AriGraph
+eq.1's exact formula (PDF fetch 403 — carried `[per lance-graph TD]`).
+Nothing in this map *depends* on their contents; F2/R1 read them before
+any regrade.
 
 ---
 
@@ -319,10 +407,10 @@ contents; `ractor_actors::state_machine` internals; #480's `mul.rs` /
 |---|---|---|
 | TD‑SURREALDB‑KVLANCE‑LANCE7 | S2/S4/N8 | kv-lance can't resolve against the workspace until pins move |
 | TD‑UNBUNDLE‑FROM‑1 | runtime gestalt | silent ~1 bit/epoch corruption under the same SoA this map lands on |
-| TD‑ARIGRAPH‑EPISODIC‑FIDELITY‑1 | §0 endgame | episodic retrieval currently the RAG baseline, not eq.1 structural — the THINK memory the DO axis consults |
+| TD‑ARIGRAPH‑EPISODIC‑FIDELITY‑1 | §0 endgame | episodic retrieval currently the RAG baseline, not eq.1 structural — the THINK memory the DO axis consults (eq.1 cited per that TD entry; not re-verified first-hand, PDF 403) |
 | TD‑RESONANCEDTO‑DUP‑1 | X3 | stranded DTO vs column doctrine |
 | TD‑HELIX‑OVERLAP‑1 | Q3/F8 | fidelity probe owed before promotion |
-| TD‑WIKI‑SCALE | S1/identity | `StructuralSignature` u32 birthday (~77k) + NiblePath depth-16 ceiling — both bite at load scale; widen/escape paths named |
+| TD‑WIKI‑SCALE | S1/identity | `StructuralSignature` u32 birthday (~77k) + NiblePath depth-16 ceiling — both bite at load scale; widen/escape paths named (home: lance-graph `TECH_DEBT.md`; joined by this map's L0b ceilings) |
 | TYPE_DUPLICATION §13 (CausalEdge64 ×2) | X1/X2 | same name, two semantics — rename + byte contract |
 
 ---
@@ -332,8 +420,12 @@ contents; `ractor_actors::state_machine` internals; #480's `mul.rs` /
 1. **N8 fork coords** — BLOCKED(C), human gate (lance-graph P0 "STOP and ask").
 2. **ADR-026 go** — ready bucket complete; recommend after F2 (Q1) so the monotile verdict pins with it.
 3. **O4** — build `ogar-from-ruby` vs reuse nexgen's ruff path (recommend: reuse; it's CODED and on the same spine).
-4. **S11 first consumer** — `RouteBucketTyped` needs one genuine non-Odoo impl or it's YAGNI (candidate: Wikidata-HHTL or the OP target).
+4. **S11 status** — `RouteBucketTyped` did NOT land on main (`62bca5e`); confirm with its session whether superseded or dropped before any consumer planning.
 5. **#47 → #48 merge order** — operator action; H1 must land on #47 first.
+6. **shape_hash use-invariant** — PIN "same-class temporal comparison only, never cross-class"; then the 2⁻²² per-change residual is acceptable as-is. Widening becomes live only if a cross-class use is ever proposed (L0b, G-pass risk-model correction).
+7. **`local` minting scope + escape** — first PIN the scope (currently unspecified), then pick prefix-shard / widen / per-tenant ns, before multi-year tenancy (L0b, G-pass).
+8. **X7 FieldMask widening design** — multi-word vs paged presence; gates F14 and real Odoo THINK rendering (L0b BLOCKER).
+9. **NiblePath flavor check** — OGAR contract §1 "27-bit segments" vs lance hhtl.rs 4-bit nibbles ×16: same structure, stale doc, or two-types-one-name? Resolve before the Phase B mint (G-pass, S1).
 
 ---
 
