@@ -89,6 +89,26 @@ StructuralSignature — Phase B's shelf), trained once, amortized over
 all instances (D-AMORT). Finer scopes (a HEEL-subtree codebook) follow
 the same longest-prefix-wins rule — one rule, every level.
 
+## Perturbation encoding — DETERMINISTIC PHASE (operator, 2026-06-10)
+
+The stacked-pyramid perturbation decomposes as **(exponent, location,
+phase, magnitude)** — and three of the four are already in the key:
+exponent = the pyramid level (tier nibbles, `>>2`); location = the
+implied sub-tile mantissa (√u / golden sub-placement, never stored);
+**phase = deterministic recurrence from the address** (never stored —
+phase is convention, not data); **magnitude = the ONLY stored bits**
+(palette-quantized envelope, coarser granularity than the phase
+varies). Cost scales with magnitude smoothness, not perturbation
+bandwidth. Fences: (a) lossless FOR SYNTHESIS by construction; for
+analysis, the unaligned remainder overflows to the next level or
+full-residual escalation, decided by the quorum certificate — never
+assumed; (b) **D-QUANTGATE**: in quantized layers the phase generator
+must be the coprime-integer walk (helix `CurveRuler` stride-4-over-17,
+bit-exact integer), golden recurrence only as build-time muscle-memory;
+the deterministic phase doubles as the anti-moiré dither. Receipts:
+helix = the shipped place/residue split (PLACE deterministic, RESIDUE
+stored). Full treatment: ndarray `guid-prefix-shape-routing.md` §4.
+
 ## Standing watch — 3×4 vs 4×3 (operator mandate, 2026-06-10)
 
 **"Correct me at any time":** if evidence ever shows 3 tiers × 4 nibbles
