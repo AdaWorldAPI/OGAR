@@ -77,6 +77,18 @@ spatial mipmap and semantic centroid cascade are ONE address; domains
 bind the axes (OSM: literal x/y; semantic: PQ subspace pairs); the
 algebra is identical and domain-agnostic.
 
+**Codebook scoping = the class routing prefix** (operator, 2026-06-10):
+the classid group sits in front of the path bytes, so the centroid
+codebooks are **selected by the key's own prefix** — longest-prefix
+binding, a radix lookup on the key being resolved. Every class gets its
+own 256⁶ ≈ 2.8×10¹⁴-cell semantic space for free (capacity through
+hierarchy, never widening); the axis binding (x/y vs PQ pairs) is a
+class-record property resolved by the same `resolve` read; codebooks
+mint with the class in the registry (next to ClassView /
+StructuralSignature — Phase B's shelf), trained once, amortized over
+all instances (D-AMORT). Finer scopes (a HEEL-subtree codebook) follow
+the same longest-prefix-wins rule — one rule, every level.
+
 ## Standing watch — 3×4 vs 4×3 (operator mandate, 2026-06-10)
 
 **"Correct me at any time":** if evidence ever shows 3 tiers × 4 nibbles
