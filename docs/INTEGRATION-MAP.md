@@ -5,10 +5,11 @@
 > F10–F14, Track O7 promoted — **plus the G-pass logic audit** (B joined
 > the critical path, diamond ≠ prefix-tree, shape_hash risk-model fixed,
 > F2 bridge condition, F14 run-gate) — **plus the canon-pass (operator,
-> 2026‑06‑10): the pinned u32 address `[classid:8|HEEL:4|HIP:4|TWIG:4|
-> basin:6|id:6]` restored as the L0 apex — widths are codebook
-> cardinalities, hierarchy is the overflow, wrappers are audited against
-> the canon and never the reverse**). Companion to `DISCOVERY-MAP.md` —
+> 2026‑06‑10): the pinned canonical is HEX-counted — it IS the GUID,
+> whose `8-4-4-4-12` dash-groups carry the semantics
+> `classid-HEEL-HIP-TWIG-[basin6+id6]` (32 hex = 128 bit); hierarchy is
+> the overflow; wrappers are audited against the canon group-by-group
+> and never the reverse**). Companion to `DISCOVERY-MAP.md` —
 > the discovery map indexes *what was found*; **this maps *how it
 > composes*: layers, seams, phases, gates.** Implementation follows this
 > map; the map precedes the code (the "document before it dilutes"
@@ -45,13 +46,17 @@ THINK arm     Class { attributes, associations (4× AR kinds), enums, scopes, mi
 DO arm        ActionDef (separate SPO node, object_class → Class) + ActionInvocation (state: ActionState)
 MEMBRANE      KausalSpec { StateGuard | LifecycleTrigger | Depends{paths} }  ← the only place domain
               workflow survives IR flattening (OGAR-AST-CONTRACT §3)
-IDENTITY      THE CANONICAL u32 (operator-pinned): [classid:8 | HEEL:4 | HIP:4 | TWIG:4 |
-              family-basin-leaf:6 | identity:6] — one register; the cascade tiers ARE the
-              address nibbles; every width = an existing codebook cardinality
-              (8→palette-256/OGIT family byte · 4+4+4 = 16³ = 4096 tiles · 6+6 = 64×64 =
-              the 4096 surface); scale = the next cascade level, never field-widening.
-              NodeGuid (128-bit UUIDv8, #480) = the lance-graph WRAPPER — must embed/derive
-              the canonical u32 (it fits octets 0–3 exactly; Phase B audits the embedding)
+IDENTITY      THE CANONICAL GUID (operator-pinned; counted in HEX DIGITS, 32 hex = 128 bit):
+                xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+                classid    HEEL  HIP   TWIG  family-basin-leaf(6)+identity(6)
+                8 hex      4     4     4     12 hex
+              The UUID's own dash-groups ARE the semantic delimiters — every printed GUID
+              is self-describing at sight. The cascade tiers are literal hex groups; the
+              path nibbles ARE the tree (FAN_OUT=16, 4-bit nibble = 1 hex digit).
+              Shipped-code agreement: group1 (8 hex = 32b) = SchemaPtr.packed u32 ·
+              group2 = PREFIX_NIBBLES=4 · the 6+6 tail = EdgeRef-24b / LOCAL_BITS=24.
+              NodeGuid (#480) = the lance-graph carving of this GUID — Phase B audits it
+              GROUP BY GROUP against the canon (see L0 apex row for the one collision).
                               ╚═════════════════════════════════════════════════════════════╝
 ADAPTERS      emit_surrealql_ddl [G] · ogar-adapter-ttl [G] · ogar-adapter-clickhouse-ddl [G]
               · ogar-knowable-from (vart-backend) [G] · parse_surrealql_ddl walk [H scaffold]
@@ -79,10 +84,10 @@ enter the SoA (§4).
 
 | Piece | Where | Status |
 |---|---|---|
-| **THE CANONICAL ADDRESS** `u32 = [classid:8 \| HEEL:4 \| HIP:4 \| TWIG:4 \| family‑basin‑leaf:6 \| identity:6]` — cascade tiers are literal address nibbles; widths ARE codebook cardinalities (256 · 16³=4096 · 64×64=4096); bounded by design, hierarchy is the overflow | substrate canon (operator-pinned, 2026‑06‑10) | **CANONICAL** — everything below implements or WRAPS it; wrappers are audited against IT, never the reverse |
+| **THE CANONICAL ADDRESS — counted in HEX, it IS the GUID**: `classid(8 hex)‑HEEL(4)‑HIP(4)‑TWIG(4)‑[family‑basin‑leaf(6)+identity(6)]` = the UUID text format's own `8‑4‑4‑4‑12` dash-groups carrying the semantics. 32 hex = 128 bit. Path nibbles = the 16-ary tree (1 hex = 1 level); 12 path nibbles across HEEL/HIP/TWIG + leaf addressing inside the basin group ≈ hhtl.rs MAX_DEPTH=16. Shipped agreement: group1 = `SchemaPtr.packed` u32 (exact) · group2 = `PREFIX_NIBBLES=4` (exact) · tail 6+6 = `EdgeRef` 24 b / `LOCAL_BITS=24` (exact). **One real collision for the Phase B audit:** RFC 9562 pins the version nibble at group3's first hex and the variant bits at group4's first hex — i.e. INSIDE the HIP and TWIG groups; the canon must either accept those stolen nibbles (HIP=3 free hex, TWIG≈3.5) or waive strict RFC form — operator call, nothing else moves | substrate canon (operator-pinned, 2026‑06‑10) | **CANONICAL** — everything below implements or WRAPS it; wrappers are audited against IT, never the reverse |
 | `Identity` (NiblePath segments, class-side; 27‑bit segs, dict-encoded) | OGAR `ogar-ontology` (#31), `OGAR-AST-CONTRACT.md §1` | **[G] CODED** — the "27‑bit segments" doc note reconciles TO the canonical (§9.9) |
 | `NiblePath{path:u64,depth:u8}`, `FAN_OUT=16`, `MAX_DEPTH=16`, `parent()`, `child()`, `is_ancestor_of` (prefix shift), LCA | lance-graph `contract/src/hhtl.rs` | **[G] CODED** `[per rt]` |
-| `NodeGuid([u8;16])` UUIDv8 — octets: ns(1)·entity_type(2)·kind(1)·niblepath_prefix(2)·ver/depth(1)·shape_hash(22b)·local(24b)·layout_version(1)·spare(2) | lance-graph `contract/src/identity.rs:66-121` (#480, Phase A, 599 tests) | **[G] CODED — WRAPPER**: must embed/derive the canonical u32 (which fits octets 0–3 exactly); whether #480's field carving does so is the **Phase B embedding audit** |
+| `NodeGuid([u8;16])` UUIDv8 — octets: ns(1)·entity_type(2)·kind(1)·niblepath_prefix(2)·ver/depth(1)·shape_hash(22b)·local(24b)·layout_version(1)·spare(2) | lance-graph `contract/src/identity.rs:66-121` (#480, Phase A, 599 tests) | **[G] CODED — a CARVING of the canonical GUID**, group-by-group: groups 1–2 and the 24-bit local MATCH the canon exactly; groups 3–4 (canon: HIP/TWIG path nibbles) currently hold ver/depth + shape_hash + variant instead — **the Phase B audit question is whether shape_hash/layout_version yield those groups back to path nibbles or the canon accepts the RFC-carved variant** |
 | The five register-reads of one GUID: **resolve** (entity_type→ClassView) / **route** (niblepath prefix `is_ancestor_of`) / **witness** (frozen bytes + merkle) / **ground‑truth** (shape_hash drift) / **dispatch‑to‑store** (`as_bytes()`→EntityKey) | `identity.rs:31-37` | **[G] CODED** |
 | Bijection law: `entity_type:u16` canonical/exact; `NiblePath` the derived view; GUID prefix = 4‑nibble routing cache; **registry mints `(entity_type, NiblePath)` unique pairs** | `identity-architecture-exists-vs-needs-v1.md` (ratified 2026‑06‑09) | **[G] law / [H] mint** — mint + build-time round-trip = lance-graph **Phase B** |
 | `SchemaPtr.packed:u32=[ns:8\|entity_type:16\|kind:8]`, `ClassId=u16` ("never a content hash"), `EntityTypeId=u16`, `EdgeRef{family:u8,local:u16}`, `StructuralSignature` | namespace.rs:119 · class_view.rs:53 · ontology.rs:81 · episodic_edges.rs:34 · odoo_blueprint | **[G] CODED** (StructuralSignature: [G] type / [H] live-wire → Phase B) |
@@ -347,10 +352,10 @@ HYGIENE    H1 SYN §3 co-revert on OGAR #47 (D-EXCITON mirror — outstanding)
               (recency stamp, not delta — enumerate ALL its sites in the map, 4+) ·
               D-MONOTILE promotion-condition tightening (Walker-addressable leg
               required; a 5+3 pass alone does not promote — mirror of F2) ·
-              birth D-DELEG-INHERIT (né D-OTP-INHERIT) · birth D-CANON32 (the
-              operator-pinned u32 address [classid:8|HEEL:4|HIP:4|TWIG:4|basin:6|id:6];
-              widths = codebook cardinalities; hierarchy = the overflow) ·
-              this map's cross-link
+              birth D-DELEG-INHERIT (né D-OTP-INHERIT) · birth D-CANON-GUID (the
+              operator-pinned canonical: HEX-counted, the GUID's own 8-4-4-4-12
+              dash-groups = classid-HEEL-HIP-TWIG-[basin6+id6]; 32 hex = 128 bit;
+              hierarchy = the overflow) · this map's cross-link
            H3 lance-graph board prepends #477-480 (CLAUDE.md mandate; formally incomplete until done)
            H4 merge order: #47 before #48 (SYN links)
 ```
@@ -444,7 +449,7 @@ any regrade.
 6. *(wrapper-field policy, not canon)* **shape_hash use-invariant** — PIN "same-class temporal comparison only, never cross-class"; then the 2⁻²² per-change residual is acceptable as-is (L0b, G-pass risk-model correction).
 7. *(wrapper-field policy, not canon)* **`local` minting scope** — PIN the scope (currently unspecified); the canonical overflow is hierarchical (next cascade level), wrapper-side widening is a lance-graph implementation choice (L0b).
 8. **X7 / F14 resolution shape** — canonical answer = page via the hierarchy (wide class = basin of field-pages); multi-word mask = wrapper option. Pick which lands (L0b BLOCKER, 109 fields measured).
-9. **Reconcile the doc note to the canon** — OGAR-AST-CONTRACT §1's "27-bit segments" wording vs the pinned canonical u32 (lance hhtl nibbles already agree). Fix the NOTE; the canon stands. Phase B also audits NodeGuid's embedding of the canonical u32 in octets 0–3 (canon-pass; supersedes the earlier "two-structures" framing, which was wrongly canon-agnostic).
+9. **Reconcile the doc note to the canon** — OGAR-AST-CONTRACT §1's "27-bit segments" wording vs the pinned canonical GUID (lance hhtl nibbles already agree: 1 hex = 1 level). Fix the NOTE; the canon stands. Phase B audits NodeGuid against the canon **group-by-group** (groups 1–2 + the 24-bit local already match exactly; groups 3–4 are the open carving question — the RFC version/variant nibble collision, L0 apex row). Supersedes both the earlier "two-structures" framing AND the first canon-pass "u32" misread — the canonical counts HEX, and it IS the GUID.
 
 ---
 
