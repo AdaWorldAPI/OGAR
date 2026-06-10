@@ -109,6 +109,38 @@ the deterministic phase doubles as the anti-moiré dither. Receipts:
 helix = the shipped place/residue split (PLACE deterministic, RESIDUE
 stored). Full treatment: ndarray `guid-prefix-shape-routing.md` §4.
 
+## Bipolar-phase pyramid — Walsh-Hadamard on VSA (operator, 2026-06-10)
+
+When the deterministic phase is **signed** (±1, one bit per address×level),
+the perturbation pyramid becomes the Walsh-Hadamard transform of the
+address tree, carried on the workspace's existing VSA-bipolar algebra:
+- **Sign composition across levels = XOR = `vsa_bind`** (multiply of ±1 = XOR of sign bits; one SIMD shift+xor).
+- **Magnitude bundling = `vsa_bundle`** (sum-and-threshold; Markov-respecting per `I-SUBSTRATE-MARKOV`).
+- **Each cell = ⊕_L sign(addr, L) ·_VSA M(addr, L)** — a resonance field, not combinatorial selection; Parseval gives "top gaussian preserved" level-to-level.
+
+**Quantum-shaped, fully deterministic:** superposition (cells hold many
+bundled contributions; unbind with a role key to extract one),
+Heisenberg-shaped capacity bound (`I-VSA-IDENTITIES` Test 1: N ≤ √d/4 ≈ 32
+distinct readouts; this IS the uncertainty principle for the substrate),
+roundtrip bit-exact (phase generated, not stored — same address ⟹ same
+sign sequence forever; Walsh-Hadamard is self-inverse up to scale).
+The "Schrödinger's cat" is in a glass box: superposition is real,
+identity recoverable by key, no measurement randomness.
+
+**D-MANTISSA finishes in coprime form:** the bipolar phase IS the implied
+mantissa as 1 sign-bit/level; the CurveRuler stride-4-over-17 walk
+(integer, bit-exact, coprime ⟹ full permutation) is the generator —
+**D-QUANTGATE-compliant by construction**.
+
+**The TWO-ALGEBRA rule (load-bearing):** **sign side = XOR**
+(write-back I1 allows it for single-target deltas), **magnitude side =
+`vsa_bundle` NEVER `MergeMode::Xor`** (raw-XOR-on-magnitudes breaks the
+Markov semigroup, `I-SUBSTRATE-MARKOV`). Two operators, two algebras,
+one pyramid. Fences: "quantum-like" is the bundling algebra, NOT
+measurement randomness (no headline drift); bipolar = 1-bit phase;
+multi-bit phases stack above it only when measured to be needed. Full
+treatment + probes in ndarray `guid-prefix-shape-routing.md` §4b.
+
 ## Standing watch — 3×4 vs 4×3 (operator mandate, 2026-06-10)
 
 **"Correct me at any time":** if evidence ever shows 3 tiers × 4 nibbles
