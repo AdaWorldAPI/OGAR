@@ -168,7 +168,12 @@ alignment costs. Until measured: 3×4 stands.
    `[G]`/`[H]`/`[S]`, append-only).
 2. `docs/INTEGRATION-MAP.md` — layers, seams (each with its contract
    TYPE), the phase DAG, falsification gates F1–F14.
-3. `docs/OGAR-AST-CONTRACT.md` — the IR type surface (THINK arm `Class`
+3. `docs/INTEGRATION-TEST-PLAN.md` — the probe-first execution
+   companion: wave-ordered probes (Wave 0 runs entirely against
+   shipped code), the three falsification joints J1–J3 with explicit
+   KILL conditions, and the operating rule that no integration brick
+   lands before its probe is green.
+4. `docs/OGAR-AST-CONTRACT.md` — the IR type surface (THINK arm `Class`
    / DO arm `ActionDef`+`ActionInvocation` / membrane `KausalSpec`).
 4. `docs/ARCHITECTURAL-DECISIONS-2026-06-04.md` — ADR-001..025
    (ADR-026 pending).
