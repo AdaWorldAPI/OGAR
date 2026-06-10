@@ -1,11 +1,14 @@
 # INTEGRATION MAP — how the substrate composes across repos
 
 > **Status: LIVING MAP v1.1** (2026‑06‑09; v1.1 = hardened by the 5+3
-> savant pass — capacity ceilings L0b, delegation lineage corrected, gates
-> F10–F14, Track O7 promoted — **plus the G-pass logic audit**: B joined
-> the critical path, diamond ≠ prefix-tree named, shape_hash risk-model
-> corrected, F2 bridge condition, F14 run-gate, NiblePath flavor check).
-> Companion to `DISCOVERY-MAP.md` —
+> savant pass — capacity table L0b, delegation lineage corrected, gates
+> F10–F14, Track O7 promoted — **plus the G-pass logic audit** (B joined
+> the critical path, diamond ≠ prefix-tree, shape_hash risk-model fixed,
+> F2 bridge condition, F14 run-gate) — **plus the canon-pass (operator,
+> 2026‑06‑10): the pinned u32 address `[classid:8|HEEL:4|HIP:4|TWIG:4|
+> basin:6|id:6]` restored as the L0 apex — widths are codebook
+> cardinalities, hierarchy is the overflow, wrappers are audited against
+> the canon and never the reverse**). Companion to `DISCOVERY-MAP.md` —
 > the discovery map indexes *what was found*; **this maps *how it
 > composes*: layers, seams, phases, gates.** Implementation follows this
 > map; the map precedes the code (the "document before it dilutes"
@@ -42,8 +45,13 @@ THINK arm     Class { attributes, associations (4× AR kinds), enums, scopes, mi
 DO arm        ActionDef (separate SPO node, object_class → Class) + ActionInvocation (state: ActionState)
 MEMBRANE      KausalSpec { StateGuard | LifecycleTrigger | Depends{paths} }  ← the only place domain
               workflow survives IR flattening (OGAR-AST-CONTRACT §3)
-IDENTITY      Identity (NiblePath, class-side)  ←─ registry mint (entity_type ↔ NiblePath, bijective) ─→
-              NodeGuid (128-bit UUIDv8, instance-side, lance-graph-contract::identity)  [G] #480
+IDENTITY      THE CANONICAL u32 (operator-pinned): [classid:8 | HEEL:4 | HIP:4 | TWIG:4 |
+              family-basin-leaf:6 | identity:6] — one register; the cascade tiers ARE the
+              address nibbles; every width = an existing codebook cardinality
+              (8→palette-256/OGIT family byte · 4+4+4 = 16³ = 4096 tiles · 6+6 = 64×64 =
+              the 4096 surface); scale = the next cascade level, never field-widening.
+              NodeGuid (128-bit UUIDv8, #480) = the lance-graph WRAPPER — must embed/derive
+              the canonical u32 (it fits octets 0–3 exactly; Phase B audits the embedding)
                               ╚═════════════════════════════════════════════════════════════╝
 ADAPTERS      emit_surrealql_ddl [G] · ogar-adapter-ttl [G] · ogar-adapter-clickhouse-ddl [G]
               · ogar-knowable-from (vart-backend) [G] · parse_surrealql_ddl walk [H scaffold]
@@ -71,23 +79,31 @@ enter the SoA (§4).
 
 | Piece | Where | Status |
 |---|---|---|
-| `Identity` (NiblePath segments, class-side; 27‑bit segs, dict-encoded) | OGAR `ogar-ontology` (#31), `OGAR-AST-CONTRACT.md §1` | **[G] CODED** |
+| **THE CANONICAL ADDRESS** `u32 = [classid:8 \| HEEL:4 \| HIP:4 \| TWIG:4 \| family‑basin‑leaf:6 \| identity:6]` — cascade tiers are literal address nibbles; widths ARE codebook cardinalities (256 · 16³=4096 · 64×64=4096); bounded by design, hierarchy is the overflow | substrate canon (operator-pinned, 2026‑06‑10) | **CANONICAL** — everything below implements or WRAPS it; wrappers are audited against IT, never the reverse |
+| `Identity` (NiblePath segments, class-side; 27‑bit segs, dict-encoded) | OGAR `ogar-ontology` (#31), `OGAR-AST-CONTRACT.md §1` | **[G] CODED** — the "27‑bit segments" doc note reconciles TO the canonical (§9.9) |
 | `NiblePath{path:u64,depth:u8}`, `FAN_OUT=16`, `MAX_DEPTH=16`, `parent()`, `child()`, `is_ancestor_of` (prefix shift), LCA | lance-graph `contract/src/hhtl.rs` | **[G] CODED** `[per rt]` |
-| `NodeGuid([u8;16])` UUIDv8 — octets: ns(1)·entity_type(2)·kind(1)·niblepath_prefix(2)·ver/depth(1)·shape_hash(22b)·local(24b)·layout_version(1)·spare(2) | lance-graph `contract/src/identity.rs:66-121` (#480, Phase A, 599 tests) | **[G] CODED** |
+| `NodeGuid([u8;16])` UUIDv8 — octets: ns(1)·entity_type(2)·kind(1)·niblepath_prefix(2)·ver/depth(1)·shape_hash(22b)·local(24b)·layout_version(1)·spare(2) | lance-graph `contract/src/identity.rs:66-121` (#480, Phase A, 599 tests) | **[G] CODED — WRAPPER**: must embed/derive the canonical u32 (which fits octets 0–3 exactly); whether #480's field carving does so is the **Phase B embedding audit** |
 | The five register-reads of one GUID: **resolve** (entity_type→ClassView) / **route** (niblepath prefix `is_ancestor_of`) / **witness** (frozen bytes + merkle) / **ground‑truth** (shape_hash drift) / **dispatch‑to‑store** (`as_bytes()`→EntityKey) | `identity.rs:31-37` | **[G] CODED** |
 | Bijection law: `entity_type:u16` canonical/exact; `NiblePath` the derived view; GUID prefix = 4‑nibble routing cache; **registry mints `(entity_type, NiblePath)` unique pairs** | `identity-architecture-exists-vs-needs-v1.md` (ratified 2026‑06‑09) | **[G] law / [H] mint** — mint + build-time round-trip = lance-graph **Phase B** |
 | `SchemaPtr.packed:u32=[ns:8\|entity_type:16\|kind:8]`, `ClassId=u16` ("never a content hash"), `EntityTypeId=u16`, `EdgeRef{family:u8,local:u16}`, `StructuralSignature` | namespace.rs:119 · class_view.rs:53 · ontology.rs:81 · episodic_edges.rs:34 · odoo_blueprint | **[G] CODED** (StructuralSignature: [G] type / [H] live-wire → Phase B) |
 | `class_id` **aliases** the `entity_type` slot on the SoA row — no new column | soa_view.rs:47 `[per xs]` | **[G] CODED** |
 | Cold-path identity TODAY: `node_id:u32` + String labels (MetadataStore), `u64` content `dn_hash` (SpoStore), `CogRecord` id-less | metadata.rs:60,86 · spo/store.rs:38 · cogrecord.rs:56 | **[G] CODED but the gap NodeGuid fills** → Phase F migration |
 
-### L0b — capacity ceilings (derived + theorem-checked, 2026‑06‑09; volume rows are estimates with stated assumptions)
+### L0b — bounded-by-design vocabularies + wrapper-field policies (canon-pass reframe)
+
+> **Canon-pass correction (operator, 2026‑06‑10):** bounded widths are the
+> DESIGN — the escape for scale is **the next cascade level**, never wider
+> integers. The rows below are **lance-graph WRAPPER field policies**
+> (they constrain #480's GUID carving, not the substrate canon) — except
+> the FieldMask row, which is an empirical finding with a canonical
+> answer. Volume rows are estimates with stated assumptions.
 
 | Field | Width | Ceiling | First-consumer impact | Escape |
 |---|---|---|---|---|
 | `entity_type` | u16 | 65,536 classes | Odoo ~3.1k ✓; SNOMED ~350k / planet-scale ✗ | TD‑WIKI‑SCALE family; widen at the registry mint when a >64k ontology lands |
 | `shape_hash` | 22 b | **G-pass risk-model correction:** comparisons are SAME-CLASS, temporal only (stored vs current hash of one class) — cross-class hashes are never compared (`entity_type` discriminates). Relevant miss = h(old)=h(new) per schema change ≈ 2⁻²² (~2.4e‑7), **negligible** | the birthday-over-all-classes figure (50% @ ~2,411) answered the wrong population | keep 22 b; PIN the use-invariant "never compare cross-class" — if that is ever violated, the birthday math applies and 22 b is too small (§9.6) |
 | `local` | 24 b | 16,777,216 per minting scope — **the scope itself is UNSPECIFIED** (global per (ns, entity_type)? per tenant? per prefix?) | IF global per (ns, entity_type): `account.move.line` exceeds in ~10 tenant-years (assumes ~1.7M lines/tenant-yr vs 2²⁴ ≈ 16.8M — an estimate, not a theorem) | §9.7 = first PIN the minting scope, THEN pick the escape (prefix-shard / widen / per-tenant ns) |
-| `FieldMask` | u64 | **64 fields**; positions ≥64 silently IGNORED (#441 N3, class_view.rs:76) | **BLOCKER: `account.move` carries 109 field declarations (counted first-hand, account_move.py Odoo 17 — auditor-measured) → THINK render silently drops 45+** | multi-word / paged presence — **Track X7 + gate F14** |
+| `FieldMask` | u64 | **64 fields**; positions ≥64 silently IGNORED (#441 N3, class_view.rs:76) | **BLOCKER: `account.move` carries 109 field declarations (counted first-hand, account_move.py Odoo 17 — auditor-measured) → THINK render silently drops 45+** | **canonical answer: page via the hierarchy** (a wide class = a basin of field-pages — the cascade IS the overflow mechanism); multi-word mask is merely a wrapper option — **Track X7 + gate F14** |
 | `niblepath_prefix` | 16 b / 4 nibbles | depth >4 → prefix-only routing | none — falls back to `entity_type` resolve (documented in identity.rs) | ✓ |
 
 ### L1 — The OGAR IR (the two arms + the membrane)
@@ -168,7 +184,7 @@ enter the SoA (§4).
 
 | # | Seam | Producer side | Consumer side | Contract type | Status |
 |---|---|---|---|---|---|
-| S1 | **class identity ↔ instance identity** | OGAR `Identity` (NiblePath) | lance-graph `NodeGuid` | registry mint `(entity_type ↔ NiblePath)` bijection | **[G] type / [H] mint** (Phase B) — **G-pass OPEN CHECK: "NiblePath" may be two structures sharing one name** (OGAR contract §1: "27-bit segments"; lance hhtl.rs: 4-bit nibbles ×16) — confirm same-or-mapped BEFORE the mint (§9.9; the CausalEdge64 name-collision lesson, applied preemptively) |
+| S1 | **class identity ↔ instance identity** | OGAR `Identity` (NiblePath) | lance-graph `NodeGuid` | registry mint `(entity_type ↔ NiblePath)` bijection | **[G] type / [H] mint** (Phase B) — **canon-pass correction**: the canonical nibble layout is PINNED (HEEL/HIP/TWIG are address nibbles; lance hhtl.rs 4-bit nibbles AGREE with it); what reconciles is the OGAR contract §1 "27-bit segments" doc note — fix the note TO the canon, not vice versa (§9.9). Phase B additionally audits NodeGuid's embedding of the canonical u32 |
 | S2 | **IR → SurrealQL DDL** | `emit_surrealql_ddl` | SurrealDB `DEFINE TABLE/FIELD` | DDL string; future body = `TableDefinition::new_for_ddl` | **[G] wired** |
 | S3 | **SurrealQL DDL → IR** | surrealdb-parser AST | `walk_query → Vec<Class>` | `Parser::enter_parse::<Query>` (depth 1000) | **[H] partial walk** (O2) |
 | S4 | **knowable_from** (the four-clock pin) | `ogar-adapter-surrealql` stamps at DDL registration | `lance-graph-planner::temporal::classify` deinterlaces (lance version / schema / awareness / thinking) | `LanceVersion` via `KnowableFromWriter` | **[G] pin (ADR‑010) / [H] Lance writer impl**; consumer `temporal.rs` landed #479 |
@@ -331,7 +347,10 @@ HYGIENE    H1 SYN §3 co-revert on OGAR #47 (D-EXCITON mirror — outstanding)
               (recency stamp, not delta — enumerate ALL its sites in the map, 4+) ·
               D-MONOTILE promotion-condition tightening (Walker-addressable leg
               required; a 5+3 pass alone does not promote — mirror of F2) ·
-              birth D-DELEG-INHERIT (né D-OTP-INHERIT) · this map's cross-link
+              birth D-DELEG-INHERIT (né D-OTP-INHERIT) · birth D-CANON32 (the
+              operator-pinned u32 address [classid:8|HEEL:4|HIP:4|TWIG:4|basin:6|id:6];
+              widths = codebook cardinalities; hierarchy = the overflow) ·
+              this map's cross-link
            H3 lance-graph board prepends #477-480 (CLAUDE.md mandate; formally incomplete until done)
            H4 merge order: #47 before #48 (SYN links)
 ```
@@ -422,10 +441,10 @@ any regrade.
 3. **O4** — build `ogar-from-ruby` vs reuse nexgen's ruff path (recommend: reuse; it's CODED and on the same spine).
 4. **S11 status** — `RouteBucketTyped` did NOT land on main (`62bca5e`); confirm with its session whether superseded or dropped before any consumer planning.
 5. **#47 → #48 merge order** — operator action; H1 must land on #47 first.
-6. **shape_hash use-invariant** — PIN "same-class temporal comparison only, never cross-class"; then the 2⁻²² per-change residual is acceptable as-is. Widening becomes live only if a cross-class use is ever proposed (L0b, G-pass risk-model correction).
-7. **`local` minting scope + escape** — first PIN the scope (currently unspecified), then pick prefix-shard / widen / per-tenant ns, before multi-year tenancy (L0b, G-pass).
-8. **X7 FieldMask widening design** — multi-word vs paged presence; gates F14 and real Odoo THINK rendering (L0b BLOCKER).
-9. **NiblePath flavor check** — OGAR contract §1 "27-bit segments" vs lance hhtl.rs 4-bit nibbles ×16: same structure, stale doc, or two-types-one-name? Resolve before the Phase B mint (G-pass, S1).
+6. *(wrapper-field policy, not canon)* **shape_hash use-invariant** — PIN "same-class temporal comparison only, never cross-class"; then the 2⁻²² per-change residual is acceptable as-is (L0b, G-pass risk-model correction).
+7. *(wrapper-field policy, not canon)* **`local` minting scope** — PIN the scope (currently unspecified); the canonical overflow is hierarchical (next cascade level), wrapper-side widening is a lance-graph implementation choice (L0b).
+8. **X7 / F14 resolution shape** — canonical answer = page via the hierarchy (wide class = basin of field-pages); multi-word mask = wrapper option. Pick which lands (L0b BLOCKER, 109 fields measured).
+9. **Reconcile the doc note to the canon** — OGAR-AST-CONTRACT §1's "27-bit segments" wording vs the pinned canonical u32 (lance hhtl nibbles already agree). Fix the NOTE; the canon stands. Phase B also audits NodeGuid's embedding of the canonical u32 in octets 0–3 (canon-pass; supersedes the earlier "two-structures" framing, which was wrongly canon-agnostic).
 
 ---
 
