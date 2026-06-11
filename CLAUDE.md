@@ -118,6 +118,28 @@ prefix to the right interpreter.**
   MRU promote/evict; 64 bits.
 - `240 × CausalEdge64` cold container — the shipped `HighHeelBGZ`
   (high_heel.rs:1-40); 2 KB cognitive-fan-out tile.
+- `VolumetricField` — **induced, not declared** (operator-greenlit
+  2026-06-10, `[H]` + probes): no edge bits stored at all. Implicit
+  centroids placed by the golden mantissa (helix `HemispherePoint`,
+  azimuth `n·φ` — **PROBE-MANTISSA-FILL GREEN, run first-hand**:
+  k=256 golden occupied 192 bins vs random 141–150, max-bin 3 vs 5–6;
+  k=1024 occupied 208 vs 205–206, max-bin 7 vs 11; zero interior holes
+  — lance-graph PR #485); pairwise weight = the 256×256 attention LUT
+  (bgz-tensor, O(1)); per-pair splat = `CamPlaneSplat` amplitude +
+  EWA Σ (Pillar 9b); top-k ranking via HHTL `RouteAction`
+  (Skip/Attend/Compose/Escalate); materialization =
+  `AwarenessPlane16K` OR-deposition. **Storage cost per edge: zero**
+  — the field regenerates from address + φ-mantissa + LUT.
+  **Remaining gates before [H] lifts:** PROBE-ATTN-EDGE (LUT weight ↔
+  edge strength, ρ vs Pflug anchors; kill → separate edge codebook) ·
+  PROBE-SPLAT-PSD (Σ composition stays PSD, relative tolerance per
+  PP-13; kill → composition bounded by Σ-norm threshold) ·
+  PROBE-CASCADE-SPARSITY (skip-ratio ≥90% on the volumetric workload;
+  kill → the O(1)-per-pair claim). PROBE-PHASE-1 also GREEN (CurveRuler
+  bit-exact, full 17-permutation from every offset — same PR). Fence:
+  induced edges serve density-like neighborhoods (semantic reach,
+  attention, proximity); audit/exact-causal classes keep DECLARED
+  layouts; some classes carry both.
 - (open; per-domain choice.)
 
 **Per-domain examples (illustrative, not prescriptive):**
