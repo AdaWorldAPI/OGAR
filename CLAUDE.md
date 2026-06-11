@@ -89,6 +89,61 @@ StructuralSignature — Phase B's shelf), trained once, amortized over
 all instances (D-AMORT). Finer scopes (a HEEL-subtree codebook) follow
 the same longest-prefix-wins rule — one rule, every level.
 
+## Schema-driven node + edge interpretation (operator, 2026-06-10)
+
+The classid prefix is the canonical dispatch — already routing
+centroid-tile vs spatial-tile node interpretation, and codebook
+selection. **Extending the same dispatch to two more axes; the schema
+declares which shape this class uses; ndarray/lance-graph route by
+prefix to the right interpreter.**
+
+**Node interpretation modes (2+x, schema-declared):**
+- `256×256 centroid tile` — semantic basins (the default for cognitive
+  classes); D-TILE256.
+- `flat 16-bit radix` — pure spatial addressing (Cesium tiles, OSM
+  quadkey); no centroid hierarchy.
+- `conglomerate-mailbox` — basin+supporters in one cell (AriGraph
+  episodic; HighHeelBGZ's 240-edge container).
+- (open; the registry adds modes, the canon does not pre-enumerate.)
+
+**Edge-slot layouts (2+x, schema-declared, optional per class):**
+- `12 intra + 4 inter × 8-bit` — Wikidata-shape: 16 edges of family/slot
+  bytes, intra/inter classification. **128 bits = exactly the key
+  width** — basin's neighborhood signature is register-symmetric with
+  basin's identity (self and surroundings same shape).
+- `8 × 16-bit` — typed-edge shape; richer per-slot semantics for
+  semantic+episodic+conglomerate mailboxes. **Also 128 bits = key
+  width.**
+- `4 × u16` hot-tier — the shipped `EpisodicEdges64` (episodic_edges.rs:18);
+  MRU promote/evict; 64 bits.
+- `240 × CausalEdge64` cold container — the shipped `HighHeelBGZ`
+  (high_heel.rs:1-40); 2 KB cognitive-fan-out tile.
+- (open; per-domain choice.)
+
+**Per-domain examples (illustrative, not prescriptive):**
+- ERP-AST (`account.move` and Active-Record-shaped classes) →
+  typically `12+4 × 8b` (family-rich, sparse cross-domain).
+- DLL-AST (`function_decl` and call-graph-shaped classes) → typically
+  `8 × 16b` (typed call edges with payload).
+- AriGraph episodic (semantic-conglomerate basins) → `4 × u16` hot
+  tier + `240 × CausalEdge64` cold container, both shipped.
+- Wikidata-HHTL (semantic entities) → `12+4 × 8b`.
+
+**Doctrine.** No single node mode or edge layout is canonical at the
+substrate level. The registry holds the choice per class. "Wrappers
+adapt to canon, never the reverse" extends to **"interpreters adapt
+to schema-declared shape, never the reverse."** This *collapses* the
+earlier M2-vs-M3 conflation question (12+4 ledger vs 240-container vs
+4×u16 hot tier): they are no longer in tension — they are three of
+the schema-selectable layouts, and the registry picks per class.
+
+**Mechanism reuse.** This is the *same* dispatch mechanism already in
+play — the classid prefix → `PrefixShapeTable` lookup
+(`ndarray-prefix-shape-routing` doc) → the right interpreter. One new
+column per class in the registry (`node_mode` / `edge_layout`); zero
+new dispatch code. **The minimum-cost generalization of what already
+shipped.**
+
 ## Perturbation encoding — DETERMINISTIC PHASE (operator, 2026-06-10)
 
 The stacked-pyramid perturbation decomposes as **(exponent, location,
