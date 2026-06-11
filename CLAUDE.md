@@ -173,7 +173,16 @@ alignment costs. Until measured: 3×4 stands.
    shipped code), the three falsification joints J1–J3 with explicit
    KILL conditions, and the operating rule that no integration brick
    lands before its probe is green.
-4. `docs/OGAR-AST-CONTRACT.md` — the IR type surface (THINK arm `Class`
+4. `docs/PROBE-SUBSTRATE-PROPOSAL.md` *(PROPOSAL, 2026-06-10)* — the
+   next architecture: the Living Probe Ledger — automating the loop
+   the session opened (probe is truth; ledger mirrors probe; debt is
+   visible). Wave A is a ~200 LOC parser; waves gated on operator
+   green-light.
+5. `.claude/handovers/2026-06-10-canon-arc-session-handover.md` —
+   honest attribution of the 2026-06-10 canon-arc session: what was
+   the operator's architecture, what was my anti-dilution work, what
+   failure modes the apparatus caught.
+6. `docs/OGAR-AST-CONTRACT.md` — the IR type surface (THINK arm `Class`
    / DO arm `ActionDef`+`ActionInvocation` / membrane `KausalSpec`).
 4. `docs/ARCHITECTURAL-DECISIONS-2026-06-04.md` — ADR-001..025
    (ADR-026 pending).
