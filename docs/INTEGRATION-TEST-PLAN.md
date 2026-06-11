@@ -42,10 +42,21 @@ Every row here is executable today; total new code ≈ 170 LOC of tests.
 | **F13 (verify)** | run the existing `simd_dispatch` W1c parity suite | 0 | 1-ULP across AVX-512/NEON/scalar (contract says mandatory — may already be green) | the correctness floor under every other probe | the floor |
 | **F8** | helix fidelity probe (owed since #459: "CONJECTURE — NOT RUN") | ~60 | naive-u8 floor ≥ 0.9980 Pearson vs ground truth | helix's clean-room promotion | closes lance-graph's own oldest owed probe |
 
-**Wave-0 exit:** ≥5 of 7 green → proceed. J3 resolved either way.
-Any red is a *result* — recorded in DISCOVERY-MAP, grade moved, prose
-corrected (the D-EXCITON pattern: revert with reasons, keep the
-`[G]`-real legs).
+**Wave-0 exit (Codex-corrected on #50):** **F13 green is MANDATORY** —
+it is the correctness floor under every other probe; a red F13 HALTS
+all waves until fixed and never counts as an acceptable quorum
+casualty. Of the remaining six, ≥4 green → proceed. **General rule: a
+probe that is a PREREQUISITE of later bricks is a mandatory pass, never
+a quorum member.** J3 resolved either way. Any red is a *result* —
+recorded in DISCOVERY-MAP, grade moved, prose corrected (the D-EXCITON
+pattern: revert with reasons, keep the `[G]`-real legs).
+
+**First receipt already in (2026-06-10):** the HILBERT-L4 question was
+run first-hand while triaging Codex on the ndarray PR — **13/13 green**
+incl. `level4_all_indices_unique` (bijective onto [0,4096) — exactly
+what cascade addressing needs) and `level4_curve_is_connected`. PP-13
+P0-4's "expected 4095" was an orientation assumption, not the contract.
+One claim flipped by execution before Wave 0 formally opened.
 
 ## 2. Wave 1 — first implementation bricks (each gated by its probe)
 
@@ -55,7 +66,7 @@ corrected (the D-EXCITON pattern: revert with reasons, keep the
 | **O1: `Class` traversal API** (`member_of`/`members`/`group_members`/`includes`/`associations_of`) — methods on the carrier per The Click | OGAR `ogar-vocab` | ~50 + tests | unit tests incl. `through`/`inverse_of` resolution | — (leaf) |
 | **PrefixShapeTable** (layout-only sibling of `MultiLaneColumn`) | ndarray `simd_soa` layer | ~150 | **PROBE-ROUTE-1**: batch ≡ scalar on 10⁶ keys; ≥4× at N=1024 | — (leaf; consumer registration comes later) |
 | **WHP-3 + WHP-4** against shipped `vsa_bind`/`vsa_bundle` | lance-graph contract tests | ~130 | WHP-3: unbind margin holds to N ≤ √d/4, fails cleanly past; WHP-4: raw-XOR-on-magnitudes FAILS Chapman-Kolmogorov (a deliberately-failing guard) | — |
-| **HILBERT-L4 fix** (PP-13 P0-4: re-derive `NEXT_STATE` from Hamilton 2006; exhaustive 4096-cell round-trip) | ndarray `linalg/hilbert.rs` | ~80 | `decode(encode(p,4),4)==p` exhaustive (≈16 ms) | — ; **blocks every L4 cascade claim until green** |
+| ~~HILBERT-L4 fix~~ → **CLOSED: VERIFIED GREEN, no fix needed** (run 2026-06-10: 13/13 incl. L4 bijectivity + connectivity; PP-13 P0-4's "expected 4095" was orientation, not contract) | ndarray `linalg/hilbert.rs` | 0 | the exhaustive suite stays as the **standing gate** for any future table change | — |
 
 **Wave-1 exit:** C green unlocks the critical path; the two-algebra
 guard (WHP-4) is permanently in CI.
@@ -114,7 +125,7 @@ route-by-prefix, X5/X6) → F14/X7 wide-model render after B.
 |---|---|
 | this session (OGAR + docs) | Wave 0 helix/jc probes, O1, O2-prep, ledger folds on every result |
 | lance-graph session(s) | C, D, B, WHP-3/4, F5/F6, X-track |
-| ndarray session(s) | PrefixShapeTable + ROUTE-1, HILBERT-L4 fix, perturbation encoder, CODEBOOK-44 |
+| ndarray session(s) | PrefixShapeTable + ROUTE-1, perturbation encoder, CODEBOOK-44 (HILBERT-L4: CLOSED — verified green) |
 | runtime/jc session | F3, F10–F12, R1/R2 (state_machine + binding) |
 | operator | merge order #47→#48; PRs for the two crystallization branches; the J1/J2/J3 verdict calls if a kill fires |
 
