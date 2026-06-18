@@ -1,0 +1,23 @@
+[package]
+name = "ogar-from-rails"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+description = "Rails / ActiveRecord frontend for OGAR. Walks an app/models tree via `ruff_ruby_spo::extract` then lifts the resulting `ruff_spo_triplet::ModelGraph` to `Vec<ogar_vocab::Class>` via `ogar-from-ruff::lift_model_graph`. The pair (`ogar-from-ruff` + `ogar-from-rails`) is the producer-side bridge into OGAR for the Rails ecosystem — mirrors the role `ogar-from-elixir` plays for HIRO."
+
+[features]
+default = []
+serde = [
+    "dep:serde",
+    "ogar-vocab/serde",
+    "ogar-from-ruff/serde",
+]
+
+[dependencies]
+ogar-vocab = { path = "../ogar-vocab" }
+ogar-from-ruff = { path = "../ogar-from-ruff" }
+ruff_ruby_spo = { git = "https://github.com/AdaWorldAPI/ruff", branch = "main" }
+serde = { workspace = true, optional = true }
