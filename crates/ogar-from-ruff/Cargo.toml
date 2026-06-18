@@ -1,0 +1,18 @@
+[package]
+name = "ogar-from-ruff"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+description = "Lift `ruff_spo_triplet::Model` (the language-agnostic IR populated by ruff frontends like `ruff_ruby_spo`) into `ogar_vocab::Class`. Mechanical field-by-field projection — the ruff IR was deliberately shaped to mirror ogar-vocab. This crate is the producer-side seam between ruff's parser ecosystem and OGAR's canonical vocab; thin enough to also serve as the reference implementation for other `ogar-from-<lang>` crates that go through ruff."
+
+[features]
+default = []
+serde = ["dep:serde", "ogar-vocab/serde"]
+
+[dependencies]
+ogar-vocab = { path = "../ogar-vocab" }
+ruff_spo_triplet = { git = "https://github.com/AdaWorldAPI/ruff", branch = "main" }
+serde = { workspace = true, optional = true }

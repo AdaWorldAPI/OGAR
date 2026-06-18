@@ -10,6 +10,9 @@ members = [
     "crates/ogar-adapter-ttl",
     "crates/ogar-adapter-clickhouse-ddl",
     "crates/ogar-knowable-from",
+    "crates/ogar-from-elixir",
+    "crates/ogar-from-ruff",
+    "crates/ogar-from-rails",
 ]
 
 [workspace.package]
