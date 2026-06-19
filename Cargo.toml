@@ -14,6 +14,7 @@ members = [
     "crates/ogar-from-ruff",
     "crates/ogar-from-rails",
     "crates/ogar-class-view",
+    "crates/ogar-render-askama",
 ]
 
 [workspace.package]
