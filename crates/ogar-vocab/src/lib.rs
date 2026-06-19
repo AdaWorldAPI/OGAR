@@ -1042,10 +1042,35 @@ impl Class {
 ///
 /// Verified collision-free + non-zero by `codebook_has_no_duplicate_ids_or_zero`.
 const CODEBOOK: &[(&str, u16)] = &[
+    // Project-management domain (OP↔Redmine fork lineage)
     ("project", 0x0001),
     ("project_work_item", 0x0002),
     ("billable_work_entry", 0x0003),
     ("project_actor", 0x0004),
+    // 0x0005-0x0006 reserved for ProjectStatus + ProjectType (OGAR#63).
+    // Commerce / billing / ERP domain (OSB ↔ Odoo cross-curator).
+    // Promoted from the parallel session's `lance-graph-ontology::ar_shape`
+    // upstream-candidate registry — six concepts each backed by
+    // ≥2-curator structural evidence:
+    //
+    //   | Canonical              | OSB             | Odoo                |
+    //   |------------------------|-----------------|---------------------|
+    //   | commercial_line_item   | InvoiceLineItem | account_move_line   |
+    //   | commercial_document    | Invoice         | account_move        |
+    //   | tax_policy             | Tax             | account_tax         |
+    //   | billing_party          | Client          | res_partner         |
+    //   | payment_record         | Payment         | account_payment     |
+    //   | currency_policy        | Currency        | res_currency        |
+    //
+    // (`tax_policy` is also referenced by `billable_work_entry().classified_by`
+    // as an ERP-boundary edge — this lands the canonical class that edge
+    // points at.)
+    ("commercial_line_item", 0x0007),
+    ("commercial_document", 0x0008),
+    ("tax_policy", 0x0009),
+    ("billing_party", 0x000A),
+    ("payment_record", 0x000B),
+    ("currency_policy", 0x000C),
 ];
 
 /// **OGAR codebook lookup** — resolve a canonical-concept string to its
@@ -1375,6 +1400,68 @@ pub fn canonical_concept(name: &str) -> String {
     ) {
         return "project_actor".to_string();
     }
+    // ── Commerce / billing / ERP domain (OSB ↔ Odoo) ──
+    // CommercialLineItem — line on a commercial document. OSB
+    // `InvoiceLineItem`, Odoo `account_move_line` (ruff normalises
+    // Odoo dots to underscores; match both forms).
+    if matches!(
+        lower.as_str(),
+        "invoicelineitem" | "invoice_line_item"
+            | "account.move.line" | "account_move_line"
+            | "commercial_line_item" | "commerciallineitem"
+    ) {
+        return "commercial_line_item".to_string();
+    }
+    // CommercialDocument — invoice / posting head. OSB `Invoice`,
+    // Odoo `account_move` (covers invoices + credit notes + journal
+    // entries; the head shape is promoted, not the variant).
+    if matches!(
+        lower.as_str(),
+        "invoice" | "invoices"
+            | "account.move" | "account_move"
+            | "commercial_document" | "commercialdocument"
+    ) {
+        return "commercial_document".to_string();
+    }
+    // TaxPolicy — tax rate / classification. OSB `Tax`, Odoo
+    // `account_tax`. Also the `BillableWorkEntry.classified_by` family
+    // edge target.
+    if matches!(
+        lower.as_str(),
+        "tax" | "taxes"
+            | "account.tax" | "account_tax"
+            | "tax_policy" | "taxpolicy"
+    ) {
+        return "tax_policy".to_string();
+    }
+    // BillingParty — counterparty (customer / vendor / partner). OSB
+    // `Client`, Odoo `res_partner`.
+    if matches!(
+        lower.as_str(),
+        "client" | "clients"
+            | "res.partner" | "res_partner"
+            | "billing_party" | "billingparty"
+    ) {
+        return "billing_party".to_string();
+    }
+    // PaymentRecord — payment event. OSB `Payment`, Odoo `account_payment`.
+    if matches!(
+        lower.as_str(),
+        "payment" | "payments"
+            | "account.payment" | "account_payment"
+            | "payment_record" | "paymentrecord"
+    ) {
+        return "payment_record".to_string();
+    }
+    // CurrencyPolicy — currency lookup. OSB `Currency`, Odoo `res_currency`.
+    if matches!(
+        lower.as_str(),
+        "currency" | "currencies"
+            | "res.currency" | "res_currency"
+            | "currency_policy" | "currencypolicy"
+    ) {
+        return "currency_policy".to_string();
+    }
     // ── Layer 2: lexical fallback ──
     let last = lower.rsplit('.').next().unwrap_or(lower.as_str());
     if last.len() > 3 && last.ends_with('s') && !last.ends_with("ss") {
@@ -1581,6 +1668,141 @@ pub fn project_actor() -> Class {
     let mut sti_type = Attribute::new("type");
     sti_type.type_name = Some("string".to_string());
     c.attributes = vec![login, sti_type];
+    c
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// Commerce / billing / ERP domain canonical classes (OSB ↔ Odoo).
+//
+// Promoted from the parallel session's `lance-graph-ontology::ar_shape`
+// upstream-candidate registry — each backed by ≥2-curator structural
+// evidence on the OSB and Odoo corpora. Shapes are minimal-by-design;
+// follow-up refinements (additional family edges, typed relations beyond
+// the obvious ones) land additively as the other session's harvest
+// surfaces more invariants.
+// ─────────────────────────────────────────────────────────────────────
+
+/// Line on a commercial document — OSB `InvoiceLineItem`, Odoo
+/// `account_move_line`. Belongs to a [`commercial_document`] (the
+/// invoice/posting head) and to a [`tax_policy`] (the classifier
+/// applied at posting).
+#[must_use]
+pub fn commercial_line_item() -> Class {
+    let mut c = Class::new("CommercialLineItem");
+    c.language = Language::Unknown;
+    c.canonical_concept = Some("commercial_line_item".to_string());
+    c.associations = vec![
+        family_edge("document", "CommercialDocument"),
+        family_edge("tax", "TaxPolicy"),
+    ];
+    let mut quantity = Attribute::new("quantity");
+    quantity.type_name = Some("decimal".to_string());
+    let mut unit_price = Attribute::new("unit_price");
+    unit_price.type_name = Some("decimal".to_string());
+    let mut subtotal = Attribute::new("subtotal");
+    subtotal.type_name = Some("decimal".to_string());
+    c.attributes = vec![quantity, unit_price, subtotal];
+    c
+}
+
+/// Commercial document head — OSB `Invoice`, Odoo `account_move`.
+/// Aggregates many [`commercial_line_item`]s, belongs to a
+/// [`billing_party`], denominated in a [`currency_policy`].
+#[must_use]
+pub fn commercial_document() -> Class {
+    let mut c = Class::new("CommercialDocument");
+    c.language = Language::Unknown;
+    c.canonical_concept = Some("commercial_document".to_string());
+    c.associations = vec![
+        family_has_many("line_items", "CommercialLineItem"),
+        family_edge("party", "BillingParty"),
+        family_edge("currency", "CurrencyPolicy"),
+    ];
+    let mut document_date = Attribute::new("document_date");
+    document_date.type_name = Some("date".to_string());
+    let mut total = Attribute::new("total");
+    total.type_name = Some("decimal".to_string());
+    let mut state = Attribute::new("state");
+    state.type_name = Some("string".to_string());
+    c.attributes = vec![document_date, total, state];
+    c
+}
+
+/// Tax classification policy — OSB `Tax`, Odoo `account_tax`. The
+/// canonical target of [`billable_work_entry`]'s `classified_by`
+/// family edge and of [`commercial_line_item`]'s `tax` edge.
+#[must_use]
+pub fn tax_policy() -> Class {
+    let mut c = Class::new("TaxPolicy");
+    c.language = Language::Unknown;
+    c.canonical_concept = Some("tax_policy".to_string());
+    c.associations = Vec::new();
+    let mut name = Attribute::new("name");
+    name.type_name = Some("string".to_string());
+    let mut rate = Attribute::new("rate");
+    rate.type_name = Some("decimal".to_string());
+    let mut tax_type = Attribute::new("tax_type");
+    tax_type.type_name = Some("string".to_string());
+    c.attributes = vec![name, rate, tax_type];
+    c
+}
+
+/// Counterparty in a commercial transaction — OSB `Client`, Odoo
+/// `res_partner`. The target of [`commercial_document`]'s `party` edge
+/// and [`payment_record`]'s `party` edge.
+#[must_use]
+pub fn billing_party() -> Class {
+    let mut c = Class::new("BillingParty");
+    c.language = Language::Unknown;
+    c.canonical_concept = Some("billing_party".to_string());
+    c.associations = Vec::new();
+    let mut name = Attribute::new("name");
+    name.type_name = Some("string".to_string());
+    let mut email = Attribute::new("email");
+    email.type_name = Some("string".to_string());
+    let mut is_company = Attribute::new("is_company");
+    is_company.type_name = Some("boolean".to_string());
+    c.attributes = vec![name, email, is_company];
+    c
+}
+
+/// Payment event — OSB `Payment`, Odoo `account_payment`. Belongs to a
+/// [`billing_party`] and (optionally) to a [`commercial_document`]
+/// (the invoice being settled).
+#[must_use]
+pub fn payment_record() -> Class {
+    let mut c = Class::new("PaymentRecord");
+    c.language = Language::Unknown;
+    c.canonical_concept = Some("payment_record".to_string());
+    c.associations = vec![
+        family_edge("party", "BillingParty"),
+        family_edge("document", "CommercialDocument"),
+    ];
+    let mut amount = Attribute::new("amount");
+    amount.type_name = Some("decimal".to_string());
+    let mut payment_date = Attribute::new("payment_date");
+    payment_date.type_name = Some("date".to_string());
+    let mut method = Attribute::new("method");
+    method.type_name = Some("string".to_string());
+    c.attributes = vec![amount, payment_date, method];
+    c
+}
+
+/// Currency lookup — OSB `Currency`, Odoo `res_currency`. The
+/// canonical target of [`commercial_document`]'s `currency` edge.
+#[must_use]
+pub fn currency_policy() -> Class {
+    let mut c = Class::new("CurrencyPolicy");
+    c.language = Language::Unknown;
+    c.canonical_concept = Some("currency_policy".to_string());
+    c.associations = Vec::new();
+    let mut code = Attribute::new("code");
+    code.type_name = Some("string".to_string());
+    let mut symbol = Attribute::new("symbol");
+    symbol.type_name = Some("string".to_string());
+    let mut rate = Attribute::new("rate");
+    rate.type_name = Some("decimal".to_string());
+    c.attributes = vec![code, symbol, rate];
     c
 }
 
@@ -2037,6 +2259,120 @@ mod tests {
         for src in ["User", "Principal", "Users", "Principals", "ProjectActor"] {
             assert_eq!(ogar_codebook(src), id, "{src} -> codebook id");
         }
+    }
+
+    #[test]
+    fn commerce_canonical_classes_are_promoted_into_the_codebook() {
+        // Each commerce concept has an assigned codebook id and a
+        // populated canonical class. Pin shape so the other session can
+        // refine details additively in follow-ups.
+        for (canonical, name, id_hex) in [
+            (commercial_line_item(), "CommercialLineItem", 0x0007u16),
+            (commercial_document(), "CommercialDocument", 0x0008),
+            (tax_policy(), "TaxPolicy", 0x0009),
+            (billing_party(), "BillingParty", 0x000A),
+            (payment_record(), "PaymentRecord", 0x000B),
+            (currency_policy(), "CurrencyPolicy", 0x000C),
+        ] {
+            assert_eq!(canonical.name, name);
+            assert_eq!(canonical.language, Language::Unknown);
+            let concept = canonical.canonical_concept.as_deref().unwrap();
+            assert_eq!(canonical.canonical_id(), Some(id_hex));
+            assert_eq!(canonical_concept_id(concept), Some(id_hex));
+            // Every commerce class has at least one typed attribute.
+            assert!(!canonical.attributes.is_empty(), "{name} has no attributes");
+            for a in &canonical.attributes {
+                assert!(a.type_name.is_some(), "{name}.{} untyped", a.name);
+            }
+        }
+    }
+
+    #[test]
+    fn commerce_resolver_collapses_osb_and_odoo_curator_divergence() {
+        // For each commerce concept, every OSB-side, Odoo-side, and
+        // canonical-class-name spelling resolves to the same codebook id.
+        let cases: &[(&str, &[&str])] = &[
+            (
+                "commercial_line_item",
+                &[
+                    "InvoiceLineItem", "invoice_line_item",
+                    "account.move.line", "account_move_line",
+                    "CommercialLineItem", "commercial_line_item",
+                ],
+            ),
+            (
+                "commercial_document",
+                &[
+                    "Invoice", "invoices",
+                    "account.move", "account_move",
+                    "CommercialDocument", "commercial_document",
+                ],
+            ),
+            (
+                "tax_policy",
+                &["Tax", "taxes", "account.tax", "account_tax", "TaxPolicy", "tax_policy"],
+            ),
+            (
+                "billing_party",
+                &[
+                    "Client", "clients", "res.partner", "res_partner",
+                    "BillingParty", "billing_party",
+                ],
+            ),
+            (
+                "payment_record",
+                &[
+                    "Payment", "payments", "account.payment", "account_payment",
+                    "PaymentRecord", "payment_record",
+                ],
+            ),
+            (
+                "currency_policy",
+                &[
+                    "Currency", "currencies", "res.currency", "res_currency",
+                    "CurrencyPolicy", "currency_policy",
+                ],
+            ),
+        ];
+        let mut ids = std::collections::HashSet::new();
+        for (concept, aliases) in cases {
+            let id = canonical_concept_id(concept);
+            assert!(id.is_some(), "{concept} must be in the codebook");
+            assert!(ids.insert(id), "duplicate codebook id for `{concept}`");
+            for alias in *aliases {
+                assert_eq!(canonical_concept(alias), *concept, "{alias} -> {concept}");
+                assert_eq!(ogar_codebook(alias), id, "{alias} -> codebook id");
+            }
+        }
+    }
+
+    #[test]
+    fn commerce_class_family_edges_target_canonical_concepts() {
+        // Internal cross-references in the commerce sub-graph are
+        // canonical-to-canonical — no curator surface leaks in:
+        //   CommercialLineItem -> CommercialDocument, TaxPolicy
+        //   CommercialDocument -> CommercialLineItem (HM), BillingParty, CurrencyPolicy
+        //   PaymentRecord     -> BillingParty, CommercialDocument
+        let line = commercial_line_item();
+        assert!(line.associations.iter().any(|a|
+            a.name == "document" && a.class_name.as_deref() == Some("CommercialDocument")));
+        assert!(line.associations.iter().any(|a|
+            a.name == "tax" && a.class_name.as_deref() == Some("TaxPolicy")));
+
+        let doc = commercial_document();
+        let line_items = doc.associations.iter().find(|a| a.name == "line_items").unwrap();
+        assert_eq!(line_items.kind, AssociationKind::HasMany);
+        assert_eq!(line_items.class_name.as_deref(), Some("CommercialLineItem"));
+        assert!(doc.associations.iter().any(|a|
+            a.name == "party" && a.class_name.as_deref() == Some("BillingParty")));
+        assert!(doc.associations.iter().any(|a|
+            a.name == "currency" && a.class_name.as_deref() == Some("CurrencyPolicy")));
+
+        let pay = payment_record();
+        assert!(pay.associations.iter().any(|a|
+            a.name == "party" && a.class_name.as_deref() == Some("BillingParty")));
+        assert!(pay.associations.iter().any(|a|
+            a.name == "document" && a.class_name.as_deref() == Some("CommercialDocument")));
     }
 
     #[test]
