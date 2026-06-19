@@ -1556,6 +1556,7 @@ pub fn canonical_concept(name: &str) -> String {
     // concept (precedes/blocks/relates_to between two work items).
     if matches!(lower.as_str(),
         "issuerelation" | "issue_relation"
+            | "issuerelations" | "issue_relations"
             | "relation" | "relations"
             | "project_relation" | "projectrelation"
     ) {
@@ -2849,6 +2850,15 @@ mod tests {
             ("project_custom_field", "custom_fields"),
             ("project_custom_field", "customfields"),
             ("project_custom_field", "CustomFields"),
+            // Codex P2 on PR #68 — Redmine `issue_relations` is the
+            // Rails-tableized form of `IssueRelation`. The single-`s`
+            // lexical fallback drops to `issue_relation`, which is the
+            // singular curator alias but NOT a canonical concept name —
+            // so canonical_concept_id returned None. Adding the plural
+            // form to the promoted arm.
+            ("project_relation", "issue_relations"),
+            ("project_relation", "issuerelations"),
+            ("project_relation", "IssueRelations"),
         ] {
             let canonical_id = canonical_concept_id(singular);
             assert!(canonical_id.is_some(), "{singular} must be in codebook");
