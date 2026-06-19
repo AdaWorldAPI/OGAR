@@ -1003,6 +1003,101 @@ impl Class {
     pub fn new(name: impl Into<String>) -> Self {
         Self { name: name.into(), ..Default::default() }
     }
+
+    /// Resolve this class's binary [OGAR codebook] identity — the `u16`
+    /// canonical id derived from its stored `canonical_concept`. Returns
+    /// `None` when the class has no canonical concept set (a producer
+    /// that never set it; rare in practice).
+    ///
+    /// This is the load-bearing convergence claim: two curator-shaped
+    /// classes (Redmine `Issue`, OpenProject `WorkPackage`) lifting to
+    /// the same `canonical_concept` produce the same `canonical_id`.
+    /// **String labels are decorative; the codebook value is the identity.**
+    #[must_use]
+    pub fn canonical_id(&self) -> Option<u16> {
+        self.canonical_concept.as_deref().map(canonical_concept_id)
+    }
+}
+
+/// **OGAR codebook hash** — fold a canonical-concept string into the
+/// stable `u16` codebook value (FNV-1a 32-bit hashed, XOR-folded to u16).
+/// Pure + deterministic + portable: the bits are the same on any machine,
+/// any run, any session. Same input -> same output, forever.
+///
+/// `u16` width per `OD-CLASSID-WIDTH` (lance-graph-contract `ClassId`).
+/// The 65,536-slot space is enough for the foreseeable canonical-concept
+/// universe; collision-resistance is verified by the
+/// `canonical_concept_id_distinct_for_promoted_concepts` test.
+#[must_use]
+pub fn canonical_concept_id(concept: &str) -> u16 {
+    // FNV-1a 32-bit (RFC-style constants).
+    const FNV_OFFSET_BASIS: u32 = 0x811c_9dc5;
+    const FNV_PRIME: u32 = 0x0100_0193;
+    let mut hash = FNV_OFFSET_BASIS;
+    for &b in concept.as_bytes() {
+        hash ^= u32::from(b);
+        hash = hash.wrapping_mul(FNV_PRIME);
+    }
+    // XOR-fold u32 -> u16. The 0 slot is canon-reserved (`NodeGuid::
+    // CLASSID_DEFAULT`), so push collisions up by one — any concept that
+    // would hash to 0 lives at 1 instead.
+    let folded = (hash as u16) ^ ((hash >> 16) as u16);
+    if folded == 0 { 1 } else { folded }
+}
+
+/// **Consumer-facing label DTO** — a (label, id) pair. Consumers send
+/// OGAR a `LabelDTO` carrying whatever name they have locally (curator
+/// surface like `"Issue"` / `"account.analytic.line"`, OGAR canonical
+/// like `"project_work_item"`, or a domain-specific tag); the `id` field
+/// is the stable [OGAR codebook] binary identity derived from that label.
+///
+/// Two consumers with different label conventions for the same concept
+/// produce `LabelDTO`s with **different labels and equal ids**. The id is
+/// the identity; the label is local presentation.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[non_exhaustive]
+pub struct LabelDTO {
+    /// Consumer-local label. Not normalised by OGAR.
+    pub label: String,
+    /// OGAR codebook binary identity ([`ogar_codebook`] of `label`).
+    pub id: u16,
+}
+
+impl LabelDTO {
+    /// Build a `LabelDTO` from a consumer-shaped alias. The OGAR codebook
+    /// resolves the alias to its canonical `u16` id without normalising
+    /// the `label` itself — `"account.analytic.line"` stays
+    /// `"account.analytic.line"`, but its `id` is the same as the id for
+    /// `"TimeEntry"` and for `"billable_work_entry"`.
+    #[must_use]
+    pub fn from_alias(label: impl Into<String>) -> Self {
+        let label = label.into();
+        let id = ogar_codebook(&label);
+        Self { label, id }
+    }
+}
+
+/// **OGAR codebook lookup** — map any alias (curator-shaped *or*
+/// canonical-shaped) to its canonical binary id. The curator name does
+/// not need to be normalised by the producer; passing the raw Rails or
+/// Odoo class name yields the same `u16` as the canonical-concept string.
+///
+/// ```text
+///   ogar_codebook("Issue")                     == codebook("project_work_item")
+///   ogar_codebook("WorkPackage")               == codebook("project_work_item")
+///   ogar_codebook("TimeEntry")                 == codebook("billable_work_entry")
+///   ogar_codebook("account.analytic.line")     == codebook("billable_work_entry")
+///   ogar_codebook("Project")                   == codebook("project")
+/// ```
+///
+/// Implementation: resolves the alias through [`canonical_concept`]
+/// (which carries the promoted-invariant table) and hashes the result
+/// through [`canonical_concept_id`]. The string layer collapses; the
+/// binary identity is the codebook value.
+#[must_use]
+pub fn ogar_codebook(alias: &str) -> u16 {
+    canonical_concept_id(&canonical_concept(alias))
 }
 
 impl Association {
@@ -1592,6 +1687,88 @@ mod tests {
         assert_eq!(canonical_concept("Issue"), "project_work_item");
         // The lexical layer remains deterministic for unpromoted names.
         assert_eq!(canonical_concept("User"), canonical_concept("Users"));
+    }
+
+    #[test]
+    fn canonical_concept_id_is_deterministic_and_nonzero() {
+        // Same input -> same output, every session.
+        assert_eq!(canonical_concept_id("project_work_item"), canonical_concept_id("project_work_item"));
+        assert_eq!(canonical_concept_id(""), canonical_concept_id(""));
+        // 0 is canon-reserved (NodeGuid::CLASSID_DEFAULT); the function
+        // pushes any hash collision with 0 to 1 instead.
+        for s in ["project_work_item", "billable_work_entry", "project", "", "x"] {
+            assert_ne!(canonical_concept_id(s), 0, "codebook(`{s}`) must be non-zero");
+        }
+    }
+
+    #[test]
+    fn canonical_concept_id_distinct_for_promoted_concepts() {
+        // No collisions in the codebook for the currently-promoted set.
+        // (If a future concept ever collides, the right fix is a curated
+        // override table — not weakening this assertion.)
+        let concepts = [
+            "project_work_item",
+            "billable_work_entry",
+            "project",
+        ];
+        let mut ids = std::collections::HashSet::new();
+        for c in concepts {
+            assert!(ids.insert(canonical_concept_id(c)), "codebook collision on `{c}`");
+        }
+    }
+
+    #[test]
+    fn ogar_codebook_maps_curator_labels_to_canonical_id() {
+        // The user's load-bearing insight: leave the curator name shape
+        // intact; the codebook is what maps to the canonical target.
+        let pwi = canonical_concept_id("project_work_item");
+        assert_eq!(ogar_codebook("Issue"), pwi);
+        assert_eq!(ogar_codebook("WorkPackage"), pwi);
+        assert_eq!(ogar_codebook("work_package"), pwi);
+
+        let bwe = canonical_concept_id("billable_work_entry");
+        assert_eq!(ogar_codebook("TimeEntry"), bwe);
+        // Odoo-shaped name maps to the same binary id without producer-
+        // side normalisation. (Lift implementation lives in the
+        // python-side producer the other session owns; the codebook
+        // mapping itself stands here.)
+        assert_eq!(ogar_codebook("account.analytic.line"), bwe);
+        assert_eq!(ogar_codebook("account_analytic_line"), bwe);
+
+        assert_eq!(ogar_codebook("Project"), canonical_concept_id("project"));
+    }
+
+    #[test]
+    fn label_dto_carries_local_label_and_shared_codebook_id() {
+        // Two consumers with totally different labels for the same
+        // concept produce LabelDTOs with different labels and EQUAL ids.
+        let a = LabelDTO::from_alias("Issue");
+        let b = LabelDTO::from_alias("WorkPackage");
+        let canonical = LabelDTO::from_alias("project_work_item");
+        let odoo_shaped = LabelDTO::from_alias("account.analytic.line");
+        let bwe = LabelDTO::from_alias("billable_work_entry");
+        assert_ne!(a.label, b.label, "labels are local");
+        assert_eq!(a.id, b.id, "but ids are the same — the address is the identity");
+        assert_eq!(a.id, canonical.id, "curator and OGAR labels share the id");
+        // Cross-domain label that ALSO maps to the same id without
+        // producer-side label-shaping.
+        assert_eq!(odoo_shaped.id, bwe.id);
+        assert_ne!(a.id, bwe.id, "distinct concepts have distinct ids");
+    }
+
+    #[test]
+    fn class_canonical_id_round_trips_through_codebook() {
+        // A Class with a canonical_concept set produces the matching
+        // codebook id; without one, returns None.
+        let c = project_work_item();
+        assert_eq!(c.canonical_id(), Some(canonical_concept_id("project_work_item")));
+        // Curator-shaped class with canonical_concept populated by the
+        // lift: same binary id as a hand-built canonical class.
+        let mut redmine_issue = Class::new("Issue");
+        redmine_issue.canonical_concept = Some(canonical_concept("Issue"));
+        assert_eq!(redmine_issue.canonical_id(), project_work_item().canonical_id());
+        // Without a canonical_concept, no id.
+        assert_eq!(Class::new("Whatever").canonical_id(), None);
     }
 
     #[test]

@@ -142,6 +142,20 @@ mod tests {
             Some("project"),
             "Rails frontend tags the project domain",
         );
+        // **Binary codebook convergence** — Redmine `TimeEntry` and the
+        // Odoo `account.analytic.line` both resolve to the same OGAR
+        // codebook value without producer-side label normalisation.
+        // (The Odoo-side extraction lives in the parallel session;
+        // the codebook mapping is asserted here on the Rails side.)
+        assert_eq!(
+            time_entry.canonical_id(),
+            Some(ogar_vocab::canonical_concept_id("billable_work_entry")),
+        );
+        assert_eq!(
+            time_entry.canonical_id(),
+            Some(ogar_vocab::ogar_codebook("account.analytic.line")),
+            "Odoo-shaped label must map to the same codebook id",
+        );
     }
 
     /// Real-corpus **same-domain convergence proof** across the fork
@@ -209,6 +223,20 @@ mod tests {
                 );
             }
         }
+
+        // **Binary codebook convergence** — Redmine `Issue` and OP
+        // `WorkPackage` are differently-named curator surfaces, but the
+        // OGAR codebook value is identical. The address is the identity;
+        // the labels are decorative.
+        assert_eq!(
+            issue.canonical_id(),
+            work_package.canonical_id(),
+            "Issue and WorkPackage must share the OGAR codebook id",
+        );
+        assert_eq!(
+            issue.canonical_id(),
+            Some(ogar_vocab::canonical_concept_id("project_work_item")),
+        );
     }
 
     /// Enrichment must not break the overlap. OpenProject `WorkPackage`
@@ -394,6 +422,20 @@ mod tests {
         assert_eq!(
             r_roles, o_roles,
             "Project canonical projection must transcode losslessly across the fork lineage",
+        );
+
+        // **Binary codebook convergence** — labels are decorative; the
+        // OGAR codebook value is the identity. Different curator names
+        // (`Project` is the same string here but in general curators may
+        // diverge) resolve to the same `u16`.
+        assert_eq!(
+            r_project.canonical_id(),
+            o_project.canonical_id(),
+            "Redmine Project and OP Project must share the OGAR codebook id",
+        );
+        assert_eq!(
+            r_project.canonical_id(),
+            Some(ogar_vocab::canonical_concept_id("project")),
         );
     }
 
