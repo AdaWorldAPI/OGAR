@@ -14,27 +14,27 @@ use ogar_vocab::Class;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ArtifactKind {
     /// Rust `struct` definition + `pub const CLASS_ID: u16` constant.
-    /// Codegen flavour — downstream compiler is the final consumer.
+    /// **Codegen flavour** — downstream compiler is the final consumer.
     RustStruct,
-    /// **Deprecated** — to be removed when T2 lands. Anti-pattern #8 in
-    /// the Northstar plan: askama is the rendering layer (server-side
-    /// HTML), not a producer of TypeScript source. The frontend in the
-    /// WoA-rs pattern reads askama-rendered HTML directly. PR #80
-    /// (TsInterface emitter) was closed for this reason. Variant kept
-    /// for one merge cycle so the dispatcher's stub fallback still has
-    /// something to fall back to; T2 replaces this variant with
-    /// `HtmlListView`.
-    TsInterface,
+    /// Tabular HTML list view rendered server-side via `askama_axum` or
+    /// equivalent. **Render flavour** — the askama-rendered HTML *is* the
+    /// output the user reads. Inherits the Redmine `Query` +
+    /// `column_content` pattern (17 years of evolution) mapped onto our
+    /// `ClassView` substrate. Spec: `docs/integration/REDMINE-QUERY-
+    /// HARVEST.md` §3.
+    HtmlListView,
     /// SurrealQL `DEFINE TABLE` + per-field `DEFINE FIELD` statements.
-    /// Codegen flavour — DB engine is the final consumer.
+    /// **Codegen flavour** — DB engine is the final consumer.
     SurrealqlTable,
-    /// **Deprecated** — to be removed when T2 lands. See Anti-pattern #8.
-    /// OpenAPI schemas serve TS / external SDK consumers the canonical
-    /// pattern doesn't have; demand-driven, not in the +5 kit.
+    /// **Deprecated** — anti-pattern #8: askama is the render output, not
+    /// a producer of other-language schemas. OpenAPI consumers outside
+    /// the WoA pattern can implement their own ClassView-based generator.
+    /// Variant kept one cycle so existing dispatchers still match;
+    /// removed in the next kit cleanup.
     OpenapiSchema,
     /// Rust `match` arm dispatching on `ClassId` — useful for routing on
-    /// `NodeGuid::classid` in graph consumers. Codegen flavour. Moves to
-    /// the Northstar roadmap (post-+5+5); not in the bootstrap kit.
+    /// `NodeGuid::classid` in graph consumers. Codegen flavour. Roadmap
+    /// (post-+5+5); not in the bootstrap kit.
     NodeGuidRoutingArm,
 }
 
@@ -43,7 +43,7 @@ impl ArtifactKind {
     /// `ArtifactKind` enum is treated append-only).
     pub const ALL: &'static [Self] = &[
         Self::RustStruct,
-        Self::TsInterface,
+        Self::HtmlListView,
         Self::SurrealqlTable,
         Self::OpenapiSchema,
         Self::NodeGuidRoutingArm,
@@ -54,7 +54,7 @@ impl ArtifactKind {
     pub fn name(self) -> &'static str {
         match self {
             Self::RustStruct => "rust_struct",
-            Self::TsInterface => "ts_interface",
+            Self::HtmlListView => "html_list_view",
             Self::SurrealqlTable => "surrealql_table",
             Self::OpenapiSchema => "openapi_schema",
             Self::NodeGuidRoutingArm => "node_guid_routing_arm",

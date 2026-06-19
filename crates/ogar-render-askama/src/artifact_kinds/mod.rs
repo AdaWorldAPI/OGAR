@@ -9,17 +9,29 @@
 //! let source = emitter.emit(&spec)?;
 //! ```
 //!
-//! Proof-of-shape phase: [`RustStruct`](rust_struct::RustStructEmitter) has
-//! a real askama template + emitter; the other four kinds use [`Stub`] —
-//! placeholder code that compiles and emits a marker comment so callers can
-//! exercise the full pipeline (lookup + dispatch + return) without waiting
-//! for every template to land. Concrete emitters arrive per-kind in
-//! follow-on PRs (T2–T5 in the integration plan).
+//! Real emitters (so far):
+//! - [`RustStruct`](rust_struct::RustStructEmitter) — T1, codegen flavour,
+//!   from PR #78.
+//! - [`HtmlListView`](html_list_view::HtmlListViewEmitter) — T2, render
+//!   flavour. Mirrors Redmine's `_list.html.erb` shape on our substrate
+//!   (see `docs/integration/REDMINE-QUERY-HARVEST.md`).
+//!
+//! Remaining kinds use [`Stub`] — placeholder code that compiles and
+//! emits a marker comment so callers can exercise the full pipeline
+//! (lookup + dispatch + return) before T3–T5 land.
+
+pub(crate) mod cells;
 
 use crate::spec::{ArtifactKind, ArtifactSpec};
 
+pub mod html_list_view;
 pub mod rust_struct;
 pub mod stub;
+
+pub use html_list_view::{
+    render_list, AttachmentEntryOwned, CellData, CellSource, GroupHeader, HtmlListViewEmitter,
+    RelationEntryOwned, RowSource, UserEntryOwned,
+};
 
 /// Contract every kind's emitter implements.
 pub trait ArtifactEmitter {
@@ -34,6 +46,7 @@ pub trait ArtifactEmitter {
 pub fn for_kind(kind: ArtifactKind) -> Box<dyn ArtifactEmitter> {
     match kind {
         ArtifactKind::RustStruct => Box::new(rust_struct::RustStructEmitter),
+        ArtifactKind::HtmlListView => Box::new(html_list_view::HtmlListViewEmitter),
         other => Box::new(stub::Stub { kind: other }),
     }
 }
