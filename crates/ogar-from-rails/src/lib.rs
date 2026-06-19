@@ -61,6 +61,24 @@ pub fn extract(source_tree: &Path) -> Vec<Class> {
     ogar_from_ruff::lift_model_graph(&graph)
 }
 
+/// Extract from a Rails source tree, tagging the harvest with an explicit
+/// `curator` namespace (e.g. `"redmine"`, `"openproject"`, `"osb"`).
+///
+/// Threads through [`ruff_ruby_spo::extract_with`] (added in
+/// AdaWorldAPI/ruff#27) so the produced classes carry the correct
+/// [`Class::source_curator`] — instead of the hardcoded `"openproject"`
+/// default [`extract`] inherits. `source_domain` is then derived from the
+/// curator namespace ([`ogar_from_ruff::classify_domain`]): Redmine and
+/// OpenProject both land in `project`, but stay distinguishable by curator.
+///
+/// Use this for any non-OpenProject Rails curator; plain [`extract`]
+/// remains the OpenProject-default convenience.
+#[must_use]
+pub fn extract_with(source_tree: &Path, curator: &str) -> Vec<Class> {
+    let graph = ruff_ruby_spo::extract_with(source_tree, curator);
+    ogar_from_ruff::lift_model_graph(&graph)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -73,6 +91,50 @@ mod tests {
     fn nonexistent_source_tree_yields_empty_vec() {
         let classes = extract(Path::new("/tmp/__definitely_does_not_exist_for_test__"));
         assert!(classes.is_empty(), "no app/models → no classes");
+        // extract_with mirrors the no-panic behaviour too.
+        let classes = extract_with(Path::new("/tmp/__nope__"), "redmine");
+        assert!(classes.is_empty());
+    }
+
+    /// **Per-curator namespace tagging** on real source (the ruff#27
+    /// `extract_with` thread, end to end). Redmine and OpenProject are
+    /// both `project`-domain but distinct curators: `extract_with` tags
+    /// each correctly via [`Class::source_curator`], while the canonical
+    /// concept still converges (`Issue` and `WorkPackage` → the same
+    /// `project_work_item` id).
+    #[test]
+    #[ignore = "requires Redmine + OpenProject checkouts"]
+    fn extract_with_tags_distinct_curators_in_one_domain() {
+        let Ok(redmine_src) = std::env::var("REDMINE_SRC") else {
+            eprintln!("skipping: REDMINE_SRC not set");
+            return;
+        };
+        let op_src = std::env::var("OPENPROJECT_SRC")
+            .unwrap_or_else(|_| "/home/user/openproject".to_string());
+        let op_path = PathBuf::from(&op_src);
+        if !op_path.exists() {
+            eprintln!("skipping: OpenProject not present at {op_src}");
+            return;
+        }
+
+        let redmine = extract_with(&PathBuf::from(redmine_src), "redmine");
+        let openproject = extract_with(&op_path, "openproject");
+
+        let issue = redmine.iter().find(|c| c.name == "Issue").unwrap();
+        let wp = openproject.iter().find(|c| c.name == "WorkPackage").unwrap();
+
+        // Distinct curators ...
+        assert_eq!(issue.source_curator.as_deref(), Some("redmine"));
+        assert_eq!(wp.source_curator.as_deref(), Some("openproject"));
+        // ... same domain ...
+        assert_eq!(issue.source_domain.as_deref(), Some("project"));
+        assert_eq!(wp.source_domain.as_deref(), Some("project"));
+        // ... and the canonical concept still converges.
+        assert_eq!(issue.canonical_id(), wp.canonical_id());
+        assert_eq!(
+            issue.canonical_id(),
+            ogar_vocab::canonical_concept_id("project_work_item"),
+        );
     }
 
     /// Smoke test against the live OpenProject source tree on the dev

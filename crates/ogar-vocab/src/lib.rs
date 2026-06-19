@@ -191,6 +191,15 @@ pub struct Class {
     /// unrecognized.
     #[cfg_attr(feature = "serde", serde(default))]
     pub source_domain: Option<String>,
+    /// Source **curator** — the *specific* product this class was
+    /// harvested from (`"openproject"`, `"redmine"`, `"odoo"`,
+    /// `"osb"`, …), as opposed to the coarse [`source_domain`](Self::source_domain)
+    /// (`"project"` / `"erp"`). Two curators in the same domain (Redmine
+    /// and OpenProject are both `project`) are distinguished here. Set by
+    /// the frontend from the harvest namespace (`ModelGraph::namespace`);
+    /// `None` when the frontend didn't tag one.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub source_curator: Option<String>,
     /// The class's canonical **concept** — its normalized identity
     /// ([`canonical_concept`]); the key cross-domain convergence bridges
     /// on. Most names normalize lexically (`User` → `user`); proven
