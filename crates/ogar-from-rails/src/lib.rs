@@ -740,6 +740,53 @@ mod tests {
         }
     }
 
+    /// **Role convergence + Group→actor collapse** on real source.
+    /// `Role` (both curators) → `project_role`. `Group` (a Principal STI
+    /// subtype in both) folds into `project_actor` alongside User /
+    /// Principal — it is assignable / member-able exactly where a User is.
+    #[test]
+    #[ignore = "requires Redmine + OpenProject checkouts"]
+    fn redmine_and_openproject_role_and_group_converge() {
+        let Ok(redmine_src) = std::env::var("REDMINE_SRC") else {
+            eprintln!("skipping: REDMINE_SRC not set");
+            return;
+        };
+        let op_src = std::env::var("OPENPROJECT_SRC")
+            .unwrap_or_else(|_| "/home/user/openproject".to_string());
+        let op_path = PathBuf::from(&op_src);
+        if !op_path.exists() {
+            eprintln!("skipping: OpenProject not present at {op_src}");
+            return;
+        }
+
+        let redmine = extract(&PathBuf::from(redmine_src));
+        let openproject = extract(&op_path);
+        let role_id = ogar_vocab::canonical_concept_id("project_role");
+        let actor_id = ogar_vocab::canonical_concept_id("project_actor");
+        assert!(role_id.is_some() && actor_id.is_some());
+
+        for (curator, classes) in [("Redmine", &redmine), ("OpenProject", &openproject)] {
+            // Role -> project_role.
+            let role = classes
+                .iter()
+                .find(|c| c.name == "Role")
+                .unwrap_or_else(|| panic!("{curator} ships a Role model"));
+            assert_eq!(role.canonical_concept.as_deref(), Some("project_role"));
+            assert_eq!(role.canonical_id(), role_id);
+            // Group -> project_actor (Principal STI subtype collapse).
+            let group = classes
+                .iter()
+                .find(|c| c.name == "Group")
+                .unwrap_or_else(|| panic!("{curator} ships a Group model"));
+            assert_eq!(
+                group.canonical_concept.as_deref(),
+                Some("project_actor"),
+                "{curator} Group folds into project_actor",
+            );
+            assert_eq!(group.canonical_id(), actor_id);
+        }
+    }
+
     /// Exactly-one-Model invariant post AdaWorldAPI/ruff#26: OP's
     /// `app/models/work_package/` sub-files reopen `class WorkPackage`
     /// without adding ontology declarations; before the fix this produced

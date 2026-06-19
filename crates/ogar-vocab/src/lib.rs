@@ -1089,6 +1089,7 @@ const CODEBOOK: &[(&str, u16)] = &[
     ("project_news", 0x0114),          // Redmine News          ↔ OP News
     ("project_message", 0x0115),       // Redmine Message       ↔ OP Message (board/forum divergence)
     ("project_forum", 0x0116),         // Redmine Board         ↔ OP Forum (name divergence; parent of project_message)
+    ("project_role", 0x0117),          // Redmine Role          ↔ OP Role (RBAC permission set)
 
     // ── 0x02XX — commerce / billing / ERP domain (OSB ↔ Odoo) ──
     // Promoted from the parallel session's `lance-graph-ontology::ar_shape`
@@ -1477,13 +1478,17 @@ pub fn canonical_concept(name: &str) -> String {
     }
     // ProjectActor — the actor canonical concept on the project domain.
     // Both Redmine and OpenProject use `User < Principal < ApplicationRecord`;
-    // the STI chain yields TWO classes (Principal at the root, User as
-    // the STI child) that BOTH project to the same actor identity. Plus
-    // the canonical class-name spellings for round-trip.
+    // the STI chain yields multiple classes (Principal at the root, User
+    // and Group as STI children) that ALL project to the same actor
+    // identity — a Group is a Principal subtype, assignable / member-able
+    // exactly where a User is, so it collapses here too (its `has_many
+    // :users` aggregation is curator-local structure the canonical layer
+    // abstracts over). Plus the canonical class-name spellings for round-trip.
     if matches!(
         lower.as_str(),
         "user" | "users"
             | "principal" | "principals"
+            | "group" | "groups"
             | "project_actor" | "projectactor"
     ) {
         return "project_actor".to_string();
@@ -1610,6 +1615,17 @@ pub fn canonical_concept(name: &str) -> String {
             | "project_forum" | "projectforum"
     ) {
         return "project_forum".to_string();
+    }
+    // ProjectRole — the RBAC permission-set bundle assigned to actors via
+    // memberships. Both curators ship `Role` (has_many :member_roles +
+    // :members through, a name, and a permission set). NOTE: distinct from
+    // `ogar_from_ruff::project_role`, which maps a curator association
+    // NAME to a ProjectWorkItem family-edge role — this is the
+    // authorization concept (the `Role` model), not a graph-edge role.
+    if matches!(lower.as_str(),
+        "role" | "roles" | "project_role" | "projectrole"
+    ) {
+        return "project_role".to_string();
     }
     // ── Commerce / billing / ERP domain (OSB ↔ Odoo) ──
     // CommercialLineItem — line on a commercial document. OSB
@@ -2259,6 +2275,39 @@ pub fn project_forum() -> Class {
     c
 }
 
+/// `Role` — the RBAC permission-set bundle. Both curators ship `Role`
+/// with `has_many :member_roles` + `has_many :members, through:
+/// :member_roles` (the actors holding the role) and a serialized /
+/// joined permission set. The `memberships` family edge points at the
+/// existing [`project_membership`] join.
+///
+/// NOTE: this is the authorization `Role` model — distinct from
+/// `ogar_from_ruff::project_role`, which is a helper that maps a curator
+/// association *name* onto a [`project_work_item`] family-edge role.
+#[must_use]
+pub fn project_role() -> Class {
+    let mut c = Class::new("ProjectRole");
+    c.language = Language::Unknown;
+    c.canonical_concept = Some("project_role".to_string());
+    c.associations = vec![
+        family_has_many("memberships", "ProjectMembership"),
+    ];
+    let mut name = Attribute::new("name");
+    name.type_name = Some("string".to_string());
+    let mut position = Attribute::new("position");
+    position.type_name = Some("integer".to_string());
+    // The defining RBAC payload — a permission set. Redmine serializes it
+    // inline (`serialize :permissions`); OpenProject normalizes it into a
+    // `has_many :role_permissions` table. Both forms collapse to the
+    // canonical concept: a Role carries permissions. Represented coarsely
+    // as a text slot at the canonical layer; the curator-local storage
+    // shape is a leaf detail.
+    let mut permissions = Attribute::new("permissions");
+    permissions.type_name = Some("text".to_string());
+    c.attributes = vec![name, position, permissions];
+    c
+}
+
 // ─────────────────────────────────────────────────────────────────────
 // Commerce / billing / ERP domain canonical classes (OSB ↔ Odoo).
 //
@@ -2855,11 +2904,15 @@ mod tests {
 
     #[test]
     fn project_actor_resolver_collapses_user_principal_sti_chain() {
-        // Both Redmine and OP have `User < Principal < ApplicationRecord`.
-        // The promoted arm collapses both STI siblings onto a single
-        // canonical concept — they ARE the same actor identity in the
-        // ontology.
-        for src in ["User", "user", "Users", "Principal", "principal", "Principals"] {
+        // Both Redmine and OP have `User < Principal < ApplicationRecord`
+        // AND `Group < Principal`. The promoted arm collapses ALL Principal
+        // STI subtypes onto a single canonical concept — they ARE the same
+        // actor identity in the ontology (a Group is assignable / member-able
+        // exactly where a User is).
+        for src in [
+            "User", "user", "Users", "Principal", "principal", "Principals",
+            "Group", "group", "Groups",
+        ] {
             assert_eq!(canonical_concept(src), "project_actor", "{src} -> project_actor");
         }
         // PascalCase canonical class name round-trips (codex P2 doctrine).
@@ -2868,7 +2921,7 @@ mod tests {
         // All resolve to the same codebook id.
         let id = canonical_concept_id("project_actor");
         assert!(id.is_some());
-        for src in ["User", "Principal", "Users", "Principals", "ProjectActor"] {
+        for src in ["User", "Principal", "Group", "Groups", "ProjectActor"] {
             assert_eq!(ogar_codebook(src), id, "{src} -> codebook id");
         }
     }
@@ -2885,6 +2938,7 @@ mod tests {
             "project_attachment", "project_comment", "project_custom_field",
             "project_relation", "project_changeset", "project_watcher",
             "project_news", "project_message", "project_forum",
+            "project_role",
         ] {
             let id = canonical_concept_id(project_concept)
                 .unwrap_or_else(|| panic!("{project_concept} missing from codebook"));
@@ -2936,6 +2990,7 @@ mod tests {
             (project_news(), "ProjectNews", 0x0114),
             (project_message(), "ProjectMessage", 0x0115),
             (project_forum(), "ProjectForum", 0x0116),
+            (project_role(), "ProjectRole", 0x0117),
         ] {
             assert_eq!(canonical.name, name);
             assert_eq!(canonical.language, Language::Unknown);
@@ -3018,6 +3073,7 @@ mod tests {
             ("project_message", &["Message", "messages", "ProjectMessage"]),
             // Cross-curator name divergence: Redmine `Board` ↔ OP `Forum`.
             ("project_forum", &["Board", "boards", "Forum", "forums", "ProjectForum"]),
+            ("project_role", &["Role", "roles", "ProjectRole"]),
         ];
         for (concept, aliases) in cases {
             let id = canonical_concept_id(concept).unwrap();
