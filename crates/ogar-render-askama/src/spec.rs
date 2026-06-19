@@ -14,15 +14,27 @@ use ogar_vocab::Class;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ArtifactKind {
     /// Rust `struct` definition + `pub const CLASS_ID: u16` constant.
+    /// Codegen flavour — downstream compiler is the final consumer.
     RustStruct,
-    /// TypeScript `interface` declaration + matching `class_ids.ts` entry.
+    /// **Deprecated** — to be removed when T2 lands. Anti-pattern #8 in
+    /// the Northstar plan: askama is the rendering layer (server-side
+    /// HTML), not a producer of TypeScript source. The frontend in the
+    /// WoA-rs pattern reads askama-rendered HTML directly. PR #80
+    /// (TsInterface emitter) was closed for this reason. Variant kept
+    /// for one merge cycle so the dispatcher's stub fallback still has
+    /// something to fall back to; T2 replaces this variant with
+    /// `HtmlListView`.
     TsInterface,
     /// SurrealQL `DEFINE TABLE` + per-field `DEFINE FIELD` statements.
+    /// Codegen flavour — DB engine is the final consumer.
     SurrealqlTable,
-    /// OpenAPI 3.1 `components.schemas.{Class}` JSON object.
+    /// **Deprecated** — to be removed when T2 lands. See Anti-pattern #8.
+    /// OpenAPI schemas serve TS / external SDK consumers the canonical
+    /// pattern doesn't have; demand-driven, not in the +5 kit.
     OpenapiSchema,
     /// Rust `match` arm dispatching on `ClassId` — useful for routing on
-    /// `NodeGuid::classid` in graph consumers.
+    /// `NodeGuid::classid` in graph consumers. Codegen flavour. Moves to
+    /// the Northstar roadmap (post-+5+5); not in the bootstrap kit.
     NodeGuidRoutingArm,
 }
 

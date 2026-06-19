@@ -1,11 +1,26 @@
-//! `ogar-render-askama` — build-time codegen harness over the calcified
+//! `ogar-render-askama` — askama rendering harness over the calcified
 //! canonical layer.
 //!
 //! Structurally a mirror of [`AdaWorldAPI/woa-rs`](https://github.com/AdaWorldAPI/woa-rs)
-//! `crates/codegen` (RFC-v02-006): one [`ArtifactKind`] enum dispatched
+//! `crates/codegen` + `templates/`: one [`ArtifactKind`] enum dispatched
 //! through a per-kind [`ArtifactEmitter`] trait, with one askama template
-//! per kind. The canonical input here is [`ogar_vocab::Class`] instead of
+//! per kind. The canonical input is [`ogar_vocab::Class`] instead of
 //! WoA's `RouteSpec`, but the kit shape is the same.
+//!
+//! # Two flavours of artifact (no TypeScript layer)
+//!
+//! - **Codegen** — emit `.rs` / `.surql` source files. The downstream
+//!   compiler / DB engine is the final consumer (Northstar plan §3:
+//!   T1 `RustStruct`, T5 `SurrealqlTable`).
+//! - **Render** — emit HTML the human reads directly via `askama_axum` or
+//!   equivalent (T2–T4: `HtmlListView` / `HtmlDetailView` / `HtmlForm`).
+//!   Askama **is** the output; nothing transcodes it further.
+//!
+//! There is no TypeScript codegen path. Askama as a producer of `.ts`
+//! source files is anti-pattern #8 in the Northstar plan — askama is
+//! the rendering layer in WoA-rs's pattern, not a producer of other
+//! languages the consumer transcompiles. PR #80 (TsInterface) was closed
+//! for this reason.
 //!
 //! # The 800 → 7-70 collapse
 //!
@@ -25,9 +40,11 @@
 //!         ▼
 //!   ogar-render-askama    (THIS CRATE — askama-bound emitters per kind)
 //!         │
-//!         │  .rs / .ts / .surql / .json source text
+//!         │  .rs / .surql source text  (codegen flavour, T1 / T5)
+//!         │  rendered HTML strings     (render flavour, T2–T4 via askama_axum)
 //!         ▼
-//!   downstream consumers  (op-codegen-projection, rm-codegen, medcare, …)
+//!   downstream consumers  (op-codegen-projection, rm-codegen, medcare, …,
+//!                          OR the user's browser for the render flavour)
 //! ```
 //!
 //! `ClassView` (the **run-time** projection layer in `lance-graph-contract`)
