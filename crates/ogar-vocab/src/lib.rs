@@ -1434,6 +1434,8 @@ pub fn canonical_concept(name: &str) -> String {
         lower.as_str(),
         "timeentry"
             | "time_entry"
+            | "timeentries"
+            | "time_entries"
             | "account.analytic.line"
             | "account_analytic_line"
             | "leistungsposition"
@@ -1488,6 +1490,7 @@ pub fn canonical_concept(name: &str) -> String {
     if matches!(
         lower.as_str(),
         "issuestatus" | "issue_status"
+            | "issuestatuses" | "issue_statuses"
             | "status" | "statuses"
             | "project_status" | "projectstatus"
     ) {
@@ -1505,7 +1508,8 @@ pub fn canonical_concept(name: &str) -> String {
     }
     // ── Project-mgmt promotions from the cross-curator overlap probe ──
     if matches!(lower.as_str(),
-        "member" | "members" | "project_membership" | "projectmembership"
+        "member" | "members" | "membership" | "memberships"
+            | "project_membership" | "projectmembership"
     ) {
         return "project_membership".to_string();
     }
@@ -1648,6 +1652,7 @@ pub fn canonical_concept(name: &str) -> String {
     if matches!(
         lower.as_str(),
         "issuepriority" | "issue_priority"
+            | "issuepriorities" | "issue_priorities"
             | "priority" | "priorities"
     ) {
         return "priority".to_string();
@@ -2844,21 +2849,34 @@ mod tests {
     #[test]
     fn plural_table_aliases_resolve_to_promoted_codebook_id() {
         for (singular, plural) in [
+            // From PR #67 — original codex P2 fix.
             ("project_wiki_page", "wiki_pages"),
             ("project_wiki_page", "wikipages"),
             ("project_wiki_page", "WikiPages"),
             ("project_custom_field", "custom_fields"),
             ("project_custom_field", "customfields"),
             ("project_custom_field", "CustomFields"),
-            // Codex P2 on PR #68 — Redmine `issue_relations` is the
-            // Rails-tableized form of `IssueRelation`. The single-`s`
-            // lexical fallback drops to `issue_relation`, which is the
-            // singular curator alias but NOT a canonical concept name —
-            // so canonical_concept_id returned None. Adding the plural
-            // form to the promoted arm.
+            // From PR #68 — codex P2 on `issue_relations`.
             ("project_relation", "issue_relations"),
             ("project_relation", "issuerelations"),
             ("project_relation", "IssueRelations"),
+            // Proactive coverage for the same defect class on already-merged
+            // promoted concepts where the Rails-table plural is irregular
+            // (Rails: ies→y for repository/query, s→ses for status/priority,
+            // -ies/-ses pluralization in general). Single-`s` lexical
+            // fallback drops to non-canonical strings; explicit promotion
+            // ensures the codebook lookup hits.
+            ("billable_work_entry", "time_entries"),
+            ("billable_work_entry", "timeentries"),
+            ("billable_work_entry", "TimeEntries"),
+            ("project_status", "issue_statuses"),
+            ("project_status", "issuestatuses"),
+            ("project_status", "IssueStatuses"),
+            ("priority", "issue_priorities"),
+            ("priority", "issuepriorities"),
+            ("priority", "IssuePriorities"),
+            ("project_membership", "memberships"),
+            ("project_membership", "Memberships"),
         ] {
             let canonical_id = canonical_concept_id(singular);
             assert!(canonical_id.is_some(), "{singular} must be in codebook");
