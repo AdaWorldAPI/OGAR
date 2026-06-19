@@ -339,11 +339,10 @@ council warned against).
   and the `ActionDef` is a materialization over (`ClassView` × mask) — no producer
   field added, no requirement dropped.
 
-### 11.2 Upstream doctrine dependencies (OGAR Core cleanup PR — not this session)
-Two phrases in the merged #546 doctrine still read with the old drift; this plan's
-`exec`/Executor references assume the **post-council** wording. Flagged here for
-the OGAR Core cleanup PR (the doctrine is Core's artifact, not the OP arm's to
-edit):
+### 11.2 Upstream doctrine cleanup — corrected in lance-graph#547
+Two phrases in the merged #546 doctrine read with the old drift; this plan's
+`exec`/Executor references assume the **post-council** wording. Now **corrected in
+lance-graph#547** (docs-only, pending OGAR Core review) — both items below:
 1. **"ractor-**owned** LanceGraph SoA"** → "ractor-**proven**" / "mailbox-owned,
    ractor-proven at compile time". ractor is the compile-time ownership proof, not
    runtime mutation authority (§9 of the detailed ownership section already says
