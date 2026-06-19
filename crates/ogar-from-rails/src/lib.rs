@@ -700,6 +700,46 @@ mod tests {
         }
     }
 
+    /// **Board/Forum convergence** on real source. Cross-curator name
+    /// divergence (Redmine `Board` ↔ OP `Forum`) unified onto
+    /// `project_forum`. Closes the parent-container reference from
+    /// `project_message`.
+    #[test]
+    #[ignore = "requires Redmine + OpenProject checkouts"]
+    fn redmine_board_and_openproject_forum_converge_as_project_forum() {
+        let Ok(redmine_src) = std::env::var("REDMINE_SRC") else {
+            eprintln!("skipping: REDMINE_SRC not set");
+            return;
+        };
+        let op_src = std::env::var("OPENPROJECT_SRC")
+            .unwrap_or_else(|_| "/home/user/openproject".to_string());
+        let op_path = PathBuf::from(&op_src);
+        if !op_path.exists() {
+            eprintln!("skipping: OpenProject not present at {op_src}");
+            return;
+        }
+
+        let redmine = extract(&PathBuf::from(redmine_src));
+        let openproject = extract(&op_path);
+        let id = ogar_vocab::canonical_concept_id("project_forum");
+        assert!(id.is_some());
+
+        let redmine_board = redmine
+            .iter()
+            .find(|c| c.name == "Board")
+            .expect("Redmine ships a Board model");
+        let op_forum = openproject
+            .iter()
+            .find(|c| c.name == "Forum")
+            .expect("OpenProject ships a Forum model");
+
+        for c in [redmine_board, op_forum] {
+            assert_eq!(c.canonical_concept.as_deref(), Some("project_forum"));
+            assert_eq!(c.source_domain.as_deref(), Some("project"));
+            assert_eq!(c.canonical_id(), id);
+        }
+    }
+
     /// Exactly-one-Model invariant post AdaWorldAPI/ruff#26: OP's
     /// `app/models/work_package/` sub-files reopen `class WorkPackage`
     /// without adding ontology declarations; before the fix this produced
