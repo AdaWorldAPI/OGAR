@@ -489,6 +489,41 @@ mod tests {
         }
     }
 
+    /// **Priority convergence** on real source. Both curators use
+    /// `IssuePriority < Enumeration`; both lift to the canonical
+    /// `priority` concept (codebook id `0x000D`).
+    #[test]
+    #[ignore = "requires Redmine + OpenProject checkouts"]
+    fn redmine_and_openproject_issuepriority_converge_through_canonical() {
+        let Ok(redmine_src) = std::env::var("REDMINE_SRC") else {
+            eprintln!("skipping: REDMINE_SRC not set");
+            return;
+        };
+        let op_src = std::env::var("OPENPROJECT_SRC")
+            .unwrap_or_else(|_| "/home/user/openproject".to_string());
+        let op_path = PathBuf::from(&op_src);
+        if !op_path.exists() {
+            eprintln!("skipping: OpenProject not present at {op_src}");
+            return;
+        }
+
+        let redmine = extract(&PathBuf::from(redmine_src));
+        let openproject = extract(&op_path);
+
+        let priority_id = ogar_vocab::canonical_concept_id("priority");
+        assert!(priority_id.is_some());
+
+        for (curator, classes) in [("Redmine", &redmine), ("OpenProject", &openproject)] {
+            let p = classes
+                .iter()
+                .find(|c| c.name == "IssuePriority")
+                .unwrap_or_else(|| panic!("{curator} ships an IssuePriority model"));
+            assert_eq!(p.canonical_concept.as_deref(), Some("priority"));
+            assert_eq!(p.source_domain.as_deref(), Some("project"));
+            assert_eq!(p.canonical_id(), priority_id);
+        }
+    }
+
     /// Exactly-one-Model invariant post AdaWorldAPI/ruff#26: OP's
     /// `app/models/work_package/` sub-files reopen `class WorkPackage`
     /// without adding ontology declarations; before the fix this produced

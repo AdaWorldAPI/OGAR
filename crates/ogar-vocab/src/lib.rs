@@ -1071,6 +1071,10 @@ const CODEBOOK: &[(&str, u16)] = &[
     ("billing_party", 0x000A),
     ("payment_record", 0x000B),
     ("currency_policy", 0x000C),
+    // Priority — referenced by project_work_item().priority. Universal
+    // enough not to wear the project_ prefix; Redmine `IssuePriority`
+    // and OP `IssuePriority` both <`Enumeration`.
+    ("priority", 0x000D),
 ];
 
 /// **OGAR codebook lookup** — resolve a canonical-concept string to its
@@ -1462,6 +1466,18 @@ pub fn canonical_concept(name: &str) -> String {
     ) {
         return "currency_policy".to_string();
     }
+    // Priority — referenced by project_work_item().priority. Both Redmine
+    // and OpenProject use `IssuePriority < Enumeration`; lexical fallback
+    // would shuttle bare `Priority`/`Priorities` to `priority` already,
+    // but `IssuePriority` lexically lands on `issuepriority` which is NOT
+    // in the codebook — must promote explicitly so it collapses.
+    if matches!(
+        lower.as_str(),
+        "issuepriority" | "issue_priority"
+            | "priority" | "priorities"
+    ) {
+        return "priority".to_string();
+    }
     // ── Layer 2: lexical fallback ──
     let last = lower.rsplit('.').next().unwrap_or(lower.as_str());
     if last.len() > 3 && last.ends_with('s') && !last.ends_with("ss") {
@@ -1785,6 +1801,31 @@ pub fn payment_record() -> Class {
     let mut method = Attribute::new("method");
     method.type_name = Some("string".to_string());
     c.attributes = vec![amount, payment_date, method];
+    c
+}
+
+/// Priority — the urgency lookup applied to work items. The canonical
+/// target of [`project_work_item`]'s `priority` family edge.
+///
+/// Both Redmine and OpenProject use `IssuePriority < Enumeration` with
+/// the universal `name` / `position` / `is_default` triple and the
+/// back-reference `has_many :issues` / `:work_packages` to
+/// [`project_work_item`].
+#[must_use]
+pub fn priority() -> Class {
+    let mut c = Class::new("Priority");
+    c.language = Language::Unknown;
+    c.canonical_concept = Some("priority".to_string());
+    c.associations = vec![
+        family_has_many("work_items", "ProjectWorkItem"),
+    ];
+    let mut name = Attribute::new("name");
+    name.type_name = Some("string".to_string());
+    let mut position = Attribute::new("position");
+    position.type_name = Some("integer".to_string());
+    let mut is_default = Attribute::new("is_default");
+    is_default.type_name = Some("boolean".to_string());
+    c.attributes = vec![name, position, is_default];
     c
 }
 
@@ -2373,6 +2414,50 @@ mod tests {
             a.name == "party" && a.class_name.as_deref() == Some("BillingParty")));
         assert!(pay.associations.iter().any(|a|
             a.name == "document" && a.class_name.as_deref() == Some("CommercialDocument")));
+    }
+
+    #[test]
+    fn priority_is_the_promoted_canonical_class() {
+        let c = priority();
+        assert_eq!(c.name, "Priority");
+        assert_eq!(c.canonical_concept.as_deref(), Some("priority"));
+        assert_eq!(c.language, Language::Unknown);
+        assert_eq!(c.canonical_id(), Some(0x000D));
+        // Universal typed attributes mirroring Status/Type pattern.
+        let attr_kind = |n: &str, t: &str| {
+            assert_eq!(
+                c.attributes.iter().find(|a| a.name == n).and_then(|a| a.type_name.as_deref()),
+                Some(t),
+                "attr {n} typed as {t}",
+            );
+        };
+        attr_kind("name", "string");
+        attr_kind("position", "integer");
+        attr_kind("is_default", "boolean");
+        // Back-reference to ProjectWorkItem.
+        let work_items = c
+            .associations
+            .iter()
+            .find(|a| a.name == "work_items")
+            .expect("work_items edge");
+        assert_eq!(work_items.kind, AssociationKind::HasMany);
+        assert_eq!(work_items.class_name.as_deref(), Some("ProjectWorkItem"));
+    }
+
+    #[test]
+    fn priority_resolver_collapses_redmine_and_op_issuepriority() {
+        // Both curators use `IssuePriority < Enumeration`. The lexical
+        // form `issuepriority` is distinct from bare `priority`; the
+        // promoted arm collapses both.
+        let id = canonical_concept_id("priority");
+        assert!(id.is_some());
+        for src in [
+            "IssuePriority", "issuepriority", "issue_priority",
+            "Priority", "priority", "Priorities", "priorities",
+        ] {
+            assert_eq!(canonical_concept(src), "priority", "{src} -> priority");
+            assert_eq!(ogar_codebook(src), id, "{src} -> codebook id");
+        }
     }
 
     #[test]
