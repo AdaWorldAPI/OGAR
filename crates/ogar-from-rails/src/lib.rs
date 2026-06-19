@@ -439,6 +439,56 @@ mod tests {
         );
     }
 
+    /// **ProjectActor convergence** on real source. Both Redmine and OP
+    /// model actors as the STI chain `User < Principal < ApplicationRecord`.
+    /// Both `User` and `Principal` lift to the same canonical concept
+    /// (`project_actor`), with binary codebook convergence — the SAME
+    /// `canonical_id` for both STI siblings AND across both curators.
+    #[test]
+    #[ignore = "requires Redmine + OpenProject checkouts"]
+    fn redmine_and_openproject_actors_converge_through_canonical() {
+        let Ok(redmine_src) = std::env::var("REDMINE_SRC") else {
+            eprintln!("skipping: REDMINE_SRC not set");
+            return;
+        };
+        let op_src = std::env::var("OPENPROJECT_SRC")
+            .unwrap_or_else(|_| "/home/user/openproject".to_string());
+        let op_path = PathBuf::from(&op_src);
+        if !op_path.exists() {
+            eprintln!("skipping: OpenProject not present at {op_src}");
+            return;
+        }
+
+        let redmine = extract(&PathBuf::from(redmine_src));
+        let openproject = extract(&op_path);
+
+        // All four classes — Redmine User + Principal, OP User + Principal
+        // — share the canonical concept and the binary codebook id.
+        let expected_id = ogar_vocab::canonical_concept_id("project_actor");
+        assert!(expected_id.is_some(), "project_actor must be in the codebook");
+
+        for (curator, classes) in [("Redmine", &redmine), ("OpenProject", &openproject)] {
+            for class_name in ["User", "Principal"] {
+                let c = classes
+                    .iter()
+                    .find(|c| c.name == class_name)
+                    .unwrap_or_else(|| panic!("{curator} ships a {class_name} model"));
+                assert_eq!(
+                    c.canonical_concept.as_deref(),
+                    Some("project_actor"),
+                    "{curator} {class_name} must canonicalize to project_actor",
+                );
+                assert_eq!(c.source_domain.as_deref(), Some("project"));
+                // Binary codebook convergence — the load-bearing claim.
+                assert_eq!(
+                    c.canonical_id(),
+                    expected_id,
+                    "{curator} {class_name} must share the OGAR codebook id",
+                );
+            }
+        }
+    }
+
     /// Exactly-one-Model invariant post AdaWorldAPI/ruff#26: OP's
     /// `app/models/work_package/` sub-files reopen `class WorkPackage`
     /// without adding ontology declarations; before the fix this produced
