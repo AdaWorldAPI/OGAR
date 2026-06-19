@@ -35,14 +35,18 @@
 //! | `scopes`               | `scopes` / `default_scope`    | `Scope` / `Scopes` → `Class.scopes`; `DefaultScope` → `Class.default_scope` |
 //! | `acts_as`              | `mixins`                      | rendered as `acts_as_<variant>` so they survive on the same shelf as concerns (`ogar-vocab` has no separate `acts_as` slot) |
 //! | `sti.inherits_from`    | `parent`                      | STI parent — matches `Class.parent` slot    |
+//! | `functions`            | `Vec<ActionDef>` (DO-arm)     | [`lift_actions`] — one `ActionDef` per method; standalone, not on `Class` |
 //!
 //! Fields NOT lifted today (no equivalent on the ruff side OR no clean
 //! semantic mapping):
 //!
-//! - `Model::functions` — ruff captures method names; OGAR `Class`
-//!   doesn't track them at the Class level. The `MethodDecl` /
-//!   `ActionDef` shapes are for behavioural arms (gen_server etc.) —
-//!   not the Rails-AR domain. Future Rails-method lift can land here.
+//! - `Model::functions` IS now lifted — by [`lift_actions`] (the DO-arm)
+//!   to a standalone `Vec<ActionDef>`, not onto `Class` (the OGAR `Class`
+//!   is the THING/THINK shape; actions register on the DO-arm
+//!   separately). Each method's `reads` / `raises` / `traverses` edges
+//!   stay on the narrow / SPO arm as triples — `lift_actions` does not
+//!   duplicate them, nor claim a reactive dependency plain Rails methods
+//!   don't declare.
 //! - `Model::delegations`, `Model::dsl_calls`, `Model::gem_dsl`,
 //!   `Model::dynamic_methods`, `Model::refinements` — ruff's
 //!   long-tail. OGAR doesn't model them yet; can land as
@@ -61,8 +65,8 @@
 #![warn(missing_docs)]
 
 use ogar_vocab::{
-    Association, AssociationKind, Attribute, Callback, Class, EnumDecl, EnumSource, Language,
-    Scope, Validation,
+    ActionDef, Association, AssociationKind, Attribute, Callback, Class, EnumDecl, EnumSource,
+    Language, Scope, Validation,
 };
 use ruff_spo_triplet::{
     AssocDecl, AssocKind, AttrDecl, AttrKind, Callback as RuffCallback, ConcernKind, Model,
@@ -100,6 +104,42 @@ pub fn lift_model(model: &Model) -> Class {
     class.validations = model.validations.iter().filter_map(lift_validation).collect();
     class.default_scope = lift_default_scope(model);
     class
+}
+
+// ───────────────────────────── actions (DO-arm) ─────────────────────────
+
+/// Lift a [`Model`]'s methods to OGAR [`ActionDef`] declarations — the
+/// DO-arm of the harvest. One `ActionDef` per [`ruff_spo_triplet::Function`].
+///
+/// This is a **facts-only** lift: it sets the action's `identity`,
+/// `predicate` (the method name — already snake_case on the Rails side),
+/// and `object_class` (the model name). It deliberately does **not**:
+///
+/// - set any execution policy (the vocab [`ActionDef`] has no `exec` slot;
+///   backend routing is consumer-private — see the OP-arm plan §5.2),
+/// - construct an `ActionInvocation` (a live-instance carrier: no target
+///   instance / cycle / trace exists at harvest time),
+/// - populate `kausal` from [`ruff_spo_triplet::Function`]`::reads` — a
+///   plain Rails method reading a field is **not** a reactive
+///   `@api.depends`-style trigger, so claiming one would leak method-body
+///   description into causal semantics. Those `reads` / `raises` /
+///   `traverses` edges already ride the narrow / SPO arm as triples.
+///
+/// The result is registry-ready: guard / RBAC / `exec` enrichment happens
+/// downstream at registration, not in the producer.
+#[must_use]
+pub fn lift_actions(model: &Model) -> Vec<ActionDef> {
+    model
+        .functions
+        .iter()
+        .map(|f| {
+            ActionDef::new(
+                format!("{}::action_def::{}", model.name, f.name),
+                &f.name,
+                &model.name,
+            )
+        })
+        .collect()
 }
 
 // ───────────────────────────── associations ──────────────────────────────
@@ -348,7 +388,7 @@ fn parse_bool(s: &str) -> Option<bool> {
 mod tests {
     use super::*;
     use ruff_spo_triplet::{
-        ActsAs, AssocDecl, AttrDecl, Callback as RuffCallback, ConcernRef, ScopeDecl,
+        ActsAs, AssocDecl, AttrDecl, Callback as RuffCallback, ConcernRef, Function, ScopeDecl,
         Validation as RuffValidation,
     };
 
@@ -606,6 +646,57 @@ mod tests {
         assert_eq!(classes.len(), 2);
         assert_eq!(classes[0].name, "WorkPackage");
         assert_eq!(classes[1].name, "Project");
+    }
+
+    fn mk_model_with_functions() -> Model {
+        let mut m = Model::new("WorkPackage");
+        m.functions.push(Function {
+            name: "set_status".to_string(),
+            reads: vec!["status".to_string()],
+            raises: Vec::new(),
+            traverses: Vec::new(),
+        });
+        m.functions.push(Function {
+            name: "close!".to_string(),
+            reads: Vec::new(),
+            raises: vec!["ArgumentError".to_string()],
+            traverses: Vec::new(),
+        });
+        m
+    }
+
+    #[test]
+    fn lift_actions_emits_one_def_per_function() {
+        let acts = lift_actions(&mk_model_with_functions());
+        assert_eq!(acts.len(), 2);
+    }
+
+    #[test]
+    fn lift_actions_predicate_object_class_and_identity() {
+        let acts = lift_actions(&mk_model_with_functions());
+        assert_eq!(acts[0].predicate, "set_status");
+        assert_eq!(acts[0].object_class, "WorkPackage");
+        assert_eq!(acts[0].identity, "WorkPackage::action_def::set_status");
+        assert_eq!(acts[1].predicate, "close!");
+        assert_eq!(acts[1].identity, "WorkPackage::action_def::close!");
+    }
+
+    /// Facts-only: no exec policy (no such slot on the vocab `ActionDef`),
+    /// no causal claim derived from `reads` (a plain Rails read is not a
+    /// reactive dependency), no body (ruff captures no method-body text),
+    /// no decorators (Rails functions carry none in the ruff IR).
+    #[test]
+    fn lift_actions_is_facts_only() {
+        let acts = lift_actions(&mk_model_with_functions());
+        let a = &acts[0];
+        assert!(a.kausal.is_none(), "reads must NOT become a causal dependency");
+        assert!(a.body_source.is_none());
+        assert!(a.decorators.is_empty());
+    }
+
+    #[test]
+    fn lift_actions_empty_functions_yields_empty() {
+        assert!(lift_actions(&Model::new("Empty")).is_empty());
     }
 
     #[test]
