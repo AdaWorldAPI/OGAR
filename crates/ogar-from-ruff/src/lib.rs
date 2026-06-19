@@ -80,12 +80,23 @@ use ruff_spo_triplet::{
 pub fn lift_model_graph(graph: &ModelGraph) -> Vec<Class> {
     let domain = classify_domain(&graph.namespace);
     let concept_domain = domain.as_deref().and_then(ogar_vocab::source_domain_concept);
+    // The harvest namespace IS the curator id (`"openproject"`,
+    // `"redmine"`, `"odoo"`, …). `source_domain` is the coarse bucket it
+    // maps to; `source_curator` keeps the specific product so two curators
+    // in the same domain (Redmine + OpenProject are both `project`) stay
+    // distinguishable downstream.
+    let curator = if graph.namespace.is_empty() {
+        None
+    } else {
+        Some(graph.namespace.clone())
+    };
     graph
         .models
         .iter()
         .map(|m| {
             let mut class = lift_model(m);
             class.source_domain = domain.clone();
+            class.source_curator = curator.clone();
             // Domain-gate the canonical concept. `lift_model` resolves
             // domain-blind (an all-domains best guess); here we know the
             // curator's domain, so re-resolve through the gate to withhold a
@@ -906,6 +917,34 @@ mod tests {
             lift_model(&Model::new("Role")).canonical_concept.as_deref(),
             Some("project_role"),
         );
+    }
+
+    #[test]
+    fn source_curator_carries_namespace_distinct_from_domain() {
+        // Two curators in the SAME domain (both `project`) are kept
+        // distinguishable by source_curator (the harvest namespace).
+        let mut redmine = ModelGraph::new("redmine");
+        redmine.models.push(Model::new("Issue"));
+        let r = &lift_model_graph(&redmine)[0];
+        assert_eq!(r.source_domain.as_deref(), Some("project"));
+        assert_eq!(r.source_curator.as_deref(), Some("redmine"));
+
+        let mut op = ModelGraph::new("openproject");
+        op.models.push(Model::new("WorkPackage"));
+        let o = &lift_model_graph(&op)[0];
+        assert_eq!(o.source_domain.as_deref(), Some("project"));
+        assert_eq!(o.source_curator.as_deref(), Some("openproject"));
+
+        // Same domain, distinct curators — AND same canonical concept/id:
+        // the convergence holds while provenance stays separable.
+        assert_eq!(r.source_domain, o.source_domain);
+        assert_ne!(r.source_curator, o.source_curator);
+        assert_eq!(r.canonical_id(), o.canonical_id());
+
+        // Empty namespace → no curator tag (not an empty string).
+        let mut bare = ModelGraph::new("");
+        bare.models.push(Model::new("X"));
+        assert_eq!(lift_model_graph(&bare)[0].source_curator, None);
     }
 
     #[test]
