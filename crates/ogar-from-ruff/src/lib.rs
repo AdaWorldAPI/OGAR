@@ -754,16 +754,27 @@ mod tests {
 
     #[test]
     fn lift_model_sets_canonical_concept_including_promoted_invariant() {
-        // Plain class → lexical concept.
+        // Plain class with no promoted invariant → lexical concept.
         assert_eq!(
-            lift_model(&Model::new("WorkPackage")).canonical_concept.as_deref(),
-            Some("workpackage"),
+            lift_model(&Model::new("Account")).canonical_concept.as_deref(),
+            Some("account"),
         );
-        // Promoted invariant → the BillableWorkEntry canonical concept:
-        // the OpenProject curator wired deterministically into the bridge.
+        // Promoted ERP-bridge concept (BillableWorkEntry) — OpenProject
+        // `TimeEntry` deterministically wired into the cross-domain bridge.
         assert_eq!(
             lift_model(&Model::new("TimeEntry")).canonical_concept.as_deref(),
             Some("billable_work_entry"),
+        );
+        // Promoted project-domain concept (ProjectWorkItem) — Redmine
+        // `Issue` and OpenProject `WorkPackage` both wire into the
+        // same-domain work-item invariant.
+        assert_eq!(
+            lift_model(&Model::new("Issue")).canonical_concept.as_deref(),
+            Some("project_work_item"),
+        );
+        assert_eq!(
+            lift_model(&Model::new("WorkPackage")).canonical_concept.as_deref(),
+            Some("project_work_item"),
         );
     }
 

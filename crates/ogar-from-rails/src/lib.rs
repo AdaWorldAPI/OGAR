@@ -143,4 +143,125 @@ mod tests {
             "Rails frontend tags the project domain",
         );
     }
+
+    /// Real-corpus **same-domain convergence proof** across the fork
+    /// lineage Redmine → ChiliProject → OpenProject. Both Redmine `Issue`
+    /// and OpenProject `WorkPackage` must lift to the *same* canonical
+    /// concept (`project_work_item`) — and OpenProject's later modular
+    /// enrichment (extra includes) must not change that.
+    ///
+    /// Set `REDMINE_SRC` and (optionally) `OPENPROJECT_SRC` (defaults to
+    /// `/home/user/openproject`). Skips gracefully if either is missing.
+    #[test]
+    #[ignore = "requires Redmine + OpenProject checkouts"]
+    fn redmine_issue_and_openproject_work_package_overlap_as_project_work_item() {
+        let Ok(redmine_src) = std::env::var("REDMINE_SRC") else {
+            eprintln!("skipping: REDMINE_SRC not set");
+            return;
+        };
+        let op_src = std::env::var("OPENPROJECT_SRC")
+            .unwrap_or_else(|_| "/home/user/openproject".to_string());
+        let op_path = PathBuf::from(&op_src);
+        if !op_path.exists() {
+            eprintln!("skipping: OpenProject not present at {op_src}");
+            return;
+        }
+
+        let redmine = extract(&PathBuf::from(redmine_src));
+        let openproject = extract(&op_path);
+
+        let issue = redmine
+            .iter()
+            .find(|c| c.name == "Issue")
+            .expect("Redmine ships an Issue model");
+        let work_package = openproject
+            .iter()
+            .find(|c| c.name == "WorkPackage")
+            .expect("OpenProject ships a WorkPackage model");
+
+        // The headline: both materialize to the SAME canonical concept,
+        // detected deterministically from class names alone. This is the
+        // load-bearing convergence assertion — it holds *regardless* of
+        // per-curator surface-extraction depth.
+        assert_eq!(issue.canonical_concept.as_deref(), Some("project_work_item"));
+        assert_eq!(
+            work_package.canonical_concept.as_deref(),
+            Some("project_work_item"),
+        );
+        // Same domain — both are project-domain curators.
+        assert_eq!(issue.source_domain.as_deref(), Some("project"));
+        assert_eq!(work_package.source_domain.as_deref(), Some("project"));
+
+        // Redmine Issue is the cleaner AR fossil — extraction reliably
+        // captures its full surface; assert the canonical roles are
+        // present.
+        assert!(
+            issue.associations.iter().any(|a| a.name == "project"),
+            "Redmine Issue must carry a `project` association",
+        );
+        assert!(
+            issue.associations.iter().any(|a| a.name == "author"),
+            "Redmine Issue must carry an `author` association",
+        );
+        assert!(
+            issue.associations.iter().any(|a| a.name == "time_entries"),
+            "Redmine Issue must carry a `time_entries` association",
+        );
+
+        // OpenProject WorkPackage's body uses constructs the current
+        // ruff_ruby_spo (96ed65f) bails on — self-referential
+        // `include WorkPackage::Foo` chains + top-level `%w[…].freeze`
+        // constants — so its extracted surface is currently sparse. A
+        // ruff sprint follow-up will lift those. Until then: assert the
+        // structural overlap only where the producer actually extracted
+        // something, so the convergence proof does not depend on parser
+        // completeness.
+        if !work_package.associations.is_empty() {
+            assert!(
+                work_package.associations.iter().any(|a| a.name == "project"),
+                "OP WorkPackage extracted associations but no `project`",
+            );
+        }
+    }
+
+    /// Enrichment must not break the overlap: any extraction-depth
+    /// difference between the cleaner Redmine `Issue` and the richer
+    /// OpenProject `WorkPackage` (extra modular includes —
+    /// `WorkPackages::SpentTime` / `Costs` / `Relations`) leaves the
+    /// canonical concept invariant. Holds both ways: when OP extracts
+    /// strictly more surface (the post-ruff-fix state), and when OP
+    /// extracts strictly less (the current ruff parser gap on
+    /// `WorkPackage`'s `%w[…].freeze` / self-include chain).
+    #[test]
+    #[ignore = "requires Redmine + OpenProject checkouts"]
+    fn openproject_enrichment_does_not_break_redmine_ar_overlap() {
+        let Ok(redmine_src) = std::env::var("REDMINE_SRC") else {
+            eprintln!("skipping: REDMINE_SRC not set");
+            return;
+        };
+        let op_src = std::env::var("OPENPROJECT_SRC")
+            .unwrap_or_else(|_| "/home/user/openproject".to_string());
+        let op_path = PathBuf::from(&op_src);
+        if !op_path.exists() {
+            eprintln!("skipping: OpenProject not present at {op_src}");
+            return;
+        }
+
+        let redmine = extract(&PathBuf::from(redmine_src));
+        let openproject = extract(&op_path);
+
+        let issue = redmine.iter().find(|c| c.name == "Issue").unwrap();
+        let work_package = openproject
+            .iter()
+            .find(|c| c.name == "WorkPackage")
+            .unwrap();
+
+        // Headline: the canonical concept is identical regardless of
+        // extraction-depth difference. Enrichment did not break overlap.
+        assert_eq!(issue.canonical_concept, work_package.canonical_concept);
+        assert_eq!(
+            issue.canonical_concept.as_deref(),
+            Some("project_work_item"),
+        );
+    }
 }

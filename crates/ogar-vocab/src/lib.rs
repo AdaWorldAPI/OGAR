@@ -1186,6 +1186,15 @@ pub fn canonical_concept(name: &str) -> String {
     ) {
         return "billable_work_entry".to_string();
     }
+    // ProjectWorkItem — project-scoped work items with status, assignment,
+    // author, type/tracker, journals, relations, time tracking. The
+    // Redmine `Issue` and OpenProject `WorkPackage` overlap (the fork
+    // lineage Redmine → ChiliProject → OpenProject preserves the
+    // invariant) — both lift here regardless of OpenProject's later
+    // modular enrichment. See [`project_work_item`].
+    if matches!(lower.as_str(), "issue" | "workpackage" | "work_package") {
+        return "project_work_item".to_string();
+    }
     // ── Layer 2: lexical fallback ──
     let last = lower.rsplit('.').next().unwrap_or(lower.as_str());
     if last.len() > 3 && last.ends_with('s') && !last.ends_with("ss") {
@@ -1253,6 +1262,47 @@ fn family_edge(role: &str, target_concept: &str) -> Association {
     let mut a = Association::new(AssociationKind::BelongsTo, role);
     a.class_name = Some(target_concept.to_string());
     a
+}
+
+/// Build one **has-many** family edge — for canonical concepts that
+/// aggregate (a [`project_work_item`] has-many `ProjectJournal`s, etc.).
+fn family_has_many(role: &str, target_concept: &str) -> Association {
+    let mut a = Association::new(AssociationKind::HasMany, role);
+    a.class_name = Some(target_concept.to_string());
+    a
+}
+
+/// The promoted canonical class for the **project-domain work-item
+/// invariant**: project-scoped work with status, assignment, type/tracker,
+/// priority, author, journals, relations, and time tracking.
+///
+/// The Redmine → ChiliProject → OpenProject lineage preserves this
+/// invariant: Redmine `Issue` and OpenProject `WorkPackage` both map here
+/// via [`canonical_concept`] (`"project_work_item"`). Curator labels
+/// (`Tracker`, `Type`, `assigned_to`, `responsible`) are leaf details on
+/// the curator class; only the canonical roles survive here.
+///
+/// The 9 family edges sit fully **inside the project domain** — no
+/// ERP-boundary slots. The cross-domain bridge to billable work lives on
+/// the `time_entries → BillableWorkEntry` has-many edge (project work
+/// produces billable work; tax/posting happens past
+/// [`billable_work_entry`]'s ERP-boundary edges).
+#[must_use]
+pub fn project_work_item() -> Class {
+    let mut c = Class::new("ProjectWorkItem");
+    c.canonical_concept = Some("project_work_item".to_string());
+    c.associations = vec![
+        family_edge("project", "Project"),
+        family_edge("status", "ProjectStatus"),
+        family_edge("type", "ProjectType"), // Redmine Tracker / OP Type
+        family_edge("priority", "Priority"),
+        family_edge("author", "ProjectActor"),
+        family_edge("assignee", "ProjectActor"), // Redmine assigned_to / OP assignee
+        family_has_many("journals", "ProjectJournal"),
+        family_has_many("relations", "ProjectRelation"),
+        family_has_many("time_entries", "BillableWorkEntry"),
+    ];
+    c
 }
 
 #[cfg(test)]
@@ -1410,6 +1460,95 @@ mod tests {
         // (one invoice line aggregates many work entries).
         assert_eq!(mat.kind, AssociationKind::BelongsTo);
         assert_eq!(mat.class_name.as_deref(), Some("InvoiceLineCandidate"));
+    }
+
+    #[test]
+    fn canonical_concept_promotes_project_work_item_deterministically() {
+        // Promoted project-domain invariant — Redmine `Issue` and
+        // OpenProject `WorkPackage` (both spellings) resolve to one
+        // canonical concept. Pure + deterministic.
+        for name in ["Issue", "issue", "WorkPackage", "work_package", "workpackage"] {
+            assert_eq!(canonical_concept(name), "project_work_item");
+            assert_eq!(canonical_concept(name), canonical_concept(name));
+        }
+    }
+
+    #[test]
+    fn project_work_item_has_required_family_edges() {
+        let c = project_work_item();
+        assert_eq!(c.name, "ProjectWorkItem");
+        assert_eq!(c.canonical_concept.as_deref(), Some("project_work_item"));
+        // The 9 family edges named in the smoke spec.
+        for (role, target) in [
+            ("project", "Project"),
+            ("status", "ProjectStatus"),
+            ("type", "ProjectType"),
+            ("priority", "Priority"),
+            ("author", "ProjectActor"),
+            ("assignee", "ProjectActor"),
+            ("journals", "ProjectJournal"),
+            ("relations", "ProjectRelation"),
+            ("time_entries", "BillableWorkEntry"),
+        ] {
+            let e = c
+                .associations
+                .iter()
+                .find(|a| a.name == role)
+                .unwrap_or_else(|| panic!("missing family edge: {role}"));
+            assert_eq!(e.class_name.as_deref(), Some(target));
+        }
+        // has-many vs belongs-to cardinality is correct: journals /
+        // relations / time_entries aggregate; the rest are single refs.
+        for role in ["journals", "relations", "time_entries"] {
+            let e = c.associations.iter().find(|a| a.name == role).unwrap();
+            assert_eq!(e.kind, AssociationKind::HasMany);
+        }
+    }
+
+    #[test]
+    fn same_project_domain_curators_do_not_create_duplicate_canonical_concepts() {
+        // Redmine `Issue` and OpenProject `WorkPackage` are project-domain
+        // work-item curators; they MUST converge to one canonical concept,
+        // never two — that's exactly what makes the agnostic vocab worth
+        // more than its curators.
+        assert_eq!(canonical_concept("Issue"), canonical_concept("WorkPackage"));
+        assert_eq!(canonical_concept("Issue"), "project_work_item");
+        // The lexical layer remains deterministic for unpromoted names.
+        assert_eq!(canonical_concept("User"), canonical_concept("Users"));
+    }
+
+    #[test]
+    fn openproject_enrichment_does_not_break_redmine_ar_overlap() {
+        // OpenProject's WorkPackage is the richer organism (extra includes
+        // like `WorkPackages::SpentTime`, `WorkPackages::Costs`,
+        // `WorkPackages::Relations`); Redmine's Issue is the cleaner AR
+        // fossil. The agnostic vocab survives the evolution: both lift to
+        // the same canonical concept.
+        let mut redmine_issue = Class::new("Issue");
+        redmine_issue.source_domain = Some("project".to_string());
+        redmine_issue.canonical_concept = Some(canonical_concept("Issue"));
+        redmine_issue.mixins = vec!["Redmine::Acts::Mentionable".to_string()];
+
+        let mut op_wp = Class::new("WorkPackage");
+        op_wp.source_domain = Some("project".to_string());
+        op_wp.canonical_concept = Some(canonical_concept("WorkPackage"));
+        op_wp.mixins = vec![
+            "WorkPackages::SpentTime".to_string(),
+            "WorkPackages::Costs".to_string(),
+            "WorkPackages::Relations".to_string(),
+            "WorkPackages::Scheduling".to_string(),
+            "OpenProject::Journal::AttachmentHelper".to_string(),
+        ];
+
+        // OP is strictly richer than Redmine at the mixin axis ...
+        assert!(op_wp.mixins.len() > redmine_issue.mixins.len());
+        // ... yet the canonical concept is identical: enrichment did not
+        // break the overlap.
+        assert_eq!(redmine_issue.canonical_concept, op_wp.canonical_concept);
+        assert_eq!(
+            redmine_issue.canonical_concept.as_deref(),
+            Some("project_work_item"),
+        );
     }
 
     #[test]
