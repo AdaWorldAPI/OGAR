@@ -1090,6 +1090,9 @@ const CODEBOOK: &[(&str, u16)] = &[
     ("project_message", 0x0115),       // Redmine Message       ↔ OP Message (board/forum divergence)
     ("project_forum", 0x0116),         // Redmine Board         ↔ OP Forum (name divergence; parent of project_message)
     ("project_role", 0x0117),          // Redmine Role          ↔ OP Role (RBAC permission set)
+    ("project_member_role", 0x0118),   // MemberRole — RBAC join (membership ↔ role)
+    ("project_custom_value", 0x0119),  // CustomValue — value of a custom field on a record
+    ("project_enabled_module", 0x011A),// EnabledModule — per-project module enablement
 
     // ── 0x02XX — commerce / billing / ERP domain (OSB ↔ Odoo) ──
     // Promoted from the parallel session's `lance-graph-ontology::ar_shape`
@@ -1669,6 +1672,31 @@ pub fn canonical_concept(name: &str) -> String {
         "role" | "roles" | "project_role" | "projectrole"
     ) {
         return "project_role".to_string();
+    }
+    // ProjectMemberRole — the RBAC join (membership ↔ role). Both
+    // curators ship `MemberRole` (belongs_to :member + :role).
+    if matches!(lower.as_str(),
+        "memberrole" | "member_role" | "memberroles" | "member_roles"
+            | "project_member_role" | "projectmemberrole"
+    ) {
+        return "project_member_role".to_string();
+    }
+    // ProjectCustomValue — the value of a [`project_custom_field`] on a
+    // record. Both curators ship `CustomValue` (belongs_to :custom_field
+    // + polymorphic :customized).
+    if matches!(lower.as_str(),
+        "customvalue" | "custom_value" | "customvalues" | "custom_values"
+            | "project_custom_value" | "projectcustomvalue"
+    ) {
+        return "project_custom_value".to_string();
+    }
+    // ProjectEnabledModule — per-project module enablement. Both curators
+    // ship `EnabledModule` (belongs_to :project + a name).
+    if matches!(lower.as_str(),
+        "enabledmodule" | "enabled_module" | "enabledmodules" | "enabled_modules"
+            | "project_enabled_module" | "projectenabledmodule"
+    ) {
+        return "project_enabled_module".to_string();
     }
     // ── Commerce / billing / ERP domain (OSB ↔ Odoo) ──
     // CommercialLineItem — line on a commercial document. OSB
@@ -2394,6 +2422,65 @@ pub fn project_role() -> Class {
     c
 }
 
+/// `MemberRole` — the RBAC join completing the membership↔role triangle:
+/// a [`project_membership`] holds one or more [`project_role`]s through
+/// this join. Both curators ship `MemberRole` (`belongs_to :member` +
+/// `belongs_to :role`).
+#[must_use]
+pub fn project_member_role() -> Class {
+    let mut c = Class::new("ProjectMemberRole");
+    c.language = Language::Unknown;
+    c.canonical_concept = Some("project_member_role".to_string());
+    c.associations = vec![
+        family_edge("membership", "ProjectMembership"),
+        family_edge("role", "ProjectRole"),
+    ];
+    // Both curators track group-inherited role assignments: when a Group
+    // membership confers a role on its member users, the derived
+    // MemberRole records the parent it was inherited from.
+    let mut inherited_from = Attribute::new("inherited_from");
+    inherited_from.type_name = Some("integer".to_string());
+    c.attributes = vec![inherited_from];
+    c
+}
+
+/// `CustomValue` — the stored value of a [`project_custom_field`] on a
+/// record. Both curators ship `CustomValue` with `belongs_to
+/// :custom_field` + a polymorphic `:customized` (the record the value is
+/// attached to — kept opaque at the canonical layer).
+#[must_use]
+pub fn project_custom_value() -> Class {
+    let mut c = Class::new("ProjectCustomValue");
+    c.language = Language::Unknown;
+    c.canonical_concept = Some("project_custom_value".to_string());
+    c.associations = vec![
+        family_edge("custom_field", "ProjectCustomField"),
+    ];
+    let mut value = Attribute::new("value");
+    value.type_name = Some("text".to_string());
+    let mut customized_type = Attribute::new("customized_type");
+    customized_type.type_name = Some("string".to_string());
+    c.attributes = vec![value, customized_type];
+    c
+}
+
+/// `EnabledModule` — per-project module enablement (which feature modules
+/// a [`project`] has turned on). Both curators ship `EnabledModule` with
+/// `belongs_to :project` + a `name` (module key), unique per project.
+#[must_use]
+pub fn project_enabled_module() -> Class {
+    let mut c = Class::new("ProjectEnabledModule");
+    c.language = Language::Unknown;
+    c.canonical_concept = Some("project_enabled_module".to_string());
+    c.associations = vec![
+        family_edge("project", "Project"),
+    ];
+    let mut name = Attribute::new("name");
+    name.type_name = Some("string".to_string());
+    c.attributes = vec![name];
+    c
+}
+
 // ─────────────────────────────────────────────────────────────────────
 // Commerce / billing / ERP domain canonical classes (OSB ↔ Odoo).
 //
@@ -3025,6 +3112,7 @@ mod tests {
             "project_relation", "project_changeset", "project_watcher",
             "project_news", "project_message", "project_forum",
             "project_role",
+            "project_member_role", "project_custom_value", "project_enabled_module",
         ] {
             let id = canonical_concept_id(project_concept)
                 .unwrap_or_else(|| panic!("{project_concept} missing from codebook"));
@@ -3077,6 +3165,9 @@ mod tests {
             (project_message(), "ProjectMessage", 0x0115),
             (project_forum(), "ProjectForum", 0x0116),
             (project_role(), "ProjectRole", 0x0117),
+            (project_member_role(), "ProjectMemberRole", 0x0118),
+            (project_custom_value(), "ProjectCustomValue", 0x0119),
+            (project_enabled_module(), "ProjectEnabledModule", 0x011A),
         ] {
             assert_eq!(canonical.name, name);
             assert_eq!(canonical.language, Language::Unknown);
@@ -3160,6 +3251,9 @@ mod tests {
             // Cross-curator name divergence: Redmine `Board` ↔ OP `Forum`.
             ("project_forum", &["Board", "boards", "Forum", "forums", "ProjectForum"]),
             ("project_role", &["Role", "roles", "ProjectRole"]),
+            ("project_member_role", &["MemberRole", "member_roles", "ProjectMemberRole"]),
+            ("project_custom_value", &["CustomValue", "custom_values", "ProjectCustomValue"]),
+            ("project_enabled_module", &["EnabledModule", "enabled_modules", "ProjectEnabledModule"]),
         ];
         for (concept, aliases) in cases {
             let id = canonical_concept_id(concept).unwrap();
