@@ -192,46 +192,32 @@ mod tests {
         assert_eq!(issue.source_domain.as_deref(), Some("project"));
         assert_eq!(work_package.source_domain.as_deref(), Some("project"));
 
-        // Redmine Issue is the cleaner AR fossil — extraction reliably
-        // captures its full surface; assert the canonical roles are
-        // present.
-        assert!(
-            issue.associations.iter().any(|a| a.name == "project"),
-            "Redmine Issue must carry a `project` association",
-        );
-        assert!(
-            issue.associations.iter().any(|a| a.name == "author"),
-            "Redmine Issue must carry an `author` association",
-        );
-        assert!(
-            issue.associations.iter().any(|a| a.name == "time_entries"),
-            "Redmine Issue must carry a `time_entries` association",
-        );
-
-        // OpenProject WorkPackage's body uses constructs the current
-        // ruff_ruby_spo (96ed65f) bails on — self-referential
-        // `include WorkPackage::Foo` chains + top-level `%w[…].freeze`
-        // constants — so its extracted surface is currently sparse. A
-        // ruff sprint follow-up will lift those. Until then: assert the
-        // structural overlap only where the producer actually extracted
-        // something, so the convergence proof does not depend on parser
-        // completeness.
-        if !work_package.associations.is_empty() {
-            assert!(
-                work_package.associations.iter().any(|a| a.name == "project"),
-                "OP WorkPackage extracted associations but no `project`",
-            );
+        // Strict structural overlap: both curators extract the canonical
+        // roles. Redmine `Issue` (the cleaner AR fossil) and OP
+        // `WorkPackage` (the richer organism — reopens merged by
+        // AdaWorldAPI/ruff#26) both carry `project`, `author`,
+        // `time_entries` after extraction. The role *names* are leaf
+        // details that may diverge (`assigned_to` vs `assignee`, `tracker`
+        // vs `type`); the canonical_concept is what unifies them.
+        for c in [issue, work_package] {
+            for role in ["project", "author", "time_entries"] {
+                assert!(
+                    c.associations.iter().any(|a| a.name == role),
+                    "{} must carry a `{}` association",
+                    c.name,
+                    role,
+                );
+            }
         }
     }
 
-    /// Enrichment must not break the overlap: any extraction-depth
-    /// difference between the cleaner Redmine `Issue` and the richer
-    /// OpenProject `WorkPackage` (extra modular includes —
-    /// `WorkPackages::SpentTime` / `Costs` / `Relations`) leaves the
-    /// canonical concept invariant. Holds both ways: when OP extracts
-    /// strictly more surface (the post-ruff-fix state), and when OP
-    /// extracts strictly less (the current ruff parser gap on
-    /// `WorkPackage`'s `%w[…].freeze` / self-include chain).
+    /// Enrichment must not break the overlap. OpenProject `WorkPackage`
+    /// is the strictly richer organism — extra modular includes
+    /// (`WorkPackages::SpentTime` / `Costs` / `Relations`,
+    /// `OpenProject::Journal::AttachmentHelper`, …) on top of the cleaner
+    /// Redmine `Issue` AR shape — yet the canonical concept is invariant.
+    /// Post AdaWorldAPI/ruff#26 (reopen-merge), OP extracts its full
+    /// body, so the richer-mixin assertion is enforceable.
     #[test]
     #[ignore = "requires Redmine + OpenProject checkouts"]
     fn openproject_enrichment_does_not_break_redmine_ar_overlap() {
@@ -256,12 +242,47 @@ mod tests {
             .find(|c| c.name == "WorkPackage")
             .unwrap();
 
-        // Headline: the canonical concept is identical regardless of
-        // extraction-depth difference. Enrichment did not break overlap.
+        // OP is strictly the richer organism at the mixin axis ...
+        assert!(
+            work_package.mixins.len() > issue.mixins.len(),
+            "OP WorkPackage should be strictly richer than Redmine Issue \
+             at the mixin axis (OP: {} mixins, Redmine: {} mixins)",
+            work_package.mixins.len(),
+            issue.mixins.len(),
+        );
+        // ... yet the canonical concept is invariant: enrichment did not
+        // break the overlap. This is the load-bearing agnostic-vocab
+        // claim made concrete on real source.
         assert_eq!(issue.canonical_concept, work_package.canonical_concept);
         assert_eq!(
             issue.canonical_concept.as_deref(),
             Some("project_work_item"),
+        );
+    }
+
+    /// Exactly-one-Model invariant post AdaWorldAPI/ruff#26: OP's
+    /// `app/models/work_package/` sub-files reopen `class WorkPackage`
+    /// without adding ontology declarations; before the fix this produced
+    /// duplicate `Model { name: "WorkPackage" }` entries (one empty, one
+    /// rich) and `.find()` could land on either. After the fix, the
+    /// producer merges them into one — pin that behavior so consumers can
+    /// trust uniqueness-by-name.
+    #[test]
+    #[ignore = "requires an OpenProject checkout"]
+    fn openproject_workpackage_extracts_as_exactly_one_class() {
+        let op_src = std::env::var("OPENPROJECT_SRC")
+            .unwrap_or_else(|_| "/home/user/openproject".to_string());
+        let op_path = PathBuf::from(&op_src);
+        if !op_path.exists() {
+            eprintln!("skipping: OpenProject not present at {op_src}");
+            return;
+        }
+        let classes = extract(&op_path);
+        let n = classes.iter().filter(|c| c.name == "WorkPackage").count();
+        assert_eq!(
+            n, 1,
+            "OpenProject `WorkPackage` must extract as exactly one Class \
+             (reopen-merge from AdaWorldAPI/ruff#26); got {n}",
         );
     }
 }
