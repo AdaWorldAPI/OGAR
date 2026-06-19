@@ -65,8 +65,8 @@
 #![warn(missing_docs)]
 
 use ogar_vocab::{
-    ActionDef, Association, AssociationKind, Attribute, Callback, Class, EnumDecl, EnumSource,
-    Inheritance, Language, Scope, Validation,
+    canonical_concept, ActionDef, Association, AssociationKind, Attribute, Callback, Class,
+    EnumDecl, EnumSource, Inheritance, Language, Scope, Validation,
 };
 use ruff_spo_triplet::{
     AssocDecl, AssocKind, AttrDecl, AttrKind, Callback as RuffCallback, ConcernKind, Model,
@@ -101,6 +101,9 @@ fn classify_domain(namespace: &str) -> Option<String> {
         Some("project".to_string())
     } else if ns.contains("odoo") {
         Some("erp".to_string())
+    } else if ns.contains("woa") || ns.contains("smb") {
+        // WoA-rs / SMB — the German-ERP sanity witness adapter.
+        Some("german-erp".to_string())
     } else {
         None
     }
@@ -120,6 +123,7 @@ pub fn lift_model(model: &Model) -> Class {
     class.language = Language::Ruby;
     class.parent = model.sti.as_ref().and_then(sti_parent);
     class.inheritance = lift_inheritance(model);
+    class.canonical_concept = Some(canonical_concept(&model.name));
     class.associations = model.associations.iter().filter_map(lift_association).collect();
     class.mixins = lift_mixins(model);
     class.attributes = model.attributes.iter().filter_map(lift_attribute).collect();
@@ -746,6 +750,21 @@ mod tests {
         let mut other = ModelGraph::new("mystery");
         other.models.push(Model::new("X"));
         assert_eq!(lift_model_graph(&other)[0].source_domain, None);
+    }
+
+    #[test]
+    fn lift_model_sets_canonical_concept_including_promoted_invariant() {
+        // Plain class → lexical concept.
+        assert_eq!(
+            lift_model(&Model::new("WorkPackage")).canonical_concept.as_deref(),
+            Some("workpackage"),
+        );
+        // Promoted invariant → the BillableWorkEntry canonical concept:
+        // the OpenProject curator wired deterministically into the bridge.
+        assert_eq!(
+            lift_model(&Model::new("TimeEntry")).canonical_concept.as_deref(),
+            Some("billable_work_entry"),
+        );
     }
 
     fn mk_model_with_functions() -> Model {
