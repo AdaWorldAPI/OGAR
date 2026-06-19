@@ -20,22 +20,29 @@
         ogar_vocab::Class    (typed: attributes + family edges + canonical_concept)
                 │
        ─────────┼─────────────────────────────────────────────────────
-       │ BUILD-TIME (codegen)        │ RUN-TIME (SoA projection)      │
-       ▼                              ▼                                │
-  ogar-render-askama        ogar-class-view (OgarClassView)            │
-  consumes &Class           consumes ClassView trait                   │
-  emits .rs / .ts / .surql  produces RenderRow stream                  │
-  via askama templates      via lance-graph-contract::ClassView        │
-       │                              │                                │
-       ▼                              ▼                                │
-  source files               late-bound display rows                   │
-  (calibrated by             (calibrated by                            │
-   target compilers)          consumer renderers)                      │
-       └──────────────┬───────────────┘                                │
-                      ▼                                                │
-              same canonical contract                                  │
-              (codebook id, N3 field order)                            │
-       ─────────────────────────────────────────────────────────────────
+       │                                                              │
+       ▼   ogar-render-askama  (one crate, two flavours)               │
+       │       │                                                       │
+       │       ├── codegen-flavour templates                           │
+       │       │     consume &Class, emit .rs / .surql source files    │
+       │       │     for downstream compilers / DB engines             │
+       │       │     (T1 RustStruct ✅, T5 SurrealqlTable)             │
+       │       │                                                       │
+       │       └── render-flavour templates                            │
+       │             consume &Class (+ rows at run time),              │
+       │             emit final HTML output read directly by the user  │
+       │             via askama_axum or equivalent                     │
+       │             (T2 HtmlListView, T3 HtmlDetailView, T4 HtmlForm) │
+       │                                                                │
+       │   No TypeScript codegen layer. Askama IS the output, per       │
+       │   the WoA-rs pattern. See Anti-pattern #8.                     │
+       │                                                                │
+       │   Sister concern (run-time SoA projection on rows-from-cache): │
+       │   ogar-class-view → ClassView trait → Vec<RenderRow>           │
+       │   (when the SoA row has no `Class` in scope, only class_id +   │
+       │    presence mask; the cache resolves labels late)              │
+       │                                                                │
+       └─── same canonical contract (codebook id, N3 field order) ─────
 ```
 
 **Two pipelines, one canonical source, one codebook. They do not compete.
@@ -174,17 +181,32 @@ respective `NamespaceBridge`s, both hit `entity_type_id() == 0x0102`
 
 ### +5 askama templates — the artifact-kind kit (in `ogar-render-askama`)
 
-| PR | ArtifactKind | Template | Target syntax |
-|---|---|---|---|
-| T1 ✅ | `RustStruct` | `dispatch/rust_struct.askama` | Rust struct + `pub const CLASS_ID` (PR #78 ships this as proof-of-shape) |
-| T2 | `TsInterface` | `dispatch/ts_interface.askama` | TypeScript `interface` + matching `class_ids.ts` entry |
-| T3 | `SurrealqlTable` | `dispatch/surrealql_table.askama` | `DEFINE TABLE` + per-field `DEFINE FIELD` |
-| T4 | `OpenapiSchema` | `dispatch/openapi_schema.askama` | OpenAPI 3.1 `components.schemas.{X}` JSON |
-| T5 | `NodeGuidRoutingArm` | `dispatch/node_guid_routing_arm.askama` | Rust `match` arm dispatching on `ClassId` |
+**Two flavours of "artifact"** the kit handles, per the WoA-rs pattern:
+
+- **Build-time codegen** — emit `.rs` / `.surql` source files. The compiler
+  / DB engine downstream is the final consumer. Example: WoA's
+  `crates/codegen` emitting axum handler stubs.
+- **Run-time HTML render** — render the canonical shape directly to the
+  user's browser via `askama_axum` or equivalent. The askama template
+  body **is** the output the human reads. Example: WoA's
+  `templates/_dispatch/list_view.html` rendering a tenant list page.
+
+**There is no TypeScript codegen layer.** Askama is the output, not a
+producer of `.ts` source files. The OP / Redmine frontend in the
+canonical pattern is server-rendered HTML through askama, not a separate
+TS app the codegen feeds. See Anti-pattern #8.
+
+| PR | ArtifactKind | Template | Flavour | What it emits |
+|---|---|---|---|---|
+| T1 ✅ | `RustStruct` | `dispatch/rust_struct.askama` | codegen | Rust `struct` + `pub const CLASS_ID` (proof-of-shape, PR #78) |
+| T2 | `HtmlListView` | `dispatch/html_list_view.askama` | render | Tabular HTML over a `(class, rows)` pair — WoA list_view shape |
+| T3 | `HtmlDetailView` | `dispatch/html_detail_view.askama` | render | Definition-list HTML for one canonical instance, with family-edge sections |
+| T4 | `HtmlForm` | `dispatch/html_form.askama` | render | Create/edit form, input element per attribute keyed by typed slot (text/number/checkbox/datetime) |
+| T5 | `SurrealqlTable` | `dispatch/surrealql_table.askama` | codegen | `DEFINE TABLE` + per-field `DEFINE FIELD` |
 
 Each PR: 1 template + 1 binding struct + 1 emitter impl + tests
-(round-trip + target-toolchain compile + golden-snapshot of the first
-emitted concept).
+(target-toolchain compile or HTML well-formedness check + golden-snapshot
+of the first emitted concept).
 
 ### +5 consumer wirings (across repos)
 
@@ -293,8 +315,31 @@ exactly this. Fixed; future surfaces should iterate
 ones. `project_actor()` declares `type` (Rails STI); the unescaped form
 emits `pub type:` (illegal). Codex P1 on PR #78 caught this. Fix is
 `escape_rust_ident` mapping reserved words to `r#name`. Same hazard on
-other targets (TS reserved words, SurrealQL keywords); every emitter
+other targets (SurrealQL keywords); every emitter that produces source
 needs the equivalent.
+
+### Anti-pattern #8: Generate TypeScript source from askama
+
+**Form**: "emit `.ts` interface files / type declarations / class-id
+consts from askama so the frontend imports typed canonical shapes".
+
+**Why wrong**: askama **is** the rendering layer in the WoA-rs pattern.
+The consumer reads askama-rendered HTML directly (server-side via
+`askama_axum` or equivalent); there is no separate TypeScript frontend
+in the canonical architecture. Generating TS source means treating
+askama as a codegen-to-other-language pipeline, which contradicts its
+role as the output layer.
+
+Codegen flavour (T1 `RustStruct`, T5 `SurrealqlTable`) is fine — those
+target compilers / DB engines that consume Rust / SQL. **TS / OpenAPI
+schemas are not in that set**, because the consumer of those would be a
+JS-side frontend the pattern doesn't have. PR #80 (TsInterface) was
+closed for this reason; T2 was rewritten as `HtmlListView` (a render-side
+template).
+
+If a downstream actually wants typed TS (e.g. a third-party SDK
+consumer outside the WoA pattern), they can implement their own
+`ClassView`-based generator — but it sits *outside* the canonical kit.
 
 ## 5. Epiphany log — high-signal architectural moments
 
@@ -361,7 +406,7 @@ These repos converged on the same northstar from different angles:
 
 | Item | What | When |
 |---|---|---|
-| T6 | `A2uiPayload` artifact kind — emit any promoted concept as an A2UI v0.8 intent payload. A2UI's "catalog of trusted components" maps 1:1 to the OGAR codebook. Existing A2UI renderers (Flutter/Angular/Lit) consume the canonical layer with zero Ruby/Rails coupling. | After T1–T5 stabilises |
+| T6 | `A2uiPayload` artifact kind — emit any promoted concept as an A2UI v0.8 intent payload. **Strict: only if a consumer outside the WoA-pattern actually asks** (Flutter/Angular/Lit frontends). The default canonical UI is server-rendered HTML via T2–T4; A2UI is an alternative output for non-server-rendered consumers. Same canonical input; new bag-of-variables shaped to A2UI's component schema. | Demand-driven, after T1–T5 stabilises |
 | T7 | Calibration-loop receipt aggregator — collect every PR's three gates into one CI artifact so coverage can be reasoned about as a ratio | After several Cn land |
 | T8 | DOLCE upper-category live wiring — `OgarClassView::dolce_category_id` currently returns `0`; live values come from `lance-graph-ontology` when the consumer chooses to wire them | Independent; opportunistic |
 | T9 | Promote more OpenProject-only concepts (Costs, Budgets, BIM, Meetings, Storages — the 880 OP-only classes from the corpus diff). Each gets its own codebook block (likely `0x03XX`+) | Demand-driven |
