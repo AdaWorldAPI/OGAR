@@ -111,4 +111,36 @@ mod tests {
         // reachable by accessing it.
         let _ = any_parent_set;
     }
+
+    /// Real-corpus **convergence proof** against the Redmine source tree
+    /// (`AdaWorldAPI/redmine` — OpenProject's project-domain ancestor).
+    /// Set `REDMINE_SRC` to the checkout root. Redmine ships a real
+    /// `TimeEntry` model, so this proves the BillableWorkEntry convergence
+    /// on actual data: a project-domain `TimeEntry` materializes to the
+    /// same canonical concept (`billable_work_entry`) that Odoo's
+    /// `account.analytic.line` does.
+    #[test]
+    #[ignore = "requires a Redmine checkout via REDMINE_SRC"]
+    fn redmine_timeentry_converges_to_billable_work_entry() {
+        let Ok(src) = std::env::var("REDMINE_SRC") else {
+            eprintln!("skipping: REDMINE_SRC not set");
+            return;
+        };
+        let classes = extract(&PathBuf::from(src));
+        assert!(!classes.is_empty(), "expected Redmine models, got none");
+        let time_entry = classes
+            .iter()
+            .find(|c| c.name == "TimeEntry")
+            .expect("Redmine ships a TimeEntry model");
+        assert_eq!(
+            time_entry.canonical_concept.as_deref(),
+            Some("billable_work_entry"),
+            "Redmine TimeEntry must converge to the BillableWorkEntry concept",
+        );
+        assert_eq!(
+            time_entry.source_domain.as_deref(),
+            Some("project"),
+            "Rails frontend tags the project domain",
+        );
+    }
 }
