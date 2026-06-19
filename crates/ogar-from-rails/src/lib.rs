@@ -260,6 +260,74 @@ mod tests {
         );
     }
 
+    /// **Lineage-transcode smoke** — Redmine `Issue` and OpenProject
+    /// `WorkPackage` are forks of the same upstream
+    /// (Redmine → ChiliProject → OpenProject), so transcoding between
+    /// them through the canonical [`ogar_vocab::project_work_item`]
+    /// bridge must be lossless: both curators project onto the **same
+    /// canonical role set**, even where surface names diverge
+    /// (`tracker`/`type`, `assigned_to`/`assignee`, `relations_from,to`/
+    /// `WorkPackages::Relations`, `journals`/`acts_as_journalized`).
+    ///
+    /// The claim is structural: the canonical layer is a valid pivot for
+    /// converting between curators of the same lineage.
+    #[test]
+    #[ignore = "requires Redmine + OpenProject checkouts"]
+    fn lineage_transcode_redmine_issue_to_openproject_work_package_via_canonical() {
+        let Ok(redmine_src) = std::env::var("REDMINE_SRC") else {
+            eprintln!("skipping: REDMINE_SRC not set");
+            return;
+        };
+        let op_src = std::env::var("OPENPROJECT_SRC")
+            .unwrap_or_else(|_| "/home/user/openproject".to_string());
+        let op_path = PathBuf::from(&op_src);
+        if !op_path.exists() {
+            eprintln!("skipping: OpenProject not present at {op_src}");
+            return;
+        }
+
+        let redmine = extract(&PathBuf::from(redmine_src));
+        let openproject = extract(&op_path);
+
+        let issue = redmine.iter().find(|c| c.name == "Issue").unwrap();
+        let work_package = openproject
+            .iter()
+            .find(|c| c.name == "WorkPackage")
+            .unwrap();
+
+        // Project each curator onto the canonical role set.
+        let issue_roles = ogar_from_ruff::project_work_item_canonical_roles(issue);
+        let wp_roles = ogar_from_ruff::project_work_item_canonical_roles(work_package);
+
+        // The full canonical surface: every role on
+        // [`ogar_vocab::project_work_item`].
+        let expected: std::collections::HashSet<&'static str> = [
+            "project", "status", "type", "priority", "author", "assignee",
+            "journals", "relations", "time_entries",
+        ]
+        .into_iter()
+        .collect();
+
+        assert_eq!(
+            issue_roles, expected,
+            "Redmine Issue must project to the FULL project_work_item canonical role set",
+        );
+        assert_eq!(
+            wp_roles, expected,
+            "OpenProject WorkPackage must project to the FULL project_work_item canonical role set \
+             (journals via `acts_as_journalized` mixin; relations via `WorkPackages::Relations`)",
+        );
+
+        // The headline lineage-transcode claim: identical canonical
+        // projections. The canonical layer IS a lossless pivot between
+        // the two curators of the same fork lineage.
+        assert_eq!(
+            issue_roles, wp_roles,
+            "fork lineage Redmine -> ChiliProject -> OpenProject must transcode losslessly \
+             through the canonical project_work_item bridge",
+        );
+    }
+
     /// Exactly-one-Model invariant post AdaWorldAPI/ruff#26: OP's
     /// `app/models/work_package/` sub-files reopen `class WorkPackage`
     /// without adding ontology declarations; before the fix this produced
