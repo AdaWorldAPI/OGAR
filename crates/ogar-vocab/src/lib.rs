@@ -1322,6 +1322,51 @@ pub fn project_work_item() -> Class {
     c
 }
 
+/// The promoted canonical class for **project** — the root container of
+/// project-domain work. Referenced by [`project_work_item`]'s `project`
+/// family edge and [`billable_work_entry`]'s `project` edge; this is the
+/// canonical class those edges resolve to.
+///
+/// Redmine `Project` and OpenProject `Project` are universal and share
+/// the AR shape: nested-set `parent` (a project may belong to a parent
+/// project), `members` (people on the project), the work items
+/// themselves, and the time entries booked against the project. Both
+/// curators carry `name` + `identifier` as the identity attributes.
+///
+/// The `work_items` family edge targets the canonical
+/// [`project_work_item`] (not the curator surfaces Redmine `Issue` or OP
+/// `WorkPackage`); `time_entries` targets [`billable_work_entry`]; the
+/// `members` edge points forward at the still-to-come canonical
+/// `ProjectActor`.
+#[must_use]
+pub fn project() -> Class {
+    let mut c = Class::new("Project");
+    // Synthetic canonical class — neutral language (codex P2 doctrine).
+    c.language = Language::Unknown;
+    c.canonical_concept = Some("project".to_string());
+    c.associations = vec![
+        family_has_many("work_items", "ProjectWorkItem"),
+        family_has_many("time_entries", "BillableWorkEntry"),
+        family_has_many("members", "ProjectActor"),
+        // Nested-project parent is a real cross-curator concept but is
+        // surfaced via MIXINS in both: Redmine threads it through the
+        // `awesome_nested_set` gem (no direct `belongs_to`), OP through
+        // the `Projects::Hierarchy` concern. The producer
+        // (`ogar_ruby_spo`) does not yet decode either mixin into a
+        // canonical parent edge — when it does, a follow-up PR adds
+        // `family_edge("parent", "Project")` here and the matching
+        // mixin-derived arm to `ogar_from_ruff::project_role_from_mixin`.
+    ];
+    // Identity attributes — both curators carry these as the canonical
+    // human + URL identity.
+    let mut name = Attribute::new("name");
+    name.type_name = Some("string".to_string());
+    let mut identifier = Attribute::new("identifier");
+    identifier.type_name = Some("string".to_string());
+    c.attributes = vec![name, identifier];
+    c
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1547,6 +1592,39 @@ mod tests {
         assert_eq!(canonical_concept("Issue"), "project_work_item");
         // The lexical layer remains deterministic for unpromoted names.
         assert_eq!(canonical_concept("User"), canonical_concept("Users"));
+    }
+
+    #[test]
+    fn project_is_the_promoted_canonical_class() {
+        let c = project();
+        assert_eq!(c.name, "Project");
+        assert_eq!(c.canonical_concept.as_deref(), Some("project"));
+        // Synthetic canonical class — neutral language (codex P2 doctrine).
+        assert_eq!(c.language, Language::Unknown);
+        // The three direct family edges — all to canonical concepts.
+        // (The `parent` edge waits on a producer-side mixin decode for
+        // `awesome_nested_set` / `Projects::Hierarchy` — see project()
+        // doc.)
+        assert_eq!(c.associations.len(), 3);
+        for (role, target, kind) in [
+            ("work_items", "ProjectWorkItem", AssociationKind::HasMany),
+            ("time_entries", "BillableWorkEntry", AssociationKind::HasMany),
+            ("members", "ProjectActor", AssociationKind::HasMany),
+        ] {
+            let e = c
+                .associations
+                .iter()
+                .find(|a| a.name == role)
+                .unwrap_or_else(|| panic!("missing family edge: {role}"));
+            assert_eq!(e.class_name.as_deref(), Some(target));
+            assert_eq!(e.kind, kind);
+        }
+        // Identity attributes carry types so DDL adapters generate the
+        // right column shape (codex P2 doctrine on typed scalars).
+        for attr in ["name", "identifier"] {
+            let a = c.attributes.iter().find(|x| x.name == attr).unwrap();
+            assert_eq!(a.type_name.as_deref(), Some("string"));
+        }
     }
 
     #[test]

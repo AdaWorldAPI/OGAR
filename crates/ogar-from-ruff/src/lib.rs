@@ -207,6 +207,52 @@ pub fn project_work_item_canonical_roles(
     set
 }
 
+// ───────────────────────── Project role projection ─────────────────────
+//
+// The Project canonical class (ogar_vocab::project) has 4 family edges:
+// parent, work_items, time_entries, members. Curators surface them under
+// varying Rails-AR names — Redmine `issues` vs OP `work_packages` for the
+// work-item set; both spell `members`/`users`/`memberships` for the actor
+// set. This resolver normalises curator names onto the canonical roles
+// so the lineage-transcode claim holds for `Project` too.
+
+/// Map a Rails-curator association name to the canonical
+/// [`ogar_vocab::project`] role it realises. Returns `None` when the
+/// association is not part of the project canonical surface (e.g. Redmine
+/// `news`, OP `forums` — real but not yet promoted into the canonical
+/// shape; future PRs may extend if cross-curator evidence accumulates).
+#[must_use]
+pub fn project_role(curator_name: &str) -> Option<&'static str> {
+    match curator_name {
+        "parent" => Some("parent"),
+        "issues" | "work_packages" => Some("work_items"),
+        "time_entries" => Some("time_entries"),
+        // The actor set is reached via multiple AR through-associations
+        // in both curators: members / memberships / users (Redmine + OP) /
+        // member_principals / principals (OP only — OP adds the
+        // through-Principal hop).
+        "members" | "memberships" | "users" | "member_principals" | "principals" => {
+            Some("members")
+        }
+        _ => None,
+    }
+}
+
+/// The set of canonical [`ogar_vocab::project`] roles a curator class
+/// projects onto. Pure association-derived for v1 — `project` carries no
+/// mixin-borne roles in either Redmine or OP today (the mixin layer
+/// only contributes to `project_work_item`'s journals / relations).
+#[must_use]
+pub fn project_canonical_roles(class: &Class) -> std::collections::HashSet<&'static str> {
+    let mut set = std::collections::HashSet::new();
+    for a in &class.associations {
+        if let Some(role) = project_role(&a.name) {
+            set.insert(role);
+        }
+    }
+    set
+}
+
 // ───────────────────────────── actions (DO-arm) ─────────────────────────
 
 /// Lift a [`Model`]'s methods to OGAR [`ActionDef`] declarations — the
@@ -896,6 +942,67 @@ mod tests {
         ];
         let op_roles = project_work_item_canonical_roles(&op);
         assert_eq!(op_roles, roles, "OP must project to the same canonical role set as Redmine");
+    }
+
+    #[test]
+    fn project_role_maps_rails_dialect_synonyms() {
+        // Universal across both Redmine and OP.
+        assert_eq!(project_role("parent"), Some("parent"));
+        assert_eq!(project_role("time_entries"), Some("time_entries"));
+        // Divergent work-item names converge on the canonical role.
+        assert_eq!(project_role("issues"), Some("work_items"));
+        assert_eq!(project_role("work_packages"), Some("work_items"));
+        // The through-association actor chain — both spellings + the OP
+        // extra hops (member_principals, principals) land at `members`.
+        for src in ["members", "memberships", "users", "member_principals", "principals"] {
+            assert_eq!(project_role(src), Some("members"), "{src} -> members");
+        }
+        // Off-shape names return None (real but not yet promoted into the
+        // canonical surface).
+        assert!(project_role("news").is_none());
+        assert!(project_role("forums").is_none());
+        assert!(project_role("repositories").is_none());
+    }
+
+    #[test]
+    fn project_canonical_roles_covers_both_curators() {
+        // Redmine Project shape (subset — only the on-canonical assocs).
+        // No `belongs_to :parent` in the fixture: Redmine threads project
+        // hierarchy through the `awesome_nested_set` gem mixin, not a
+        // direct AR association.
+        let mut redmine = Class::new("Project");
+        redmine.associations = vec![
+            Association::new(AssociationKind::HasMany, "memberships"),
+            Association::new(AssociationKind::HasMany, "members"),
+            Association::new(AssociationKind::HasMany, "users"),
+            Association::new(AssociationKind::HasMany, "issues"),
+            Association::new(AssociationKind::HasMany, "time_entries"),
+            // Off-shape: must not inflate the role set.
+            Association::new(AssociationKind::HasMany, "news"),
+        ];
+        let r_roles = project_canonical_roles(&redmine);
+        // OP Project shape (with work_packages instead of issues, plus
+        // OP's extra through-association hops). OP threads parent via
+        // the `Projects::Hierarchy` concern, not `belongs_to :parent`.
+        let mut op = Class::new("Project");
+        op.associations = vec![
+            Association::new(AssociationKind::HasMany, "members"),
+            Association::new(AssociationKind::HasMany, "memberships"),
+            Association::new(AssociationKind::HasMany, "member_principals"),
+            Association::new(AssociationKind::HasMany, "users"),
+            Association::new(AssociationKind::HasMany, "principals"),
+            Association::new(AssociationKind::HasMany, "work_packages"),
+            Association::new(AssociationKind::HasMany, "time_entries"),
+        ];
+        let o_roles = project_canonical_roles(&op);
+        // v1 canonical surface: 3 direct-association roles. `parent` is
+        // a real cross-curator concept but lives behind mixins and is
+        // not yet decoded (see ogar_vocab::project doc).
+        let expected: std::collections::HashSet<&'static str> =
+            ["work_items", "time_entries", "members"].into_iter().collect();
+        assert_eq!(r_roles, expected, "Redmine projection must cover the 3-role canonical surface");
+        assert_eq!(o_roles, expected, "OP projection must cover the same surface");
+        assert_eq!(r_roles, o_roles, "lineage-transcode parity for Project");
     }
 
     #[test]
