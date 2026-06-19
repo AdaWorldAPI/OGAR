@@ -1045,6 +1045,7 @@ const CODEBOOK: &[(&str, u16)] = &[
     ("project", 0x0001),
     ("project_work_item", 0x0002),
     ("billable_work_entry", 0x0003),
+    ("project_actor", 0x0004),
 ];
 
 /// **OGAR codebook lookup** — resolve a canonical-concept string to its
@@ -1361,6 +1362,19 @@ pub fn canonical_concept(name: &str) -> String {
     if matches!(lower.as_str(), "project" | "projects") {
         return "project".to_string();
     }
+    // ProjectActor — the actor canonical concept on the project domain.
+    // Both Redmine and OpenProject use `User < Principal < ApplicationRecord`;
+    // the STI chain yields TWO classes (Principal at the root, User as
+    // the STI child) that BOTH project to the same actor identity. Plus
+    // the canonical class-name spellings for round-trip.
+    if matches!(
+        lower.as_str(),
+        "user" | "users"
+            | "principal" | "principals"
+            | "project_actor" | "projectactor"
+    ) {
+        return "project_actor".to_string();
+    }
     // ── Layer 2: lexical fallback ──
     let last = lower.rsplit('.').next().unwrap_or(lower.as_str());
     if last.len() > 3 && last.ends_with('s') && !last.ends_with("ss") {
@@ -1533,6 +1547,43 @@ pub fn project() -> Class {
     c
 }
 
+/// The promoted canonical class for **project actor** — the people /
+/// groups who participate in project-domain work. Referenced by
+/// [`project_work_item`]'s `author` / `assignee` edges and
+/// [`project`]'s `members` edge; this is the canonical class those
+/// edges resolve to.
+///
+/// Both Redmine and OpenProject model actors with the STI chain
+/// `User < Principal < ApplicationRecord`, where Principal carries the
+/// project-attachment relations (`has_many :members`, `:memberships`,
+/// `:projects`-through-memberships) and User adds person-specific
+/// preferences/tokens. Both `User` and `Principal` lift to this same
+/// canonical concept via the resolver's promoted arm.
+///
+/// The single direct family edge is `projects` → `Project` (the
+/// universal through-memberships relation both curators carry). Memberships
+/// themselves wait on a future `Member` / `Membership` canonical class.
+#[must_use]
+pub fn project_actor() -> Class {
+    let mut c = Class::new("ProjectActor");
+    // Synthetic canonical class — neutral language (codex P2 doctrine).
+    c.language = Language::Unknown;
+    c.canonical_concept = Some("project_actor".to_string());
+    c.associations = vec![
+        // Both Redmine and OP Principal carry
+        // `has_many :projects, through: :memberships`.
+        family_has_many("projects", "Project"),
+    ];
+    // Universal identity attributes. `type` is the STI discriminator
+    // (`User`, `Group`, `AnonymousUser`, …); both curators expose it.
+    let mut login = Attribute::new("login");
+    login.type_name = Some("string".to_string());
+    let mut sti_type = Attribute::new("type");
+    sti_type.type_name = Some("string".to_string());
+    c.attributes = vec![login, sti_type];
+    c
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1555,22 +1606,28 @@ mod tests {
 
     #[test]
     fn wire_synergies_links_a_concept_across_domains() {
-        let mut op_user = Class::new("User");
-        op_user.source_domain = Some("project".to_string());
-        let mut odoo_user = Class::new("res.users");
-        odoo_user.source_domain = Some("erp".to_string());
+        // Use a genuinely un-promoted lexical pair to demonstrate the
+        // synergy mechanism. (User/Principal/res.users now promote into
+        // domain-distinct canonical concepts — project_actor for project,
+        // lexical for erp — so they no longer bridge through wire_synergies.
+        // That separation is correct semantics; this test still pins the
+        // mechanism on names that DO lexically converge.)
+        let mut op_comment = Class::new("Comment");
+        op_comment.source_domain = Some("project".to_string());
+        let mut odoo_comment = Class::new("comments");
+        odoo_comment.source_domain = Some("erp".to_string());
         let mut op_wp = Class::new("WorkPackage");
         op_wp.source_domain = Some("project".to_string());
 
-        let syn = wire_synergies(&[op_user, odoo_user, op_wp]);
-        assert_eq!(syn.len(), 1, "only `user` bridges both domains");
-        assert_eq!(syn[0].concept, "user");
+        let syn = wire_synergies(&[op_comment, odoo_comment, op_wp]);
+        assert_eq!(syn.len(), 1, "only `comment` bridges both domains");
+        assert_eq!(syn[0].concept, "comment");
         assert_eq!(syn[0].members.len(), 2);
         // ordered by domain: erp before project
         assert_eq!(syn[0].members[0].domain, "erp");
-        assert_eq!(syn[0].members[0].class_name, "res.users");
+        assert_eq!(syn[0].members[0].class_name, "comments");
         assert_eq!(syn[0].members[1].domain, "project");
-        assert_eq!(syn[0].members[1].class_name, "User");
+        assert_eq!(syn[0].members[1].class_name, "Comment");
     }
 
     #[test]
@@ -1602,9 +1659,11 @@ mod tests {
             assert_eq!(canonical_concept(name), "billable_work_entry");
             assert_eq!(canonical_concept(name), canonical_concept(name));
         }
-        // Un-promoted names still normalize lexically.
-        assert_eq!(canonical_concept("User"), "user");
-        assert_eq!(canonical_concept("res.users"), "user");
+        // Un-promoted names still normalize lexically. (User/Principal
+        // promoted into `project_actor` by a later PR; use a name that
+        // is genuinely un-promoted today.)
+        assert_eq!(canonical_concept("Country"), "country");
+        assert_eq!(canonical_concept("res.partners"), "partner");
     }
 
     #[test]
@@ -1854,8 +1913,10 @@ mod tests {
         assert_eq!(bwe.canonical, "billable_work_entry");
 
         // Unknown labels: None — they are not in the codebook.
+        // (Use a genuinely un-promoted name; `user` is now in
+        // `project_actor` via the PR adding ProjectActor.)
         assert!(LabelDTO::from_alias("outcome").is_none());
-        assert!(LabelDTO::from_alias("user").is_none());
+        assert!(LabelDTO::from_alias("nonexistent_widget").is_none());
     }
 
     #[test]
@@ -1931,6 +1992,50 @@ mod tests {
         for attr in ["name", "identifier"] {
             let a = c.attributes.iter().find(|x| x.name == attr).unwrap();
             assert_eq!(a.type_name.as_deref(), Some("string"));
+        }
+    }
+
+    #[test]
+    fn project_actor_is_the_promoted_canonical_class() {
+        let c = project_actor();
+        assert_eq!(c.name, "ProjectActor");
+        assert_eq!(c.canonical_concept.as_deref(), Some("project_actor"));
+        // Synthetic canonical class — neutral language.
+        assert_eq!(c.language, Language::Unknown);
+        // Single direct family edge: projects (through memberships, both
+        // curators).
+        assert_eq!(c.associations.len(), 1);
+        let projects = &c.associations[0];
+        assert_eq!(projects.name, "projects");
+        assert_eq!(projects.kind, AssociationKind::HasMany);
+        assert_eq!(projects.class_name.as_deref(), Some("Project"));
+        // Identity attributes carry types (codex P2 doctrine on typed scalars).
+        for attr in ["login", "type"] {
+            let a = c.attributes.iter().find(|x| x.name == attr).unwrap();
+            assert_eq!(a.type_name.as_deref(), Some("string"));
+        }
+        // In the codebook with a unique id.
+        assert!(c.canonical_id().is_some());
+        assert_eq!(c.canonical_id(), canonical_concept_id("project_actor"));
+    }
+
+    #[test]
+    fn project_actor_resolver_collapses_user_principal_sti_chain() {
+        // Both Redmine and OP have `User < Principal < ApplicationRecord`.
+        // The promoted arm collapses both STI siblings onto a single
+        // canonical concept — they ARE the same actor identity in the
+        // ontology.
+        for src in ["User", "user", "Users", "Principal", "principal", "Principals"] {
+            assert_eq!(canonical_concept(src), "project_actor", "{src} -> project_actor");
+        }
+        // PascalCase canonical class name round-trips (codex P2 doctrine).
+        assert_eq!(canonical_concept("ProjectActor"), "project_actor");
+        assert_eq!(canonical_concept("project_actor"), "project_actor");
+        // All resolve to the same codebook id.
+        let id = canonical_concept_id("project_actor");
+        assert!(id.is_some());
+        for src in ["User", "Principal", "Users", "Principals", "ProjectActor"] {
+            assert_eq!(ogar_codebook(src), id, "{src} -> codebook id");
         }
     }
 
