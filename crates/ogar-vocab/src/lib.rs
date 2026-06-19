@@ -1233,12 +1233,21 @@ pub fn canonical_concept(name: &str) -> String {
 #[must_use]
 pub fn billable_work_entry() -> Class {
     let mut c = Class::new("BillableWorkEntry");
+    // Synthetic canonical class — NOT a Ruby-harvested model. Mark the
+    // language neutral so the triple-emitter writes `ogar:sourceLanguage`
+    // = `Unknown` and consumers do not route this through Ruby-specific
+    // handling (codex P2 on OGAR#57).
+    c.language = Language::Unknown;
     c.canonical_concept = Some("billable_work_entry".to_string());
     // The 12 family edges — internal ontology meaning. Every target is a
     // canonical concept (PascalCase), never a curator/adapter surface.
     c.associations = vec![
         family_edge("project", "Project"),
-        family_edge("about", "WorkPackage"),
+        // `about` targets the canonical project-work-item concept — NOT
+        // `WorkPackage` (OP curator surface), so Redmine `Issue` and OP
+        // `WorkPackage` converge here through their shared
+        // `ProjectWorkItem` projection (codex P2 on OGAR#58).
+        family_edge("about", "ProjectWorkItem"),
         family_edge("performed_by", "Worker"),
         family_edge("duration", "Duration"),
         family_edge("priced_by", "RatePolicy"),
@@ -1250,8 +1259,12 @@ pub fn billable_work_entry() -> Class {
         family_edge("audit_trail", "AuditTrail"),
         family_edge("posted_by", "PostingAction"), // ERP boundary
     ];
-    // The defining flag (a scalar, not an edge).
-    c.attributes = vec![Attribute::new("billable")];
+    // The defining flag — typed as boolean so DDL adapters that default
+    // untyped fields to string-like columns generate the right schema
+    // shape (codex P2 on OGAR#57).
+    let mut billable = Attribute::new("billable");
+    billable.type_name = Some("boolean".to_string());
+    c.attributes = vec![billable];
     c
 }
 
@@ -1290,6 +1303,10 @@ fn family_has_many(role: &str, target_concept: &str) -> Association {
 #[must_use]
 pub fn project_work_item() -> Class {
     let mut c = Class::new("ProjectWorkItem");
+    // Synthetic canonical class — neutral language so the triple-emitter
+    // does not route this through Ruby-specific handling. Same fix as
+    // [`billable_work_entry`] (codex P2 on OGAR#57).
+    c.language = Language::Unknown;
     c.canonical_concept = Some("project_work_item".to_string());
     c.associations = vec![
         family_edge("project", "Project"),
@@ -1384,11 +1401,24 @@ mod tests {
         let c = billable_work_entry();
         assert_eq!(c.name, "BillableWorkEntry");
         assert_eq!(c.canonical_concept.as_deref(), Some("billable_work_entry"));
-        // Exactly the 12 internal family edges, to canonical concepts.
+        // Synthetic canonical class — neutral language (codex P2 on #57).
+        assert_eq!(c.language, Language::Unknown);
+        // Defining `billable` flag is typed as a boolean so DDL adapters
+        // do not default it to string (codex P2 on #57).
+        let billable = c
+            .attributes
+            .iter()
+            .find(|a| a.name == "billable")
+            .expect("billable attribute");
+        assert_eq!(billable.type_name.as_deref(), Some("boolean"));
+        // Exactly the 12 internal family edges, to canonical concepts —
+        // `about` points at `ProjectWorkItem` (not the OP curator surface
+        // `WorkPackage`) so Redmine `Issue` and OP `WorkPackage` converge
+        // here through their shared canonical concept (codex P2 on #58).
         assert_eq!(c.associations.len(), 12);
         for target in [
             "Project",
-            "WorkPackage",
+            "ProjectWorkItem",
             "Worker",
             "Duration",
             "RatePolicy",
@@ -1478,6 +1508,8 @@ mod tests {
         let c = project_work_item();
         assert_eq!(c.name, "ProjectWorkItem");
         assert_eq!(c.canonical_concept.as_deref(), Some("project_work_item"));
+        // Synthetic canonical class — neutral language (codex P2 on #57).
+        assert_eq!(c.language, Language::Unknown);
         // The 9 family edges named in the smoke spec.
         for (role, target) in [
             ("project", "Project"),
