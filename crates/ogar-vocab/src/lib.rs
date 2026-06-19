@@ -183,6 +183,14 @@ pub struct Class {
     /// Source language major version (`"17.0"`, `"7.2"`, ...) for
     /// multi-version source compatibility. Reserved; v1 leaves `None`.
     pub source_version: Option<String>,
+    /// Curator **domain** — the kind of system this class was harvested
+    /// from: `"project"` (OpenProject / Redmine), `"erp"` (Odoo / SAP), …
+    /// A coarse, curator-agnostic tag (NOT the namespace or module) and a
+    /// component of the `ClassFingerprint` used to mint a stable `ClassId`.
+    /// Set by the frontend from the harvest namespace; `None` when
+    /// unrecognized.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub source_domain: Option<String>,
     /// Computed-field declarations (Odoo `compute=...` fields, also
     /// Rails / Django where producers can detect them). Lives in
     /// base vocab — see `docs/ODOO-TRANSCODING.md` §8.

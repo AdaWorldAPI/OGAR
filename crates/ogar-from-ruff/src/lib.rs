@@ -78,7 +78,32 @@ use ruff_spo_triplet::{
 /// deterministic ordering for snapshot tests.
 #[must_use]
 pub fn lift_model_graph(graph: &ModelGraph) -> Vec<Class> {
-    graph.models.iter().map(lift_model).collect()
+    let domain = classify_domain(&graph.namespace);
+    graph
+        .models
+        .iter()
+        .map(|m| {
+            let mut class = lift_model(m);
+            class.source_domain = domain.clone();
+            class
+        })
+        .collect()
+}
+
+/// Name the curator **domain** from the harvest namespace — the "one tiny
+/// regex" that tags OpenProject as a `project` domain and Odoo as an `erp`
+/// domain. A coarse, curator-agnostic label (a `ClassFingerprint`
+/// component), not the namespace itself. Returns `None` for unrecognized
+/// namespaces — the domain stays unset rather than guessed.
+fn classify_domain(namespace: &str) -> Option<String> {
+    let ns = namespace.to_ascii_lowercase();
+    if ns.contains("openproject") || ns.contains("redmine") {
+        Some("project".to_string())
+    } else if ns.contains("odoo") {
+        Some("erp".to_string())
+    } else {
+        None
+    }
 }
 
 /// Lift one [`Model`] to an OGAR [`Class`]. Pure projection — no I/O.
@@ -705,6 +730,22 @@ mod tests {
         assert_eq!(classes.len(), 2);
         assert_eq!(classes[0].name, "WorkPackage");
         assert_eq!(classes[1].name, "Project");
+    }
+
+    #[test]
+    fn classify_domain_names_op_project_and_odoo_erp() {
+        // OpenProject → "project"
+        let mut op = ModelGraph::new("openproject");
+        op.models.push(Model::new("WorkPackage"));
+        assert_eq!(lift_model_graph(&op)[0].source_domain.as_deref(), Some("project"));
+        // Odoo → "erp"
+        let mut odoo = ModelGraph::new("odoo");
+        odoo.models.push(Model::new("AccountMove"));
+        assert_eq!(lift_model_graph(&odoo)[0].source_domain.as_deref(), Some("erp"));
+        // Unrecognized → None (not guessed).
+        let mut other = ModelGraph::new("mystery");
+        other.models.push(Model::new("X"));
+        assert_eq!(lift_model_graph(&other)[0].source_domain, None);
     }
 
     fn mk_model_with_functions() -> Model {
