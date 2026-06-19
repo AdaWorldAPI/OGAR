@@ -284,11 +284,20 @@ council warned against).
 
 ### 11.1 Council findings folded in
 - **Internal contradictions resolved.** Prior §5-step-5 (`DEFINE FUNCTION`) vs §8
-  (body-lift out of scope): the DO→SurrealQL projection emits the function
-  *declaration shell* (signature + commit-gate guard); Ruby-body transcription
-  stays deferred (D-AR-5.6). Prior §3-rule-1 ("I stop at `Class`") vs the classid
-  binding step: classid minting is now Core's (`mint_classid`), so the producer
-  genuinely stops at `Class` + facts.
+  (body-lift out of scope): a `DEFINE FUNCTION` *requires* a body, so the
+  projection (in `op-surreal-actions`, when the action's executor is `SurrealAst`)
+  emits an **admission function** whose body is the commit-gate adjudication
+  derivable from `ActionDef` metadata alone — RBAC via the consumer-supplied role
+  map + the state guard as `$value IN [...]`. That is a *valid* function with a
+  real body, not a bodyless shell. The **domain effect** (the Ruby method body) is
+  an explicit, deferred **body-adapter input** (D-AR-5.6); until it exists the
+  projection emits a `-- TODO domain-body` marker, never a fabricated body. This
+  plan therefore does **not** claim Step 5 closes the AR→DO→SurrealQL loop — only
+  its admission half; the executable half waits on the body-adapter. When no
+  metadata-derivable guard exists either, the action falls back to dispatch
+  metadata / an annotation rather than a `DEFINE FUNCTION`. Prior §3-rule-1 ("I
+  stop at `Class`") vs the classid binding step: classid minting is now Core's
+  (`mint_classid`), so the producer genuinely stops at `Class` + facts.
 - **`op-surreal-actions` is a new crate**, not an extension of `op-surreal-ast`
   (preserves the zero-async-deps invariant `surrealdb-core` consumes).
 - **`ActionInvocation` stays producer-absent** (it carries `NodeGuid
