@@ -149,11 +149,11 @@ mod tests {
         // the codebook mapping is asserted here on the Rails side.)
         assert_eq!(
             time_entry.canonical_id(),
-            Some(ogar_vocab::canonical_concept_id("billable_work_entry")),
+            ogar_vocab::canonical_concept_id("billable_work_entry"),
         );
         assert_eq!(
             time_entry.canonical_id(),
-            Some(ogar_vocab::ogar_codebook("account.analytic.line")),
+            ogar_vocab::ogar_codebook("account.analytic.line"),
             "Odoo-shaped label must map to the same codebook id",
         );
     }
@@ -235,7 +235,7 @@ mod tests {
         );
         assert_eq!(
             issue.canonical_id(),
-            Some(ogar_vocab::canonical_concept_id("project_work_item")),
+            ogar_vocab::canonical_concept_id("project_work_item"),
         );
     }
 
@@ -435,7 +435,7 @@ mod tests {
         );
         assert_eq!(
             r_project.canonical_id(),
-            Some(ogar_vocab::canonical_concept_id("project")),
+            ogar_vocab::canonical_concept_id("project"),
         );
     }
 
