@@ -1072,6 +1072,89 @@ impl Validation {
     }
 }
 
+// ─────────────────────────────────────────────────────────────────────
+// Cross-domain synergies
+// ─────────────────────────────────────────────────────────────────────
+
+/// A cross-domain **synergy**: one canonical concept that surfaces in two
+/// or more curator [domains](Class::source_domain) — e.g. `user` in both
+/// the `project` domain (OpenProject `User`) and the `erp` domain (Odoo
+/// `res.users`). Wiring synergies is what makes the agnostic vocab more
+/// than the sum of its curators: shared concepts unify across domains.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[non_exhaustive]
+pub struct Synergy {
+    /// Canonical concept (normalized class name) the members share.
+    pub concept: String,
+    /// The classes that realize this concept — one entry per domain that
+    /// has it, ordered by domain.
+    pub members: Vec<SynergyMember>,
+}
+
+/// One domain's realization of a [`Synergy`] concept.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[non_exhaustive]
+pub struct SynergyMember {
+    /// The curator domain (`"project"`, `"erp"`, …) — see
+    /// [`Class::source_domain`].
+    pub domain: String,
+    /// The class name as written in that domain.
+    pub class_name: String,
+}
+
+/// Wire cross-domain synergies across a set of lifted [`Class`]es.
+///
+/// Groups classes by [`canonical_concept`] and keeps only concepts that
+/// appear in **2+ distinct** [`source_domain`](Class::source_domain)s —
+/// those bridges are the synergies. Classes with no `source_domain` are
+/// skipped (a synergy needs domains to bridge); the first class seen per
+/// (concept, domain) wins. Output is deterministic (ordered by concept,
+/// then domain).
+#[must_use]
+pub fn wire_synergies(classes: &[Class]) -> Vec<Synergy> {
+    use std::collections::BTreeMap;
+    let mut by_concept: BTreeMap<String, BTreeMap<String, String>> = BTreeMap::new();
+    for c in classes {
+        let Some(domain) = c.source_domain.as_ref() else {
+            continue;
+        };
+        let concept = canonical_concept(&c.name);
+        by_concept
+            .entry(concept)
+            .or_default()
+            .entry(domain.clone())
+            .or_insert_with(|| c.name.clone());
+    }
+    by_concept
+        .into_iter()
+        .filter(|(_, domains)| domains.len() >= 2)
+        .map(|(concept, domains)| Synergy {
+            concept,
+            members: domains
+                .into_iter()
+                .map(|(domain, class_name)| SynergyMember { domain, class_name })
+                .collect(),
+        })
+        .collect()
+}
+
+/// Normalize a class name to its canonical concept: lowercase, take the
+/// last dotted segment (Odoo `res.users` → `users`), and drop a single
+/// trailing plural `s` (`users` → `user`), except after `ss`. Coarse by
+/// design — a v1 bridge for obvious overlaps (`user`, `project`,
+/// `company`), not a thesaurus.
+fn canonical_concept(name: &str) -> String {
+    let lower = name.to_ascii_lowercase();
+    let last = lower.rsplit('.').next().unwrap_or(lower.as_str());
+    if last.len() > 3 && last.ends_with('s') && !last.ends_with("ss") {
+        last[..last.len() - 1].to_string()
+    } else {
+        last.to_string()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1090,6 +1173,38 @@ mod tests {
         assert_eq!(c.name, "WorkPackage");
         assert!(c.parent.is_none());
         assert!(c.associations.is_empty());
+    }
+
+    #[test]
+    fn wire_synergies_links_a_concept_across_domains() {
+        let mut op_user = Class::new("User");
+        op_user.source_domain = Some("project".to_string());
+        let mut odoo_user = Class::new("res.users");
+        odoo_user.source_domain = Some("erp".to_string());
+        let mut op_wp = Class::new("WorkPackage");
+        op_wp.source_domain = Some("project".to_string());
+
+        let syn = wire_synergies(&[op_user, odoo_user, op_wp]);
+        assert_eq!(syn.len(), 1, "only `user` bridges both domains");
+        assert_eq!(syn[0].concept, "user");
+        assert_eq!(syn[0].members.len(), 2);
+        // ordered by domain: erp before project
+        assert_eq!(syn[0].members[0].domain, "erp");
+        assert_eq!(syn[0].members[0].class_name, "res.users");
+        assert_eq!(syn[0].members[1].domain, "project");
+        assert_eq!(syn[0].members[1].class_name, "User");
+    }
+
+    #[test]
+    fn wire_synergies_needs_two_distinct_domains() {
+        // same concept, same domain → not a synergy
+        let mut a = Class::new("User");
+        a.source_domain = Some("project".to_string());
+        let mut b = Class::new("Users");
+        b.source_domain = Some("project".to_string());
+        // an undomained class is ignored entirely
+        let c = Class::new("res.users");
+        assert!(wire_synergies(&[a, b, c]).is_empty());
     }
 
     #[test]
