@@ -136,6 +136,77 @@ pub fn lift_model(model: &Model) -> Class {
     class
 }
 
+// ───────────────────────── ProjectWorkItem role projection ─────────────
+//
+// Curator-side mapping: project_work_item's canonical roles vs the
+// Rails-AR-dialect names that surface them. Used by the lineage-transcode
+// smoke (Redmine Issue <-> OpenProject WorkPackage through the canonical
+// bridge) — both curators must project losslessly onto the same role set.
+//
+// Synonyms are deliberate and minimal: only well-known Rails-AR variants
+// of the canonical role appear here. Adding a new synonym is the right
+// move when a real corpus surfaces it; inventing synonyms isn't.
+
+/// Map a Rails-curator association name to the canonical
+/// [`ogar_vocab::project_work_item`] role it realises. Returns `None`
+/// when the association is not part of the project-work-item canonical
+/// surface (e.g. Redmine `fixed_version`, OP `file_links`).
+#[must_use]
+pub fn project_work_item_role(curator_name: &str) -> Option<&'static str> {
+    match curator_name {
+        "project" => Some("project"),
+        "status" => Some("status"),
+        "tracker" | "type" => Some("type"),
+        "priority" => Some("priority"),
+        "author" => Some("author"),
+        "assigned_to" | "assignee" | "responsible" => Some("assignee"),
+        "journals" => Some("journals"),
+        "relations" | "relations_from" | "relations_to" => Some("relations"),
+        "time_entries" => Some("time_entries"),
+        _ => None,
+    }
+}
+
+/// Map a mixin / `acts_as_*` name to a canonical
+/// [`ogar_vocab::project_work_item`] role it provides indirectly. OP's
+/// WorkPackage carries `journals` via `acts_as_journalized` and
+/// `relations` via the `WorkPackages::Relations` concern instead of
+/// direct `has_many` calls; this resolver recovers them so the canonical
+/// projection is total.
+#[must_use]
+pub fn project_work_item_role_from_mixin(mixin: &str) -> Option<&'static str> {
+    if mixin == "acts_as_journalized" || mixin.ends_with("::Journalized") {
+        return Some("journals");
+    }
+    if mixin == "WorkPackages::Relations" || mixin.ends_with("::Relations") {
+        return Some("relations");
+    }
+    None
+}
+
+/// The set of canonical [`ogar_vocab::project_work_item`] roles a curator
+/// class projects onto. Unions association-derived roles
+/// ([`project_work_item_role`]) with mixin-derived roles
+/// ([`project_work_item_role_from_mixin`]). Returns the empty set when
+/// the class has no project-work-item shape.
+#[must_use]
+pub fn project_work_item_canonical_roles(
+    class: &Class,
+) -> std::collections::HashSet<&'static str> {
+    let mut set = std::collections::HashSet::new();
+    for a in &class.associations {
+        if let Some(role) = project_work_item_role(&a.name) {
+            set.insert(role);
+        }
+    }
+    for m in &class.mixins {
+        if let Some(role) = project_work_item_role_from_mixin(m) {
+            set.insert(role);
+        }
+    }
+    set
+}
+
 // ───────────────────────────── actions (DO-arm) ─────────────────────────
 
 /// Lift a [`Model`]'s methods to OGAR [`ActionDef`] declarations — the
@@ -750,6 +821,81 @@ mod tests {
         let mut other = ModelGraph::new("mystery");
         other.models.push(Model::new("X"));
         assert_eq!(lift_model_graph(&other)[0].source_domain, None);
+    }
+
+    #[test]
+    fn project_work_item_role_maps_rails_dialect_synonyms() {
+        // Universal names common to Redmine + OP.
+        for (src, want) in [
+            ("project", "project"),
+            ("status", "status"),
+            ("priority", "priority"),
+            ("author", "author"),
+            ("time_entries", "time_entries"),
+        ] {
+            assert_eq!(project_work_item_role(src), Some(want));
+        }
+        // Redmine-side dialect: tracker -> type; relations_from/to -> relations.
+        assert_eq!(project_work_item_role("tracker"), Some("type"));
+        assert_eq!(project_work_item_role("relations_from"), Some("relations"));
+        assert_eq!(project_work_item_role("relations_to"), Some("relations"));
+        // OP-side dialect: type -> type; responsible -> assignee.
+        assert_eq!(project_work_item_role("type"), Some("type"));
+        assert_eq!(project_work_item_role("responsible"), Some("assignee"));
+        // Off-shape associations return None — `fixed_version` (Redmine),
+        // `file_links` (OP) are real-but-not-canonical.
+        assert!(project_work_item_role("fixed_version").is_none());
+        assert!(project_work_item_role("file_links").is_none());
+    }
+
+    #[test]
+    fn project_work_item_canonical_roles_unions_associations_and_mixins() {
+        // Redmine-shaped class: journals + relations come via direct
+        // associations; the union still covers them.
+        let mut redmine = Class::new("Issue");
+        redmine.associations = vec![
+            Association::new(AssociationKind::BelongsTo, "project"),
+            Association::new(AssociationKind::BelongsTo, "tracker"),
+            Association::new(AssociationKind::BelongsTo, "status"),
+            Association::new(AssociationKind::BelongsTo, "author"),
+            Association::new(AssociationKind::BelongsTo, "assigned_to"),
+            Association::new(AssociationKind::BelongsTo, "priority"),
+            Association::new(AssociationKind::HasMany, "journals"),
+            Association::new(AssociationKind::HasMany, "time_entries"),
+            Association::new(AssociationKind::HasMany, "relations_from"),
+            Association::new(AssociationKind::HasMany, "relations_to"),
+            // Off-shape: must NOT inflate the role set.
+            Association::new(AssociationKind::BelongsTo, "fixed_version"),
+        ];
+        let roles = project_work_item_canonical_roles(&redmine);
+        assert_eq!(roles.len(), 9);
+        for r in [
+            "project", "status", "type", "priority", "author", "assignee",
+            "journals", "relations", "time_entries",
+        ] {
+            assert!(roles.contains(r), "Redmine projection missing role {r}");
+        }
+
+        // OP-shaped class: journals + relations come via MIXINS
+        // (`acts_as_journalized`, `WorkPackages::Relations`). Same total
+        // role set under the lineage-transcode bridge.
+        let mut op = Class::new("WorkPackage");
+        op.associations = vec![
+            Association::new(AssociationKind::BelongsTo, "project"),
+            Association::new(AssociationKind::BelongsTo, "type"),
+            Association::new(AssociationKind::BelongsTo, "status"),
+            Association::new(AssociationKind::BelongsTo, "author"),
+            Association::new(AssociationKind::BelongsTo, "assigned_to"),
+            Association::new(AssociationKind::BelongsTo, "responsible"),
+            Association::new(AssociationKind::BelongsTo, "priority"),
+            Association::new(AssociationKind::HasMany, "time_entries"),
+        ];
+        op.mixins = vec![
+            "acts_as_journalized".to_string(),
+            "WorkPackages::Relations".to_string(),
+        ];
+        let op_roles = project_work_item_canonical_roles(&op);
+        assert_eq!(op_roles, roles, "OP must project to the same canonical role set as Redmine");
     }
 
     #[test]
