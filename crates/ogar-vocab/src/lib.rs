@@ -1017,6 +1017,14 @@ impl Class {
     pub fn canonical_id(&self) -> Option<u16> {
         self.canonical_concept.as_deref().map(canonical_concept_id)
     }
+
+    /// `canonical_id` rendered as **2 little-endian bytes** — the wire
+    /// contract for downstream consumers (SurrealAST, lance-graph-planner,
+    /// kanban, …). `None` when no `canonical_concept` is set.
+    #[must_use]
+    pub fn canonical_id_le(&self) -> Option<[u8; 2]> {
+        self.canonical_id().map(u16::to_le_bytes)
+    }
 }
 
 /// **OGAR codebook hash** — fold a canonical-concept string into the
@@ -1028,6 +1036,20 @@ impl Class {
 /// The 65,536-slot space is enough for the foreseeable canonical-concept
 /// universe; collision-resistance is verified by the
 /// `canonical_concept_id_distinct_for_promoted_concepts` test.
+///
+/// # Wire contract — 2 little-endian bytes
+///
+/// Downstream consumers (SurrealDB AST, lance-graph-planner, kanban, …)
+/// serialise the id as 2 little-endian bytes via `u16::to_le_bytes`. Byte
+/// order matches the `NodeGuid` layout (`lance-graph-contract`:
+/// `canonical_node.rs` — LE throughout) so codebook ids and the
+/// `NodeGuid.classid` u16 low half are wire-compatible.
+///
+/// The contract type ([`LabelDTO`]) lives in `ogar-vocab` today; long-term
+/// it belongs in `lance-graph-contract` alongside `ClassId` and the
+/// `NodeGuid` LE layout. Consumers should treat the wire as the source of
+/// truth: any encoder/decoder agreeing on `u16` little-endian is
+/// compatible regardless of which crate exports the DTO.
 #[must_use]
 pub fn canonical_concept_id(concept: &str) -> u16 {
     // FNV-1a 32-bit (RFC-style constants).
@@ -1045,23 +1067,32 @@ pub fn canonical_concept_id(concept: &str) -> u16 {
     if folded == 0 { 1 } else { folded }
 }
 
-/// **Consumer-facing label DTO** — a (label, id) pair. Consumers send
-/// OGAR a `LabelDTO` carrying whatever name they have locally (curator
-/// surface like `"Issue"` / `"account.analytic.line"`, OGAR canonical
-/// like `"project_work_item"`, or a domain-specific tag); the `id` field
-/// is the stable [OGAR codebook] binary identity derived from that label.
+/// **Consumer-facing label DTO** — `(label, id, canonical)` triple. The
+/// three fields cover the three roles a class identity plays:
 ///
-/// Two consumers with different label conventions for the same concept
-/// produce `LabelDTO`s with **different labels and equal ids**. The id is
-/// the identity; the label is local presentation.
+/// - `label` — **consumer-local** name (curator surface like `"Issue"` /
+///   `"account.analytic.line"`, or a domain-specific tag). Not normalised
+///   by OGAR.
+/// - `id` — **binary codebook identity** ([`ogar_codebook`] of `label`).
+///   The actual identity used for set-equality, lookup, dispatch. Two
+///   consumers with different labels for the same concept produce DTOs
+///   with different `label`s and equal `id`s.
+/// - `canonical` — **canonical-AST label** ([`canonical_concept`] of
+///   `label`). The portable symbol used by AST consumers (SurrealDB AST,
+///   lance-graph-planner, kanban, …) when they need a stable
+///   curator-agnostic name. AST emission picks this; identity comparison
+///   picks `id`; presentation picks `label`.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[non_exhaustive]
 pub struct LabelDTO {
     /// Consumer-local label. Not normalised by OGAR.
     pub label: String,
-    /// OGAR codebook binary identity ([`ogar_codebook`] of `label`).
+    /// OGAR codebook binary identity.
     pub id: u16,
+    /// Canonical-AST label — the portable symbol AST / planner / kanban
+    /// consumers emit when they need a stable curator-agnostic name.
+    pub canonical: String,
 }
 
 impl LabelDTO {
@@ -1069,12 +1100,21 @@ impl LabelDTO {
     /// resolves the alias to its canonical `u16` id without normalising
     /// the `label` itself — `"account.analytic.line"` stays
     /// `"account.analytic.line"`, but its `id` is the same as the id for
-    /// `"TimeEntry"` and for `"billable_work_entry"`.
+    /// `"TimeEntry"` and for `"billable_work_entry"`, and its `canonical`
+    /// is `"billable_work_entry"` ready for AST emission.
     #[must_use]
     pub fn from_alias(label: impl Into<String>) -> Self {
         let label = label.into();
-        let id = ogar_codebook(&label);
-        Self { label, id }
+        let canonical = canonical_concept(&label);
+        let id = canonical_concept_id(&canonical);
+        Self { label, id, canonical }
+    }
+
+    /// `id` rendered as **2 little-endian bytes** — the wire contract for
+    /// downstream consumers. Roundtrip via `u16::from_le_bytes`.
+    #[must_use]
+    pub fn id_le(&self) -> [u8; 2] {
+        self.id.to_le_bytes()
     }
 }
 
@@ -1741,19 +1781,51 @@ mod tests {
     #[test]
     fn label_dto_carries_local_label_and_shared_codebook_id() {
         // Two consumers with totally different labels for the same
-        // concept produce LabelDTOs with different labels and EQUAL ids.
+        // concept produce LabelDTOs with different labels and EQUAL ids,
+        // and the SAME canonical-AST label (for SurrealAST / planner /
+        // kanban consumers that emit a portable symbol).
         let a = LabelDTO::from_alias("Issue");
         let b = LabelDTO::from_alias("WorkPackage");
         let canonical = LabelDTO::from_alias("project_work_item");
         let odoo_shaped = LabelDTO::from_alias("account.analytic.line");
         let bwe = LabelDTO::from_alias("billable_work_entry");
+        // Labels stay local — not normalised.
         assert_ne!(a.label, b.label, "labels are local");
-        assert_eq!(a.id, b.id, "but ids are the same — the address is the identity");
+        assert_eq!(a.label, "Issue");
+        assert_eq!(odoo_shaped.label, "account.analytic.line");
+        // Ids converge — the address is the identity.
+        assert_eq!(a.id, b.id, "address is the identity");
         assert_eq!(a.id, canonical.id, "curator and OGAR labels share the id");
-        // Cross-domain label that ALSO maps to the same id without
-        // producer-side label-shaping.
-        assert_eq!(odoo_shaped.id, bwe.id);
+        assert_eq!(odoo_shaped.id, bwe.id, "cross-domain label converges on the id");
         assert_ne!(a.id, bwe.id, "distinct concepts have distinct ids");
+        // Canonical-AST labels converge — what AST consumers emit.
+        assert_eq!(a.canonical, "project_work_item");
+        assert_eq!(b.canonical, "project_work_item");
+        assert_eq!(canonical.canonical, "project_work_item");
+        assert_eq!(odoo_shaped.canonical, "billable_work_entry");
+        assert_eq!(bwe.canonical, "billable_work_entry");
+    }
+
+    #[test]
+    fn le_wire_contract_round_trips() {
+        // The wire contract: u16 little-endian, roundtrip-stable across
+        // Class.canonical_id_le() and LabelDTO.id_le(). What downstream
+        // consumers (SurrealAST, planner, kanban) read off the wire.
+        let issue = LabelDTO::from_alias("Issue");
+        let wp = LabelDTO::from_alias("WorkPackage");
+        // Same wire bytes for the same concept.
+        assert_eq!(issue.id_le(), wp.id_le());
+        // Roundtrip via u16::from_le_bytes recovers the id.
+        assert_eq!(u16::from_le_bytes(issue.id_le()), issue.id);
+        // Class.canonical_id_le agrees with LabelDTO.id_le for the same
+        // canonical concept.
+        let pwi = project_work_item();
+        assert_eq!(
+            pwi.canonical_id_le().unwrap(),
+            LabelDTO::from_alias("project_work_item").id_le(),
+        );
+        // No canonical -> None on the wire.
+        assert_eq!(Class::new("Bare").canonical_id_le(), None);
     }
 
     #[test]
