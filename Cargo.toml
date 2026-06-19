@@ -13,6 +13,7 @@ members = [
     "crates/ogar-from-elixir",
     "crates/ogar-from-ruff",
     "crates/ogar-from-rails",
+    "crates/ogar-class-view",
 ]
 
 [workspace.package]
