@@ -1003,6 +1003,141 @@ impl Class {
     pub fn new(name: impl Into<String>) -> Self {
         Self { name: name.into(), ..Default::default() }
     }
+
+    /// Resolve this class's binary [OGAR codebook] identity — the `u16`
+    /// canonical id derived from its stored `canonical_concept`. Returns
+    /// `None` when the class has no canonical concept set (a producer
+    /// that never set it; rare in practice).
+    ///
+    /// This is the load-bearing convergence claim: two curator-shaped
+    /// classes (Redmine `Issue`, OpenProject `WorkPackage`) lifting to
+    /// the same `canonical_concept` produce the same `canonical_id`.
+    /// **String labels are decorative; the codebook value is the identity.**
+    #[must_use]
+    pub fn canonical_id(&self) -> Option<u16> {
+        self.canonical_concept.as_deref().map(canonical_concept_id)
+    }
+
+    /// `canonical_id` rendered as **2 little-endian bytes** — the wire
+    /// contract for downstream consumers (SurrealAST, lance-graph-planner,
+    /// kanban, …). `None` when no `canonical_concept` is set.
+    #[must_use]
+    pub fn canonical_id_le(&self) -> Option<[u8; 2]> {
+        self.canonical_id().map(u16::to_le_bytes)
+    }
+}
+
+/// **OGAR codebook hash** — fold a canonical-concept string into the
+/// stable `u16` codebook value (FNV-1a 32-bit hashed, XOR-folded to u16).
+/// Pure + deterministic + portable: the bits are the same on any machine,
+/// any run, any session. Same input -> same output, forever.
+///
+/// `u16` width per `OD-CLASSID-WIDTH` (lance-graph-contract `ClassId`).
+/// The 65,536-slot space is enough for the foreseeable canonical-concept
+/// universe; collision-resistance is verified by the
+/// `canonical_concept_id_distinct_for_promoted_concepts` test.
+///
+/// # Wire contract — 2 little-endian bytes
+///
+/// Downstream consumers (SurrealDB AST, lance-graph-planner, kanban, …)
+/// serialise the id as 2 little-endian bytes via `u16::to_le_bytes`. Byte
+/// order matches the `NodeGuid` layout (`lance-graph-contract`:
+/// `canonical_node.rs` — LE throughout) so codebook ids and the
+/// `NodeGuid.classid` u16 low half are wire-compatible.
+///
+/// The contract type ([`LabelDTO`]) lives in `ogar-vocab` today; long-term
+/// it belongs in `lance-graph-contract` alongside `ClassId` and the
+/// `NodeGuid` LE layout. Consumers should treat the wire as the source of
+/// truth: any encoder/decoder agreeing on `u16` little-endian is
+/// compatible regardless of which crate exports the DTO.
+#[must_use]
+pub fn canonical_concept_id(concept: &str) -> u16 {
+    // FNV-1a 32-bit (RFC-style constants).
+    const FNV_OFFSET_BASIS: u32 = 0x811c_9dc5;
+    const FNV_PRIME: u32 = 0x0100_0193;
+    let mut hash = FNV_OFFSET_BASIS;
+    for &b in concept.as_bytes() {
+        hash ^= u32::from(b);
+        hash = hash.wrapping_mul(FNV_PRIME);
+    }
+    // XOR-fold u32 -> u16. The 0 slot is canon-reserved (`NodeGuid::
+    // CLASSID_DEFAULT`), so push collisions up by one — any concept that
+    // would hash to 0 lives at 1 instead.
+    let folded = (hash as u16) ^ ((hash >> 16) as u16);
+    if folded == 0 { 1 } else { folded }
+}
+
+/// **Consumer-facing label DTO** — `(label, id, canonical)` triple. The
+/// three fields cover the three roles a class identity plays:
+///
+/// - `label` — **consumer-local** name (curator surface like `"Issue"` /
+///   `"account.analytic.line"`, or a domain-specific tag). Not normalised
+///   by OGAR.
+/// - `id` — **binary codebook identity** ([`ogar_codebook`] of `label`).
+///   The actual identity used for set-equality, lookup, dispatch. Two
+///   consumers with different labels for the same concept produce DTOs
+///   with different `label`s and equal `id`s.
+/// - `canonical` — **canonical-AST label** ([`canonical_concept`] of
+///   `label`). The portable symbol used by AST consumers (SurrealDB AST,
+///   lance-graph-planner, kanban, …) when they need a stable
+///   curator-agnostic name. AST emission picks this; identity comparison
+///   picks `id`; presentation picks `label`.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[non_exhaustive]
+pub struct LabelDTO {
+    /// Consumer-local label. Not normalised by OGAR.
+    pub label: String,
+    /// OGAR codebook binary identity.
+    pub id: u16,
+    /// Canonical-AST label — the portable symbol AST / planner / kanban
+    /// consumers emit when they need a stable curator-agnostic name.
+    pub canonical: String,
+}
+
+impl LabelDTO {
+    /// Build a `LabelDTO` from a consumer-shaped alias. The OGAR codebook
+    /// resolves the alias to its canonical `u16` id without normalising
+    /// the `label` itself — `"account.analytic.line"` stays
+    /// `"account.analytic.line"`, but its `id` is the same as the id for
+    /// `"TimeEntry"` and for `"billable_work_entry"`, and its `canonical`
+    /// is `"billable_work_entry"` ready for AST emission.
+    #[must_use]
+    pub fn from_alias(label: impl Into<String>) -> Self {
+        let label = label.into();
+        let canonical = canonical_concept(&label);
+        let id = canonical_concept_id(&canonical);
+        Self { label, id, canonical }
+    }
+
+    /// `id` rendered as **2 little-endian bytes** — the wire contract for
+    /// downstream consumers. Roundtrip via `u16::from_le_bytes`.
+    #[must_use]
+    pub fn id_le(&self) -> [u8; 2] {
+        self.id.to_le_bytes()
+    }
+}
+
+/// **OGAR codebook lookup** — map any alias (curator-shaped *or*
+/// canonical-shaped) to its canonical binary id. The curator name does
+/// not need to be normalised by the producer; passing the raw Rails or
+/// Odoo class name yields the same `u16` as the canonical-concept string.
+///
+/// ```text
+///   ogar_codebook("Issue")                     == codebook("project_work_item")
+///   ogar_codebook("WorkPackage")               == codebook("project_work_item")
+///   ogar_codebook("TimeEntry")                 == codebook("billable_work_entry")
+///   ogar_codebook("account.analytic.line")     == codebook("billable_work_entry")
+///   ogar_codebook("Project")                   == codebook("project")
+/// ```
+///
+/// Implementation: resolves the alias through [`canonical_concept`]
+/// (which carries the promoted-invariant table) and hashes the result
+/// through [`canonical_concept_id`]. The string layer collapses; the
+/// binary identity is the codebook value.
+#[must_use]
+pub fn ogar_codebook(alias: &str) -> u16 {
+    canonical_concept_id(&canonical_concept(alias))
 }
 
 impl Association {
@@ -1322,6 +1457,51 @@ pub fn project_work_item() -> Class {
     c
 }
 
+/// The promoted canonical class for **project** — the root container of
+/// project-domain work. Referenced by [`project_work_item`]'s `project`
+/// family edge and [`billable_work_entry`]'s `project` edge; this is the
+/// canonical class those edges resolve to.
+///
+/// Redmine `Project` and OpenProject `Project` are universal and share
+/// the AR shape: nested-set `parent` (a project may belong to a parent
+/// project), `members` (people on the project), the work items
+/// themselves, and the time entries booked against the project. Both
+/// curators carry `name` + `identifier` as the identity attributes.
+///
+/// The `work_items` family edge targets the canonical
+/// [`project_work_item`] (not the curator surfaces Redmine `Issue` or OP
+/// `WorkPackage`); `time_entries` targets [`billable_work_entry`]; the
+/// `members` edge points forward at the still-to-come canonical
+/// `ProjectActor`.
+#[must_use]
+pub fn project() -> Class {
+    let mut c = Class::new("Project");
+    // Synthetic canonical class — neutral language (codex P2 doctrine).
+    c.language = Language::Unknown;
+    c.canonical_concept = Some("project".to_string());
+    c.associations = vec![
+        family_has_many("work_items", "ProjectWorkItem"),
+        family_has_many("time_entries", "BillableWorkEntry"),
+        family_has_many("members", "ProjectActor"),
+        // Nested-project parent is a real cross-curator concept but is
+        // surfaced via MIXINS in both: Redmine threads it through the
+        // `awesome_nested_set` gem (no direct `belongs_to`), OP through
+        // the `Projects::Hierarchy` concern. The producer
+        // (`ogar_ruby_spo`) does not yet decode either mixin into a
+        // canonical parent edge — when it does, a follow-up PR adds
+        // `family_edge("parent", "Project")` here and the matching
+        // mixin-derived arm to `ogar_from_ruff::project_role_from_mixin`.
+    ];
+    // Identity attributes — both curators carry these as the canonical
+    // human + URL identity.
+    let mut name = Attribute::new("name");
+    name.type_name = Some("string".to_string());
+    let mut identifier = Attribute::new("identifier");
+    identifier.type_name = Some("string".to_string());
+    c.attributes = vec![name, identifier];
+    c
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1547,6 +1727,153 @@ mod tests {
         assert_eq!(canonical_concept("Issue"), "project_work_item");
         // The lexical layer remains deterministic for unpromoted names.
         assert_eq!(canonical_concept("User"), canonical_concept("Users"));
+    }
+
+    #[test]
+    fn canonical_concept_id_is_deterministic_and_nonzero() {
+        // Same input -> same output, every session.
+        assert_eq!(canonical_concept_id("project_work_item"), canonical_concept_id("project_work_item"));
+        assert_eq!(canonical_concept_id(""), canonical_concept_id(""));
+        // 0 is canon-reserved (NodeGuid::CLASSID_DEFAULT); the function
+        // pushes any hash collision with 0 to 1 instead.
+        for s in ["project_work_item", "billable_work_entry", "project", "", "x"] {
+            assert_ne!(canonical_concept_id(s), 0, "codebook(`{s}`) must be non-zero");
+        }
+    }
+
+    #[test]
+    fn canonical_concept_id_distinct_for_promoted_concepts() {
+        // No collisions in the codebook for the currently-promoted set.
+        // (If a future concept ever collides, the right fix is a curated
+        // override table — not weakening this assertion.)
+        let concepts = [
+            "project_work_item",
+            "billable_work_entry",
+            "project",
+        ];
+        let mut ids = std::collections::HashSet::new();
+        for c in concepts {
+            assert!(ids.insert(canonical_concept_id(c)), "codebook collision on `{c}`");
+        }
+    }
+
+    #[test]
+    fn ogar_codebook_maps_curator_labels_to_canonical_id() {
+        // The user's load-bearing insight: leave the curator name shape
+        // intact; the codebook is what maps to the canonical target.
+        let pwi = canonical_concept_id("project_work_item");
+        assert_eq!(ogar_codebook("Issue"), pwi);
+        assert_eq!(ogar_codebook("WorkPackage"), pwi);
+        assert_eq!(ogar_codebook("work_package"), pwi);
+
+        let bwe = canonical_concept_id("billable_work_entry");
+        assert_eq!(ogar_codebook("TimeEntry"), bwe);
+        // Odoo-shaped name maps to the same binary id without producer-
+        // side normalisation. (Lift implementation lives in the
+        // python-side producer the other session owns; the codebook
+        // mapping itself stands here.)
+        assert_eq!(ogar_codebook("account.analytic.line"), bwe);
+        assert_eq!(ogar_codebook("account_analytic_line"), bwe);
+
+        assert_eq!(ogar_codebook("Project"), canonical_concept_id("project"));
+    }
+
+    #[test]
+    fn label_dto_carries_local_label_and_shared_codebook_id() {
+        // Two consumers with totally different labels for the same
+        // concept produce LabelDTOs with different labels and EQUAL ids,
+        // and the SAME canonical-AST label (for SurrealAST / planner /
+        // kanban consumers that emit a portable symbol).
+        let a = LabelDTO::from_alias("Issue");
+        let b = LabelDTO::from_alias("WorkPackage");
+        let canonical = LabelDTO::from_alias("project_work_item");
+        let odoo_shaped = LabelDTO::from_alias("account.analytic.line");
+        let bwe = LabelDTO::from_alias("billable_work_entry");
+        // Labels stay local — not normalised.
+        assert_ne!(a.label, b.label, "labels are local");
+        assert_eq!(a.label, "Issue");
+        assert_eq!(odoo_shaped.label, "account.analytic.line");
+        // Ids converge — the address is the identity.
+        assert_eq!(a.id, b.id, "address is the identity");
+        assert_eq!(a.id, canonical.id, "curator and OGAR labels share the id");
+        assert_eq!(odoo_shaped.id, bwe.id, "cross-domain label converges on the id");
+        assert_ne!(a.id, bwe.id, "distinct concepts have distinct ids");
+        // Canonical-AST labels converge — what AST consumers emit.
+        assert_eq!(a.canonical, "project_work_item");
+        assert_eq!(b.canonical, "project_work_item");
+        assert_eq!(canonical.canonical, "project_work_item");
+        assert_eq!(odoo_shaped.canonical, "billable_work_entry");
+        assert_eq!(bwe.canonical, "billable_work_entry");
+    }
+
+    #[test]
+    fn le_wire_contract_round_trips() {
+        // The wire contract: u16 little-endian, roundtrip-stable across
+        // Class.canonical_id_le() and LabelDTO.id_le(). What downstream
+        // consumers (SurrealAST, planner, kanban) read off the wire.
+        let issue = LabelDTO::from_alias("Issue");
+        let wp = LabelDTO::from_alias("WorkPackage");
+        // Same wire bytes for the same concept.
+        assert_eq!(issue.id_le(), wp.id_le());
+        // Roundtrip via u16::from_le_bytes recovers the id.
+        assert_eq!(u16::from_le_bytes(issue.id_le()), issue.id);
+        // Class.canonical_id_le agrees with LabelDTO.id_le for the same
+        // canonical concept.
+        let pwi = project_work_item();
+        assert_eq!(
+            pwi.canonical_id_le().unwrap(),
+            LabelDTO::from_alias("project_work_item").id_le(),
+        );
+        // No canonical -> None on the wire.
+        assert_eq!(Class::new("Bare").canonical_id_le(), None);
+    }
+
+    #[test]
+    fn class_canonical_id_round_trips_through_codebook() {
+        // A Class with a canonical_concept set produces the matching
+        // codebook id; without one, returns None.
+        let c = project_work_item();
+        assert_eq!(c.canonical_id(), Some(canonical_concept_id("project_work_item")));
+        // Curator-shaped class with canonical_concept populated by the
+        // lift: same binary id as a hand-built canonical class.
+        let mut redmine_issue = Class::new("Issue");
+        redmine_issue.canonical_concept = Some(canonical_concept("Issue"));
+        assert_eq!(redmine_issue.canonical_id(), project_work_item().canonical_id());
+        // Without a canonical_concept, no id.
+        assert_eq!(Class::new("Whatever").canonical_id(), None);
+    }
+
+    #[test]
+    fn project_is_the_promoted_canonical_class() {
+        let c = project();
+        assert_eq!(c.name, "Project");
+        assert_eq!(c.canonical_concept.as_deref(), Some("project"));
+        // Synthetic canonical class — neutral language (codex P2 doctrine).
+        assert_eq!(c.language, Language::Unknown);
+        // The three direct family edges — all to canonical concepts.
+        // (The `parent` edge waits on a producer-side mixin decode for
+        // `awesome_nested_set` / `Projects::Hierarchy` — see project()
+        // doc.)
+        assert_eq!(c.associations.len(), 3);
+        for (role, target, kind) in [
+            ("work_items", "ProjectWorkItem", AssociationKind::HasMany),
+            ("time_entries", "BillableWorkEntry", AssociationKind::HasMany),
+            ("members", "ProjectActor", AssociationKind::HasMany),
+        ] {
+            let e = c
+                .associations
+                .iter()
+                .find(|a| a.name == role)
+                .unwrap_or_else(|| panic!("missing family edge: {role}"));
+            assert_eq!(e.class_name.as_deref(), Some(target));
+            assert_eq!(e.kind, kind);
+        }
+        // Identity attributes carry types so DDL adapters generate the
+        // right column shape (codex P2 doctrine on typed scalars).
+        for attr in ["name", "identifier"] {
+            let a = c.attributes.iter().find(|x| x.name == attr).unwrap();
+            assert_eq!(a.type_name.as_deref(), Some("string"));
+        }
     }
 
     #[test]

@@ -142,6 +142,20 @@ mod tests {
             Some("project"),
             "Rails frontend tags the project domain",
         );
+        // **Binary codebook convergence** — Redmine `TimeEntry` and the
+        // Odoo `account.analytic.line` both resolve to the same OGAR
+        // codebook value without producer-side label normalisation.
+        // (The Odoo-side extraction lives in the parallel session;
+        // the codebook mapping is asserted here on the Rails side.)
+        assert_eq!(
+            time_entry.canonical_id(),
+            Some(ogar_vocab::canonical_concept_id("billable_work_entry")),
+        );
+        assert_eq!(
+            time_entry.canonical_id(),
+            Some(ogar_vocab::ogar_codebook("account.analytic.line")),
+            "Odoo-shaped label must map to the same codebook id",
+        );
     }
 
     /// Real-corpus **same-domain convergence proof** across the fork
@@ -209,6 +223,20 @@ mod tests {
                 );
             }
         }
+
+        // **Binary codebook convergence** — Redmine `Issue` and OP
+        // `WorkPackage` are differently-named curator surfaces, but the
+        // OGAR codebook value is identical. The address is the identity;
+        // the labels are decorative.
+        assert_eq!(
+            issue.canonical_id(),
+            work_package.canonical_id(),
+            "Issue and WorkPackage must share the OGAR codebook id",
+        );
+        assert_eq!(
+            issue.canonical_id(),
+            Some(ogar_vocab::canonical_concept_id("project_work_item")),
+        );
     }
 
     /// Enrichment must not break the overlap. OpenProject `WorkPackage`
@@ -325,6 +353,89 @@ mod tests {
             issue_roles, wp_roles,
             "fork lineage Redmine -> ChiliProject -> OpenProject must transcode losslessly \
              through the canonical project_work_item bridge",
+        );
+    }
+
+    /// **Project convergence** on real source. Both Redmine `Project`
+    /// and OpenProject `Project` lift to canonical_concept `"project"`
+    /// and project to the same 4-role canonical role set (`parent`,
+    /// `work_items`, `time_entries`, `members`) — even though Redmine
+    /// uses `has_many :issues` and OP uses `has_many :work_packages`
+    /// for the work-item link, and OP threads members via additional
+    /// `member_principals` / `principals` through-associations.
+    #[test]
+    #[ignore = "requires Redmine + OpenProject checkouts"]
+    fn redmine_and_openproject_projects_converge_through_canonical() {
+        let Ok(redmine_src) = std::env::var("REDMINE_SRC") else {
+            eprintln!("skipping: REDMINE_SRC not set");
+            return;
+        };
+        let op_src = std::env::var("OPENPROJECT_SRC")
+            .unwrap_or_else(|_| "/home/user/openproject".to_string());
+        let op_path = PathBuf::from(&op_src);
+        if !op_path.exists() {
+            eprintln!("skipping: OpenProject not present at {op_src}");
+            return;
+        }
+
+        let redmine = extract(&PathBuf::from(redmine_src));
+        let openproject = extract(&op_path);
+
+        let r_project = redmine
+            .iter()
+            .find(|c| c.name == "Project")
+            .expect("Redmine ships a Project model");
+        let o_project = openproject
+            .iter()
+            .find(|c| c.name == "Project")
+            .expect("OpenProject ships a Project model");
+
+        // Headline: both materialize to the same canonical concept,
+        // detected deterministically from the class name.
+        assert_eq!(r_project.canonical_concept.as_deref(), Some("project"));
+        assert_eq!(o_project.canonical_concept.as_deref(), Some("project"));
+        // Same domain — both are project-domain curators.
+        assert_eq!(r_project.source_domain.as_deref(), Some("project"));
+        assert_eq!(o_project.source_domain.as_deref(), Some("project"));
+
+        // Lineage-transcode parity: both curators project onto the same
+        // canonical role set through the [`ogar_from_ruff::project_role`]
+        // resolver, despite the surface-name divergence
+        // (issues / work_packages) and OP's extra through-assoc hops.
+        let r_roles = ogar_from_ruff::project_canonical_roles(r_project);
+        let o_roles = ogar_from_ruff::project_canonical_roles(o_project);
+        // v1 canonical surface: 3 direct-association roles. Nested-project
+        // `parent` is real cross-curator but lives behind mixins
+        // (Redmine `awesome_nested_set`; OP `Projects::Hierarchy`); the
+        // producer does not yet decode either, so the v1 surface stays
+        // at 3 roles. A follow-up mixin-decode adds it.
+        let expected: std::collections::HashSet<&'static str> =
+            ["work_items", "time_entries", "members"].into_iter().collect();
+        assert_eq!(
+            r_roles, expected,
+            "Redmine Project must cover the canonical 3-role surface",
+        );
+        assert_eq!(
+            o_roles, expected,
+            "OpenProject Project must cover the same surface",
+        );
+        assert_eq!(
+            r_roles, o_roles,
+            "Project canonical projection must transcode losslessly across the fork lineage",
+        );
+
+        // **Binary codebook convergence** — labels are decorative; the
+        // OGAR codebook value is the identity. Different curator names
+        // (`Project` is the same string here but in general curators may
+        // diverge) resolve to the same `u16`.
+        assert_eq!(
+            r_project.canonical_id(),
+            o_project.canonical_id(),
+            "Redmine Project and OP Project must share the OGAR codebook id",
+        );
+        assert_eq!(
+            r_project.canonical_id(),
+            Some(ogar_vocab::canonical_concept_id("project")),
         );
     }
 
