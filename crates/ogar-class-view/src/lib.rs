@@ -182,11 +182,18 @@ impl OgarClassView {
         }
     }
 
-    /// The promoted class ids the registry currently exposes — useful for
-    /// downstream consumers that want to iterate every class (e.g. emit
-    /// one Rust struct per class).
+    /// The promoted class ids the registry currently exposes, in **stable
+    /// codebook order** (matches [`ogar_vocab::class_ids::ALL`]).
+    ///
+    /// Codex P2 on PR #77: the previous shape borrowed `HashMap`'s
+    /// randomized iteration, so downstream renderers using this for bulk
+    /// emission could reorder generated structs / drift-guard snapshots
+    /// across process runs without any schema change. Stable order is
+    /// load-bearing for diff hygiene of generated artifacts.
     pub fn known_class_ids(&self) -> impl Iterator<Item = ClassId> + '_ {
-        self.by_id.keys().copied()
+        ogar_vocab::class_ids::ALL
+            .iter()
+            .filter_map(|(_, id)| self.by_id.contains_key(id).then_some(*id))
     }
 
     /// Look up the [`ObjectView`] (the full per-class render spec —
@@ -248,6 +255,38 @@ mod tests {
         }
         // The registry knows exactly the 32 promoted concepts.
         assert_eq!(v.known_class_ids().count(), all_canonical_classes().len());
+    }
+
+    #[test]
+    fn known_class_ids_iterates_in_stable_codebook_order() {
+        // Codex P2 on #77: the iterator must be deterministic across
+        // process runs (no HashMap randomization leaking through), and
+        // its order must match `ogar_vocab::class_ids::ALL` — the same
+        // order downstream consumers' drift-guard snapshots are pinned
+        // against.
+        let v = OgarClassView::new();
+        let got: Vec<ClassId> = v.known_class_ids().collect();
+        let expected: Vec<ClassId> = ogar_vocab::class_ids::ALL
+            .iter()
+            .filter_map(|(_, id)| {
+                // class_ids::ALL spans all domains (project-mgmt +
+                // commerce); the registry holds every promoted concept,
+                // so the filter is a no-op today but stays robust if
+                // OGAR ever adds a concept this crate doesn't lift.
+                canonical_concept_id(
+                    ogar_vocab::class_ids::ALL
+                        .iter()
+                        .find(|(_, i)| i == id)
+                        .map(|(n, _)| *n)
+                        .unwrap_or(""),
+                )
+                .map(|_| *id)
+            })
+            .collect();
+        assert_eq!(got, expected, "known_class_ids drifted from codebook order");
+        // A second call returns the same sequence — no HashMap pollution.
+        let again: Vec<ClassId> = v.known_class_ids().collect();
+        assert_eq!(got, again);
     }
 
     #[test]
