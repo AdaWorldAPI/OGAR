@@ -56,19 +56,27 @@
 //!
 //! # Proof-of-shape phase
 //!
-//! [`ArtifactKind::RustStruct`] has a real askama template + concrete
-//! emitter. The other four kinds use [`artifact_kinds::stub::Stub`] —
-//! placeholder code that compiles and emits a marker comment so callers
-//! can exercise the full pipeline against every promoted concept while
-//! T2–T5 templates land in follow-on PRs.
+//! - [`ArtifactKind::RustStruct`] — codegen, real emitter (T1, PR #78).
+//! - [`ArtifactKind::HtmlListView`] — render, real emitter (T2, this PR).
+//!   Spec lifted from `docs/integration/REDMINE-QUERY-HARVEST.md`.
+//! - Remaining kinds (`SurrealqlTable`, `OpenapiSchema`,
+//!   `NodeGuidRoutingArm`) use [`artifact_kinds::stub::Stub`] —
+//!   placeholder code that compiles and emits a marker comment so
+//!   callers can exercise the full pipeline (lookup + dispatch + return)
+//!   against every promoted concept while T3–T5 land.
 
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
 
 pub mod artifact_kinds;
+pub mod list_view;
 pub mod spec;
 
-pub use artifact_kinds::{for_kind, ArtifactEmitter};
+pub use artifact_kinds::{
+    for_kind, render_list, ArtifactEmitter, AttachmentEntryOwned, CellData, CellSource,
+    GroupHeader, RelationEntryOwned, RowSource, UserEntryOwned,
+};
+pub use list_view::{default_kind_for, ColumnKind, RenderColumn, SortOrder};
 pub use spec::{ArtifactKind, ArtifactSpec};
 
 use ogar_vocab::Class;
@@ -117,7 +125,7 @@ mod tests {
         let all = ArtifactKind::ALL;
         assert!(
             all.contains(&ArtifactKind::RustStruct)
-                && all.contains(&ArtifactKind::TsInterface)
+                && all.contains(&ArtifactKind::HtmlListView)
                 && all.contains(&ArtifactKind::SurrealqlTable)
                 && all.contains(&ArtifactKind::OpenapiSchema)
                 && all.contains(&ArtifactKind::NodeGuidRoutingArm),
@@ -179,12 +187,11 @@ mod tests {
 
     #[test]
     fn stub_emits_marker_for_unimplemented_kinds() {
-        // The four stub kinds compile + emit a marker comment naming the
-        // kind + class. This is what lets the kit be wired end-to-end
-        // before every template has landed.
+        // Three stub kinds remain after T1+T2 (RustStruct + HtmlListView)
+        // landed real emitters. Each compiles + emits a marker comment
+        // naming the kind + class.
         let class = project();
         for kind in [
-            ArtifactKind::TsInterface,
             ArtifactKind::SurrealqlTable,
             ArtifactKind::OpenapiSchema,
             ArtifactKind::NodeGuidRoutingArm,
@@ -200,6 +207,144 @@ mod tests {
                 "stub should mention the class name:\n{src}"
             );
         }
+    }
+
+    // ── T2 (HtmlListView) tests ─────────────────────────────────────
+
+    #[test]
+    fn html_list_view_proof_of_shape_renders_canonical_concept_header() {
+        // The codebook-only emit path: no rows, just the class shell.
+        // Pins that the spine template is wired and surfaces the
+        // class_id + concept as data-attributes for downstream JS hooks.
+        let class = project_work_item();
+        let src = render(&class, ArtifactKind::HtmlListView).unwrap();
+        assert!(
+            src.contains("data-class-id=\"0x0102\""),
+            "expected data-class-id=\"0x0102\" in:\n{src}"
+        );
+        assert!(
+            src.contains("data-concept=\"project_work_item\""),
+            "{src}"
+        );
+        // Empty-state row appears when no rows are supplied.
+        assert!(src.contains("No data."), "expected empty-state in:\n{src}");
+    }
+
+    #[test]
+    fn html_list_view_renders_inline_and_block_rows() {
+        // The substantive path: build columns + rows and assert the
+        // spine template substitutes them correctly.
+        let inline = vec![
+            RenderColumn::new("id", "#", ColumnKind::IdLink).sortable().frozen(),
+            RenderColumn::new("subject", "Subject", ColumnKind::PrimaryLink).sortable(),
+            RenderColumn::new("done_ratio", "% Done", ColumnKind::ProgressBar),
+        ];
+        let block = vec![
+            RenderColumn::new("description", "Description", ColumnKind::RichText).block(),
+        ];
+
+        let row = RowSource {
+            record_id: 42,
+            css_classes: "odd issue closed",
+            group: None,
+            inline: vec![
+                CellSource {
+                    column: &inline[0],
+                    css_classes: "num",
+                    data: CellData::IdLink { id: 42, href: "/issues/42" },
+                },
+                CellSource {
+                    column: &inline[1],
+                    css_classes: "",
+                    data: CellData::PrimaryLink {
+                        label: "Fix the foo",
+                        href: "/issues/42",
+                    },
+                },
+                CellSource {
+                    column: &inline[2],
+                    css_classes: "",
+                    data: CellData::ProgressBar { pct: 70 },
+                },
+            ],
+            block: vec![CellSource {
+                column: &block[0],
+                css_classes: "",
+                data: CellData::RichText {
+                    body: "<p>Some rendered prose.</p>",
+                },
+            }],
+        };
+
+        let src = render_list(
+            "Work items",
+            0x0102,
+            "project_work_item",
+            &inline,
+            &block,
+            std::slice::from_ref(&row),
+        )
+        .unwrap();
+
+        // Header + columns
+        assert!(src.contains("<h2>Work items</h2>"), "{src}");
+        assert!(src.contains("data-class-id=\"0x0102\""));
+        assert!(src.contains("Subject"), "expected `Subject` column header in:\n{src}");
+        assert!(src.contains("% Done"));
+        // Inline row + cells
+        assert!(src.contains("id=\"record-42\""), "expected id=\"record-42\":\n{src}");
+        assert!(src.contains("href=\"/issues/42\""), "{src}");
+        assert!(src.contains("#42"), "id link body should be `#42`:\n{src}");
+        assert!(src.contains("Fix the foo"), "{src}");
+        // Progress bar
+        assert!(src.contains("aria-valuenow=\"70\""), "{src}");
+        assert!(src.contains("width: 70%"), "{src}");
+        // Block row
+        assert!(
+            src.contains("class=\"odd issue closed block-row\""),
+            "expected block row CSS in:\n{src}"
+        );
+        assert!(
+            src.contains("class=\"wiki\""),
+            "rich-text wrapper missing in:\n{src}"
+        );
+        assert!(src.contains("Some rendered prose."), "{src}");
+    }
+
+    #[test]
+    fn html_list_view_renders_group_separator_when_provided() {
+        let col = RenderColumn::new("subject", "Subject", ColumnKind::PrimaryLink);
+        let row = RowSource {
+            record_id: 1,
+            css_classes: "",
+            group: Some(GroupHeader { label: "Open", count: 5 }),
+            inline: vec![CellSource {
+                column: &col,
+                css_classes: "",
+                data: CellData::PrimaryLink { label: "T1", href: "/i/1" },
+            }],
+            block: vec![],
+        };
+        let src = render_list("By status", 0x0102, "project_work_item", &[col.clone()], &[], &[row])
+            .unwrap();
+        assert!(src.contains("class=\"group open\""), "{src}");
+        assert!(src.contains("<span class=\"name\">Open</span>"), "{src}");
+        assert!(src.contains("<span class=\"badge\">5</span>"), "{src}");
+    }
+
+    #[test]
+    fn default_kind_resolver_is_wired_through_render_kit() {
+        // Smoke: the resolver lib.rs re-exports is the one consumers
+        // call to pick cell kinds. Pin the contract.
+        assert_eq!(default_kind_for("id", None), ColumnKind::IdLink);
+        assert_eq!(default_kind_for("subject", Some("string")), ColumnKind::PrimaryLink);
+        assert_eq!(default_kind_for("done_ratio", None), ColumnKind::ProgressBar);
+        assert_eq!(default_kind_for("estimated_hours", None), ColumnKind::Hours);
+        assert_eq!(
+            default_kind_for("description", Some("text")),
+            ColumnKind::RichText
+        );
+        assert_eq!(default_kind_for("position", Some("integer")), ColumnKind::Plain);
     }
 
     #[test]
