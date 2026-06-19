@@ -229,6 +229,29 @@ no substrate) / `lance-graph-mailbox-contract` / `lance-graph-thoughtspace`.
 | 11 | `Authorization` | `{ role_predicates: Vec<PredicateName>, scope_kind, condition: Option<Expr>, enforcement_phase: QueryFilter\|CommandAdmission\|CommitGate\|AuditOnly }` | OP `visible`/`allowed_to` (query-plane) vs DO-arm commit-gate — **must not fuse** |
 | 12 | `resolve_mro` | `OntologyRegistry::resolve_mro(class_id) -> Result<Vec<ClassId>, MroError>` — registry-owned (identity, cycle detection, trait order, cross-curator collision) | Rails STI chain + Odoo `_inherit` MRO via one lookup |
 
+### 6.1 Materialization model — schema template × bitmask filter
+
+The slots above are **not copied per class**. The model is **Jinja-style**: a
+`ClassView` is the inherited **schema template** (the superset surface a class
+*could* expose); the **bitmask is the per-class filter** that decides *when to
+enable what, and where*. A concrete `Field` / `Relation` / `Function` /
+`ActionDef` is the **materialization = apply the bitmask to the inherited
+schema** — never a stored duplicate.
+
+- **Inheritance is template inheritance + mask filtering.** A class inheriting a
+  schema does not copy fields; it inherits the template and applies its own mask.
+  `resolve_mro` (item 12) walks the chain; the effective surface is the schema ∩
+  mask across the MRO — this is exactly `effective_actions` in #538.
+- **Visibility is one bit of the filter.** Public-vs-private is a mask lane, read
+  at materialization. The codex P2 ("the ruff IR can't carry visibility") is
+  answered correctly: it doesn't need to — the bitmask carries it, and the action
+  is materialized over (`ClassView` × mask). Neither a new `Function.visibility`
+  field nor a dropped requirement; the property lives where the rest of the class
+  surface lives (`class_view`), resolved at projection time (#534 pattern).
+- **Agnostic by construction.** Rails / Odoo / Foundry curators all emit the same
+  template + mask; only their *scrape* differs. The materialization is identical —
+  which is the litmus test of §1.
+
 ## 7. classid width — resolved (council contract-surface finding)
 
 Verified against `lance-graph-contract` source: `class_view.rs:53` declares
@@ -275,8 +298,8 @@ council warned against).
 
 | Step | DoD |
 |------|-----|
-| `lift_actions` | `lift_actions_emits_one_def_per_method`, `lift_actions_sets_no_exec_policy`, `lift_actions_predicate_is_snake_case` |
-| real-OP smoke | corrected expectation: **~1800–1900** `ActionDef` from 694 classes (council: raw ~2643 before non-action filtering). Prior "≥8000" was wrong. **`Function::visibility` does not exist in the ruff IR** — no visibility-based filter; filter on action-shape, not access modifier. |
+| `lift_actions` | `lift_actions_materializes_public_surface_from_mask` (reads the `ClassView` visibility bit — §6.1), `lift_actions_sets_no_exec_policy`, `lift_actions_predicate_is_snake_case` |
+| real-OP smoke | corrected expectation: **~1800–1900** `ActionDef` from 694 classes (council: raw ~2643 before non-action filtering). Prior "≥8000" was wrong. **Visibility is not a producer field** — it is a facet of the `ClassView` bitmask (`lance-graph-contract::class_view`). An `ActionDef` is a *materialization over (`ClassView` bitmask × method)*, so the lift derives public-vs-private by reading the bit at materialization time. Nothing to add to the ruff IR; nothing to drop. |
 | `register_actions` | `register_actions_rejects_unknown_class_id`, `register_actions_rejects_unflagged_mro_collision`, `mint_classid_is_deterministic_over_fingerprint` |
 | Phase-5 flip | `rails_tokens_absent_from_canonical_facts` (litmus), `relation_count_matches_association_count`, `inheritance_separates_sti_from_traits` |
 
@@ -304,6 +327,11 @@ council warned against).
   object_instance` + `cycle` + idempotency/trace — none knowable at harvest).
 - **`OwnedActionDef`, `Box::leak`, the `classid_minter` closure, producer-side
   `exec` defaults** — all four killed (§5.2, §5.4).
+- **Visibility resolved at the right altitude (§6.1), not clipped.** The codex P2
+  was a real signal; the wrong response was dropping the DoD ("learned
+  helplessness"). The right one: visibility is a bit of the `ClassView` bitmask,
+  and the `ActionDef` is a materialization over (`ClassView` × mask) — no producer
+  field added, no requirement dropped.
 
 ### 11.2 Upstream doctrine dependencies (OGAR Core cleanup PR — not this session)
 Two phrases in the merged #546 doctrine still read with the old drift; this plan's
