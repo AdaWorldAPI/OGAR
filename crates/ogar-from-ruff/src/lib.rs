@@ -66,7 +66,7 @@
 
 use ogar_vocab::{
     ActionDef, Association, AssociationKind, Attribute, Callback, Class, EnumDecl, EnumSource,
-    Language, Scope, Validation,
+    Inheritance, Language, Scope, Validation,
 };
 use ruff_spo_triplet::{
     AssocDecl, AssocKind, AttrDecl, AttrKind, Callback as RuffCallback, ConcernKind, Model,
@@ -94,6 +94,7 @@ pub fn lift_model(model: &Model) -> Class {
     let mut class = Class::new(&model.name);
     class.language = Language::Ruby;
     class.parent = model.sti.as_ref().and_then(sti_parent);
+    class.inheritance = lift_inheritance(model);
     class.associations = model.associations.iter().filter_map(lift_association).collect();
     class.mixins = lift_mixins(model);
     class.attributes = model.attributes.iter().filter_map(lift_attribute).collect();
@@ -362,6 +363,27 @@ fn sti_parent(sti: &StiInfo) -> Option<String> {
     sti.inherits_from.clone()
 }
 
+/// Metabolize Rails STI facts into the agnostic [`Inheritance`] slot.
+///
+/// Priority: a declared parent makes it an [`Inheritance::Concrete`] child
+/// regardless of other flags; `abstract_class` makes it
+/// [`Inheritance::Abstract`]; an `inheritance_column` with no parent makes
+/// it the [`Inheritance::RootedAt`] root of a hierarchy; otherwise
+/// [`Inheritance::Root`]. Mixins / concerns are NOT consulted — they are a
+/// separate axis (`Class.mixins`).
+fn lift_inheritance(model: &Model) -> Inheritance {
+    match model.sti.as_ref() {
+        Some(sti) if sti.inherits_from.is_some() => Inheritance::Concrete {
+            parent: sti.inherits_from.clone().expect("checked is_some"),
+        },
+        Some(sti) if sti.abstract_class => Inheritance::Abstract,
+        Some(sti) if sti.inheritance_column.is_some() => Inheritance::RootedAt {
+            root: model.name.clone(),
+        },
+        _ => Inheritance::Root,
+    }
+}
+
 // ───────────────────────────── helpers ──────────────────────────────────
 
 /// Strip ruby-source markers (quote pairs, leading symbol colon) from
@@ -476,6 +498,43 @@ mod tests {
         assert_eq!(class.name, "WorkPackage");
         assert_eq!(class.parent.as_deref(), Some("Issue"));
         assert!(matches!(class.language, Language::Ruby));
+    }
+
+    #[test]
+    fn lift_inheritance_concrete_from_sti_parent() {
+        // mk_model's StiInfo has inherits_from = Some("Issue").
+        let class = lift_model(&mk_model());
+        assert_eq!(
+            class.inheritance,
+            Inheritance::Concrete { parent: "Issue".to_string() },
+        );
+    }
+
+    #[test]
+    fn lift_inheritance_abstract_rooted_and_root() {
+        // abstract_class → Abstract
+        let mut m = Model::new("ApplicationRecord");
+        m.sti = Some(StiInfo {
+            inherits_from: None,
+            abstract_class: true,
+            inheritance_column: None,
+        });
+        assert_eq!(lift_model(&m).inheritance, Inheritance::Abstract);
+
+        // inheritance_column, no parent → RootedAt(self): the STI root.
+        let mut r = Model::new("Principal");
+        r.sti = Some(StiInfo {
+            inherits_from: None,
+            abstract_class: false,
+            inheritance_column: Some("type".to_string()),
+        });
+        assert_eq!(
+            lift_model(&r).inheritance,
+            Inheritance::RootedAt { root: "Principal".to_string() },
+        );
+
+        // no STI info at all → Root.
+        assert_eq!(lift_model(&Model::new("Plain")).inheritance, Inheritance::Root);
     }
 
     #[test]

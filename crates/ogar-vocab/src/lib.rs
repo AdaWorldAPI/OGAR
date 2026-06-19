@@ -93,6 +93,14 @@ pub struct Class {
     /// Superclass name as written, when one is declared. Used by
     /// consumers to assemble single-table-inheritance hierarchies.
     pub parent: Option<String>,
+    /// Agnostic inheritance slot — metabolizes the three things Rails
+    /// conflates (STI parent / abstract base / STI root) into one typed
+    /// value. Mixins / concerns are a SEPARATE axis ([`Self::mixins`]) and
+    /// are never folded in here. `parent` / `abstract_model` /
+    /// `inheritance_column_disabled` are retained for one migration cycle;
+    /// new consumers should read `inheritance`.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub inheritance: Inheritance,
     /// Source language of the producer that emitted this class.
     pub language: Language,
     /// `belongs_to` / `has_one` / `has_many` / `has_and_belongs_to_many`
@@ -184,6 +192,38 @@ pub struct Class {
     /// `def self.method`, etc.). Distinct from `callbacks` which
     /// are declarative hooks.
     pub methods: Vec<MethodDecl>,
+}
+
+/// How a class sits in its inheritance lattice — the agnostic
+/// metabolization of the three things Rails conflates: STI parent,
+/// abstract base, and STI root. Mixins / concerns are a SEPARATE axis
+/// ([`Class::mixins`]) and are never folded in here.
+///
+/// Producer IR carries parent/root as **names** (`String`); the registry
+/// mints the `ClassId` later. Cross-curator mapping: Rails `< Parent` /
+/// `self.abstract_class` / `self.inheritance_column`; Odoo `_inherit` /
+/// `_abstract`; Django abstract base classes.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[non_exhaustive]
+pub enum Inheritance {
+    /// No superclass beyond the ORM root (Rails `< ApplicationRecord`).
+    #[default]
+    Root,
+    /// Concrete STI child of `parent` (shares the parent's table).
+    Concrete {
+        /// Parent class name as written.
+        parent: String,
+    },
+    /// Abstract base — methods / fields inherited, but no table of its own
+    /// (Rails `self.abstract_class = true`; Odoo `_abstract = True`).
+    Abstract,
+    /// Root of an STI hierarchy — defines the discriminator column but is
+    /// not itself a child. `root` is this class's own name.
+    RootedAt {
+        /// The hierarchy root class name (this class).
+        root: String,
+    },
 }
 
 /// A computed-field declaration. Carries the field name, the compute
