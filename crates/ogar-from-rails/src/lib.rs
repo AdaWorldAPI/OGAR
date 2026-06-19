@@ -655,6 +655,51 @@ mod tests {
         }
     }
 
+    /// **News + Message convergence** on real source. Both curators ship
+    /// `News` (project news/blog) and `Message` (threaded forum/board
+    /// discussion) — the latter has parent-container divergence (Redmine
+    /// `Board` vs OP `Forum`), but `Message` itself converges.
+    #[test]
+    #[ignore = "requires Redmine + OpenProject checkouts"]
+    fn redmine_and_openproject_news_and_message_converge() {
+        let Ok(redmine_src) = std::env::var("REDMINE_SRC") else {
+            eprintln!("skipping: REDMINE_SRC not set");
+            return;
+        };
+        let op_src = std::env::var("OPENPROJECT_SRC")
+            .unwrap_or_else(|_| "/home/user/openproject".to_string());
+        let op_path = PathBuf::from(&op_src);
+        if !op_path.exists() {
+            eprintln!("skipping: OpenProject not present at {op_src}");
+            return;
+        }
+
+        let redmine = extract(&PathBuf::from(redmine_src));
+        let openproject = extract(&op_path);
+        let news_id = ogar_vocab::canonical_concept_id("project_news");
+        let msg_id = ogar_vocab::canonical_concept_id("project_message");
+        assert!(news_id.is_some() && msg_id.is_some());
+
+        for (curator, classes) in [("Redmine", &redmine), ("OpenProject", &openproject)] {
+            for (class_name, concept, expected_id) in [
+                ("News", "project_news", news_id),
+                ("Message", "project_message", msg_id),
+            ] {
+                let c = classes
+                    .iter()
+                    .find(|c| c.name == class_name)
+                    .unwrap_or_else(|| panic!("{curator} ships a {class_name} model"));
+                assert_eq!(
+                    c.canonical_concept.as_deref(),
+                    Some(concept),
+                    "{curator} {class_name} -> {concept}",
+                );
+                assert_eq!(c.source_domain.as_deref(), Some("project"));
+                assert_eq!(c.canonical_id(), expected_id);
+            }
+        }
+    }
+
     /// Exactly-one-Model invariant post AdaWorldAPI/ruff#26: OP's
     /// `app/models/work_package/` sub-files reopen `class WorkPackage`
     /// without adding ontology declarations; before the fix this produced

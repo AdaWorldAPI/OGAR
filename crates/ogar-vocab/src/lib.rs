@@ -1086,6 +1086,8 @@ const CODEBOOK: &[(&str, u16)] = &[
     ("project_relation", 0x0111),      // Redmine IssueRelation ↔ OP Relation (name divergence)
     ("project_changeset", 0x0112),     // Redmine Changeset     ↔ OP Changeset
     ("project_watcher", 0x0113),       // Redmine Watcher       ↔ OP Watcher
+    ("project_news", 0x0114),          // Redmine News          ↔ OP News
+    ("project_message", 0x0115),       // Redmine Message       ↔ OP Message (board/forum divergence)
 
     // ── 0x02XX — commerce / billing / ERP domain (OSB ↔ Odoo) ──
     // Promoted from the parallel session's `lance-graph-ontology::ar_shape`
@@ -1581,6 +1583,22 @@ pub fn canonical_concept(name: &str) -> String {
         "watcher" | "watchers" | "project_watcher" | "projectwatcher"
     ) {
         return "project_watcher".to_string();
+    }
+    // ProjectNews — project news/blog post. Both curators ship `News`
+    // with belongs_to :project + :author + has_many :comments. Same
+    // shape across both.
+    if matches!(lower.as_str(),
+        "news" | "project_news" | "projectnews"
+    ) {
+        return "project_news".to_string();
+    }
+    // ProjectMessage — forum/board message (threaded discussion). Both
+    // curators ship `Message`, but the parent container diverges in
+    // name (Redmine `Board`, OpenProject `Forum`).
+    if matches!(lower.as_str(),
+        "message" | "messages" | "project_message" | "projectmessage"
+    ) {
+        return "project_message".to_string();
     }
     // ── Commerce / billing / ERP domain (OSB ↔ Odoo) ──
     // CommercialLineItem — line on a commercial document. OSB
@@ -2152,6 +2170,57 @@ pub fn project_watcher() -> Class {
     let mut watchable_type = Attribute::new("watchable_type");
     watchable_type.type_name = Some("string".to_string());
     c.attributes = vec![watchable_type];
+    c
+}
+
+/// `News` — a project news post / announcement. Both curators ship
+/// `News` with `belongs_to :project` + `belongs_to :author` (a
+/// [`project_actor`]) + `has_many :comments` (to [`project_comment`]).
+/// Universal `title` / `summary` / `description` attributes.
+#[must_use]
+pub fn project_news() -> Class {
+    let mut c = Class::new("ProjectNews");
+    c.language = Language::Unknown;
+    c.canonical_concept = Some("project_news".to_string());
+    c.associations = vec![
+        family_edge("project", "Project"),
+        family_edge("author", "ProjectActor"),
+        family_has_many("comments", "ProjectComment"),
+    ];
+    let mut title = Attribute::new("title");
+    title.type_name = Some("string".to_string());
+    let mut summary = Attribute::new("summary");
+    summary.type_name = Some("string".to_string());
+    let mut description = Attribute::new("description");
+    description.type_name = Some("text".to_string());
+    c.attributes = vec![title, summary, description];
+    c
+}
+
+/// `Message` — threaded forum/board discussion post. Both curators ship
+/// `Message` (curator divergence on the parent container: Redmine
+/// `Board`, OpenProject `Forum`). Universal: `belongs_to :author`, a
+/// self-reference `last_reply` for thread chaining, `acts_as_tree` for
+/// nested replies, and `subject` / `content` / `replies_count` scalars.
+#[must_use]
+pub fn project_message() -> Class {
+    let mut c = Class::new("ProjectMessage");
+    c.language = Language::Unknown;
+    c.canonical_concept = Some("project_message".to_string());
+    c.associations = vec![
+        family_edge("author", "ProjectActor"),
+        // Tree self-reference: both curators use `acts_as_tree` with
+        // `belongs_to :last_reply, class_name: "Message"` linking the
+        // thread chain.
+        family_edge("last_reply", "ProjectMessage"),
+    ];
+    let mut subject = Attribute::new("subject");
+    subject.type_name = Some("string".to_string());
+    let mut content = Attribute::new("content");
+    content.type_name = Some("text".to_string());
+    let mut replies_count = Attribute::new("replies_count");
+    replies_count.type_name = Some("integer".to_string());
+    c.attributes = vec![subject, content, replies_count];
     c
 }
 
@@ -2780,6 +2849,7 @@ mod tests {
             "project_version", "project_wiki_page", "project_query",
             "project_attachment", "project_comment", "project_custom_field",
             "project_relation", "project_changeset", "project_watcher",
+            "project_news", "project_message",
         ] {
             let id = canonical_concept_id(project_concept)
                 .unwrap_or_else(|| panic!("{project_concept} missing from codebook"));
@@ -2828,6 +2898,8 @@ mod tests {
             (project_relation(), "ProjectRelation", 0x0111),
             (project_changeset(), "ProjectChangeset", 0x0112),
             (project_watcher(), "ProjectWatcher", 0x0113),
+            (project_news(), "ProjectNews", 0x0114),
+            (project_message(), "ProjectMessage", 0x0115),
         ] {
             assert_eq!(canonical.name, name);
             assert_eq!(canonical.language, Language::Unknown);
@@ -2906,6 +2978,8 @@ mod tests {
             ("project_relation", &["IssueRelation", "issue_relation", "Relation", "relations", "ProjectRelation"]),
             ("project_changeset", &["Changeset", "changesets", "ProjectChangeset"]),
             ("project_watcher", &["Watcher", "watchers", "ProjectWatcher"]),
+            ("project_news", &["News", "news", "ProjectNews"]),
+            ("project_message", &["Message", "messages", "ProjectMessage"]),
         ];
         for (concept, aliases) in cases {
             let id = canonical_concept_id(concept).unwrap();
