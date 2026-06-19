@@ -1089,6 +1089,7 @@ const CODEBOOK: &[(&str, u16)] = &[
     ("project_news", 0x0114),          // Redmine News          ↔ OP News
     ("project_message", 0x0115),       // Redmine Message       ↔ OP Message (board/forum divergence)
     ("project_forum", 0x0116),         // Redmine Board         ↔ OP Forum (name divergence; parent of project_message)
+    ("project_role", 0x0117),          // Redmine Role          ↔ OP Role (RBAC permission set)
 
     // ── 0x02XX — commerce / billing / ERP domain (OSB ↔ Odoo) ──
     // Promoted from the parallel session's `lance-graph-ontology::ar_shape`
@@ -1159,6 +1160,25 @@ pub fn canonical_concept_domain(id: u16) -> ConceptDomain {
     }
 }
 
+/// Map a coarse [`Class::source_domain`] tag — as produced by the curator
+/// namespace classifier (`"project"`, `"erp"`, `"german-erp"`, …) — to the
+/// [`ConceptDomain`] its promotions live in. Returns `None` for an
+/// unrecognised or absent tag; [`canonical_concept_in_domain`] treats that
+/// as "curator domain unknown" and withholds codebook promotion.
+///
+/// This is the seam a producer crosses from its coarse source-domain string
+/// to the typed codebook domain — keeping the mapping in `ogar-vocab` (not
+/// hardcoded in each producer) so it stays consistent with the [`CODEBOOK`]
+/// layout.
+#[must_use]
+pub fn source_domain_concept(source_domain: &str) -> Option<ConceptDomain> {
+    match source_domain {
+        "project" => Some(ConceptDomain::ProjectMgmt),
+        "erp" | "german-erp" => Some(ConceptDomain::Commerce),
+        _ => None,
+    }
+}
+
 /// **OGAR codebook lookup** — resolve a canonical-concept string to its
 /// stable `u16` codebook id via the curated [`CODEBOOK`] registry.
 /// Returns `None` for unpromoted concepts — they are not in the codebook.
@@ -1183,6 +1203,30 @@ pub fn canonical_concept_id(concept: &str) -> Option<u16> {
     CODEBOOK
         .iter()
         .find_map(|(name, id)| if *name == concept { Some(*id) } else { None })
+}
+
+/// **Cross-domain bridge concepts** — promoted concepts whose convergence
+/// is intentionally *across* domains, so they must be exempt from the
+/// domain gate in [`canonical_concept_in_domain`].
+///
+/// A bridge concept owns one home domain via its codebook id (high byte),
+/// but curators in *other* domains legitimately map onto it — that shared
+/// node identity is the whole point of the convergence. `billable_work_entry`
+/// (`0x0103`, project-mgmt home) is the canonical example: OpenProject
+/// `TimeEntry` (project), Odoo `account.analytic.line` (erp), and WoA
+/// `Arbeitszeit` (german-erp) all converge here. Gating it by home domain
+/// would sever the erp/german-erp witnesses and destroy the bridge.
+///
+/// Everything else (`project_role`, `commercial_document`, …) is
+/// domain-specific: a collision from a foreign domain is an accident, not a
+/// bridge, and is withheld.
+const CROSS_DOMAIN_CONCEPTS: &[&str] = &["billable_work_entry"];
+
+/// Whether a canonical concept is a [`CROSS_DOMAIN_CONCEPTS`] bridge —
+/// intentionally shared across domains and therefore never domain-gated.
+#[must_use]
+pub fn is_cross_domain_concept(concept: &str) -> bool {
+    CROSS_DOMAIN_CONCEPTS.contains(&concept)
 }
 
 /// **Consumer-facing label DTO** — `(label, id, canonical)` triple. The
@@ -1477,13 +1521,17 @@ pub fn canonical_concept(name: &str) -> String {
     }
     // ProjectActor — the actor canonical concept on the project domain.
     // Both Redmine and OpenProject use `User < Principal < ApplicationRecord`;
-    // the STI chain yields TWO classes (Principal at the root, User as
-    // the STI child) that BOTH project to the same actor identity. Plus
-    // the canonical class-name spellings for round-trip.
+    // the STI chain yields multiple classes (Principal at the root, User
+    // and Group as STI children) that ALL project to the same actor
+    // identity — a Group is a Principal subtype, assignable / member-able
+    // exactly where a User is, so it collapses here too (its `has_many
+    // :users` aggregation is curator-local structure the canonical layer
+    // abstracts over). Plus the canonical class-name spellings for round-trip.
     if matches!(
         lower.as_str(),
         "user" | "users"
             | "principal" | "principals"
+            | "group" | "groups"
             | "project_actor" | "projectactor"
     ) {
         return "project_actor".to_string();
@@ -1611,6 +1659,17 @@ pub fn canonical_concept(name: &str) -> String {
     ) {
         return "project_forum".to_string();
     }
+    // ProjectRole — the RBAC permission-set bundle assigned to actors via
+    // memberships. Both curators ship `Role` (has_many :member_roles +
+    // :members through, a name, and a permission set). NOTE: distinct from
+    // `ogar_from_ruff::project_role`, which maps a curator association
+    // NAME to a ProjectWorkItem family-edge role — this is the
+    // authorization concept (the `Role` model), not a graph-edge role.
+    if matches!(lower.as_str(),
+        "role" | "roles" | "project_role" | "projectrole"
+    ) {
+        return "project_role".to_string();
+    }
     // ── Commerce / billing / ERP domain (OSB ↔ Odoo) ──
     // CommercialLineItem — line on a commercial document. OSB
     // `InvoiceLineItem`, Odoo `account_move_line` (ruff normalises
@@ -1687,11 +1746,54 @@ pub fn canonical_concept(name: &str) -> String {
         return "priority".to_string();
     }
     // ── Layer 2: lexical fallback ──
+    lexical_concept(name)
+}
+
+/// The **lexical fallback** half of [`canonical_concept`]: lowercase, take
+/// the last dotted segment (Odoo `res.users` → `users`), then drop a single
+/// trailing plural `s` (except after `ss`). Coarse by design — **no
+/// codebook promotion happens here**, so the result is not guaranteed to be
+/// in [`CODEBOOK`]. Exposed so [`canonical_concept_in_domain`] can fall
+/// back to it when a cross-domain promotion is withheld.
+#[must_use]
+pub fn lexical_concept(name: &str) -> String {
+    let lower = name.to_ascii_lowercase();
     let last = lower.rsplit('.').next().unwrap_or(lower.as_str());
     if last.len() > 3 && last.ends_with('s') && !last.ends_with("ss") {
         last[..last.len() - 1].to_string()
     } else {
         last.to_string()
+    }
+}
+
+/// Domain-gated [`canonical_concept`]. Resolves `name`, but **withholds a
+/// codebook promotion whose [`ConceptDomain`] does not match the curator's
+/// `domain`**, falling back to [`lexical_concept`] instead. This is the
+/// resolver a producer should use once it knows the curator's domain (via
+/// [`source_domain_concept`]).
+///
+/// Without the gate, any name colliding with a promoted alias — the codex
+/// P2 example is a generic `Role` — inherits a project-mgmt codebook id and
+/// routes as [`ConceptDomain::ProjectMgmt`] even when harvested from an
+/// unrelated app (PR #72).
+///
+/// Resolution, in order:
+/// - resolved concept is a **cross-domain bridge**
+///   ([`is_cross_domain_concept`], e.g. `billable_work_entry`) → keep it
+///   regardless of domain; these promotions are intentionally shared.
+/// - `domain == Some(d)` and the promotion's codebook domain is `d` → keep.
+/// - `domain == Some(other)` (cross-domain collision) → withhold → lexical.
+/// - `domain == None` (curator domain unknown) → withhold → lexical: a
+///   promotion we cannot vouch for is worse than a coarse lexical concept.
+/// - resolved concept is already lexical (not in [`CODEBOOK`]) → unchanged.
+#[must_use]
+pub fn canonical_concept_in_domain(name: &str, domain: Option<ConceptDomain>) -> String {
+    let concept = canonical_concept(name);
+    match canonical_concept_id(&concept) {
+        Some(_) if is_cross_domain_concept(&concept) => concept,
+        Some(id) if domain == Some(canonical_concept_domain(id)) => concept,
+        Some(_) => lexical_concept(name),
+        None => concept,
     }
 }
 
@@ -2256,6 +2358,39 @@ pub fn project_forum() -> Class {
     let mut position = Attribute::new("position");
     position.type_name = Some("integer".to_string());
     c.attributes = vec![name, description, position];
+    c
+}
+
+/// `Role` — the RBAC permission-set bundle. Both curators ship `Role`
+/// with `has_many :member_roles` + `has_many :members, through:
+/// :member_roles` (the actors holding the role) and a serialized /
+/// joined permission set. The `memberships` family edge points at the
+/// existing [`project_membership`] join.
+///
+/// NOTE: this is the authorization `Role` model — distinct from
+/// `ogar_from_ruff::project_role`, which is a helper that maps a curator
+/// association *name* onto a [`project_work_item`] family-edge role.
+#[must_use]
+pub fn project_role() -> Class {
+    let mut c = Class::new("ProjectRole");
+    c.language = Language::Unknown;
+    c.canonical_concept = Some("project_role".to_string());
+    c.associations = vec![
+        family_has_many("memberships", "ProjectMembership"),
+    ];
+    let mut name = Attribute::new("name");
+    name.type_name = Some("string".to_string());
+    let mut position = Attribute::new("position");
+    position.type_name = Some("integer".to_string());
+    // The defining RBAC payload — a permission set. Redmine serializes it
+    // inline (`serialize :permissions`); OpenProject normalizes it into a
+    // `has_many :role_permissions` table. Both forms collapse to the
+    // canonical concept: a Role carries permissions. Represented coarsely
+    // as a text slot at the canonical layer; the curator-local storage
+    // shape is a leaf detail.
+    let mut permissions = Attribute::new("permissions");
+    permissions.type_name = Some("text".to_string());
+    c.attributes = vec![name, position, permissions];
     c
 }
 
@@ -2855,11 +2990,15 @@ mod tests {
 
     #[test]
     fn project_actor_resolver_collapses_user_principal_sti_chain() {
-        // Both Redmine and OP have `User < Principal < ApplicationRecord`.
-        // The promoted arm collapses both STI siblings onto a single
-        // canonical concept — they ARE the same actor identity in the
-        // ontology.
-        for src in ["User", "user", "Users", "Principal", "principal", "Principals"] {
+        // Both Redmine and OP have `User < Principal < ApplicationRecord`
+        // AND `Group < Principal`. The promoted arm collapses ALL Principal
+        // STI subtypes onto a single canonical concept — they ARE the same
+        // actor identity in the ontology (a Group is assignable / member-able
+        // exactly where a User is).
+        for src in [
+            "User", "user", "Users", "Principal", "principal", "Principals",
+            "Group", "group", "Groups",
+        ] {
             assert_eq!(canonical_concept(src), "project_actor", "{src} -> project_actor");
         }
         // PascalCase canonical class name round-trips (codex P2 doctrine).
@@ -2868,7 +3007,7 @@ mod tests {
         // All resolve to the same codebook id.
         let id = canonical_concept_id("project_actor");
         assert!(id.is_some());
-        for src in ["User", "Principal", "Users", "Principals", "ProjectActor"] {
+        for src in ["User", "Principal", "Group", "Groups", "ProjectActor"] {
             assert_eq!(ogar_codebook(src), id, "{src} -> codebook id");
         }
     }
@@ -2885,6 +3024,7 @@ mod tests {
             "project_attachment", "project_comment", "project_custom_field",
             "project_relation", "project_changeset", "project_watcher",
             "project_news", "project_message", "project_forum",
+            "project_role",
         ] {
             let id = canonical_concept_id(project_concept)
                 .unwrap_or_else(|| panic!("{project_concept} missing from codebook"));
@@ -2936,6 +3076,7 @@ mod tests {
             (project_news(), "ProjectNews", 0x0114),
             (project_message(), "ProjectMessage", 0x0115),
             (project_forum(), "ProjectForum", 0x0116),
+            (project_role(), "ProjectRole", 0x0117),
         ] {
             assert_eq!(canonical.name, name);
             assert_eq!(canonical.language, Language::Unknown);
@@ -3018,6 +3159,7 @@ mod tests {
             ("project_message", &["Message", "messages", "ProjectMessage"]),
             // Cross-curator name divergence: Redmine `Board` ↔ OP `Forum`.
             ("project_forum", &["Board", "boards", "Forum", "forums", "ProjectForum"]),
+            ("project_role", &["Role", "roles", "ProjectRole"]),
         ];
         for (concept, aliases) in cases {
             let id = canonical_concept_id(concept).unwrap();
@@ -3110,6 +3252,89 @@ mod tests {
                 assert_eq!(ogar_codebook(alias), id, "{alias} -> codebook id");
             }
         }
+    }
+
+    #[test]
+    fn source_domain_concept_maps_coarse_tags_to_codebook_domains() {
+        assert_eq!(source_domain_concept("project"), Some(ConceptDomain::ProjectMgmt));
+        assert_eq!(source_domain_concept("erp"), Some(ConceptDomain::Commerce));
+        assert_eq!(source_domain_concept("german-erp"), Some(ConceptDomain::Commerce));
+        // Unknown / unclassified curator → no domain → promotion withheld.
+        assert_eq!(source_domain_concept("health"), None);
+        assert_eq!(source_domain_concept(""), None);
+    }
+
+    #[test]
+    fn canonical_concept_in_domain_gates_generic_role_by_domain() {
+        use ConceptDomain::{Commerce, Health, ProjectMgmt};
+        // codex P2 on PR #72: a bare `Role` only becomes `project_role`
+        // when the curator is actually in the project-mgmt domain.
+        assert_eq!(canonical_concept_in_domain("Role", Some(ProjectMgmt)), "project_role");
+        assert_eq!(canonical_concept_in_domain("roles", Some(ProjectMgmt)), "project_role");
+        // Foreign domain → the promotion is a collision, not a bridge → lexical.
+        assert_eq!(canonical_concept_in_domain("Role", Some(Commerce)), "role");
+        assert_eq!(canonical_concept_in_domain("Role", Some(Health)), "role");
+        // Unknown curator domain → withhold → lexical (cannot vouch for it).
+        assert_eq!(canonical_concept_in_domain("Role", None), "role");
+        // The canonical spelling behaves identically — no special case.
+        assert_eq!(canonical_concept_in_domain("ProjectRole", Some(Health)), "projectrole");
+    }
+
+    #[test]
+    fn canonical_concept_in_domain_keeps_each_domains_own_promotions() {
+        use ConceptDomain::{Commerce, ProjectMgmt};
+        // Commerce concept lands only for a commerce curator.
+        assert_eq!(canonical_concept_in_domain("Invoice", Some(Commerce)), "commercial_document");
+        assert_eq!(canonical_concept_in_domain("Invoice", Some(ProjectMgmt)), "invoice");
+        // Project concept lands only for a project curator. For a foreign
+        // domain it falls through to the coarse lexical fallback (which
+        // drops a trailing plural `s`: "Status" -> "statu") — the point is
+        // simply that it is NOT the promoted `project_status`.
+        assert_eq!(canonical_concept_in_domain("WorkPackage", Some(ProjectMgmt)), "project_work_item");
+        assert_eq!(canonical_concept_in_domain("Status", Some(Commerce)), "statu");
+        assert_ne!(canonical_concept_in_domain("Status", Some(Commerce)), "project_status");
+        // Already-lexical names are unchanged in any domain.
+        assert_eq!(canonical_concept_in_domain("Setting", Some(ProjectMgmt)), "setting");
+        assert_eq!(canonical_concept_in_domain("Setting", None), "setting");
+    }
+
+    #[test]
+    fn cross_domain_bridge_survives_the_domain_gate() {
+        use ConceptDomain::{Commerce, ProjectMgmt};
+        // `billable_work_entry` is a deliberate cross-domain bridge: it has
+        // a project-mgmt home id (0x0103) but erp/german-erp curators must
+        // still converge onto it — the gate must NOT sever that.
+        assert!(is_cross_domain_concept("billable_work_entry"));
+        assert!(!is_cross_domain_concept("project_role"));
+        let id = canonical_concept_id("billable_work_entry").unwrap();
+        assert_eq!(canonical_concept_domain(id), ProjectMgmt); // home domain
+        // Project curator (home domain) — kept.
+        assert_eq!(
+            canonical_concept_in_domain("TimeEntry", Some(ProjectMgmt)),
+            "billable_work_entry"
+        );
+        // Odoo / erp curator (foreign domain) — STILL kept (bridge exempt).
+        assert_eq!(
+            canonical_concept_in_domain("account_analytic_line", Some(Commerce)),
+            "billable_work_entry"
+        );
+        // Even an unknown-domain curator keeps the bridge.
+        assert_eq!(
+            canonical_concept_in_domain("TimeEntry", None),
+            "billable_work_entry"
+        );
+    }
+
+    #[test]
+    fn lexical_concept_matches_canonical_fallback_for_unpromoted_names() {
+        // `lexical_concept` is exactly the Layer-2 fallback of
+        // `canonical_concept` — for an unpromoted name they agree.
+        for name in ["Setting", "settings", "res.users", "Address", "WidgetThing"] {
+            assert_eq!(lexical_concept(name), canonical_concept(name), "{name}");
+        }
+        // It does NOT promote: a promoted name still reduces lexically here.
+        assert_eq!(lexical_concept("Role"), "role");
+        assert_eq!(lexical_concept("WorkPackage"), "workpackage");
     }
 
     #[test]

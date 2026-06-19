@@ -79,12 +79,22 @@ use ruff_spo_triplet::{
 #[must_use]
 pub fn lift_model_graph(graph: &ModelGraph) -> Vec<Class> {
     let domain = classify_domain(&graph.namespace);
+    let concept_domain = domain.as_deref().and_then(ogar_vocab::source_domain_concept);
     graph
         .models
         .iter()
         .map(|m| {
             let mut class = lift_model(m);
             class.source_domain = domain.clone();
+            // Domain-gate the canonical concept. `lift_model` resolves
+            // domain-blind (an all-domains best guess); here we know the
+            // curator's domain, so re-resolve through the gate to withhold a
+            // promotion whose codebook domain doesn't match — a generic
+            // `Role` in a non-project curator must stay `role`, not become
+            // `project_role` (codex P2 on #72). Cross-domain bridges like
+            // `billable_work_entry` are exempt and still converge.
+            class.canonical_concept =
+                Some(ogar_vocab::canonical_concept_in_domain(&m.name, concept_domain));
             class
         })
         .collect()
@@ -867,6 +877,35 @@ mod tests {
         let mut other = ModelGraph::new("mystery");
         other.models.push(Model::new("X"));
         assert_eq!(lift_model_graph(&other)[0].source_domain, None);
+    }
+
+    #[test]
+    fn lift_model_graph_domain_gates_the_canonical_concept() {
+        // codex P2 on #72: `lift_model` is domain-blind, but
+        // `lift_model_graph` knows the curator's domain and must gate
+        // promotions through it. A bare `Role` only becomes `project_role`
+        // for a project-mgmt curator.
+        let concept = |ns: &str, model: &str| {
+            let mut g = ModelGraph::new(ns);
+            g.models.push(Model::new(model));
+            lift_model_graph(&g)[0].canonical_concept.clone().unwrap()
+        };
+        // Project curator (OpenProject / Redmine) — `Role` promotes.
+        assert_eq!(concept("openproject", "Role"), "project_role");
+        assert_eq!(concept("redmine", "Role"), "project_role");
+        // Unrelated curator (domain None) — `Role` stays lexical, NOT
+        // project_role, so it can't route as ConceptDomain::ProjectMgmt.
+        assert_eq!(concept("mystery", "Role"), "role");
+        // Foreign-but-known domain (erp) — also withheld.
+        assert_eq!(concept("odoo", "Role"), "role");
+        // Cross-domain bridge survives the gate from any domain.
+        assert_eq!(concept("openproject", "TimeEntry"), "billable_work_entry");
+        assert_eq!(concept("odoo", "account_analytic_line"), "billable_work_entry");
+        // `lift_model` itself stays domain-blind (all-domains best guess).
+        assert_eq!(
+            lift_model(&Model::new("Role")).canonical_concept.as_deref(),
+            Some("project_role"),
+        );
     }
 
     #[test]
