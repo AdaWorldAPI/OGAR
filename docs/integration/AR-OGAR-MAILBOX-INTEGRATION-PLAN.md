@@ -1,16 +1,17 @@
 # AR → OGAR → SurrealQL — OP-Arm Canonical-Contract Plan
 
-> **Status**: NEGOTIATED. Doctrine [lance-graph#546] is merged (OGAR IS the
->   AR-shaped THINK/DO compiler — curators feed it, it does not adapt to them).
->   #546 landed **doctrine only — no code**. This plan is the *contract layer*
->   downstream of it: it turns the OpenProject curator-arm feedback into concrete
->   OGAR Core contract requirements. OGAR Core has accepted the split —
->   **items 1–5 are flip blockers (Phase A), items 6–12 are promotion candidates
+> **Status**: ACTIVE — single-owner roadmap. Doctrine [lance-graph#546] is merged
+>   (OGAR IS the AR-shaped THINK/DO compiler — curators feed it, it does not adapt
+>   to them). #546 landed **doctrine only — no code**. This plan is the *contract
+>   layer* downstream of it: it turns the OpenProject curator-arm experience into
+>   concrete canonical-vocab requirements. **This session owns the whole
+>   OP-shaped → agnostic transformation** — both the producer scrape *and* the
+>   canonical layer; there is **no separate "OGAR Core session"** to hand work to.
+>   The split is **items 1–5 flip blockers (Phase A), items 6–12 promotions
 >   (Phase B)**. The 5+3 council (consolidate + brutal critique) has run; findings
->   are folded in (§11).
-> **Subordinate to**: #546 defines the doctrine; this defines the stable OGAR Core
->   contracts the OpenProject arm needs. Not to be smuggled into lance-graph
->   Inc 1 / Inc 2 — it is its own plan.
+>   folded in (§11).
+> **Subordinate to**: #546 defines the doctrine; this defines the canonical-vocab
+>   contracts the agnostic flip needs.
 > **Audience**: OGAR Core + the consumer repos (`openproject-nexgen-rs`,
 >   `AdaWorldAPI/surrealdb`).
 > **Reads from**: `lance-graph/docs/OGAR_CONSUMER_API.md` (the iron rules) + #546.
@@ -112,24 +113,29 @@ three things Rails conflates (STI / abstract / concern). Grounded against the
 | *(dropped today)*                                       | `state_machines: Vec<StateMachineDecl>` | 9 |
 | *(dropped today)*                                       | `audit_trail: Option<AuditTrailDecl>`   | 10 |
 
-Once Core lands the slots, `ogar-from-rails` becomes a pure rename/reslot pass.
+Once these canonical slots land (this session owns landing them),
+`ogar-from-rails` becomes a pure rename/reslot pass.
 **No new producer IR.** That is the whole point — the producer never grows a
 parallel object model.
 
-## 4. Division of labor (negotiated)
+## 4. Division of concerns (one owner — this session)
 
-### 4a. OGAR Core owns — Phase A flip blockers (1–5)
+This session owns **both** layers below; the split is by *concern* (canonical
+vocab vs curator-local scrape), not by session. "OGAR Core" names the canonical
+**layer**, not a separate agent.
+
+### 4a. The canonical layer (OGAR Core) — Phase A flip blockers (1–5)
 1. Canonical slot rename (deprecated aliases for one cycle, not a hard break).
 2. `lance-graph-contract::action`: `predicate: PredicateName(Cow<'static, str>)`.
 3. `OntologyRegistry::register_actions(class_id, &[ActionDef]) -> Result<(), RegistryError>`.
 4. `OntologyRegistry::mint_classid(&ClassFingerprint) -> ClassId` — content-addressed.
 5. Cargo feature isolation: `lance-graph-contract` stays substrate-free.
 
-### 4b. OGAR Core promotes — Phase B canonical wave (6–12)
+### 4b. The canonical layer — Phase B promotions (6–12)
 `Relation`, `Constraint`, `Inheritance`, `StateMachineDecl`, `AuditTrailDecl`,
 `Authorization`, `OntologyRegistry::resolve_mro`. Shapes in §6.
 
-### 4c. OP session owns locally — dies at the extraction boundary
+### 4c. Curator-local scrape (still this session) — dies at the extraction boundary
 `belongs_to`/`has_many` token parsing · `validates_*` class-name dispatch ·
 `acts_as_*` family filtering · `class_name:` namespace stripping · block-callback
 `target_method: None` normalization · ApplicationRecord-rooted STI detection ·
@@ -296,9 +302,9 @@ Phase B  Promotion slots   6 Relation · 7 Constraint · 8 Inheritance ·
 Phase 5  OP flip           ogar-from-rails emits only canonical slots;
                            op-surreal-ast proves invariant projection
 ```
-Phase 0/A/B are Core-side. Phase 5 is this session — it cannot start before the
-rename + promotion slots land (starting earlier = the speculative rework the
-council warned against).
+All phases are this session's. Phase 5 (the producer flip) still cannot start
+before the rename + promotion slots land — that's **sequencing, not ownership**
+(starting earlier = the speculative rework the council warned against).
 
 ## 10. Test surface (corrected)
 
