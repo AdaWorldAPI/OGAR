@@ -489,9 +489,80 @@ mod tests {
         }
     }
 
-    /// **Priority convergence** on real source. Both curators use
-    /// `IssuePriority < Enumeration`; both lift to the canonical
-    /// `priority` concept (codebook id `0x000D`).
+    /// **ProjectStatus + ProjectType convergence** on real source. Both
+    /// curators carry these lookup tables under divergent names:
+    ///
+    /// | Canonical concept | Redmine     | OpenProject |
+    /// |-------------------|-------------|-------------|
+    /// | project_status    | IssueStatus | Status      |
+    /// | project_type      | Tracker     | Type        |
+    ///
+    /// All four extracted classes converge through their respective
+    /// canonical concept and codebook id (`0x0105` / `0x0106`).
+    #[test]
+    #[ignore = "requires Redmine + OpenProject checkouts"]
+    fn redmine_and_openproject_status_and_type_converge_through_canonical() {
+        let Ok(redmine_src) = std::env::var("REDMINE_SRC") else {
+            eprintln!("skipping: REDMINE_SRC not set");
+            return;
+        };
+        let op_src = std::env::var("OPENPROJECT_SRC")
+            .unwrap_or_else(|_| "/home/user/openproject".to_string());
+        let op_path = PathBuf::from(&op_src);
+        if !op_path.exists() {
+            eprintln!("skipping: OpenProject not present at {op_src}");
+            return;
+        }
+
+        let redmine = extract(&PathBuf::from(redmine_src));
+        let openproject = extract(&op_path);
+
+        let status_id = ogar_vocab::canonical_concept_id("project_status");
+        let type_id = ogar_vocab::canonical_concept_id("project_type");
+        assert!(status_id.is_some() && type_id.is_some());
+
+        // Each (curator, class_name) tuple must lift to (concept, id).
+        // Cross-curator name divergence: IssueStatus/Status, Tracker/Type.
+        for (curator, classes, table) in [
+            (
+                "Redmine",
+                &redmine,
+                &[
+                    ("IssueStatus", "project_status", status_id),
+                    ("Tracker", "project_type", type_id),
+                ][..],
+            ),
+            (
+                "OpenProject",
+                &openproject,
+                &[
+                    ("Status", "project_status", status_id),
+                    ("Type", "project_type", type_id),
+                ][..],
+            ),
+        ] {
+            for (class_name, concept, expected_id) in table {
+                let c = classes
+                    .iter()
+                    .find(|c| c.name == *class_name)
+                    .unwrap_or_else(|| panic!("{curator} ships a {class_name} model"));
+                assert_eq!(
+                    c.canonical_concept.as_deref(),
+                    Some(*concept),
+                    "{curator} {class_name} -> {concept}",
+                );
+                assert_eq!(c.source_domain.as_deref(), Some("project"));
+                assert_eq!(
+                    c.canonical_id(),
+                    *expected_id,
+                    "{curator} {class_name} -> codebook id for {concept}",
+                );
+            }
+        }
+    }
+
+    /// Both curators use `IssuePriority < Enumeration`; both lift to the
+    /// canonical `priority` concept (codebook id `0x0107` post-#66).
     #[test]
     #[ignore = "requires Redmine + OpenProject checkouts"]
     fn redmine_and_openproject_issuepriority_converge_through_canonical() {

@@ -1067,8 +1067,8 @@ const CODEBOOK: &[(&str, u16)] = &[
     ("project_work_item", 0x0102),
     ("billable_work_entry", 0x0103),
     ("project_actor", 0x0104),
-    // 0x0105–0x0106 reserved for in-flight #63 (project_status, project_type);
-    // OGAR#63 rebases by switching its ids to those reserved slots.
+    ("project_status", 0x0105),     // Redmine IssueStatus ↔ OP Status
+    ("project_type", 0x0106),       // Redmine Tracker     ↔ OP Type
     ("priority", 0x0107),
 
     // New project-mgmt promotions from the cross-curator overlap probe
@@ -1480,6 +1480,26 @@ pub fn canonical_concept(name: &str) -> String {
     ) {
         return "project_actor".to_string();
     }
+    // ProjectStatus — the workflow-state lookup. Redmine `IssueStatus`,
+    // OpenProject `Status`. Cross-curator name divergence; same concept.
+    if matches!(
+        lower.as_str(),
+        "issuestatus" | "issue_status"
+            | "status" | "statuses"
+            | "project_status" | "projectstatus"
+    ) {
+        return "project_status".to_string();
+    }
+    // ProjectType — the work-item categorisation lookup. Redmine `Tracker`,
+    // OpenProject `Type`. Cross-curator name divergence; same concept.
+    if matches!(
+        lower.as_str(),
+        "tracker" | "trackers"
+            | "type" | "types"
+            | "project_type" | "projecttype"
+    ) {
+        return "project_type".to_string();
+    }
     // ── Project-mgmt promotions from the cross-curator overlap probe ──
     if matches!(lower.as_str(),
         "member" | "members" | "project_membership" | "projectmembership"
@@ -1807,6 +1827,59 @@ pub fn project_actor() -> Class {
     let mut sti_type = Attribute::new("type");
     sti_type.type_name = Some("string".to_string());
     c.attributes = vec![login, sti_type];
+    c
+}
+
+/// The promoted canonical class for **project status** — the workflow
+/// state lookup applied to project work items. Referenced by
+/// [`project_work_item`]'s `status` family edge.
+///
+/// Cross-curator name divergence: Redmine `IssueStatus`, OpenProject
+/// `Status`. Same concept, same canonical id (`0x0105`). Both curators
+/// carry the universal `name` / `position` / `is_closed` triple (closed
+/// = workflow terminal state) plus a `has_many :workflows` collection
+/// of allowed transitions.
+#[must_use]
+pub fn project_status() -> Class {
+    let mut c = Class::new("ProjectStatus");
+    c.language = Language::Unknown;
+    c.canonical_concept = Some("project_status".to_string());
+    c.associations = vec![
+        family_has_many("workflows", "WorkflowTransition"),
+    ];
+    let mut name = Attribute::new("name");
+    name.type_name = Some("string".to_string());
+    let mut position = Attribute::new("position");
+    position.type_name = Some("integer".to_string());
+    let mut is_closed = Attribute::new("is_closed");
+    is_closed.type_name = Some("boolean".to_string());
+    c.attributes = vec![name, position, is_closed];
+    c
+}
+
+/// The promoted canonical class for **project type** — the work-item
+/// categorisation lookup. Referenced by [`project_work_item`]'s `type`
+/// family edge.
+///
+/// Cross-curator name divergence: Redmine `Tracker`, OpenProject `Type`.
+/// Same concept, same canonical id (`0x0106`). Both carry `name` /
+/// `position` / `is_default` plus the back-reference `has_many
+/// :work_items` to [`project_work_item`].
+#[must_use]
+pub fn project_type() -> Class {
+    let mut c = Class::new("ProjectType");
+    c.language = Language::Unknown;
+    c.canonical_concept = Some("project_type".to_string());
+    c.associations = vec![
+        family_has_many("work_items", "ProjectWorkItem"),
+    ];
+    let mut name = Attribute::new("name");
+    name.type_name = Some("string".to_string());
+    let mut position = Attribute::new("position");
+    position.type_name = Some("integer".to_string());
+    let mut is_default = Attribute::new("is_default");
+    is_default.type_name = Some("boolean".to_string());
+    c.attributes = vec![name, position, is_default];
     c
 }
 
@@ -2598,7 +2671,7 @@ mod tests {
         // Existing concepts must live in their correct domain block.
         for project_concept in [
             "project", "project_work_item", "billable_work_entry",
-            "project_actor", "priority",
+            "project_actor", "project_status", "project_type", "priority",
             "project_membership", "project_journal", "project_repository",
             "project_version", "project_wiki_page", "project_query",
             "project_attachment", "project_comment", "project_custom_field",
@@ -2837,6 +2910,69 @@ mod tests {
             assert_eq!(canonical_concept(src), "priority", "{src} -> priority");
             assert_eq!(ogar_codebook(src), id, "{src} -> codebook id");
         }
+    }
+
+    #[test]
+    fn project_status_and_project_type_are_promoted_canonical_classes() {
+        // ProjectStatus — Redmine IssueStatus / OP Status converge here.
+        let s = project_status();
+        assert_eq!(s.name, "ProjectStatus");
+        assert_eq!(s.canonical_concept.as_deref(), Some("project_status"));
+        assert_eq!(s.language, Language::Unknown);
+        assert_eq!(s.canonical_id(), Some(0x0105));
+        let s_attr = |n: &str, t: &str| {
+            assert_eq!(
+                s.attributes.iter().find(|a| a.name == n).and_then(|a| a.type_name.as_deref()),
+                Some(t),
+            );
+        };
+        s_attr("name", "string");
+        s_attr("position", "integer");
+        s_attr("is_closed", "boolean");
+
+        // ProjectType — Redmine Tracker / OP Type converge here.
+        let t = project_type();
+        assert_eq!(t.name, "ProjectType");
+        assert_eq!(t.canonical_concept.as_deref(), Some("project_type"));
+        assert_eq!(t.language, Language::Unknown);
+        assert_eq!(t.canonical_id(), Some(0x0106));
+        let t_attr = |n: &str, ty: &str| {
+            assert_eq!(
+                t.attributes.iter().find(|a| a.name == n).and_then(|a| a.type_name.as_deref()),
+                Some(ty),
+            );
+        };
+        t_attr("name", "string");
+        t_attr("position", "integer");
+        t_attr("is_default", "boolean");
+        // ProjectType back-references ProjectWorkItem.
+        let work_items = t
+            .associations
+            .iter()
+            .find(|a| a.name == "work_items")
+            .expect("work_items edge");
+        assert_eq!(work_items.kind, AssociationKind::HasMany);
+        assert_eq!(work_items.class_name.as_deref(), Some("ProjectWorkItem"));
+    }
+
+    #[test]
+    fn project_status_and_type_resolver_collapses_curator_name_divergence() {
+        // ProjectStatus: Redmine IssueStatus / OP Status — same id.
+        let status_id = canonical_concept_id("project_status");
+        assert!(status_id.is_some());
+        for src in ["IssueStatus", "issuestatus", "issue_status", "Status", "statuses", "ProjectStatus", "projectstatus"] {
+            assert_eq!(canonical_concept(src), "project_status");
+            assert_eq!(ogar_codebook(src), status_id, "{src} -> project_status id");
+        }
+        // ProjectType: Redmine Tracker / OP Type — same id.
+        let type_id = canonical_concept_id("project_type");
+        assert!(type_id.is_some());
+        for src in ["Tracker", "trackers", "Type", "types", "ProjectType", "projecttype"] {
+            assert_eq!(canonical_concept(src), "project_type");
+            assert_eq!(ogar_codebook(src), type_id, "{src} -> project_type id");
+        }
+        // The two canonical concepts have distinct ids.
+        assert_ne!(status_id, type_id);
     }
 
     #[test]
