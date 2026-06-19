@@ -1502,7 +1502,8 @@ pub fn canonical_concept(name: &str) -> String {
         return "project_version".to_string();
     }
     if matches!(lower.as_str(),
-        "wikipage" | "wiki_page" | "project_wiki_page" | "projectwikipage"
+        "wikipage" | "wiki_page" | "wikipages" | "wiki_pages"
+            | "project_wiki_page" | "projectwikipage"
     ) {
         return "project_wiki_page".to_string();
     }
@@ -1522,7 +1523,7 @@ pub fn canonical_concept(name: &str) -> String {
         return "project_comment".to_string();
     }
     if matches!(lower.as_str(),
-        "customfield" | "custom_field"
+        "customfield" | "custom_field" | "customfields" | "custom_fields"
             | "project_custom_field" | "projectcustomfield"
     ) {
         return "project_custom_field".to_string();
@@ -2656,6 +2657,33 @@ mod tests {
             for a in &canonical.attributes {
                 assert!(a.type_name.is_some(), "{name}.{} untyped", a.name);
             }
+        }
+    }
+
+    /// Regression for the codex P2 on PR #66: a Rails-tableized plural
+    /// label (e.g. `wiki_pages`, `custom_fields`) must resolve to the
+    /// same codebook id as the singular form. The promoted-invariant
+    /// arms must accept the plural snake_case spelling — not punt to
+    /// lexical fallback, where it would return `wiki_page` /
+    /// `custom_field` without re-entering the codebook lookup.
+    #[test]
+    fn plural_table_aliases_resolve_to_promoted_codebook_id() {
+        for (singular, plural) in [
+            ("project_wiki_page", "wiki_pages"),
+            ("project_wiki_page", "wikipages"),
+            ("project_wiki_page", "WikiPages"),
+            ("project_custom_field", "custom_fields"),
+            ("project_custom_field", "customfields"),
+            ("project_custom_field", "CustomFields"),
+        ] {
+            let canonical_id = canonical_concept_id(singular);
+            assert!(canonical_id.is_some(), "{singular} must be in codebook");
+            assert_eq!(canonical_concept(plural), singular, "{plural} -> {singular}");
+            assert_eq!(
+                ogar_codebook(plural),
+                canonical_id,
+                "tableized `{plural}` must share the {singular} codebook id",
+            );
         }
     }
 
