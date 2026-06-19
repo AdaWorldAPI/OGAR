@@ -1217,6 +1217,220 @@ pub fn canonical_concept_id(concept: &str) -> Option<u16> {
         .find_map(|(name, id)| if *name == concept { Some(*id) } else { None })
 }
 
+/// **Compile-time class-id constants** — every promoted concept's id
+/// exposed as a named `pub const u16` so downstream consumers can dispatch
+/// on canonical identity at compile time without a [`canonical_concept_id`]
+/// lookup.
+///
+/// This is the **canonical home** of the constants. The two `-rs` consumer
+/// crates (`redmine-canon::class_ids` and `op-canon::class_ids`) re-export
+/// from here so the values cannot drift across ports: both Rust ports of
+/// the project-management curators (Redmine, OpenProject) speak this one
+/// list.
+///
+/// ```
+/// use ogar_vocab::class_ids;
+///
+/// fn dispatch(incoming_id: u16) {
+///     match incoming_id {
+///         class_ids::PROJECT_WORK_ITEM => handle_work_item(),
+///         class_ids::BILLABLE_WORK_ENTRY => handle_time_entry(),
+///         _ => {}
+///     }
+/// }
+/// # fn handle_work_item() {}
+/// # fn handle_time_entry() {}
+/// ```
+///
+/// Drift between the constants and [`CODEBOOK`] is impossible without a
+/// failing test: [`class_ids::tests::constants_match_codebook`] (the
+/// forward gate) and [`class_ids::tests::every_codebook_entry_has_a_const`]
+/// (the reverse gate) walk both directions.
+///
+/// Ids are stable forever (per the codebook contract). They only arrive —
+/// never move, never get re-assigned.
+pub mod class_ids {
+    // ── 0x01XX — project-mgmt domain ──
+
+    /// `project` (`0x0101`) — root project container.
+    pub const PROJECT: u16 = 0x0101;
+    /// `project_work_item` (`0x0102`) — project-scoped work item. Redmine
+    /// `Issue` / OpenProject `WorkPackage`.
+    pub const PROJECT_WORK_ITEM: u16 = 0x0102;
+    /// `billable_work_entry` (`0x0103`) — booked work / time / cost. The
+    /// **first cross-domain bridge**: OpenProject `TimeEntry`, Redmine
+    /// `TimeEntry`, Odoo `account.analytic.line` all converge here.
+    pub const BILLABLE_WORK_ENTRY: u16 = 0x0103;
+    /// `project_actor` (`0x0104`) — actor identity (Principal + User +
+    /// Group STI chain collapsed).
+    pub const PROJECT_ACTOR: u16 = 0x0104;
+    /// `project_status` (`0x0105`) — workflow status. Redmine `IssueStatus`,
+    /// OpenProject `Status`.
+    pub const PROJECT_STATUS: u16 = 0x0105;
+    /// `project_type` (`0x0106`) — work-item type. Redmine `Tracker`,
+    /// OpenProject `Type`.
+    pub const PROJECT_TYPE: u16 = 0x0106;
+    /// `priority` (`0x0107`) — priority enumeration. Both ship `IssuePriority`.
+    pub const PRIORITY: u16 = 0x0107;
+    /// `project_membership` (`0x0108`) — actor↔project join. Both ship `Member`.
+    pub const PROJECT_MEMBERSHIP: u16 = 0x0108;
+    /// `project_journal` (`0x0109`) — change journal entry.
+    pub const PROJECT_JOURNAL: u16 = 0x0109;
+    /// `project_repository` (`0x010A`) — VCS repository.
+    pub const PROJECT_REPOSITORY: u16 = 0x010A;
+    /// `project_version` (`0x010B`) — release / milestone.
+    pub const PROJECT_VERSION: u16 = 0x010B;
+    /// `project_wiki_page` (`0x010C`).
+    pub const PROJECT_WIKI_PAGE: u16 = 0x010C;
+    /// `project_query` (`0x010D`) — saved query.
+    pub const PROJECT_QUERY: u16 = 0x010D;
+    /// `project_attachment` (`0x010E`).
+    pub const PROJECT_ATTACHMENT: u16 = 0x010E;
+    /// `project_comment` (`0x010F`).
+    pub const PROJECT_COMMENT: u16 = 0x010F;
+    /// `project_custom_field` (`0x0110`).
+    pub const PROJECT_CUSTOM_FIELD: u16 = 0x0110;
+    /// `project_relation` (`0x0111`) — work-item↔work-item link. Redmine
+    /// `IssueRelation`, OpenProject `Relation`.
+    pub const PROJECT_RELATION: u16 = 0x0111;
+    /// `project_changeset` (`0x0112`) — VCS commit metadata.
+    pub const PROJECT_CHANGESET: u16 = 0x0112;
+    /// `project_watcher` (`0x0113`).
+    pub const PROJECT_WATCHER: u16 = 0x0113;
+    /// `project_news` (`0x0114`) — project news / blog post.
+    pub const PROJECT_NEWS: u16 = 0x0114;
+    /// `project_message` (`0x0115`) — forum / board message.
+    pub const PROJECT_MESSAGE: u16 = 0x0115;
+    /// `project_forum` (`0x0116`) — message container. Redmine `Board`,
+    /// OpenProject `Forum`.
+    pub const PROJECT_FORUM: u16 = 0x0116;
+    /// `project_role` (`0x0117`) — RBAC permission-set bundle.
+    pub const PROJECT_ROLE: u16 = 0x0117;
+    /// `project_member_role` (`0x0118`) — RBAC join (membership ↔ role).
+    pub const PROJECT_MEMBER_ROLE: u16 = 0x0118;
+    /// `project_custom_value` (`0x0119`) — value of a custom field on a record.
+    pub const PROJECT_CUSTOM_VALUE: u16 = 0x0119;
+    /// `project_enabled_module` (`0x011A`) — per-project module enablement.
+    pub const PROJECT_ENABLED_MODULE: u16 = 0x011A;
+
+    // ── 0x02XX — commerce / billing / ERP domain ──
+
+    /// `commercial_line_item` (`0x0201`) — line on a commercial document.
+    /// OSB `InvoiceLineItem`, Odoo `account.move.line`.
+    pub const COMMERCIAL_LINE_ITEM: u16 = 0x0201;
+    /// `commercial_document` (`0x0202`) — invoice / posting head.
+    /// OSB `Invoice`, Odoo `account.move`.
+    pub const COMMERCIAL_DOCUMENT: u16 = 0x0202;
+    /// `tax_policy` (`0x0203`) — tax rate / classification. OSB `Tax`,
+    /// Odoo `account.tax`. Also `billable_work_entry.classified_by` target.
+    pub const TAX_POLICY: u16 = 0x0203;
+    /// `billing_party` (`0x0204`) — counterparty (customer/vendor/partner).
+    /// OSB `Client`, Odoo `res.partner`.
+    pub const BILLING_PARTY: u16 = 0x0204;
+    /// `payment_record` (`0x0205`) — payment event. OSB `Payment`,
+    /// Odoo `account.payment`.
+    pub const PAYMENT_RECORD: u16 = 0x0205;
+    /// `currency_policy` (`0x0206`) — currency lookup. OSB `Currency`,
+    /// Odoo `res.currency`.
+    pub const CURRENCY_POLICY: u16 = 0x0206;
+
+    /// Every `(canonical_concept_name, id)` pair the constants vouch for.
+    /// Drift-guarded against [`super::CODEBOOK`] by tests in this module.
+    pub const ALL: &[(&str, u16)] = &[
+        // 0x01XX — project-mgmt
+        ("project", PROJECT),
+        ("project_work_item", PROJECT_WORK_ITEM),
+        ("billable_work_entry", BILLABLE_WORK_ENTRY),
+        ("project_actor", PROJECT_ACTOR),
+        ("project_status", PROJECT_STATUS),
+        ("project_type", PROJECT_TYPE),
+        ("priority", PRIORITY),
+        ("project_membership", PROJECT_MEMBERSHIP),
+        ("project_journal", PROJECT_JOURNAL),
+        ("project_repository", PROJECT_REPOSITORY),
+        ("project_version", PROJECT_VERSION),
+        ("project_wiki_page", PROJECT_WIKI_PAGE),
+        ("project_query", PROJECT_QUERY),
+        ("project_attachment", PROJECT_ATTACHMENT),
+        ("project_comment", PROJECT_COMMENT),
+        ("project_custom_field", PROJECT_CUSTOM_FIELD),
+        ("project_relation", PROJECT_RELATION),
+        ("project_changeset", PROJECT_CHANGESET),
+        ("project_watcher", PROJECT_WATCHER),
+        ("project_news", PROJECT_NEWS),
+        ("project_message", PROJECT_MESSAGE),
+        ("project_forum", PROJECT_FORUM),
+        ("project_role", PROJECT_ROLE),
+        ("project_member_role", PROJECT_MEMBER_ROLE),
+        ("project_custom_value", PROJECT_CUSTOM_VALUE),
+        ("project_enabled_module", PROJECT_ENABLED_MODULE),
+        // 0x02XX — commerce
+        ("commercial_line_item", COMMERCIAL_LINE_ITEM),
+        ("commercial_document", COMMERCIAL_DOCUMENT),
+        ("tax_policy", TAX_POLICY),
+        ("billing_party", BILLING_PARTY),
+        ("payment_record", PAYMENT_RECORD),
+        ("currency_policy", CURRENCY_POLICY),
+    ];
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+        use crate::{canonical_concept_id, CODEBOOK};
+
+        #[test]
+        fn constants_match_codebook() {
+            // Forward gate: every (name, const) in ALL agrees with the
+            // CODEBOOK lookup for the same canonical_concept name. A new
+            // CODEBOOK promotion that changes an id (which the codebook
+            // contract forbids — ids never re-move) fails THIS test before
+            // any consumer breaks.
+            for (name, id) in ALL {
+                assert_eq!(
+                    canonical_concept_id(name),
+                    Some(*id),
+                    "{name}: constant 0x{id:04X} disagrees with CODEBOOK lookup",
+                );
+            }
+        }
+
+        #[test]
+        fn every_codebook_entry_has_a_const() {
+            // Reverse gate: if the CODEBOOK promotes a new concept, ALL
+            // (and the const block above) must learn it. Catches the
+            // "promotion landed without exposing a const" case.
+            let known: std::collections::HashSet<&str> = ALL.iter().map(|(n, _)| *n).collect();
+            for (name, _id) in CODEBOOK {
+                assert!(
+                    known.contains(name),
+                    "{name} promoted in CODEBOOK but missing from class_ids::ALL",
+                );
+            }
+        }
+
+        #[test]
+        fn constants_are_unique_and_non_zero() {
+            use std::collections::HashSet;
+            let mut seen = HashSet::new();
+            for (name, id) in ALL {
+                assert_ne!(*id, 0, "{name}: id must be non-zero (0x0000 reserved)");
+                assert!(seen.insert(*id), "duplicate id 0x{id:04X} (saw at {name})");
+            }
+        }
+
+        #[test]
+        fn divergent_curator_names_share_one_constant() {
+            // The whole point of the codebook, in code: a Redmine Issue
+            // and an OpenProject WorkPackage both route on the SAME arm.
+            assert_eq!(PROJECT_WORK_ITEM, 0x0102);
+            assert_eq!(PROJECT_STATUS, 0x0105);
+            assert_eq!(PROJECT_TYPE, 0x0106);
+            assert_eq!(PROJECT_FORUM, 0x0116);
+            assert_eq!(BILLABLE_WORK_ENTRY, 0x0103);
+        }
+    }
+}
+
 /// **Cross-domain bridge concepts** — promoted concepts whose convergence
 /// is intentionally *across* domains, so they must be exempt from the
 /// domain gate in [`canonical_concept_in_domain`].
