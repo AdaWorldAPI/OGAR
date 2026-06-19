@@ -93,6 +93,14 @@ pub struct Class {
     /// Superclass name as written, when one is declared. Used by
     /// consumers to assemble single-table-inheritance hierarchies.
     pub parent: Option<String>,
+    /// Agnostic inheritance slot — metabolizes the three things Rails
+    /// conflates (STI parent / abstract base / STI root) into one typed
+    /// value. Mixins / concerns are a SEPARATE axis ([`Self::mixins`]) and
+    /// are never folded in here. `parent` / `abstract_model` /
+    /// `inheritance_column_disabled` are retained for one migration cycle;
+    /// new consumers should read `inheritance`.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub inheritance: Inheritance,
     /// Source language of the producer that emitted this class.
     pub language: Language,
     /// `belongs_to` / `has_one` / `has_many` / `has_and_belongs_to_many`
@@ -175,6 +183,14 @@ pub struct Class {
     /// Source language major version (`"17.0"`, `"7.2"`, ...) for
     /// multi-version source compatibility. Reserved; v1 leaves `None`.
     pub source_version: Option<String>,
+    /// Curator **domain** — the kind of system this class was harvested
+    /// from: `"project"` (OpenProject / Redmine), `"erp"` (Odoo / SAP), …
+    /// A coarse, curator-agnostic tag (NOT the namespace or module) and a
+    /// component of the `ClassFingerprint` used to mint a stable `ClassId`.
+    /// Set by the frontend from the harvest namespace; `None` when
+    /// unrecognized.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub source_domain: Option<String>,
     /// Computed-field declarations (Odoo `compute=...` fields, also
     /// Rails / Django where producers can detect them). Lives in
     /// base vocab — see `docs/ODOO-TRANSCODING.md` §8.
@@ -184,6 +200,38 @@ pub struct Class {
     /// `def self.method`, etc.). Distinct from `callbacks` which
     /// are declarative hooks.
     pub methods: Vec<MethodDecl>,
+}
+
+/// How a class sits in its inheritance lattice — the agnostic
+/// metabolization of the three things Rails conflates: STI parent,
+/// abstract base, and STI root. Mixins / concerns are a SEPARATE axis
+/// ([`Class::mixins`]) and are never folded in here.
+///
+/// Producer IR carries parent/root as **names** (`String`); the registry
+/// mints the `ClassId` later. Cross-curator mapping: Rails `< Parent` /
+/// `self.abstract_class` / `self.inheritance_column`; Odoo `_inherit` /
+/// `_abstract`; Django abstract base classes.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[non_exhaustive]
+pub enum Inheritance {
+    /// No superclass beyond the ORM root (Rails `< ApplicationRecord`).
+    #[default]
+    Root,
+    /// Concrete STI child of `parent` (shares the parent's table).
+    Concrete {
+        /// Parent class name as written.
+        parent: String,
+    },
+    /// Abstract base — methods / fields inherited, but no table of its own
+    /// (Rails `self.abstract_class = true`; Odoo `_abstract = True`).
+    Abstract,
+    /// Root of an STI hierarchy — defines the discriminator column but is
+    /// not itself a child. `root` is this class's own name.
+    RootedAt {
+        /// The hierarchy root class name (this class).
+        root: String,
+    },
 }
 
 /// A computed-field declaration. Carries the field name, the compute
@@ -1024,6 +1072,89 @@ impl Validation {
     }
 }
 
+// ─────────────────────────────────────────────────────────────────────
+// Cross-domain synergies
+// ─────────────────────────────────────────────────────────────────────
+
+/// A cross-domain **synergy**: one canonical concept that surfaces in two
+/// or more curator [domains](Class::source_domain) — e.g. `user` in both
+/// the `project` domain (OpenProject `User`) and the `erp` domain (Odoo
+/// `res.users`). Wiring synergies is what makes the agnostic vocab more
+/// than the sum of its curators: shared concepts unify across domains.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[non_exhaustive]
+pub struct Synergy {
+    /// Canonical concept (normalized class name) the members share.
+    pub concept: String,
+    /// The classes that realize this concept — one entry per domain that
+    /// has it, ordered by domain.
+    pub members: Vec<SynergyMember>,
+}
+
+/// One domain's realization of a [`Synergy`] concept.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[non_exhaustive]
+pub struct SynergyMember {
+    /// The curator domain (`"project"`, `"erp"`, …) — see
+    /// [`Class::source_domain`].
+    pub domain: String,
+    /// The class name as written in that domain.
+    pub class_name: String,
+}
+
+/// Wire cross-domain synergies across a set of lifted [`Class`]es.
+///
+/// Groups classes by [`canonical_concept`] and keeps only concepts that
+/// appear in **2+ distinct** [`source_domain`](Class::source_domain)s —
+/// those bridges are the synergies. Classes with no `source_domain` are
+/// skipped (a synergy needs domains to bridge); the first class seen per
+/// (concept, domain) wins. Output is deterministic (ordered by concept,
+/// then domain).
+#[must_use]
+pub fn wire_synergies(classes: &[Class]) -> Vec<Synergy> {
+    use std::collections::BTreeMap;
+    let mut by_concept: BTreeMap<String, BTreeMap<String, String>> = BTreeMap::new();
+    for c in classes {
+        let Some(domain) = c.source_domain.as_ref() else {
+            continue;
+        };
+        let concept = canonical_concept(&c.name);
+        by_concept
+            .entry(concept)
+            .or_default()
+            .entry(domain.clone())
+            .or_insert_with(|| c.name.clone());
+    }
+    by_concept
+        .into_iter()
+        .filter(|(_, domains)| domains.len() >= 2)
+        .map(|(concept, domains)| Synergy {
+            concept,
+            members: domains
+                .into_iter()
+                .map(|(domain, class_name)| SynergyMember { domain, class_name })
+                .collect(),
+        })
+        .collect()
+}
+
+/// Normalize a class name to its canonical concept: lowercase, take the
+/// last dotted segment (Odoo `res.users` → `users`), and drop a single
+/// trailing plural `s` (`users` → `user`), except after `ss`. Coarse by
+/// design — a v1 bridge for obvious overlaps (`user`, `project`,
+/// `company`), not a thesaurus.
+fn canonical_concept(name: &str) -> String {
+    let lower = name.to_ascii_lowercase();
+    let last = lower.rsplit('.').next().unwrap_or(lower.as_str());
+    if last.len() > 3 && last.ends_with('s') && !last.ends_with("ss") {
+        last[..last.len() - 1].to_string()
+    } else {
+        last.to_string()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1042,6 +1173,38 @@ mod tests {
         assert_eq!(c.name, "WorkPackage");
         assert!(c.parent.is_none());
         assert!(c.associations.is_empty());
+    }
+
+    #[test]
+    fn wire_synergies_links_a_concept_across_domains() {
+        let mut op_user = Class::new("User");
+        op_user.source_domain = Some("project".to_string());
+        let mut odoo_user = Class::new("res.users");
+        odoo_user.source_domain = Some("erp".to_string());
+        let mut op_wp = Class::new("WorkPackage");
+        op_wp.source_domain = Some("project".to_string());
+
+        let syn = wire_synergies(&[op_user, odoo_user, op_wp]);
+        assert_eq!(syn.len(), 1, "only `user` bridges both domains");
+        assert_eq!(syn[0].concept, "user");
+        assert_eq!(syn[0].members.len(), 2);
+        // ordered by domain: erp before project
+        assert_eq!(syn[0].members[0].domain, "erp");
+        assert_eq!(syn[0].members[0].class_name, "res.users");
+        assert_eq!(syn[0].members[1].domain, "project");
+        assert_eq!(syn[0].members[1].class_name, "User");
+    }
+
+    #[test]
+    fn wire_synergies_needs_two_distinct_domains() {
+        // same concept, same domain → not a synergy
+        let mut a = Class::new("User");
+        a.source_domain = Some("project".to_string());
+        let mut b = Class::new("Users");
+        b.source_domain = Some("project".to_string());
+        // an undomained class is ignored entirely
+        let c = Class::new("res.users");
+        assert!(wire_synergies(&[a, b, c]).is_empty());
     }
 
     #[test]

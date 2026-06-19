@@ -66,7 +66,7 @@
 
 use ogar_vocab::{
     ActionDef, Association, AssociationKind, Attribute, Callback, Class, EnumDecl, EnumSource,
-    Language, Scope, Validation,
+    Inheritance, Language, Scope, Validation,
 };
 use ruff_spo_triplet::{
     AssocDecl, AssocKind, AttrDecl, AttrKind, Callback as RuffCallback, ConcernKind, Model,
@@ -78,7 +78,32 @@ use ruff_spo_triplet::{
 /// deterministic ordering for snapshot tests.
 #[must_use]
 pub fn lift_model_graph(graph: &ModelGraph) -> Vec<Class> {
-    graph.models.iter().map(lift_model).collect()
+    let domain = classify_domain(&graph.namespace);
+    graph
+        .models
+        .iter()
+        .map(|m| {
+            let mut class = lift_model(m);
+            class.source_domain = domain.clone();
+            class
+        })
+        .collect()
+}
+
+/// Name the curator **domain** from the harvest namespace — the "one tiny
+/// regex" that tags OpenProject as a `project` domain and Odoo as an `erp`
+/// domain. A coarse, curator-agnostic label (a `ClassFingerprint`
+/// component), not the namespace itself. Returns `None` for unrecognized
+/// namespaces — the domain stays unset rather than guessed.
+fn classify_domain(namespace: &str) -> Option<String> {
+    let ns = namespace.to_ascii_lowercase();
+    if ns.contains("openproject") || ns.contains("redmine") {
+        Some("project".to_string())
+    } else if ns.contains("odoo") {
+        Some("erp".to_string())
+    } else {
+        None
+    }
 }
 
 /// Lift one [`Model`] to an OGAR [`Class`]. Pure projection — no I/O.
@@ -94,6 +119,7 @@ pub fn lift_model(model: &Model) -> Class {
     let mut class = Class::new(&model.name);
     class.language = Language::Ruby;
     class.parent = model.sti.as_ref().and_then(sti_parent);
+    class.inheritance = lift_inheritance(model);
     class.associations = model.associations.iter().filter_map(lift_association).collect();
     class.mixins = lift_mixins(model);
     class.attributes = model.attributes.iter().filter_map(lift_attribute).collect();
@@ -362,6 +388,27 @@ fn sti_parent(sti: &StiInfo) -> Option<String> {
     sti.inherits_from.clone()
 }
 
+/// Metabolize Rails STI facts into the agnostic [`Inheritance`] slot.
+///
+/// Priority: a declared parent makes it an [`Inheritance::Concrete`] child
+/// regardless of other flags; `abstract_class` makes it
+/// [`Inheritance::Abstract`]; an `inheritance_column` with no parent makes
+/// it the [`Inheritance::RootedAt`] root of a hierarchy; otherwise
+/// [`Inheritance::Root`]. Mixins / concerns are NOT consulted — they are a
+/// separate axis (`Class.mixins`).
+fn lift_inheritance(model: &Model) -> Inheritance {
+    match model.sti.as_ref() {
+        Some(sti) if sti.inherits_from.is_some() => Inheritance::Concrete {
+            parent: sti.inherits_from.clone().expect("checked is_some"),
+        },
+        Some(sti) if sti.abstract_class => Inheritance::Abstract,
+        Some(sti) if sti.inheritance_column.is_some() => Inheritance::RootedAt {
+            root: model.name.clone(),
+        },
+        _ => Inheritance::Root,
+    }
+}
+
 // ───────────────────────────── helpers ──────────────────────────────────
 
 /// Strip ruby-source markers (quote pairs, leading symbol colon) from
@@ -476,6 +523,43 @@ mod tests {
         assert_eq!(class.name, "WorkPackage");
         assert_eq!(class.parent.as_deref(), Some("Issue"));
         assert!(matches!(class.language, Language::Ruby));
+    }
+
+    #[test]
+    fn lift_inheritance_concrete_from_sti_parent() {
+        // mk_model's StiInfo has inherits_from = Some("Issue").
+        let class = lift_model(&mk_model());
+        assert_eq!(
+            class.inheritance,
+            Inheritance::Concrete { parent: "Issue".to_string() },
+        );
+    }
+
+    #[test]
+    fn lift_inheritance_abstract_rooted_and_root() {
+        // abstract_class → Abstract
+        let mut m = Model::new("ApplicationRecord");
+        m.sti = Some(StiInfo {
+            inherits_from: None,
+            abstract_class: true,
+            inheritance_column: None,
+        });
+        assert_eq!(lift_model(&m).inheritance, Inheritance::Abstract);
+
+        // inheritance_column, no parent → RootedAt(self): the STI root.
+        let mut r = Model::new("Principal");
+        r.sti = Some(StiInfo {
+            inherits_from: None,
+            abstract_class: false,
+            inheritance_column: Some("type".to_string()),
+        });
+        assert_eq!(
+            lift_model(&r).inheritance,
+            Inheritance::RootedAt { root: "Principal".to_string() },
+        );
+
+        // no STI info at all → Root.
+        assert_eq!(lift_model(&Model::new("Plain")).inheritance, Inheritance::Root);
     }
 
     #[test]
@@ -646,6 +730,22 @@ mod tests {
         assert_eq!(classes.len(), 2);
         assert_eq!(classes[0].name, "WorkPackage");
         assert_eq!(classes[1].name, "Project");
+    }
+
+    #[test]
+    fn classify_domain_names_op_project_and_odoo_erp() {
+        // OpenProject → "project"
+        let mut op = ModelGraph::new("openproject");
+        op.models.push(Model::new("WorkPackage"));
+        assert_eq!(lift_model_graph(&op)[0].source_domain.as_deref(), Some("project"));
+        // Odoo → "erp"
+        let mut odoo = ModelGraph::new("odoo");
+        odoo.models.push(Model::new("AccountMove"));
+        assert_eq!(lift_model_graph(&odoo)[0].source_domain.as_deref(), Some("erp"));
+        // Unrecognized → None (not guessed).
+        let mut other = ModelGraph::new("mystery");
+        other.models.push(Model::new("X"));
+        assert_eq!(lift_model_graph(&other)[0].source_domain, None);
     }
 
     fn mk_model_with_functions() -> Model {
