@@ -75,7 +75,7 @@ impl ArtifactEmitter for RustStructEmitter {
             .iter()
             .map(|a| RustAttr {
                 name: a.name.clone(),
-                snake_name: a.name.clone(),
+                snake_name: escape_rust_ident(&a.name),
                 rust_type: rails_to_rust_type(a.type_name.as_deref()),
                 type_name: a.type_name.clone().unwrap_or_default(),
             })
@@ -86,7 +86,7 @@ impl ArtifactEmitter for RustStructEmitter {
             .iter()
             .map(|a| RustEdge {
                 name: a.name.clone(),
-                snake_name: a.name.clone(),
+                snake_name: escape_rust_ident(&a.name),
                 rust_type: edge_rust_type(a),
                 kind_label: assoc_label(a.kind),
                 target: a.class_name.clone().unwrap_or_default(),
@@ -103,6 +103,36 @@ impl ArtifactEmitter for RustStructEmitter {
             associations,
         };
         ctx.render()
+    }
+}
+
+/// Prefix Rust reserved words with `r#` so a curator-side slot named
+/// `type`, `match`, `move`, … emits a legal Rust field identifier.
+///
+/// Catches codex P1 on PR #78: `project_actor()` ships an attribute named
+/// `type` (per Rails STI convention) and the unescaped template would emit
+/// `pub type: String,` — illegal. Same hazard for `async` / `await` /
+/// `dyn` etc. that newer Rust editions reserved. Conservative list (Rust
+/// 2024 strict + reserved-future); a `&str` slot from the canonical layer
+/// can never need a non-identifier escape since names are sourced from
+/// Rails / Odoo identifiers.
+fn escape_rust_ident(name: &str) -> String {
+    const RESERVED: &[&str] = &[
+        // Rust 2015+ strict keywords:
+        "as", "break", "const", "continue", "crate", "else", "enum", "extern",
+        "false", "fn", "for", "if", "impl", "in", "let", "loop", "match", "mod",
+        "move", "mut", "pub", "ref", "return", "self", "Self", "static", "struct",
+        "super", "trait", "true", "type", "unsafe", "use", "where", "while",
+        // Rust 2018+ strict keywords:
+        "async", "await", "dyn",
+        // Reserved-future (lexable but unusable as raw idents anyway):
+        "abstract", "become", "box", "do", "final", "macro", "override", "priv",
+        "typeof", "unsized", "virtual", "yield", "try",
+    ];
+    if RESERVED.contains(&name) {
+        format!("r#{name}")
+    } else {
+        name.to_string()
     }
 }
 

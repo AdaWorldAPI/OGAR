@@ -90,7 +90,7 @@ pub fn render_all(
 mod tests {
     use super::*;
     use ogar_vocab::{
-        billable_work_entry, project, project_role, project_work_item,
+        billable_work_entry, project, project_actor, project_role, project_work_item,
     };
 
     #[test]
@@ -183,6 +183,30 @@ mod tests {
                 "stub should mention the class name:\n{src}"
             );
         }
+    }
+
+    #[test]
+    fn rust_struct_escapes_keyword_attribute_names() {
+        // Codex P1 on #78: `project_actor()` declares an attribute named
+        // `type` (Rails STI convention). The naive template would emit
+        // `pub type: String,` which is illegal Rust. The emitter must
+        // raw-escape Rust reserved words so the output compiles.
+        let class = project_actor();
+        assert!(
+            class.attributes.iter().any(|a| a.name == "type"),
+            "regression precondition: project_actor must ship a `type` attribute"
+        );
+        let src = render(&class, ArtifactKind::RustStruct).unwrap();
+        // The illegal form must NOT appear ...
+        assert!(
+            !src.contains("pub type:"),
+            "rust_struct must not emit `pub type:` (illegal); got:\n{src}"
+        );
+        // ... and the raw-escaped form MUST appear.
+        assert!(
+            src.contains("pub r#type:"),
+            "expected raw-escaped `pub r#type:` for the `type` attribute:\n{src}"
+        );
     }
 
     #[test]
