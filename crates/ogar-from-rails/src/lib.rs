@@ -111,4 +111,178 @@ mod tests {
         // reachable by accessing it.
         let _ = any_parent_set;
     }
+
+    /// Real-corpus **convergence proof** against the Redmine source tree
+    /// (`AdaWorldAPI/redmine` — OpenProject's project-domain ancestor).
+    /// Set `REDMINE_SRC` to the checkout root. Redmine ships a real
+    /// `TimeEntry` model, so this proves the BillableWorkEntry convergence
+    /// on actual data: a project-domain `TimeEntry` materializes to the
+    /// same canonical concept (`billable_work_entry`) that Odoo's
+    /// `account.analytic.line` does.
+    #[test]
+    #[ignore = "requires a Redmine checkout via REDMINE_SRC"]
+    fn redmine_timeentry_converges_to_billable_work_entry() {
+        let Ok(src) = std::env::var("REDMINE_SRC") else {
+            eprintln!("skipping: REDMINE_SRC not set");
+            return;
+        };
+        let classes = extract(&PathBuf::from(src));
+        assert!(!classes.is_empty(), "expected Redmine models, got none");
+        let time_entry = classes
+            .iter()
+            .find(|c| c.name == "TimeEntry")
+            .expect("Redmine ships a TimeEntry model");
+        assert_eq!(
+            time_entry.canonical_concept.as_deref(),
+            Some("billable_work_entry"),
+            "Redmine TimeEntry must converge to the BillableWorkEntry concept",
+        );
+        assert_eq!(
+            time_entry.source_domain.as_deref(),
+            Some("project"),
+            "Rails frontend tags the project domain",
+        );
+    }
+
+    /// Real-corpus **same-domain convergence proof** across the fork
+    /// lineage Redmine → ChiliProject → OpenProject. Both Redmine `Issue`
+    /// and OpenProject `WorkPackage` must lift to the *same* canonical
+    /// concept (`project_work_item`) — and OpenProject's later modular
+    /// enrichment (extra includes) must not change that.
+    ///
+    /// Set `REDMINE_SRC` and (optionally) `OPENPROJECT_SRC` (defaults to
+    /// `/home/user/openproject`). Skips gracefully if either is missing.
+    #[test]
+    #[ignore = "requires Redmine + OpenProject checkouts"]
+    fn redmine_issue_and_openproject_work_package_overlap_as_project_work_item() {
+        let Ok(redmine_src) = std::env::var("REDMINE_SRC") else {
+            eprintln!("skipping: REDMINE_SRC not set");
+            return;
+        };
+        let op_src = std::env::var("OPENPROJECT_SRC")
+            .unwrap_or_else(|_| "/home/user/openproject".to_string());
+        let op_path = PathBuf::from(&op_src);
+        if !op_path.exists() {
+            eprintln!("skipping: OpenProject not present at {op_src}");
+            return;
+        }
+
+        let redmine = extract(&PathBuf::from(redmine_src));
+        let openproject = extract(&op_path);
+
+        let issue = redmine
+            .iter()
+            .find(|c| c.name == "Issue")
+            .expect("Redmine ships an Issue model");
+        let work_package = openproject
+            .iter()
+            .find(|c| c.name == "WorkPackage")
+            .expect("OpenProject ships a WorkPackage model");
+
+        // The headline: both materialize to the SAME canonical concept,
+        // detected deterministically from class names alone. This is the
+        // load-bearing convergence assertion — it holds *regardless* of
+        // per-curator surface-extraction depth.
+        assert_eq!(issue.canonical_concept.as_deref(), Some("project_work_item"));
+        assert_eq!(
+            work_package.canonical_concept.as_deref(),
+            Some("project_work_item"),
+        );
+        // Same domain — both are project-domain curators.
+        assert_eq!(issue.source_domain.as_deref(), Some("project"));
+        assert_eq!(work_package.source_domain.as_deref(), Some("project"));
+
+        // Strict structural overlap: both curators extract the canonical
+        // roles. Redmine `Issue` (the cleaner AR fossil) and OP
+        // `WorkPackage` (the richer organism — reopens merged by
+        // AdaWorldAPI/ruff#26) both carry `project`, `author`,
+        // `time_entries` after extraction. The role *names* are leaf
+        // details that may diverge (`assigned_to` vs `assignee`, `tracker`
+        // vs `type`); the canonical_concept is what unifies them.
+        for c in [issue, work_package] {
+            for role in ["project", "author", "time_entries"] {
+                assert!(
+                    c.associations.iter().any(|a| a.name == role),
+                    "{} must carry a `{}` association",
+                    c.name,
+                    role,
+                );
+            }
+        }
+    }
+
+    /// Enrichment must not break the overlap. OpenProject `WorkPackage`
+    /// is the strictly richer organism — extra modular includes
+    /// (`WorkPackages::SpentTime` / `Costs` / `Relations`,
+    /// `OpenProject::Journal::AttachmentHelper`, …) on top of the cleaner
+    /// Redmine `Issue` AR shape — yet the canonical concept is invariant.
+    /// Post AdaWorldAPI/ruff#26 (reopen-merge), OP extracts its full
+    /// body, so the richer-mixin assertion is enforceable.
+    #[test]
+    #[ignore = "requires Redmine + OpenProject checkouts"]
+    fn openproject_enrichment_does_not_break_redmine_ar_overlap() {
+        let Ok(redmine_src) = std::env::var("REDMINE_SRC") else {
+            eprintln!("skipping: REDMINE_SRC not set");
+            return;
+        };
+        let op_src = std::env::var("OPENPROJECT_SRC")
+            .unwrap_or_else(|_| "/home/user/openproject".to_string());
+        let op_path = PathBuf::from(&op_src);
+        if !op_path.exists() {
+            eprintln!("skipping: OpenProject not present at {op_src}");
+            return;
+        }
+
+        let redmine = extract(&PathBuf::from(redmine_src));
+        let openproject = extract(&op_path);
+
+        let issue = redmine.iter().find(|c| c.name == "Issue").unwrap();
+        let work_package = openproject
+            .iter()
+            .find(|c| c.name == "WorkPackage")
+            .unwrap();
+
+        // OP is strictly the richer organism at the mixin axis ...
+        assert!(
+            work_package.mixins.len() > issue.mixins.len(),
+            "OP WorkPackage should be strictly richer than Redmine Issue \
+             at the mixin axis (OP: {} mixins, Redmine: {} mixins)",
+            work_package.mixins.len(),
+            issue.mixins.len(),
+        );
+        // ... yet the canonical concept is invariant: enrichment did not
+        // break the overlap. This is the load-bearing agnostic-vocab
+        // claim made concrete on real source.
+        assert_eq!(issue.canonical_concept, work_package.canonical_concept);
+        assert_eq!(
+            issue.canonical_concept.as_deref(),
+            Some("project_work_item"),
+        );
+    }
+
+    /// Exactly-one-Model invariant post AdaWorldAPI/ruff#26: OP's
+    /// `app/models/work_package/` sub-files reopen `class WorkPackage`
+    /// without adding ontology declarations; before the fix this produced
+    /// duplicate `Model { name: "WorkPackage" }` entries (one empty, one
+    /// rich) and `.find()` could land on either. After the fix, the
+    /// producer merges them into one — pin that behavior so consumers can
+    /// trust uniqueness-by-name.
+    #[test]
+    #[ignore = "requires an OpenProject checkout"]
+    fn openproject_workpackage_extracts_as_exactly_one_class() {
+        let op_src = std::env::var("OPENPROJECT_SRC")
+            .unwrap_or_else(|_| "/home/user/openproject".to_string());
+        let op_path = PathBuf::from(&op_src);
+        if !op_path.exists() {
+            eprintln!("skipping: OpenProject not present at {op_src}");
+            return;
+        }
+        let classes = extract(&op_path);
+        let n = classes.iter().filter(|c| c.name == "WorkPackage").count();
+        assert_eq!(
+            n, 1,
+            "OpenProject `WorkPackage` must extract as exactly one Class \
+             (reopen-merge from AdaWorldAPI/ruff#26); got {n}",
+        );
+    }
 }

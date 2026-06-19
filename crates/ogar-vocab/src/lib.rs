@@ -191,6 +191,15 @@ pub struct Class {
     /// unrecognized.
     #[cfg_attr(feature = "serde", serde(default))]
     pub source_domain: Option<String>,
+    /// The class's canonical **concept** — its normalized identity
+    /// ([`canonical_concept`]); the key cross-domain convergence bridges
+    /// on. Most names normalize lexically (`User` → `user`); proven
+    /// cross-domain invariants resolve to a promoted concept (OpenProject
+    /// `TimeEntry` and Odoo `account.analytic.line` both →
+    /// `billable_work_entry`, the [`billable_work_entry`] canonical class).
+    /// Set by the frontend at lift time.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub canonical_concept: Option<String>,
     /// Computed-field declarations (Odoo `compute=...` fields, also
     /// Rails / Django where producers can detect them). Lives in
     /// base vocab — see `docs/ODOO-TRANSCODING.md` §8.
@@ -1120,7 +1129,13 @@ pub fn wire_synergies(classes: &[Class]) -> Vec<Synergy> {
         let Some(domain) = c.source_domain.as_ref() else {
             continue;
         };
-        let concept = canonical_concept(&c.name);
+        // Prefer the concept the producer stored; else compute it
+        // deterministically from the name — so any consumer session
+        // rediscovers the same bridge from ontology surfaces alone.
+        let concept = c
+            .canonical_concept
+            .clone()
+            .unwrap_or_else(|| canonical_concept(&c.name));
         by_concept
             .entry(concept)
             .or_default()
@@ -1140,19 +1155,154 @@ pub fn wire_synergies(classes: &[Class]) -> Vec<Synergy> {
         .collect()
 }
 
-/// Normalize a class name to its canonical concept: lowercase, take the
-/// last dotted segment (Odoo `res.users` → `users`), and drop a single
-/// trailing plural `s` (`users` → `user`), except after `ss`. Coarse by
-/// design — a v1 bridge for obvious overlaps (`user`, `project`,
-/// `company`), not a thesaurus.
-fn canonical_concept(name: &str) -> String {
+/// Resolve a class name to its canonical OGAR **concept**.
+///
+/// Two layers, in order:
+/// 1. **Promoted cross-domain invariants** — concepts a Claude Code
+///    convergence pass has proven across 2+ domains and promoted into
+///    OGAR. OGAR stores only the stable result; the proof is the test, the
+///    "finding" was the PR that added the arm. (No `SynergyKind` /
+///    `SynergyFinding` taxonomy — convergence is an operation, not a
+///    stored object.)
+/// 2. **Lexical fallback** — lowercase, last dotted segment (Odoo
+///    `res.users` → `users`), drop a single trailing plural `s` except
+///    after `ss`. Coarse by design, not a thesaurus.
+#[must_use]
+pub fn canonical_concept(name: &str) -> String {
     let lower = name.to_ascii_lowercase();
+    // ── Layer 1: promoted invariants ──
+    // BillableWorkEntry — booked work / time / cost against a project or
+    // order (see [`billable_work_entry`]). OpenProject `TimeEntry` ↔ Odoo
+    // `account.analytic.line` ↔ WoA `Arbeitszeit`. ruff normalizes Odoo
+    // dots to underscores, so match both forms.
+    if matches!(
+        lower.as_str(),
+        "timeentry"
+            | "time_entry"
+            | "account.analytic.line"
+            | "account_analytic_line"
+            | "leistungsposition"
+            | "arbeitszeit"
+    ) {
+        return "billable_work_entry".to_string();
+    }
+    // ProjectWorkItem — project-scoped work items with status, assignment,
+    // author, type/tracker, journals, relations, time tracking. The
+    // Redmine `Issue` and OpenProject `WorkPackage` overlap (the fork
+    // lineage Redmine → ChiliProject → OpenProject preserves the
+    // invariant) — both lift here regardless of OpenProject's later
+    // modular enrichment. See [`project_work_item`].
+    if matches!(lower.as_str(), "issue" | "workpackage" | "work_package") {
+        return "project_work_item".to_string();
+    }
+    // ── Layer 2: lexical fallback ──
     let last = lower.rsplit('.').next().unwrap_or(lower.as_str());
     if last.len() > 3 && last.ends_with('s') && !last.ends_with("ss") {
         last[..last.len() - 1].to_string()
     } else {
         last.to_string()
     }
+}
+
+/// The promoted canonical class for the **first convergence invariant**:
+/// booked work / time / cost against a project or order. The shared shape
+/// under OpenProject `TimeEntry` (project domain), Odoo
+/// `account.analytic.line` (erp domain), and WoA `Leistungsposition` /
+/// `Arbeitszeit` (german-erp witness). Curators map in via
+/// [`canonical_concept`] (`"billable_work_entry"`).
+///
+/// This is OGAR storing the *stable result* of a convergence pass — not a
+/// synergy taxonomy.
+///
+/// # The 12 family edges (internal) + the adapter edge (external)
+///
+/// BillableWorkEntry carries **12 family edges** — relations to other
+/// canonical concepts, internal to the ontology. The link from a curator
+/// surface (OpenProject `TimeEntry`, Odoo `account.analytic.line`) is the
+/// **adapter edge**, living *out of family* on the curator class (its
+/// `source_domain` + `canonical_concept`), never among these edges.
+///
+/// **Tax is a boundary policy.** Three family edges — `classified_by →
+/// TaxPolicy`, `materializes_as → InvoiceLineCandidate`, `posted_by →
+/// PostingAction` — are populated only past the **ERP / posting
+/// boundary**. The project domain records work evidence (`duration`,
+/// `about → WorkPackage`, `performed_by → Worker`) and never applies tax.
+///
+/// `materializes_as` is `BelongsTo`, so many BillableWorkEntries aggregate
+/// into one `InvoiceLineCandidate` (one invoice line, many work entries).
+#[must_use]
+pub fn billable_work_entry() -> Class {
+    let mut c = Class::new("BillableWorkEntry");
+    c.canonical_concept = Some("billable_work_entry".to_string());
+    // The 12 family edges — internal ontology meaning. Every target is a
+    // canonical concept (PascalCase), never a curator/adapter surface.
+    c.associations = vec![
+        family_edge("project", "Project"),
+        family_edge("about", "WorkPackage"),
+        family_edge("performed_by", "Worker"),
+        family_edge("duration", "Duration"),
+        family_edge("priced_by", "RatePolicy"),
+        family_edge("cost_center", "CostCenter"),
+        family_edge("classified_by", "TaxPolicy"), // ERP boundary
+        family_edge("materializes_as", "InvoiceLineCandidate"), // ERP boundary
+        family_edge("approval_state", "ApprovalState"),
+        family_edge("tenant", "Tenant"),
+        family_edge("audit_trail", "AuditTrail"),
+        family_edge("posted_by", "PostingAction"), // ERP boundary
+    ];
+    // The defining flag (a scalar, not an edge).
+    c.attributes = vec![Attribute::new("billable")];
+    c
+}
+
+/// Build one BillableWorkEntry **family edge** — a `BelongsTo` relation to
+/// a canonical ontology concept (the edge's `class_name`). Family edges
+/// are internal; curator / adapter links never appear here.
+fn family_edge(role: &str, target_concept: &str) -> Association {
+    let mut a = Association::new(AssociationKind::BelongsTo, role);
+    a.class_name = Some(target_concept.to_string());
+    a
+}
+
+/// Build one **has-many** family edge — for canonical concepts that
+/// aggregate (a [`project_work_item`] has-many `ProjectJournal`s, etc.).
+fn family_has_many(role: &str, target_concept: &str) -> Association {
+    let mut a = Association::new(AssociationKind::HasMany, role);
+    a.class_name = Some(target_concept.to_string());
+    a
+}
+
+/// The promoted canonical class for the **project-domain work-item
+/// invariant**: project-scoped work with status, assignment, type/tracker,
+/// priority, author, journals, relations, and time tracking.
+///
+/// The Redmine → ChiliProject → OpenProject lineage preserves this
+/// invariant: Redmine `Issue` and OpenProject `WorkPackage` both map here
+/// via [`canonical_concept`] (`"project_work_item"`). Curator labels
+/// (`Tracker`, `Type`, `assigned_to`, `responsible`) are leaf details on
+/// the curator class; only the canonical roles survive here.
+///
+/// The 9 family edges sit fully **inside the project domain** — no
+/// ERP-boundary slots. The cross-domain bridge to billable work lives on
+/// the `time_entries → BillableWorkEntry` has-many edge (project work
+/// produces billable work; tax/posting happens past
+/// [`billable_work_entry`]'s ERP-boundary edges).
+#[must_use]
+pub fn project_work_item() -> Class {
+    let mut c = Class::new("ProjectWorkItem");
+    c.canonical_concept = Some("project_work_item".to_string());
+    c.associations = vec![
+        family_edge("project", "Project"),
+        family_edge("status", "ProjectStatus"),
+        family_edge("type", "ProjectType"), // Redmine Tracker / OP Type
+        family_edge("priority", "Priority"),
+        family_edge("author", "ProjectActor"),
+        family_edge("assignee", "ProjectActor"), // Redmine assigned_to / OP assignee
+        family_has_many("journals", "ProjectJournal"),
+        family_has_many("relations", "ProjectRelation"),
+        family_has_many("time_entries", "BillableWorkEntry"),
+    ];
+    c
 }
 
 #[cfg(test)]
@@ -1205,6 +1355,228 @@ mod tests {
         // an undomained class is ignored entirely
         let c = Class::new("res.users");
         assert!(wire_synergies(&[a, b, c]).is_empty());
+    }
+
+    #[test]
+    fn canonical_concept_promotes_billable_work_entry_deterministically() {
+        // Promoted cross-domain invariant — OpenProject `TimeEntry` and
+        // Odoo `account.analytic.line` converge to one canonical concept
+        // (both the dotted and ruff's underscored form). Pure +
+        // deterministic: same input → same output, every session.
+        for name in [
+            "TimeEntry",
+            "time_entry",
+            "account.analytic.line",
+            "account_analytic_line",
+            "Leistungsposition",
+            "Arbeitszeit",
+        ] {
+            assert_eq!(canonical_concept(name), "billable_work_entry");
+            assert_eq!(canonical_concept(name), canonical_concept(name));
+        }
+        // Un-promoted names still normalize lexically.
+        assert_eq!(canonical_concept("User"), "user");
+        assert_eq!(canonical_concept("res.users"), "user");
+    }
+
+    #[test]
+    fn billable_work_entry_has_twelve_family_edges() {
+        let c = billable_work_entry();
+        assert_eq!(c.name, "BillableWorkEntry");
+        assert_eq!(c.canonical_concept.as_deref(), Some("billable_work_entry"));
+        // Exactly the 12 internal family edges, to canonical concepts.
+        assert_eq!(c.associations.len(), 12);
+        for target in [
+            "Project",
+            "WorkPackage",
+            "Worker",
+            "Duration",
+            "RatePolicy",
+            "CostCenter",
+            "TaxPolicy",
+            "InvoiceLineCandidate",
+            "ApprovalState",
+            "Tenant",
+            "AuditTrail",
+            "PostingAction",
+        ] {
+            assert!(
+                c.associations.iter().any(|e| e.class_name.as_deref() == Some(target)),
+                "missing family edge → {target}",
+            );
+        }
+    }
+
+    #[test]
+    fn convergence_project_and_erp_materialize_to_billable_work_entry() {
+        let canonical = billable_work_entry();
+        // Two curators, only domain tag + name — a consumer session
+        // rediscovers the bridge deterministically from these surfaces.
+        let mut op = Class::new("TimeEntry");
+        op.source_domain = Some("project".to_string());
+        op.canonical_concept = Some(canonical_concept("TimeEntry"));
+        let mut odoo = Class::new("account_analytic_line");
+        odoo.source_domain = Some("erp".to_string());
+        odoo.canonical_concept = Some(canonical_concept("account_analytic_line"));
+
+        // Both materialize to the SAME canonical concept as the class.
+        assert_eq!(op.canonical_concept, canonical.canonical_concept);
+        assert_eq!(odoo.canonical_concept, canonical.canonical_concept);
+
+        // wire_synergies rediscovers exactly one cross-domain bridge,
+        // and is idempotent (deterministic).
+        let syn = wire_synergies(&[op.clone(), odoo.clone()]);
+        assert_eq!(syn, wire_synergies(&[op, odoo]));
+        assert_eq!(syn.len(), 1);
+        assert_eq!(syn[0].concept, "billable_work_entry");
+        assert_eq!(syn[0].members.len(), 2);
+    }
+
+    #[test]
+    fn tax_policy_is_an_erp_boundary_edge_not_in_project_evidence() {
+        // TaxPolicy is a family edge on the canonical shape ...
+        let bwe = billable_work_entry();
+        assert!(bwe
+            .associations
+            .iter()
+            .any(|e| e.class_name.as_deref() == Some("TaxPolicy")));
+        // ... but the project curator records work evidence with no tax.
+        let mut op = Class::new("TimeEntry");
+        op.source_domain = Some("project".to_string());
+        op.canonical_concept = Some(canonical_concept("TimeEntry"));
+        assert!(op.associations.is_empty());
+        assert!(!op.attributes.iter().any(|a| a.name.contains("tax")));
+    }
+
+    #[test]
+    fn one_invoice_line_aggregates_many_billable_work_entries() {
+        let bwe = billable_work_entry();
+        let mat = bwe
+            .associations
+            .iter()
+            .find(|e| e.name == "materializes_as")
+            .expect("materializes_as edge");
+        // BelongsTo: many BillableWorkEntries → one InvoiceLineCandidate
+        // (one invoice line aggregates many work entries).
+        assert_eq!(mat.kind, AssociationKind::BelongsTo);
+        assert_eq!(mat.class_name.as_deref(), Some("InvoiceLineCandidate"));
+    }
+
+    #[test]
+    fn canonical_concept_promotes_project_work_item_deterministically() {
+        // Promoted project-domain invariant — Redmine `Issue` and
+        // OpenProject `WorkPackage` (both spellings) resolve to one
+        // canonical concept. Pure + deterministic.
+        for name in ["Issue", "issue", "WorkPackage", "work_package", "workpackage"] {
+            assert_eq!(canonical_concept(name), "project_work_item");
+            assert_eq!(canonical_concept(name), canonical_concept(name));
+        }
+    }
+
+    #[test]
+    fn project_work_item_has_required_family_edges() {
+        let c = project_work_item();
+        assert_eq!(c.name, "ProjectWorkItem");
+        assert_eq!(c.canonical_concept.as_deref(), Some("project_work_item"));
+        // The 9 family edges named in the smoke spec.
+        for (role, target) in [
+            ("project", "Project"),
+            ("status", "ProjectStatus"),
+            ("type", "ProjectType"),
+            ("priority", "Priority"),
+            ("author", "ProjectActor"),
+            ("assignee", "ProjectActor"),
+            ("journals", "ProjectJournal"),
+            ("relations", "ProjectRelation"),
+            ("time_entries", "BillableWorkEntry"),
+        ] {
+            let e = c
+                .associations
+                .iter()
+                .find(|a| a.name == role)
+                .unwrap_or_else(|| panic!("missing family edge: {role}"));
+            assert_eq!(e.class_name.as_deref(), Some(target));
+        }
+        // has-many vs belongs-to cardinality is correct: journals /
+        // relations / time_entries aggregate; the rest are single refs.
+        for role in ["journals", "relations", "time_entries"] {
+            let e = c.associations.iter().find(|a| a.name == role).unwrap();
+            assert_eq!(e.kind, AssociationKind::HasMany);
+        }
+    }
+
+    #[test]
+    fn same_project_domain_curators_do_not_create_duplicate_canonical_concepts() {
+        // Redmine `Issue` and OpenProject `WorkPackage` are project-domain
+        // work-item curators; they MUST converge to one canonical concept,
+        // never two — that's exactly what makes the agnostic vocab worth
+        // more than its curators.
+        assert_eq!(canonical_concept("Issue"), canonical_concept("WorkPackage"));
+        assert_eq!(canonical_concept("Issue"), "project_work_item");
+        // The lexical layer remains deterministic for unpromoted names.
+        assert_eq!(canonical_concept("User"), canonical_concept("Users"));
+    }
+
+    #[test]
+    fn openproject_enrichment_does_not_break_redmine_ar_overlap() {
+        // OpenProject's WorkPackage is the richer organism (extra includes
+        // like `WorkPackages::SpentTime`, `WorkPackages::Costs`,
+        // `WorkPackages::Relations`); Redmine's Issue is the cleaner AR
+        // fossil. The agnostic vocab survives the evolution: both lift to
+        // the same canonical concept.
+        let mut redmine_issue = Class::new("Issue");
+        redmine_issue.source_domain = Some("project".to_string());
+        redmine_issue.canonical_concept = Some(canonical_concept("Issue"));
+        redmine_issue.mixins = vec!["Redmine::Acts::Mentionable".to_string()];
+
+        let mut op_wp = Class::new("WorkPackage");
+        op_wp.source_domain = Some("project".to_string());
+        op_wp.canonical_concept = Some(canonical_concept("WorkPackage"));
+        op_wp.mixins = vec![
+            "WorkPackages::SpentTime".to_string(),
+            "WorkPackages::Costs".to_string(),
+            "WorkPackages::Relations".to_string(),
+            "WorkPackages::Scheduling".to_string(),
+            "OpenProject::Journal::AttachmentHelper".to_string(),
+        ];
+
+        // OP is strictly richer than Redmine at the mixin axis ...
+        assert!(op_wp.mixins.len() > redmine_issue.mixins.len());
+        // ... yet the canonical concept is identical: enrichment did not
+        // break the overlap.
+        assert_eq!(redmine_issue.canonical_concept, op_wp.canonical_concept);
+        assert_eq!(
+            redmine_issue.canonical_concept.as_deref(),
+            Some("project_work_item"),
+        );
+    }
+
+    #[test]
+    fn family_edges_internal_adapter_edges_external() {
+        let bwe = billable_work_entry();
+        // All 12 family-edge targets are ONTOLOGY concepts (PascalCase),
+        // never curator / adapter surfaces — internal by construction.
+        assert_eq!(bwe.associations.len(), 12);
+        for e in &bwe.associations {
+            let target = e.class_name.as_deref().unwrap_or_default();
+            assert!(
+                target.starts_with(|ch: char| ch.is_ascii_uppercase()),
+                "family edge target must be an ontology concept: {target:?}",
+            );
+            for curator in ["TimeEntry", "account.", "account_", "OpenProject", "Odoo", "res."] {
+                assert!(
+                    !target.contains(curator),
+                    "curator surface leaked into a family edge: {target:?}",
+                );
+            }
+        }
+        // The adapter edge lives OUT of family — on the curator class
+        // (source_domain + canonical_concept), not among these edges.
+        let mut op = Class::new("TimeEntry");
+        op.source_domain = Some("project".to_string());
+        op.canonical_concept = Some(canonical_concept("TimeEntry"));
+        assert_eq!(op.canonical_concept.as_deref(), Some("billable_work_entry"));
+        assert!(bwe.associations.iter().all(|e| e.name != "TimeEntry"));
     }
 
     #[test]
