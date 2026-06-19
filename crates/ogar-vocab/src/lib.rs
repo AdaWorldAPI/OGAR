@@ -1031,27 +1031,63 @@ impl Class {
 /// table. Per the integration contract (`docs/INTEGRATION-MAP.md`:92-93,
 /// "ClassId / entity_type is minted uniquely by the registry and is
 /// never a content hash"), codebook ids are **assigned**, not derived
-/// from a hash: a 16-bit hash has real collisions (codex P1 on PR #60
-/// confirmed `outcome` and `handle_out` both fold to 33032 under FNV-1a
-/// XOR) and would silently merge unrelated concepts downstream.
+/// from a hash.
 ///
-/// Each new promoted canonical concept is added here with the next free
-/// id. Ids are stable forever — once shipped, never re-assigned. Id `0`
-/// is reserved (`NodeGuid::CLASSID_DEFAULT`); promoted concepts start at
-/// `0x0001`. Ids are dense-low so the 2-byte LE wire stays compact.
+/// # Domain-encoded id layout — `0xDDCC`
 ///
+/// Codebook ids are **domain-prefixed**: the high byte encodes the
+/// concept's domain, the low byte its slot within that domain. A
+/// consumer loading both project and commerce concepts routes on domain
+/// in O(1) from just the `u16` — see [`canonical_concept_domain`].
+///
+/// ```text
+///   0x00XX  reserved          (0x0000 = NodeGuid::CLASSID_DEFAULT)
+///   0x01XX  project-mgmt      (OP ↔ Redmine fork lineage)
+///   0x02XX  commerce / ERP    (OSB ↔ Odoo cross-curator)
+///   0x03XX  unassigned
+///   0x04XX  unassigned
+///   0x05XX  unassigned
+///   0x06XX  unassigned
+///   0x07XX  reserved: OSINT
+///   0x08XX  reserved: OCR
+///   0x09XX  reserved: Health
+///   0x0AXX+ unassigned
+/// ```
+///
+/// Reserved blocks have a placeholder [`ConceptDomain`] variant so a
+/// consumer routing on `id >> 8` returns a stable domain tag even before
+/// any concept lands in that block.
+///
+/// Ids are stable forever — once shipped, never re-assigned. Each new
+/// promoted concept gets the next free slot inside its domain block.
 /// Verified collision-free + non-zero by `codebook_has_no_duplicate_ids_or_zero`.
 const CODEBOOK: &[(&str, u16)] = &[
-    // Project-management domain (OP↔Redmine fork lineage)
-    ("project", 0x0001),
-    ("project_work_item", 0x0002),
-    ("billable_work_entry", 0x0003),
-    ("project_actor", 0x0004),
-    // 0x0005-0x0006 reserved for ProjectStatus + ProjectType (OGAR#63).
-    // Commerce / billing / ERP domain (OSB ↔ Odoo cross-curator).
+    // ── 0x01XX — project-mgmt domain (OP ↔ Redmine fork lineage) ──
+    ("project", 0x0101),
+    ("project_work_item", 0x0102),
+    ("billable_work_entry", 0x0103),
+    ("project_actor", 0x0104),
+    // 0x0105–0x0106 reserved for in-flight #63 (project_status, project_type);
+    // OGAR#63 rebases by switching its ids to those reserved slots.
+    ("priority", 0x0107),
+
+    // New project-mgmt promotions from the cross-curator overlap probe
+    // (Redmine 111 classes ↔ OpenProject 681 classes ⇒ 38 common names;
+    // 9 chosen for promotion based on substantive shape on both sides):
+    ("project_membership", 0x0108),    // Redmine Member       ↔ OP Member
+    ("project_journal", 0x0109),       // Redmine Journal      ↔ OP Journal
+    ("project_repository", 0x010A),    // Redmine Repository   ↔ OP Repository
+    ("project_version", 0x010B),       // Redmine Version      ↔ OP Version
+    ("project_wiki_page", 0x010C),     // Redmine WikiPage     ↔ OP WikiPage
+    ("project_query", 0x010D),         // Redmine Query        ↔ OP Query
+    ("project_attachment", 0x010E),    // Redmine Attachment   ↔ OP Attachment
+    ("project_comment", 0x010F),       // Redmine Comment      ↔ OP Comment
+    ("project_custom_field", 0x0110),  // Redmine CustomField  ↔ OP CustomField
+
+    // ── 0x02XX — commerce / billing / ERP domain (OSB ↔ Odoo) ──
     // Promoted from the parallel session's `lance-graph-ontology::ar_shape`
-    // upstream-candidate registry — six concepts each backed by
-    // ≥2-curator structural evidence:
+    // upstream-candidate registry; each backed by ≥2-curator structural
+    // evidence on the OSB and Odoo corpora.
     //
     //   | Canonical              | OSB             | Odoo                |
     //   |------------------------|-----------------|---------------------|
@@ -1065,17 +1101,57 @@ const CODEBOOK: &[(&str, u16)] = &[
     // (`tax_policy` is also referenced by `billable_work_entry().classified_by`
     // as an ERP-boundary edge — this lands the canonical class that edge
     // points at.)
-    ("commercial_line_item", 0x0007),
-    ("commercial_document", 0x0008),
-    ("tax_policy", 0x0009),
-    ("billing_party", 0x000A),
-    ("payment_record", 0x000B),
-    ("currency_policy", 0x000C),
-    // Priority — referenced by project_work_item().priority. Universal
-    // enough not to wear the project_ prefix; Redmine `IssuePriority`
-    // and OP `IssuePriority` both <`Enumeration`.
-    ("priority", 0x000D),
+    ("commercial_line_item", 0x0201),
+    ("commercial_document", 0x0202),
+    ("tax_policy", 0x0203),
+    ("billing_party", 0x0204),
+    ("payment_record", 0x0205),
+    ("currency_policy", 0x0206),
 ];
+
+/// Codebook **domain** — the high byte of a canonical id (see
+/// [`CODEBOOK`] layout). Lets a consumer route on domain in O(1) from
+/// just the `u16`, without a table lookup.
+///
+/// Reserved high-byte slots are listed with their intended domain name
+/// even before any concept lands in that block, so consumers can branch
+/// on them today and the meaning is stable as concepts arrive.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[non_exhaustive]
+pub enum ConceptDomain {
+    /// `0x00XX` — reserved (`0x0000` is `NodeGuid::CLASSID_DEFAULT`).
+    Reserved,
+    /// `0x01XX` — project-management (OP ↔ Redmine).
+    ProjectMgmt,
+    /// `0x02XX` — commerce / billing / ERP (OSB ↔ Odoo).
+    Commerce,
+    /// `0x07XX` — OSINT (open-source intelligence).
+    Osint,
+    /// `0x08XX` — OCR (optical character recognition / document
+    /// extraction).
+    Ocr,
+    /// `0x09XX` — Health (clinical / patient / care).
+    Health,
+    /// Any high-byte slot not yet assigned a domain (`0x03XX`–`0x06XX`,
+    /// `0x0AXX`+).
+    Unassigned,
+}
+
+/// Resolve a canonical id's [`ConceptDomain`] from its high byte. Pure +
+/// deterministic + O(1) — no table lookup needed.
+#[must_use]
+pub fn canonical_concept_domain(id: u16) -> ConceptDomain {
+    match id >> 8 {
+        0x00 => ConceptDomain::Reserved,
+        0x01 => ConceptDomain::ProjectMgmt,
+        0x02 => ConceptDomain::Commerce,
+        0x07 => ConceptDomain::Osint,
+        0x08 => ConceptDomain::Ocr,
+        0x09 => ConceptDomain::Health,
+        _ => ConceptDomain::Unassigned,
+    }
+}
 
 /// **OGAR codebook lookup** — resolve a canonical-concept string to its
 /// stable `u16` codebook id via the curated [`CODEBOOK`] registry.
@@ -1404,6 +1480,53 @@ pub fn canonical_concept(name: &str) -> String {
     ) {
         return "project_actor".to_string();
     }
+    // ── Project-mgmt promotions from the cross-curator overlap probe ──
+    if matches!(lower.as_str(),
+        "member" | "members" | "project_membership" | "projectmembership"
+    ) {
+        return "project_membership".to_string();
+    }
+    if matches!(lower.as_str(),
+        "journal" | "journals" | "project_journal" | "projectjournal"
+    ) {
+        return "project_journal".to_string();
+    }
+    if matches!(lower.as_str(),
+        "repository" | "repositories" | "project_repository" | "projectrepository"
+    ) {
+        return "project_repository".to_string();
+    }
+    if matches!(lower.as_str(),
+        "version" | "versions" | "project_version" | "projectversion"
+    ) {
+        return "project_version".to_string();
+    }
+    if matches!(lower.as_str(),
+        "wikipage" | "wiki_page" | "project_wiki_page" | "projectwikipage"
+    ) {
+        return "project_wiki_page".to_string();
+    }
+    if matches!(lower.as_str(),
+        "query" | "queries" | "project_query" | "projectquery"
+    ) {
+        return "project_query".to_string();
+    }
+    if matches!(lower.as_str(),
+        "attachment" | "attachments" | "project_attachment" | "projectattachment"
+    ) {
+        return "project_attachment".to_string();
+    }
+    if matches!(lower.as_str(),
+        "comment" | "comments" | "project_comment" | "projectcomment"
+    ) {
+        return "project_comment".to_string();
+    }
+    if matches!(lower.as_str(),
+        "customfield" | "custom_field"
+            | "project_custom_field" | "projectcustomfield"
+    ) {
+        return "project_custom_field".to_string();
+    }
     // ── Commerce / billing / ERP domain (OSB ↔ Odoo) ──
     // CommercialLineItem — line on a commercial document. OSB
     // `InvoiceLineItem`, Odoo `account_move_line` (ruff normalises
@@ -1688,6 +1811,174 @@ pub fn project_actor() -> Class {
 }
 
 // ─────────────────────────────────────────────────────────────────────
+// Project-mgmt batch promotions from the cross-curator overlap probe
+// (Redmine ↔ OpenProject). Minimal-by-design canonical shapes; both
+// curators' AR forms surface the same universal facets.
+// ─────────────────────────────────────────────────────────────────────
+
+/// `Member` — links a [`project_actor`] to a [`project`] with a role.
+/// Both curators ship `Member` as a join class.
+#[must_use]
+pub fn project_membership() -> Class {
+    let mut c = Class::new("ProjectMembership");
+    c.language = Language::Unknown;
+    c.canonical_concept = Some("project_membership".to_string());
+    c.associations = vec![
+        family_edge("project", "Project"),
+        family_edge("actor", "ProjectActor"),
+    ];
+    let mut created_on = Attribute::new("created_on");
+    created_on.type_name = Some("datetime".to_string());
+    c.attributes = vec![created_on];
+    c
+}
+
+/// `Journal` — audit-trail record on a [`project_work_item`]. The
+/// canonical target of `project_work_item().journals`. Both Redmine and
+/// OpenProject ship `Journal`; OP uses `acts_as_journalized` to attach.
+#[must_use]
+pub fn project_journal() -> Class {
+    let mut c = Class::new("ProjectJournal");
+    c.language = Language::Unknown;
+    c.canonical_concept = Some("project_journal".to_string());
+    c.associations = vec![
+        family_edge("journable", "ProjectWorkItem"),
+        family_edge("user", "ProjectActor"),
+    ];
+    let mut created_at = Attribute::new("created_at");
+    created_at.type_name = Some("datetime".to_string());
+    let mut notes = Attribute::new("notes");
+    notes.type_name = Some("text".to_string());
+    c.attributes = vec![created_at, notes];
+    c
+}
+
+/// `Repository` — VCS source root attached to a [`project`].
+/// Both curators ship `Repository` as the project's code surface.
+#[must_use]
+pub fn project_repository() -> Class {
+    let mut c = Class::new("ProjectRepository");
+    c.language = Language::Unknown;
+    c.canonical_concept = Some("project_repository".to_string());
+    c.associations = vec![
+        family_edge("project", "Project"),
+    ];
+    let mut url = Attribute::new("url");
+    url.type_name = Some("string".to_string());
+    let mut scm_type = Attribute::new("scm_type");
+    scm_type.type_name = Some("string".to_string());
+    c.attributes = vec![url, scm_type];
+    c
+}
+
+/// `Version` — release milestone on a [`project`]. Both curators ship
+/// `Version` as the release-grouping concept for work items.
+#[must_use]
+pub fn project_version() -> Class {
+    let mut c = Class::new("ProjectVersion");
+    c.language = Language::Unknown;
+    c.canonical_concept = Some("project_version".to_string());
+    c.associations = vec![
+        family_edge("project", "Project"),
+    ];
+    let mut name = Attribute::new("name");
+    name.type_name = Some("string".to_string());
+    let mut effective_date = Attribute::new("effective_date");
+    effective_date.type_name = Some("date".to_string());
+    let mut status = Attribute::new("status");
+    status.type_name = Some("string".to_string());
+    c.attributes = vec![name, effective_date, status];
+    c
+}
+
+/// `WikiPage` — page in a project's wiki. Both curators ship `WikiPage`
+/// as the documentation surface attached to a [`project`].
+#[must_use]
+pub fn project_wiki_page() -> Class {
+    let mut c = Class::new("ProjectWikiPage");
+    c.language = Language::Unknown;
+    c.canonical_concept = Some("project_wiki_page".to_string());
+    c.associations = vec![
+        family_edge("project", "Project"),
+    ];
+    let mut title = Attribute::new("title");
+    title.type_name = Some("string".to_string());
+    c.attributes = vec![title];
+    c
+}
+
+/// `Query` — saved filter / view definition. Both curators ship `Query`
+/// as a per-user/per-project saved-search surface.
+#[must_use]
+pub fn project_query() -> Class {
+    let mut c = Class::new("ProjectQuery");
+    c.language = Language::Unknown;
+    c.canonical_concept = Some("project_query".to_string());
+    c.associations = vec![
+        family_edge("project", "Project"),
+        family_edge("user", "ProjectActor"),
+    ];
+    let mut name = Attribute::new("name");
+    name.type_name = Some("string".to_string());
+    c.attributes = vec![name];
+    c
+}
+
+/// `Attachment` — file attached to a project entity (work item, wiki
+/// page, journal, …). Both curators ship `Attachment` polymorphically.
+#[must_use]
+pub fn project_attachment() -> Class {
+    let mut c = Class::new("ProjectAttachment");
+    c.language = Language::Unknown;
+    c.canonical_concept = Some("project_attachment".to_string());
+    c.associations = Vec::new();
+    let mut filename = Attribute::new("filename");
+    filename.type_name = Some("string".to_string());
+    let mut filesize = Attribute::new("filesize");
+    filesize.type_name = Some("integer".to_string());
+    let mut content_type = Attribute::new("content_type");
+    content_type.type_name = Some("string".to_string());
+    c.attributes = vec![filename, filesize, content_type];
+    c
+}
+
+/// `Comment` — free-form remark attached polymorphically to a project
+/// entity. Both curators ship `Comment` as the lightweight discussion
+/// surface separate from full journals.
+#[must_use]
+pub fn project_comment() -> Class {
+    let mut c = Class::new("ProjectComment");
+    c.language = Language::Unknown;
+    c.canonical_concept = Some("project_comment".to_string());
+    c.associations = vec![
+        family_edge("author", "ProjectActor"),
+    ];
+    let mut comments = Attribute::new("comments");
+    comments.type_name = Some("text".to_string());
+    c.attributes = vec![comments];
+    c
+}
+
+/// `CustomField` — per-tenant schema extension definition. Both Redmine
+/// and OpenProject ship `CustomField` to add user-defined attributes to
+/// project entities at runtime.
+#[must_use]
+pub fn project_custom_field() -> Class {
+    let mut c = Class::new("ProjectCustomField");
+    c.language = Language::Unknown;
+    c.canonical_concept = Some("project_custom_field".to_string());
+    c.associations = Vec::new();
+    let mut name = Attribute::new("name");
+    name.type_name = Some("string".to_string());
+    let mut field_format = Attribute::new("field_format");
+    field_format.type_name = Some("string".to_string());
+    let mut is_required = Attribute::new("is_required");
+    is_required.type_name = Some("boolean".to_string());
+    c.attributes = vec![name, field_format, is_required];
+    c
+}
+
+// ─────────────────────────────────────────────────────────────────────
 // Commerce / billing / ERP domain canonical classes (OSB ↔ Odoo).
 //
 // Promoted from the parallel session's `lance-graph-ontology::ar_shape`
@@ -1870,27 +2161,26 @@ mod tests {
     #[test]
     fn wire_synergies_links_a_concept_across_domains() {
         // Use a genuinely un-promoted lexical pair to demonstrate the
-        // synergy mechanism. (User/Principal/res.users now promote into
-        // domain-distinct canonical concepts — project_actor for project,
-        // lexical for erp — so they no longer bridge through wire_synergies.
-        // That separation is correct semantics; this test still pins the
-        // mechanism on names that DO lexically converge.)
-        let mut op_comment = Class::new("Comment");
-        op_comment.source_domain = Some("project".to_string());
-        let mut odoo_comment = Class::new("comments");
-        odoo_comment.source_domain = Some("erp".to_string());
+        // synergy mechanism. (Many cross-curator-common names have since
+        // been promoted into the codebook with distinct domain blocks —
+        // Comment/comments now resolve to `project_comment` for instance.
+        // `Setting`/`settings` remain lexical-only.)
+        let mut op_setting = Class::new("Setting");
+        op_setting.source_domain = Some("project".to_string());
+        let mut odoo_setting = Class::new("settings");
+        odoo_setting.source_domain = Some("erp".to_string());
         let mut op_wp = Class::new("WorkPackage");
         op_wp.source_domain = Some("project".to_string());
 
-        let syn = wire_synergies(&[op_comment, odoo_comment, op_wp]);
-        assert_eq!(syn.len(), 1, "only `comment` bridges both domains");
-        assert_eq!(syn[0].concept, "comment");
+        let syn = wire_synergies(&[op_setting, odoo_setting, op_wp]);
+        assert_eq!(syn.len(), 1, "only `setting` bridges both domains");
+        assert_eq!(syn[0].concept, "setting");
         assert_eq!(syn[0].members.len(), 2);
         // ordered by domain: erp before project
         assert_eq!(syn[0].members[0].domain, "erp");
-        assert_eq!(syn[0].members[0].class_name, "comments");
+        assert_eq!(syn[0].members[0].class_name, "settings");
         assert_eq!(syn[0].members[1].domain, "project");
-        assert_eq!(syn[0].members[1].class_name, "Comment");
+        assert_eq!(syn[0].members[1].class_name, "Setting");
     }
 
     #[test]
@@ -2303,17 +2593,106 @@ mod tests {
     }
 
     #[test]
-    fn commerce_canonical_classes_are_promoted_into_the_codebook() {
-        // Each commerce concept has an assigned codebook id and a
-        // populated canonical class. Pin shape so the other session can
-        // refine details additively in follow-ups.
+    fn codebook_ids_are_domain_prefixed_and_consistent() {
+        // The high byte of every codebook id encodes its domain block.
+        // Existing concepts must live in their correct domain block.
+        for project_concept in [
+            "project", "project_work_item", "billable_work_entry",
+            "project_actor", "priority",
+            "project_membership", "project_journal", "project_repository",
+            "project_version", "project_wiki_page", "project_query",
+            "project_attachment", "project_comment", "project_custom_field",
+        ] {
+            let id = canonical_concept_id(project_concept)
+                .unwrap_or_else(|| panic!("{project_concept} missing from codebook"));
+            assert_eq!(id >> 8, 0x01, "{project_concept} id {id:#06x} not in 0x01XX block");
+            assert_eq!(canonical_concept_domain(id), ConceptDomain::ProjectMgmt);
+        }
+        for commerce_concept in [
+            "commercial_line_item", "commercial_document", "tax_policy",
+            "billing_party", "payment_record", "currency_policy",
+        ] {
+            let id = canonical_concept_id(commerce_concept)
+                .unwrap_or_else(|| panic!("{commerce_concept} missing from codebook"));
+            assert_eq!(id >> 8, 0x02, "{commerce_concept} id {id:#06x} not in 0x02XX block");
+            assert_eq!(canonical_concept_domain(id), ConceptDomain::Commerce);
+        }
+        // Reserved + named future-domain blocks.
+        assert_eq!(canonical_concept_domain(0x0000), ConceptDomain::Reserved);
+        assert_eq!(canonical_concept_domain(0x00FF), ConceptDomain::Reserved);
+        assert_eq!(canonical_concept_domain(0x0700), ConceptDomain::Osint);
+        assert_eq!(canonical_concept_domain(0x07AB), ConceptDomain::Osint);
+        assert_eq!(canonical_concept_domain(0x0800), ConceptDomain::Ocr);
+        assert_eq!(canonical_concept_domain(0x0900), ConceptDomain::Health);
+        // Unassigned blocks (3-6, A+).
+        assert_eq!(canonical_concept_domain(0x0300), ConceptDomain::Unassigned);
+        assert_eq!(canonical_concept_domain(0x0600), ConceptDomain::Unassigned);
+        assert_eq!(canonical_concept_domain(0x0A00), ConceptDomain::Unassigned);
+        assert_eq!(canonical_concept_domain(0xFFFF), ConceptDomain::Unassigned);
+    }
+
+    #[test]
+    fn project_mgmt_batch_promotions_each_have_a_codebook_id_and_shape() {
+        // The 9 new project-mgmt concepts from the cross-curator overlap
+        // probe. Each has a canonical class with `Language::Unknown`, a
+        // populated canonical_concept, an id in the 0x01XX block, and
+        // typed attributes.
         for (canonical, name, id_hex) in [
-            (commercial_line_item(), "CommercialLineItem", 0x0007u16),
-            (commercial_document(), "CommercialDocument", 0x0008),
-            (tax_policy(), "TaxPolicy", 0x0009),
-            (billing_party(), "BillingParty", 0x000A),
-            (payment_record(), "PaymentRecord", 0x000B),
-            (currency_policy(), "CurrencyPolicy", 0x000C),
+            (project_membership(), "ProjectMembership", 0x0108u16),
+            (project_journal(), "ProjectJournal", 0x0109),
+            (project_repository(), "ProjectRepository", 0x010A),
+            (project_version(), "ProjectVersion", 0x010B),
+            (project_wiki_page(), "ProjectWikiPage", 0x010C),
+            (project_query(), "ProjectQuery", 0x010D),
+            (project_attachment(), "ProjectAttachment", 0x010E),
+            (project_comment(), "ProjectComment", 0x010F),
+            (project_custom_field(), "ProjectCustomField", 0x0110),
+        ] {
+            assert_eq!(canonical.name, name);
+            assert_eq!(canonical.language, Language::Unknown);
+            assert_eq!(canonical.canonical_id(), Some(id_hex));
+            assert_eq!(canonical_concept_domain(id_hex), ConceptDomain::ProjectMgmt);
+            assert!(!canonical.attributes.is_empty(), "{name} has no attrs");
+            for a in &canonical.attributes {
+                assert!(a.type_name.is_some(), "{name}.{} untyped", a.name);
+            }
+        }
+    }
+
+    #[test]
+    fn project_mgmt_resolver_arms_collapse_curator_names() {
+        // Every alias for each new concept resolves to the right id.
+        let cases: &[(&str, &[&str])] = &[
+            ("project_membership", &["Member", "members", "ProjectMembership"]),
+            ("project_journal", &["Journal", "journals", "ProjectJournal"]),
+            ("project_repository", &["Repository", "repositories", "ProjectRepository"]),
+            ("project_version", &["Version", "versions", "ProjectVersion"]),
+            ("project_wiki_page", &["WikiPage", "wiki_page", "ProjectWikiPage"]),
+            ("project_query", &["Query", "queries", "ProjectQuery"]),
+            ("project_attachment", &["Attachment", "attachments", "ProjectAttachment"]),
+            ("project_comment", &["Comment", "comments", "ProjectComment"]),
+            ("project_custom_field", &["CustomField", "custom_field", "ProjectCustomField"]),
+        ];
+        for (concept, aliases) in cases {
+            let id = canonical_concept_id(concept).unwrap();
+            for alias in *aliases {
+                assert_eq!(canonical_concept(alias), *concept, "{alias} -> {concept}");
+                assert_eq!(ogar_codebook(alias), Some(id), "{alias} -> id");
+            }
+        }
+    }
+
+    #[test]
+    fn commerce_canonical_classes_are_promoted_into_the_codebook() {
+        // Each commerce concept has an assigned codebook id in the
+        // `0x02XX` commerce-domain block and a populated canonical class.
+        for (canonical, name, id_hex) in [
+            (commercial_line_item(), "CommercialLineItem", 0x0201u16),
+            (commercial_document(), "CommercialDocument", 0x0202),
+            (tax_policy(), "TaxPolicy", 0x0203),
+            (billing_party(), "BillingParty", 0x0204),
+            (payment_record(), "PaymentRecord", 0x0205),
+            (currency_policy(), "CurrencyPolicy", 0x0206),
         ] {
             assert_eq!(canonical.name, name);
             assert_eq!(canonical.language, Language::Unknown);
@@ -2422,7 +2801,7 @@ mod tests {
         assert_eq!(c.name, "Priority");
         assert_eq!(c.canonical_concept.as_deref(), Some("priority"));
         assert_eq!(c.language, Language::Unknown);
-        assert_eq!(c.canonical_id(), Some(0x000D));
+        assert_eq!(c.canonical_id(), Some(0x0107));
         // Universal typed attributes mirroring Status/Type pattern.
         let attr_kind = |n: &str, t: &str| {
             assert_eq!(
