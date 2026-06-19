@@ -79,6 +79,33 @@ pub fn extract_with(source_tree: &Path, curator: &str) -> Vec<Class> {
     ogar_from_ruff::lift_model_graph(&graph)
 }
 
+/// Like [`extract_with`], but **walks the whole Rails application** — the
+/// core `app/models` *plus* every mounted engine's `app/models`
+/// (`modules/*/app/models`, `engines/*/app/models`).
+///
+/// Threads through [`ruff_ruby_spo::extract_app_with`] (added in
+/// AdaWorldAPI/ruff#28). OpenProject keeps a large share of its domain in
+/// `modules/*` engines (e.g. `TimeEntry` lives in
+/// `modules/costs/app/models`), invisible to the core-only [`extract`] /
+/// [`extract_with`]; this entry point closes that gap so the canonical
+/// layer sees the full corpus.
+///
+/// Plain [`extract`] / [`extract_with`] stay core-only for backward
+/// compatibility; engines are opt-in via this entry point.
+#[must_use]
+pub fn extract_app_with(source_tree: &Path, curator: &str) -> Vec<Class> {
+    let graph = ruff_ruby_spo::extract_app_with(source_tree, curator);
+    ogar_from_ruff::lift_model_graph(&graph)
+}
+
+/// Whole-application extraction (core + engines), defaulting the curator
+/// namespace to `"openproject"`. Thin wrapper over [`extract_app_with`].
+#[must_use]
+pub fn extract_app(source_tree: &Path) -> Vec<Class> {
+    let graph = ruff_ruby_spo::extract_app(source_tree);
+    ogar_from_ruff::lift_model_graph(&graph)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -94,6 +121,49 @@ mod tests {
         // extract_with mirrors the no-panic behaviour too.
         let classes = extract_with(Path::new("/tmp/__nope__"), "redmine");
         assert!(classes.is_empty());
+        // extract_app / extract_app_with also stay no-panic on a missing tree.
+        assert!(extract_app(Path::new("/tmp/__nope__")).is_empty());
+        assert!(extract_app_with(Path::new("/tmp/__nope__"), "redmine").is_empty());
+    }
+
+    /// **OpenProject modular-engine harvest** via [`extract_app_with`] —
+    /// closes the gap that left `TimeEntry` (and ~240 other models in
+    /// `modules/*/app/models`) invisible to plain [`extract`]. After this,
+    /// OpenProject's side of the `billable_work_entry` (`0x0103`) bridge is
+    /// populated, completing the OP↔Redmine convergence on that concept.
+    #[test]
+    #[ignore = "requires /home/user/openproject Rails source"]
+    fn extract_app_harvests_openproject_modules() {
+        let path = PathBuf::from("/home/user/openproject");
+        if !path.exists() {
+            eprintln!("skipping: {} not present", path.display());
+            return;
+        }
+        let core = extract(&path);
+        let app = extract_app_with(&path, "openproject");
+        assert!(
+            app.len() > core.len(),
+            "extract_app ({}) must exceed core-only ({})",
+            app.len(),
+            core.len(),
+        );
+        // TimeEntry lives in modules/costs/app/models — invisible to core,
+        // visible to extract_app, and lifts onto billable_work_entry.
+        let te = app
+            .iter()
+            .find(|c| c.name == "TimeEntry")
+            .expect("TimeEntry harvested from modules/costs by extract_app");
+        assert_eq!(te.canonical_concept.as_deref(), Some("billable_work_entry"));
+        assert_eq!(te.source_curator.as_deref(), Some("openproject"));
+        assert_eq!(
+            te.canonical_id(),
+            ogar_vocab::canonical_concept_id("billable_work_entry"),
+        );
+        // And core-only really doesn't see it (regression guard on the gap).
+        assert!(
+            !core.iter().any(|c| c.name == "TimeEntry"),
+            "core-only extract must NOT see modules/costs/TimeEntry",
+        );
     }
 
     /// **Per-curator namespace tagging** on real source (the ruff#27
