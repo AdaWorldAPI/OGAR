@@ -595,6 +595,66 @@ mod tests {
         }
     }
 
+    /// **ProjectRelation + Changeset + Watcher convergence** on real
+    /// source. Closes the last `project_work_item` forward reference
+    /// (`.relations`) and lands two natural neighbours that pair with
+    /// already-canonical concepts:
+    ///
+    /// | Canonical concept   | Redmine        | OpenProject |
+    /// |---------------------|----------------|-------------|
+    /// | project_relation    | IssueRelation  | Relation    |
+    /// | project_changeset   | Changeset      | Changeset   |
+    /// | project_watcher     | Watcher        | Watcher     |
+    #[test]
+    #[ignore = "requires Redmine + OpenProject checkouts"]
+    fn redmine_and_openproject_relation_changeset_watcher_converge() {
+        let Ok(redmine_src) = std::env::var("REDMINE_SRC") else {
+            eprintln!("skipping: REDMINE_SRC not set");
+            return;
+        };
+        let op_src = std::env::var("OPENPROJECT_SRC")
+            .unwrap_or_else(|_| "/home/user/openproject".to_string());
+        let op_path = PathBuf::from(&op_src);
+        if !op_path.exists() {
+            eprintln!("skipping: OpenProject not present at {op_src}");
+            return;
+        }
+
+        let redmine = extract(&PathBuf::from(redmine_src));
+        let openproject = extract(&op_path);
+        let rel_id = ogar_vocab::canonical_concept_id("project_relation");
+        let cs_id = ogar_vocab::canonical_concept_id("project_changeset");
+        let w_id = ogar_vocab::canonical_concept_id("project_watcher");
+        assert!(rel_id.is_some() && cs_id.is_some() && w_id.is_some());
+
+        for (curator, classes, table) in [
+            ("Redmine", &redmine, &[
+                ("IssueRelation", "project_relation", rel_id),
+                ("Changeset", "project_changeset", cs_id),
+                ("Watcher", "project_watcher", w_id),
+            ][..]),
+            ("OpenProject", &openproject, &[
+                ("Relation", "project_relation", rel_id),
+                ("Changeset", "project_changeset", cs_id),
+                ("Watcher", "project_watcher", w_id),
+            ][..]),
+        ] {
+            for (class_name, concept, expected_id) in table {
+                let c = classes
+                    .iter()
+                    .find(|c| c.name == *class_name)
+                    .unwrap_or_else(|| panic!("{curator} ships a {class_name} model"));
+                assert_eq!(
+                    c.canonical_concept.as_deref(),
+                    Some(*concept),
+                    "{curator} {class_name} -> {concept}",
+                );
+                assert_eq!(c.source_domain.as_deref(), Some("project"));
+                assert_eq!(c.canonical_id(), *expected_id);
+            }
+        }
+    }
+
     /// Exactly-one-Model invariant post AdaWorldAPI/ruff#26: OP's
     /// `app/models/work_package/` sub-files reopen `class WorkPackage`
     /// without adding ontology declarations; before the fix this produced
