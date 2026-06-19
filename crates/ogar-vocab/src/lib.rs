@@ -1088,6 +1088,7 @@ const CODEBOOK: &[(&str, u16)] = &[
     ("project_watcher", 0x0113),       // Redmine Watcher       ↔ OP Watcher
     ("project_news", 0x0114),          // Redmine News          ↔ OP News
     ("project_message", 0x0115),       // Redmine Message       ↔ OP Message (board/forum divergence)
+    ("project_forum", 0x0116),         // Redmine Board         ↔ OP Forum (name divergence; parent of project_message)
 
     // ── 0x02XX — commerce / billing / ERP domain (OSB ↔ Odoo) ──
     // Promoted from the parallel session's `lance-graph-ontology::ar_shape`
@@ -1599,6 +1600,16 @@ pub fn canonical_concept(name: &str) -> String {
         "message" | "messages" | "project_message" | "projectmessage"
     ) {
         return "project_message".to_string();
+    }
+    // ProjectForum — the parent container for [`project_message`].
+    // Cross-curator name divergence: Redmine `Board`, OpenProject `Forum`
+    // (same shape — project + last_message + name/description, with
+    // has_many :messages).
+    if matches!(lower.as_str(),
+        "board" | "boards" | "forum" | "forums"
+            | "project_forum" | "projectforum"
+    ) {
+        return "project_forum".to_string();
     }
     // ── Commerce / billing / ERP domain (OSB ↔ Odoo) ──
     // CommercialLineItem — line on a commercial document. OSB
@@ -2221,6 +2232,30 @@ pub fn project_message() -> Class {
     let mut replies_count = Attribute::new("replies_count");
     replies_count.type_name = Some("integer".to_string());
     c.attributes = vec![subject, content, replies_count];
+    c
+}
+
+/// `Board`/`Forum` — the parent container for [`project_message`].
+/// Cross-curator name divergence: Redmine `Board`, OpenProject `Forum`.
+/// Universal shape: `belongs_to :project` + `has_many :messages` +
+/// `belongs_to :last_message` + `name` / `description` / `position`.
+#[must_use]
+pub fn project_forum() -> Class {
+    let mut c = Class::new("ProjectForum");
+    c.language = Language::Unknown;
+    c.canonical_concept = Some("project_forum".to_string());
+    c.associations = vec![
+        family_edge("project", "Project"),
+        family_has_many("messages", "ProjectMessage"),
+        family_edge("last_message", "ProjectMessage"),
+    ];
+    let mut name = Attribute::new("name");
+    name.type_name = Some("string".to_string());
+    let mut description = Attribute::new("description");
+    description.type_name = Some("text".to_string());
+    let mut position = Attribute::new("position");
+    position.type_name = Some("integer".to_string());
+    c.attributes = vec![name, description, position];
     c
 }
 
@@ -2849,7 +2884,7 @@ mod tests {
             "project_version", "project_wiki_page", "project_query",
             "project_attachment", "project_comment", "project_custom_field",
             "project_relation", "project_changeset", "project_watcher",
-            "project_news", "project_message",
+            "project_news", "project_message", "project_forum",
         ] {
             let id = canonical_concept_id(project_concept)
                 .unwrap_or_else(|| panic!("{project_concept} missing from codebook"));
@@ -2900,6 +2935,7 @@ mod tests {
             (project_watcher(), "ProjectWatcher", 0x0113),
             (project_news(), "ProjectNews", 0x0114),
             (project_message(), "ProjectMessage", 0x0115),
+            (project_forum(), "ProjectForum", 0x0116),
         ] {
             assert_eq!(canonical.name, name);
             assert_eq!(canonical.language, Language::Unknown);
@@ -2980,6 +3016,8 @@ mod tests {
             ("project_watcher", &["Watcher", "watchers", "ProjectWatcher"]),
             ("project_news", &["News", "news", "ProjectNews"]),
             ("project_message", &["Message", "messages", "ProjectMessage"]),
+            // Cross-curator name divergence: Redmine `Board` ↔ OP `Forum`.
+            ("project_forum", &["Board", "boards", "Forum", "forums", "ProjectForum"]),
         ];
         for (concept, aliases) in cases {
             let id = canonical_concept_id(concept).unwrap();
