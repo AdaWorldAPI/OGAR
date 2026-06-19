@@ -1083,6 +1083,9 @@ const CODEBOOK: &[(&str, u16)] = &[
     ("project_attachment", 0x010E),    // Redmine Attachment   ↔ OP Attachment
     ("project_comment", 0x010F),       // Redmine Comment      ↔ OP Comment
     ("project_custom_field", 0x0110),  // Redmine CustomField  ↔ OP CustomField
+    ("project_relation", 0x0111),      // Redmine IssueRelation ↔ OP Relation (name divergence)
+    ("project_changeset", 0x0112),     // Redmine Changeset     ↔ OP Changeset
+    ("project_watcher", 0x0113),       // Redmine Watcher       ↔ OP Watcher
 
     // ── 0x02XX — commerce / billing / ERP domain (OSB ↔ Odoo) ──
     // Promoted from the parallel session's `lance-graph-ontology::ar_shape`
@@ -1547,6 +1550,33 @@ pub fn canonical_concept(name: &str) -> String {
             | "project_custom_field" | "projectcustomfield"
     ) {
         return "project_custom_field".to_string();
+    }
+    // ProjectRelation — work-item ↔ work-item edge. Cross-curator name
+    // divergence: Redmine `IssueRelation`, OpenProject `Relation`. Same
+    // concept (precedes/blocks/relates_to between two work items).
+    if matches!(lower.as_str(),
+        "issuerelation" | "issue_relation"
+            | "issuerelations" | "issue_relations"
+            | "relation" | "relations"
+            | "project_relation" | "projectrelation"
+    ) {
+        return "project_relation".to_string();
+    }
+    // ProjectChangeset — VCS commit on a [`project_repository`]. Both
+    // curators ship `Changeset` with the same shape (belongs_to repository
+    // + user, revision/comments/commit_date).
+    if matches!(lower.as_str(),
+        "changeset" | "changesets" | "project_changeset" | "projectchangeset"
+    ) {
+        return "project_changeset".to_string();
+    }
+    // ProjectWatcher — the per-user follow-relationship on a polymorphic
+    // watchable. Both curators ship `Watcher` with `belongs_to :user` +
+    // `belongs_to :watchable, polymorphic: true`.
+    if matches!(lower.as_str(),
+        "watcher" | "watchers" | "project_watcher" | "projectwatcher"
+    ) {
+        return "project_watcher".to_string();
     }
     // ── Commerce / billing / ERP domain (OSB ↔ Odoo) ──
     // CommercialLineItem — line on a commercial document. OSB
@@ -2049,6 +2079,74 @@ pub fn project_custom_field() -> Class {
     let mut is_required = Attribute::new("is_required");
     is_required.type_name = Some("boolean".to_string());
     c.attributes = vec![name, field_format, is_required];
+    c
+}
+
+/// `IssueRelation`/`Relation` — directed work-item edge. The canonical
+/// target of [`project_work_item`]'s `relations` family edge. Both
+/// curators have it under divergent names (Redmine `IssueRelation` →
+/// `issue_from`/`issue_to`; OP `Relation` → `from`/`to`); the canonical
+/// shape uses universal `from`/`to` family edges to [`project_work_item`].
+#[must_use]
+pub fn project_relation() -> Class {
+    let mut c = Class::new("ProjectRelation");
+    c.language = Language::Unknown;
+    c.canonical_concept = Some("project_relation".to_string());
+    c.associations = vec![
+        family_edge("from", "ProjectWorkItem"),
+        family_edge("to", "ProjectWorkItem"),
+    ];
+    let mut relation_type = Attribute::new("relation_type");
+    relation_type.type_name = Some("string".to_string());
+    // Redmine names it `delay`, OP names it `lag` — same semantic
+    // (offset in days between predecessor and successor). Canonical:
+    // `lag` (the more common project-scheduling term).
+    let mut lag = Attribute::new("lag");
+    lag.type_name = Some("integer".to_string());
+    c.attributes = vec![relation_type, lag];
+    c
+}
+
+/// `Changeset` — VCS commit on a [`project_repository`]. Both curators
+/// ship `Changeset` with identical shape: `belongs_to :repository`,
+/// `belongs_to :user` (committer mapped to a [`project_actor`]), with
+/// `revision` / `commit_date` / `comments` scalars.
+#[must_use]
+pub fn project_changeset() -> Class {
+    let mut c = Class::new("ProjectChangeset");
+    c.language = Language::Unknown;
+    c.canonical_concept = Some("project_changeset".to_string());
+    c.associations = vec![
+        family_edge("repository", "ProjectRepository"),
+        family_edge("user", "ProjectActor"),
+    ];
+    let mut revision = Attribute::new("revision");
+    revision.type_name = Some("string".to_string());
+    let mut commit_date = Attribute::new("commit_date");
+    commit_date.type_name = Some("date".to_string());
+    let mut comments = Attribute::new("comments");
+    comments.type_name = Some("text".to_string());
+    c.attributes = vec![revision, commit_date, comments];
+    c
+}
+
+/// `Watcher` — a follow-relationship: a [`project_actor`] watches a
+/// polymorphic watchable (work item, project, wiki page, …). Both
+/// curators ship `Watcher` with `belongs_to :user` + `belongs_to
+/// :watchable, polymorphic: true`. The polymorphic target stays opaque
+/// at the canonical layer (the `watchable_type` discriminator is the
+/// curator-local cell).
+#[must_use]
+pub fn project_watcher() -> Class {
+    let mut c = Class::new("ProjectWatcher");
+    c.language = Language::Unknown;
+    c.canonical_concept = Some("project_watcher".to_string());
+    c.associations = vec![
+        family_edge("user", "ProjectActor"),
+    ];
+    let mut watchable_type = Attribute::new("watchable_type");
+    watchable_type.type_name = Some("string".to_string());
+    c.attributes = vec![watchable_type];
     c
 }
 
@@ -2676,6 +2774,7 @@ mod tests {
             "project_membership", "project_journal", "project_repository",
             "project_version", "project_wiki_page", "project_query",
             "project_attachment", "project_comment", "project_custom_field",
+            "project_relation", "project_changeset", "project_watcher",
         ] {
             let id = canonical_concept_id(project_concept)
                 .unwrap_or_else(|| panic!("{project_concept} missing from codebook"));
@@ -2721,6 +2820,9 @@ mod tests {
             (project_attachment(), "ProjectAttachment", 0x010E),
             (project_comment(), "ProjectComment", 0x010F),
             (project_custom_field(), "ProjectCustomField", 0x0110),
+            (project_relation(), "ProjectRelation", 0x0111),
+            (project_changeset(), "ProjectChangeset", 0x0112),
+            (project_watcher(), "ProjectWatcher", 0x0113),
         ] {
             assert_eq!(canonical.name, name);
             assert_eq!(canonical.language, Language::Unknown);
@@ -2748,6 +2850,15 @@ mod tests {
             ("project_custom_field", "custom_fields"),
             ("project_custom_field", "customfields"),
             ("project_custom_field", "CustomFields"),
+            // Codex P2 on PR #68 — Redmine `issue_relations` is the
+            // Rails-tableized form of `IssueRelation`. The single-`s`
+            // lexical fallback drops to `issue_relation`, which is the
+            // singular curator alias but NOT a canonical concept name —
+            // so canonical_concept_id returned None. Adding the plural
+            // form to the promoted arm.
+            ("project_relation", "issue_relations"),
+            ("project_relation", "issuerelations"),
+            ("project_relation", "IssueRelations"),
         ] {
             let canonical_id = canonical_concept_id(singular);
             assert!(canonical_id.is_some(), "{singular} must be in codebook");
@@ -2773,6 +2884,10 @@ mod tests {
             ("project_attachment", &["Attachment", "attachments", "ProjectAttachment"]),
             ("project_comment", &["Comment", "comments", "ProjectComment"]),
             ("project_custom_field", &["CustomField", "custom_field", "ProjectCustomField"]),
+            // Cross-curator name divergence: Redmine `IssueRelation` ↔ OP `Relation`.
+            ("project_relation", &["IssueRelation", "issue_relation", "Relation", "relations", "ProjectRelation"]),
+            ("project_changeset", &["Changeset", "changesets", "ProjectChangeset"]),
+            ("project_watcher", &["Watcher", "watchers", "ProjectWatcher"]),
         ];
         for (concept, aliases) in cases {
             let id = canonical_concept_id(concept).unwrap();
