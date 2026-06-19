@@ -223,7 +223,7 @@ no substrate) / `lance-graph-mailbox-contract` / `lance-graph-thoughtspace`.
 |---|-----------|----------------|-------------|
 | 6 | `Relation` | `{ name, direction: SubjectToObject\|Reverse, kind: Reference\|Composition\|Aggregation\|Derivation, target: Class(ClassId)\|Interface(Symbol)\|UnknownPolymorphic, polymorphic: bool, erasure: InterfaceTable\|Discriminator{field}\|JoinTable\|ExternalAdapter }` | Rails `belongs_to`/`has_many`, Odoo `many2one`, Foundry links |
 | 7 | `Constraint` | `{ kind: Presence\|Length\|Range\|Format\|Inclusion\|Numericality\|Unique{scope}, params: BTreeMap<Symbol,ConstraintValue>, condition: Option<Expr> }` — semantic rule, **not** `Index` (physical) | Rails `validates`, composite uniqueness, Odoo `_sql_constraints` |
-| 8 | `Inheritance` | `enum { Concrete{parent: ClassId}, Abstract, RootedAt{root: ClassId} }` + separate `TraitUse{ trait_id }` | STI parent / abstract base / concern — three organs, distinct |
+| 8 | `Inheritance` | `enum { Concrete{parent: ClassId}, Abstract, RootedAt{root: ClassId} }` + separate `TraitUse{ trait_id }` — materializes per §6.1 (template + mask, not field-copy) | STI parent / abstract base / concern — three organs, distinct |
 | 9 | `StateMachineDecl` | `{ name, state_field, states: Vec<StateDecl>, transitions: Vec<TransitionDecl> }` — **THINK** (policy over time) | Rails `state_machine`/AASM, Odoo workflow, WoA doc lifecycle |
 | 10 | `AuditTrailDecl` | `{ events, payload_shape: Option<ClassId>, retention_policy, regulatory_anchor: Vec<RegulationIri> }` — legal audit split from ordinary hooks | `acts_as_journalized`, Odoo chatter, WoA GoBD |
 | 11 | `Authorization` | `{ role_predicates: Vec<PredicateName>, scope_kind, condition: Option<Expr>, enforcement_phase: QueryFilter\|CommandAdmission\|CommitGate\|AuditOnly }` | OP `visible`/`allowed_to` (query-plane) vs DO-arm commit-gate — **must not fuse** |
@@ -238,6 +238,12 @@ enable what, and where*. A concrete `Field` / `Relation` / `Function` /
 `ActionDef` is the **materialization = apply the bitmask to the inherited
 schema** — never a stored duplicate.
 
+- **The mask lives in Core; the producer only feeds it.** The `FieldMask` / bitmask
+  is part of `ClassView` (`lance-graph-contract::class_view`), Core-owned. The
+  producer (`ogar-from-rails`) emits the *facts* that populate its lanes (field /
+  method presence, visibility, which inherited members are enabled) — it never owns
+  the mask type nor runs the materialization. Materialization (template × mask) is
+  registry / Core-side. This keeps §4c intact: producer emits facts, Core materializes.
 - **Inheritance is template inheritance + mask filtering.** A class inheriting a
   schema does not copy fields; it inherits the template and applies its own mask.
   `resolve_mro` (item 12) walks the chain; the effective surface is the schema ∩
