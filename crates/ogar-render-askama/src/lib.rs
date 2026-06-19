@@ -162,12 +162,11 @@ mod tests {
 
     #[test]
     fn stub_emits_marker_for_unimplemented_kinds() {
-        // The four stub kinds compile + emit a marker comment naming the
-        // kind + class. This is what lets the kit be wired end-to-end
-        // before every template has landed.
+        // The remaining stub kinds compile + emit a marker comment naming
+        // the kind + class. T1 (RustStruct) + T2 (TsInterface) now have
+        // real emitters; T3 / T4 / T5 are still stubbed (per Northstar §3).
         let class = project();
         for kind in [
-            ArtifactKind::TsInterface,
             ArtifactKind::SurrealqlTable,
             ArtifactKind::OpenapiSchema,
             ArtifactKind::NodeGuidRoutingArm,
@@ -183,6 +182,116 @@ mod tests {
                 "stub should mention the class name:\n{src}"
             );
         }
+    }
+
+    #[test]
+    fn ts_interface_emits_class_id_and_canonical_concept() {
+        // T2 proof of shape: render project_work_item — verify the emitted
+        // .ts source declares the right interface name + CLASS_ID const
+        // (`as const` for literal-type) + canonical concept const.
+        let class = project_work_item();
+        let src = render(&class, ArtifactKind::TsInterface).unwrap();
+        assert!(
+            src.contains("export interface ProjectWorkItem"),
+            "ts_interface should declare `export interface ProjectWorkItem`:\n{src}"
+        );
+        assert!(
+            src.contains("export const CLASS_ID = 0x0102 as const;"),
+            "expected CLASS_ID = 0x0102 (as const) in:\n{src}"
+        );
+        assert!(
+            src.contains("export const CANONICAL_CONCEPT = \"project_work_item\" as const;"),
+            "{src}"
+        );
+    }
+
+    #[test]
+    fn ts_interface_maps_rails_types_to_ts() {
+        // Coarse Rails→TS type mapping: integer → number, string → string,
+        // boolean → boolean. Pinned against project_role (carries `name`,
+        // `position` int, `permissions` text).
+        let class = project_role();
+        let src = render(&class, ArtifactKind::TsInterface).unwrap();
+        // `name: string` (Rails "string")
+        assert!(src.contains("name: string;"), "expected `name: string;` in:\n{src}");
+        // `position: number` (Rails "integer")
+        assert!(
+            src.contains("position: number;"),
+            "expected `position: number;` in:\n{src}"
+        );
+        // `permissions: string` (Rails "text")
+        assert!(
+            src.contains("permissions: string;"),
+            "expected `permissions: string;` in:\n{src}"
+        );
+    }
+
+    #[test]
+    fn ts_interface_emits_family_edges_as_arrays_and_nullable_ids() {
+        // belongs_to / has_one → `number | null` (nullable FK id)
+        // has_many / habtm     → `ReadonlyArray<number>`
+        let class = billable_work_entry();
+        let src = render(&class, ArtifactKind::TsInterface).unwrap();
+        // Every family edge name should appear as a TS property.
+        for edge in &class.associations {
+            assert!(
+                src.contains(&format!("{}: ", edge.name)),
+                "ts_interface missing family edge `{}`:\n{src}",
+                edge.name
+            );
+        }
+        // At least one of each shape:
+        assert!(
+            src.contains("number | null"),
+            "expected at least one belongs_to/has_one as `number | null`:\n{src}"
+        );
+        // (billable_work_entry's edges are all belongs_to today, so
+        // `ReadonlyArray<number>` may not appear — assert via project_actor
+        // which has the `groups` / `users` has_many shape.)
+        let actor_src = render(&project_actor(), ArtifactKind::TsInterface).unwrap();
+        assert!(
+            actor_src.contains("ReadonlyArray<number>"),
+            "expected at least one has_many edge as `ReadonlyArray<number>`:\n{actor_src}"
+        );
+    }
+
+    #[test]
+    fn ts_interface_handles_keyword_property_names_safely() {
+        // project_actor declares an attribute named `type` (the same hazard
+        // that bit Rust on PR #78). TypeScript accepts `type` as a property
+        // name in interface bodies, but quoting is the conservative move
+        // for any JS reserved word. Per `escape_ts_property`, `type` is in
+        // the conservative quote list -> emitted as `"type": string;`.
+        let class = project_actor();
+        let src = render(&class, ArtifactKind::TsInterface).unwrap();
+        assert!(
+            src.contains("\"type\": string;"),
+            "expected `\"type\": string;` (quoted JS-reserved name) in:\n{src}"
+        );
+        assert!(
+            !src.contains("\n    type: "),
+            "unquoted `type:` is a hazard; emitter must quote it:\n{src}"
+        );
+    }
+
+    #[test]
+    fn ts_interface_quotes_dotted_property_names() {
+        // Odoo-style identifiers (e.g. `account.move.line`) aren't valid
+        // bare TS property names — must be quoted. This is the same logic
+        // catching `escape_ts_property`'s non-identifier branch.
+        // Use a fabricated class with a dotted attribute name.
+        use ogar_vocab::{Attribute, Class as VocabClass, Language};
+        let mut c = VocabClass::new("Synth");
+        c.canonical_concept = Some("synth".to_string());
+        c.language = Language::Unknown;
+        let mut a = Attribute::new("account.move.line");
+        a.type_name = Some("string".to_string());
+        c.attributes = vec![a];
+        let src = render(&c, ArtifactKind::TsInterface).unwrap();
+        assert!(
+            src.contains("\"account.move.line\": string;"),
+            "dotted property name must be quoted:\n{src}"
+        );
     }
 
     #[test]

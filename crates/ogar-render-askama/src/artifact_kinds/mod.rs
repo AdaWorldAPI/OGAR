@@ -9,17 +9,19 @@
 //! let source = emitter.emit(&spec)?;
 //! ```
 //!
-//! Proof-of-shape phase: [`RustStruct`](rust_struct::RustStructEmitter) has
-//! a real askama template + emitter; the other four kinds use [`Stub`] —
-//! placeholder code that compiles and emits a marker comment so callers can
-//! exercise the full pipeline (lookup + dispatch + return) without waiting
-//! for every template to land. Concrete emitters arrive per-kind in
-//! follow-on PRs (T2–T5 in the integration plan).
+//! Real emitters (so far): [`RustStruct`](rust_struct::RustStructEmitter)
+//! (T1, from PR #78) and [`TsInterface`](ts_interface::TsInterfaceEmitter)
+//! (T2, this PR). Remaining kinds use [`Stub`] — placeholder code that
+//! compiles and emits a marker comment so callers can exercise the full
+//! pipeline (lookup + dispatch + return) without waiting for every
+//! template to land. Concrete emitters arrive per-kind in follow-on PRs
+//! T3–T5 from the Northstar plan §3.
 
 use crate::spec::{ArtifactKind, ArtifactSpec};
 
 pub mod rust_struct;
 pub mod stub;
+pub mod ts_interface;
 
 /// Contract every kind's emitter implements.
 pub trait ArtifactEmitter {
@@ -34,6 +36,7 @@ pub trait ArtifactEmitter {
 pub fn for_kind(kind: ArtifactKind) -> Box<dyn ArtifactEmitter> {
     match kind {
         ArtifactKind::RustStruct => Box::new(rust_struct::RustStructEmitter),
+        ArtifactKind::TsInterface => Box::new(ts_interface::TsInterfaceEmitter),
         other => Box::new(stub::Stub { kind: other }),
     }
 }
