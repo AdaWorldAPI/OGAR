@@ -30,7 +30,7 @@ use ogar_vocab::canonical_concept_id;
 // ── Spine binding struct ─────────────────────────────────────────────
 
 #[derive(Template)]
-#[template(path = "dispatch/html_list_view.askama", escape = "none")]
+#[template(path = "dispatch/html_list_view.askama", escape = "html")]
 struct HtmlListViewCtx {
     title: String,
     class_id_hex: String,

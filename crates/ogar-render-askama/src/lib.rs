@@ -73,8 +73,8 @@ pub mod list_view;
 pub mod spec;
 
 pub use artifact_kinds::{
-    for_kind, render_list, ArtifactEmitter, AttachmentEntryOwned, CellData, CellSource,
-    GroupHeader, RelationEntryOwned, RowSource, UserEntryOwned,
+    for_kind, render_detail, render_list, ArtifactEmitter, AttachmentEntryOwned, CellData,
+    CellSource, GroupHeader, RelationEntryOwned, RowSource, UserEntryOwned,
 };
 pub use list_view::{default_kind_for, ColumnKind, RenderColumn, SortOrder};
 pub use spec::{ArtifactKind, ArtifactSpec};
@@ -126,12 +126,13 @@ mod tests {
         assert!(
             all.contains(&ArtifactKind::RustStruct)
                 && all.contains(&ArtifactKind::HtmlListView)
+                && all.contains(&ArtifactKind::HtmlDetailView)
                 && all.contains(&ArtifactKind::SurrealqlTable)
                 && all.contains(&ArtifactKind::OpenapiSchema)
                 && all.contains(&ArtifactKind::NodeGuidRoutingArm),
             "ArtifactKind::ALL missing a variant"
         );
-        assert_eq!(all.len(), 5);
+        assert_eq!(all.len(), 6);
     }
 
     #[test]
@@ -330,6 +331,267 @@ mod tests {
         assert!(src.contains("class=\"group open\""), "{src}");
         assert!(src.contains("<span class=\"name\">Open</span>"), "{src}");
         assert!(src.contains("<span class=\"badge\">5</span>"), "{src}");
+    }
+
+    // ── XSS regression — codex P1 on #83 + #84 ──────────────────────
+
+    #[test]
+    fn html_list_view_escapes_data_derived_strings_xss_regression() {
+        // Codex P1 on PR #83: the spine template was compiled with
+        // `escape = "none"`, so every interpolation was raw — a malicious
+        // group-header label, title, caption, or css_class would inject
+        // raw HTML into the page. The fix is `escape = "html"` on the
+        // spine binding + `|safe` only on the intentionally-pre-rendered
+        // `cell.body_html`. This test pins the contract: untrusted
+        // strings get escaped; only cell bodies are raw.
+        let col = RenderColumn::new(
+            "subject",
+            "<script>alert(1)</script>", // poisoned caption
+            ColumnKind::PrimaryLink,
+        );
+        let row = RowSource {
+            record_id: 1,
+            css_classes: "<malicious-class>",
+            group: Some(GroupHeader {
+                label: "<img src=x onerror=alert(2)>",
+                count: 0,
+            }),
+            inline: vec![CellSource {
+                column: &col,
+                css_classes: "<bad-cell-class>",
+                data: CellData::PrimaryLink {
+                    label: "<safe>label</safe>",
+                    href: "/i/1",
+                },
+            }],
+            block: vec![],
+        };
+        let src = render_list(
+            "<title-xss>x</title-xss>",
+            0x0102,
+            "project_work_item",
+            std::slice::from_ref(&col),
+            &[],
+            std::slice::from_ref(&row),
+        )
+        .unwrap();
+
+        // Untrusted strings MUST be escaped — no raw `<script>` etc.
+        assert!(
+            !src.contains("<script>alert(1)"),
+            "caption was rendered raw — XSS hazard:\n{src}"
+        );
+        assert!(
+            src.contains("&lt;script&gt;alert(1)"),
+            "caption should be HTML-escaped:\n{src}"
+        );
+        assert!(
+            !src.contains("<img src=x onerror"),
+            "group label was rendered raw — XSS hazard:\n{src}"
+        );
+        assert!(
+            !src.contains("<malicious-class>"),
+            "row css_classes was rendered raw — XSS hazard:\n{src}"
+        );
+        assert!(
+            !src.contains("<title-xss>"),
+            "title was rendered raw — XSS hazard:\n{src}"
+        );
+        // The pre-rendered cell body comes from the PrimaryLink cell
+        // sub-template, which DOES escape its `label` field — the
+        // `<safe>` markers in the label become `&lt;safe&gt;` inside the
+        // already-escaped `<a>...</a>` HTML, which is then `|safe`-passed
+        // through the spine. Both layers escape: the spine doesn't
+        // re-escape, the sub-template escapes once.
+        assert!(
+            src.contains("&lt;safe&gt;label&lt;/safe&gt;"),
+            "primary_link cell should escape its label:\n{src}"
+        );
+        // The intentional HTML — the `<a>` element wrapping the label —
+        // DOES make it through (cell body is pre-rendered + `|safe`).
+        assert!(src.contains("<a href=\"/i/1\""), "cell body lost:\n{src}");
+    }
+
+    #[test]
+    fn html_detail_view_escapes_data_derived_strings_xss_regression() {
+        // Codex P1 on PR #84 (sibling of the list-view P1). Same
+        // contract: subtitle / labels / css_classes get escaped;
+        // only headline_html + cell.body_html + section.body_html
+        // are pre-rendered and marked safe.
+        let col = RenderColumn::new(
+            "status",
+            "<script>alert('label')</script>",
+            ColumnKind::PrimaryLink,
+        );
+        let block = RenderColumn::new(
+            "description",
+            "<script>alert('block-label')</script>",
+            ColumnKind::RichText,
+        )
+        .block();
+        let columns = vec![col, block];
+        let cells = vec![
+            CellSource {
+                column: &columns[0],
+                css_classes: "<inline-css>",
+                data: CellData::PrimaryLink {
+                    label: "<safe>x</safe>",
+                    href: "/s/1",
+                },
+            },
+            CellSource {
+                column: &columns[1],
+                css_classes: "<block-css>",
+                data: CellData::RichText {
+                    body: "<p>Trusted prose.</p>", // intentional HTML
+                },
+            },
+        ];
+
+        let src = render_detail(
+            0x0102,
+            "project_work_item",
+            42,
+            // headline_html — intentional HTML, gets through
+            "<a href=\"/issues/42\">Headline</a>",
+            // subtitle — data-derived, MUST be escaped
+            "<img src=x onerror=alert(3)>",
+            &columns,
+            &cells,
+        )
+        .unwrap();
+
+        // Subtitle XSS attempt must not survive.
+        assert!(
+            !src.contains("<img src=x onerror"),
+            "subtitle was rendered raw — XSS hazard:\n{src}"
+        );
+        // Section labels (block labels) must be escaped.
+        assert!(
+            !src.contains("<script>alert('block-label')"),
+            "block section label was rendered raw — XSS hazard:\n{src}"
+        );
+        // Inline field labels must be escaped.
+        assert!(
+            !src.contains("<script>alert('label')"),
+            "inline field label was rendered raw — XSS hazard:\n{src}"
+        );
+        // CSS classes must be escaped.
+        assert!(
+            !src.contains("<inline-css>"),
+            "cell css_classes was rendered raw — XSS hazard:\n{src}"
+        );
+        assert!(
+            !src.contains("<block-css>"),
+            "section css_classes was rendered raw — XSS hazard:\n{src}"
+        );
+        // Pre-rendered intentional HTML DOES get through.
+        assert!(
+            src.contains("<a href=\"/issues/42\">Headline</a>"),
+            "headline_html should be marked safe and pass through:\n{src}"
+        );
+        assert!(
+            src.contains("<p>Trusted prose.</p>"),
+            "rich-text section body should pass through (cell|safe):\n{src}"
+        );
+    }
+
+    // ── T3 (HtmlDetailView) tests ───────────────────────────────────
+
+    #[test]
+    fn html_detail_view_proof_of_shape_renders_dl_with_class_meta() {
+        // Codebook-only emit: synthesised dl from class attributes, "—"
+        // placeholders, no headline. Pins data-class-id + data-concept.
+        let class = project_work_item();
+        let src = render(&class, ArtifactKind::HtmlDetailView).unwrap();
+        assert!(
+            src.contains("data-class-id=\"0x0102\""),
+            "expected data-class-id in:\n{src}"
+        );
+        assert!(src.contains("data-concept=\"project_work_item\""));
+        assert!(src.contains("<dl class=\"detail-fields\">"), "{src}");
+        // Every typed attribute should land as a detail-field-<name>.
+        for attr in &class.attributes {
+            assert!(
+                src.contains(&format!("detail-field-{}", attr.name)),
+                "missing detail-field-{} in:\n{src}",
+                attr.name
+            );
+        }
+    }
+
+    #[test]
+    fn html_detail_view_renders_inline_dl_and_block_sections() {
+        let inline = RenderColumn::new("status", "Status", ColumnKind::PrimaryLink);
+        let pct = RenderColumn::new("done_ratio", "% Done", ColumnKind::ProgressBar);
+        let block_desc =
+            RenderColumn::new("description", "Description", ColumnKind::RichText).block();
+
+        let columns = vec![inline.clone(), pct.clone(), block_desc.clone()];
+        let cells = vec![
+            CellSource {
+                column: &columns[0],
+                css_classes: "",
+                data: CellData::PrimaryLink {
+                    label: "Open",
+                    href: "/statuses/1",
+                },
+            },
+            CellSource {
+                column: &columns[1],
+                css_classes: "num",
+                data: CellData::ProgressBar { pct: 60 },
+            },
+            CellSource {
+                column: &columns[2],
+                css_classes: "",
+                data: CellData::RichText {
+                    body: "<p>Detailed body here.</p>",
+                },
+            },
+        ];
+
+        let src = render_detail(
+            0x0102,
+            "project_work_item",
+            42,
+            "<a href=\"/issues/42\" class=\"primary-link\">Fix the foo</a>",
+            "Open · High",
+            &columns,
+            &cells,
+        )
+        .unwrap();
+
+        // Header
+        assert!(src.contains("data-record-id=\"42\""), "{src}");
+        assert!(src.contains("class=\"detail-id\">#42"), "{src}");
+        assert!(src.contains("Fix the foo"), "headline missing in:\n{src}");
+        assert!(src.contains("Open · High"), "subtitle missing in:\n{src}");
+        // Inline dl entries
+        assert!(src.contains("detail-field-status"), "{src}");
+        assert!(src.contains("detail-field-done_ratio"), "{src}");
+        // Inline cells render through the per-kind sub-templates.
+        assert!(src.contains("href=\"/statuses/1\""), "{src}");
+        assert!(src.contains("aria-valuenow=\"60\""), "{src}");
+        // Block section for description
+        assert!(src.contains("detail-section-description"), "{src}");
+        assert!(src.contains("<section class=\"detail-section"), "{src}");
+        assert!(src.contains("Detailed body here."), "{src}");
+        // Block content should NOT appear inside the inline `<dl>`.
+        // (Negative pin: detail-field-description should not exist.)
+        assert!(
+            !src.contains("detail-field-description"),
+            "block field leaked into inline dl in:\n{src}"
+        );
+    }
+
+    #[test]
+    fn html_detail_view_column_cell_arity_mismatch_returns_error() {
+        let col = RenderColumn::new("subject", "Subject", ColumnKind::PrimaryLink);
+        let columns = vec![col];
+        let cells: Vec<CellSource<'_>> = vec![]; // intentional mismatch
+        let r = render_detail(0x0102, "project_work_item", 1, "", "", &columns, &cells);
+        assert!(r.is_err(), "expected mismatch to error, got Ok:\n{r:?}");
     }
 
     #[test]
