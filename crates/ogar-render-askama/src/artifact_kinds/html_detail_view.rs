@@ -13,11 +13,6 @@
 
 use askama::Template;
 
-use super::cells::{
-    AttachmentEntry, AttachmentListCell, HoursCell, IdLinkCell, PlainCell, PrimaryLinkCell,
-    ProgressBarCell, RecordRefCell, RelationEntry, RelationListCell, RichTextCell, UserEntry,
-    UserListCell,
-};
 use super::html_list_view::{CellData, CellSource};
 use super::ArtifactEmitter;
 use crate::list_view::{ColumnKind, RenderColumn};
@@ -116,45 +111,11 @@ pub fn render_detail(
     .render()
 }
 
-/// Same per-kind dispatch as the list view (kept duplicated here rather
-/// than re-exported because the list-view side has crate-internal naming;
-/// once T3 + T4 stabilise we factor the dispatch into one helper).
+/// Pre-render this cell's body via the shared per-kind dispatch.
+/// See [`super::cells::render_cell_body`]; factored when T4 became the
+/// third caller (T2 list-view, T3 detail-view, T4 form-view fallback).
 fn render_cell_body(src: &CellSource<'_>) -> Result<String, askama::Error> {
-    Ok(match &src.data {
-        CellData::Plain { value } => PlainCell { value }.render()?,
-        CellData::IdLink { id, href } => IdLinkCell { id: *id, href }.render()?,
-        CellData::PrimaryLink { label, href } => PrimaryLinkCell { label, href }.render()?,
-        CellData::RecordRef { label, href, target_concept } => RecordRefCell {
-            label,
-            href,
-            target_concept,
-        }
-        .render()?,
-        CellData::RichText { body } => RichTextCell { body }.render()?,
-        CellData::ProgressBar { pct } => ProgressBarCell { pct: *pct }.render()?,
-        CellData::RelationList { relations } => {
-            let mapped: Vec<RelationEntry<'_>> = relations
-                .iter()
-                .map(|r| RelationEntry { id: r.id, kind: r.kind.as_str(), href: r.href.as_str() })
-                .collect();
-            RelationListCell { relations: mapped }.render()?
-        }
-        CellData::Hours { hours, href } => HoursCell { hours, href }.render()?,
-        CellData::AttachmentList { attachments } => {
-            let mapped: Vec<AttachmentEntry<'_>> = attachments
-                .iter()
-                .map(|a| AttachmentEntry { filename: a.filename.as_str(), href: a.href.as_str() })
-                .collect();
-            AttachmentListCell { attachments: mapped }.render()?
-        }
-        CellData::UserList { users } => {
-            let mapped: Vec<UserEntry<'_>> = users
-                .iter()
-                .map(|u| UserEntry { name: u.name.as_str(), href: u.href.as_str() })
-                .collect();
-            UserListCell { users: mapped }.render()?
-        }
-    })
+    super::cells::render_cell_body(&src.data)
 }
 
 /// The codebook-only dispatch entry point used by [`for_kind`](super::for_kind).

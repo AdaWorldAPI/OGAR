@@ -15,25 +15,35 @@
 //! - [`HtmlListView`](html_list_view::HtmlListViewEmitter) — T2, render
 //!   flavour. Mirrors Redmine's `_list.html.erb` shape on our substrate
 //!   (see `docs/integration/REDMINE-QUERY-HARVEST.md`).
+//! - [`HtmlDetailView`](html_detail_view::HtmlDetailViewEmitter) — T3,
+//!   render flavour. Mirror of Redmine `show.html.erb`.
+//! - [`HtmlForm`](html_form::HtmlFormEmitter) — T4, render flavour.
+//!   Mirror of Redmine `_form.html.erb`. Separate
+//!   [`InputKind`](crate::form_view::InputKind) catalog from `ColumnKind`
+//!   because input controls don't map 1:1 to display formatters.
 //!
-//! Remaining kinds use [`Stub`] — placeholder code that compiles and
-//! emits a marker comment so callers can exercise the full pipeline
-//! (lookup + dispatch + return) before T3–T5 land.
+//! Remaining kinds (`SurrealqlTable`, `OpenapiSchema`,
+//! `NodeGuidRoutingArm`) use [`Stub`] — placeholder code so callers can
+//! exercise the full pipeline before T5 lands.
 
 pub(crate) mod cells;
+pub(crate) mod inputs;
 
 use crate::spec::{ArtifactKind, ArtifactSpec};
 
 pub mod html_detail_view;
+pub mod html_form;
 pub mod html_list_view;
 pub mod rust_struct;
 pub mod stub;
 
 pub use html_detail_view::{render_detail, HtmlDetailViewEmitter};
+pub use html_form::{render_form, FormFieldSource, FormSource, HtmlFormEmitter};
 pub use html_list_view::{
     render_list, AttachmentEntryOwned, CellData, CellSource, GroupHeader, HtmlListViewEmitter,
     RelationEntryOwned, RowSource, UserEntryOwned,
 };
+pub use inputs::{InputData, SelectOptionOwned};
 
 /// Contract every kind's emitter implements.
 pub trait ArtifactEmitter {
@@ -50,6 +60,7 @@ pub fn for_kind(kind: ArtifactKind) -> Box<dyn ArtifactEmitter> {
         ArtifactKind::RustStruct => Box::new(rust_struct::RustStructEmitter),
         ArtifactKind::HtmlListView => Box::new(html_list_view::HtmlListViewEmitter),
         ArtifactKind::HtmlDetailView => Box::new(html_detail_view::HtmlDetailViewEmitter),
+        ArtifactKind::HtmlForm => Box::new(html_form::HtmlFormEmitter),
         other => Box::new(stub::Stub { kind: other }),
     }
 }
