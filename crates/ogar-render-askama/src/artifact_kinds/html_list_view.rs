@@ -17,11 +17,6 @@
 
 use askama::Template;
 
-use super::cells::{
-    AttachmentEntry, AttachmentListCell, HoursCell, IdLinkCell, PlainCell, PrimaryLinkCell,
-    ProgressBarCell, RecordRefCell, RelationEntry, RelationListCell, RichTextCell, UserEntry,
-    UserListCell,
-};
 use super::ArtifactEmitter;
 use crate::list_view::{ColumnKind, RenderColumn};
 use crate::spec::ArtifactSpec;
@@ -237,41 +232,10 @@ pub fn render_list(
 }
 
 fn render_cell(src: &CellSource<'_>) -> Result<RenderedCell, askama::Error> {
-    let body = match &src.data {
-        CellData::Plain { value } => PlainCell { value }.render()?,
-        CellData::IdLink { id, href } => IdLinkCell { id: *id, href }.render()?,
-        CellData::PrimaryLink { label, href } => PrimaryLinkCell { label, href }.render()?,
-        CellData::RecordRef { label, href, target_concept } => RecordRefCell {
-            label,
-            href,
-            target_concept,
-        }
-        .render()?,
-        CellData::RichText { body } => RichTextCell { body }.render()?,
-        CellData::ProgressBar { pct } => ProgressBarCell { pct: *pct }.render()?,
-        CellData::RelationList { relations } => {
-            let mapped: Vec<RelationEntry<'_>> = relations
-                .iter()
-                .map(|r| RelationEntry { id: r.id, kind: r.kind.as_str(), href: r.href.as_str() })
-                .collect();
-            RelationListCell { relations: mapped }.render()?
-        }
-        CellData::Hours { hours, href } => HoursCell { hours, href }.render()?,
-        CellData::AttachmentList { attachments } => {
-            let mapped: Vec<AttachmentEntry<'_>> = attachments
-                .iter()
-                .map(|a| AttachmentEntry { filename: a.filename.as_str(), href: a.href.as_str() })
-                .collect();
-            AttachmentListCell { attachments: mapped }.render()?
-        }
-        CellData::UserList { users } => {
-            let mapped: Vec<UserEntry<'_>> = users
-                .iter()
-                .map(|u| UserEntry { name: u.name.as_str(), href: u.href.as_str() })
-                .collect();
-            UserListCell { users: mapped }.render()?
-        }
-    };
+    // Shared dispatch — see `cells::render_cell_body`. T2/T3/T4 all call
+    // the same helper; this function just wraps the body into the
+    // RenderedCell record T2's spine template expects.
+    let body = super::cells::render_cell_body(&src.data)?;
     Ok(RenderedCell {
         name: src.column.name.clone(),
         css_classes: src.css_classes.to_string(),

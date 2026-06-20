@@ -69,13 +69,16 @@
 #![warn(missing_docs)]
 
 pub mod artifact_kinds;
+pub mod form_view;
 pub mod list_view;
 pub mod spec;
 
 pub use artifact_kinds::{
-    for_kind, render_detail, render_list, ArtifactEmitter, AttachmentEntryOwned, CellData,
-    CellSource, GroupHeader, RelationEntryOwned, RowSource, UserEntryOwned,
+    for_kind, render_detail, render_form, render_list, ArtifactEmitter, AttachmentEntryOwned,
+    CellData, CellSource, FormFieldSource, FormSource, GroupHeader, InputData,
+    RelationEntryOwned, RowSource, SelectOptionOwned, UserEntryOwned,
 };
+pub use form_view::{default_input_kind_for, InputKind};
 pub use list_view::{default_kind_for, ColumnKind, RenderColumn, SortOrder};
 pub use spec::{ArtifactKind, ArtifactSpec};
 
@@ -127,12 +130,13 @@ mod tests {
             all.contains(&ArtifactKind::RustStruct)
                 && all.contains(&ArtifactKind::HtmlListView)
                 && all.contains(&ArtifactKind::HtmlDetailView)
+                && all.contains(&ArtifactKind::HtmlForm)
                 && all.contains(&ArtifactKind::SurrealqlTable)
                 && all.contains(&ArtifactKind::OpenapiSchema)
                 && all.contains(&ArtifactKind::NodeGuidRoutingArm),
             "ArtifactKind::ALL missing a variant"
         );
-        assert_eq!(all.len(), 6);
+        assert_eq!(all.len(), 7);
     }
 
     #[test]
@@ -607,6 +611,256 @@ mod tests {
             ColumnKind::RichText
         );
         assert_eq!(default_kind_for("position", Some("integer")), ColumnKind::Plain);
+    }
+
+    // ── T4 (HtmlForm) tests ─────────────────────────────────────────
+
+    #[test]
+    fn html_form_proof_of_shape_renders_inputs_for_class_attributes() {
+        // Codebook-only emit: every typed attribute on project_role lands
+        // as a `<form>` field. Pins data-class-id / data-concept + the
+        // per-attribute form-field wrappers.
+        let class = project_role();
+        let src = render(&class, ArtifactKind::HtmlForm).unwrap();
+        assert!(
+            src.contains("data-class-id=\"0x0117\""),
+            "expected data-class-id=\"0x0117\" in:\n{src}"
+        );
+        assert!(src.contains("data-concept=\"project_role\""), "{src}");
+        assert!(src.contains("<form"), "expected a <form> element:\n{src}");
+        for attr in &class.attributes {
+            assert!(
+                src.contains(&format!("form-field-{}", attr.name)),
+                "missing form-field-{} in:\n{src}",
+                attr.name
+            );
+        }
+        // Default proof-of-shape form uses POST + Create + no cancel.
+        assert!(src.contains("method=\"post\""), "{src}");
+        assert!(src.contains(">Create</button>"), "{src}");
+    }
+
+    #[test]
+    fn html_form_dispatches_input_kinds_to_their_sub_templates() {
+        // Build a form with explicit per-field InputData covering every
+        // kind that maps to a distinct HTML element. Verify each
+        // sub-template fires correctly.
+        let cols = vec![
+            RenderColumn::new("subject", "Subject", ColumnKind::PrimaryLink),
+            RenderColumn::new("description", "Description", ColumnKind::RichText).block(),
+            RenderColumn::new("estimated_hours", "Estimated h", ColumnKind::Hours),
+            RenderColumn::new("done_ratio", "% Done", ColumnKind::ProgressBar),
+            RenderColumn::new("is_private", "Private?", ColumnKind::Plain),
+            RenderColumn::new("start_date", "Start", ColumnKind::Plain),
+            RenderColumn::new("updated_at", "Updated", ColumnKind::Plain),
+            RenderColumn::new("status_id", "Status", ColumnKind::IdLink),
+            RenderColumn::new("id", "ID", ColumnKind::IdLink).frozen(),
+        ];
+        let fields = vec![
+            FormFieldSource {
+                column: &cols[0],
+                css_classes: "",
+                hint: "Short headline",
+                data: InputData::Text {
+                    value: "draft title".to_string(),
+                    required: true,
+                    placeholder: "Enter a subject".to_string(),
+                },
+            },
+            FormFieldSource {
+                column: &cols[1],
+                css_classes: "",
+                hint: "",
+                data: InputData::TextArea {
+                    value: "draft body".to_string(),
+                    rows: 8,
+                    required: false,
+                    placeholder: String::new(),
+                },
+            },
+            FormFieldSource {
+                column: &cols[2],
+                css_classes: "num",
+                hint: "",
+                data: InputData::Number {
+                    value: "3".to_string(),
+                    required: false,
+                    step: "0.25".to_string(),
+                },
+            },
+            FormFieldSource {
+                column: &cols[3],
+                css_classes: "",
+                hint: "",
+                data: InputData::Range {
+                    value: "70".to_string(),
+                    min: 0,
+                    max: 100,
+                    step: 10,
+                    suffix: "%".to_string(),
+                },
+            },
+            FormFieldSource {
+                column: &cols[4],
+                css_classes: "",
+                hint: "",
+                data: InputData::Checkbox { checked: true },
+            },
+            FormFieldSource {
+                column: &cols[5],
+                css_classes: "",
+                hint: "",
+                data: InputData::Date {
+                    value: "2026-01-15".to_string(),
+                    required: false,
+                },
+            },
+            FormFieldSource {
+                column: &cols[6],
+                css_classes: "",
+                hint: "",
+                data: InputData::DateTime {
+                    value: "2026-06-19T10:00".to_string(),
+                    required: false,
+                },
+            },
+            FormFieldSource {
+                column: &cols[7],
+                css_classes: "",
+                hint: "",
+                data: InputData::Select {
+                    value: "2".to_string(),
+                    required: false,
+                    options: vec![
+                        SelectOptionOwned { value: "1".to_string(), label: "New".to_string() },
+                        SelectOptionOwned { value: "2".to_string(), label: "In Progress".to_string() },
+                        SelectOptionOwned { value: "3".to_string(), label: "Closed".to_string() },
+                    ],
+                },
+            },
+            FormFieldSource {
+                column: &cols[8],
+                css_classes: "",
+                hint: "",
+                data: InputData::Hidden {
+                    value: "42".to_string(),
+                },
+            },
+        ];
+
+        let src = render_form(
+            0x0102,
+            "project_work_item",
+            &FormSource {
+                method: "patch",
+                action: "/issues/42",
+                csrf_token: "xyz",
+                record_id: Some(42),
+                legend: "Edit issue",
+                submit_label: "Save",
+                cancel_label: "Cancel",
+                cancel_href: "/issues/42",
+                fields,
+            },
+        )
+        .unwrap();
+
+        // Header attrs
+        assert!(src.contains("method=\"patch\""), "{src}");
+        assert!(src.contains("action=\"/issues/42\""), "{src}");
+        assert!(src.contains("name=\"authenticity_token\" value=\"xyz\""), "{src}");
+        // record_id hidden field for the edit form
+        assert!(src.contains("name=\"id\" value=\"42\""), "expected record-id hidden:\n{src}");
+        assert!(src.contains("<legend>Edit issue</legend>"), "{src}");
+
+        // Each input kind fires its own sub-template:
+        assert!(src.contains("<input type=\"text\" name=\"subject\""), "{src}");
+        assert!(src.contains("placeholder=\"Enter a subject\""), "{src}");
+        assert!(src.contains("<textarea name=\"description\""), "{src}");
+        assert!(src.contains("rows=\"8\""), "{src}");
+        assert!(src.contains("<input type=\"number\" name=\"estimated_hours\""), "{src}");
+        assert!(src.contains("step=\"0.25\""), "{src}");
+        assert!(src.contains("<input type=\"range\" name=\"done_ratio\""), "{src}");
+        assert!(src.contains("max=\"100\""), "{src}");
+        assert!(src.contains("<input type=\"checkbox\" name=\"is_private\""), "{src}");
+        // checkbox carries the hidden 0 sibling per Rails idiom
+        assert!(src.contains("<input type=\"hidden\" name=\"is_private\" value=\"0\""), "{src}");
+        assert!(src.contains("<input type=\"date\" name=\"start_date\""), "{src}");
+        assert!(src.contains("<input type=\"datetime-local\" name=\"updated_at\""), "{src}");
+        assert!(src.contains("<select name=\"status_id\""), "{src}");
+        // selected option pinned
+        assert!(src.contains("<option value=\"2\" selected>In Progress</option>"), "{src}");
+        // hidden field has NO label wrapper; emitted bare
+        assert!(src.contains("<input type=\"hidden\" name=\"id\" value=\"42\""), "{src}");
+        assert!(!src.contains("form-field-id"), "hidden field should not have a wrapper:\n{src}");
+        // The Subject field's hint goes through
+        assert!(src.contains("Short headline"), "{src}");
+        // Cancel + submit buttons
+        assert!(src.contains(">Save</button>"), "{src}");
+        assert!(src.contains("href=\"/issues/42\""), "{src}");
+        assert!(src.contains(">Cancel</a>"), "{src}");
+    }
+
+    #[test]
+    fn html_form_escapes_data_derived_strings_xss_regression() {
+        // Same XSS regression as the spine fixes on PRs #83/#84:
+        // labels, hints, action URL, legend, css_classes all escape.
+        let col = RenderColumn::new(
+            "subject",
+            "<script>alert(1)</script>", // poisoned caption
+            ColumnKind::PrimaryLink,
+        );
+        let fields = vec![FormFieldSource {
+            column: &col,
+            css_classes: "<bad-css>",
+            hint: "<img src=x onerror=alert(2)>",
+            data: InputData::Text {
+                value: "<xss-value>".to_string(),
+                required: false,
+                placeholder: "<xss-placeholder>".to_string(),
+            },
+        }];
+        let src = render_form(
+            0x0102,
+            "project_work_item",
+            &FormSource {
+                method: "post",
+                action: "/<bad-action>",
+                csrf_token: "<xss-csrf>",
+                record_id: None,
+                legend: "<script>alert('legend')</script>",
+                submit_label: "<safe>Save</safe>",
+                cancel_label: "Cancel",
+                cancel_href: "",
+                fields,
+            },
+        )
+        .unwrap();
+        // No raw scripts / images / dangling-tag css survive
+        assert!(!src.contains("<script>alert(1)"), "label raw: {src}");
+        assert!(!src.contains("<img src=x onerror"), "hint raw: {src}");
+        assert!(!src.contains("<bad-css>"), "css raw: {src}");
+        assert!(!src.contains("<xss-value>"), "value raw: {src}");
+        assert!(!src.contains("<xss-placeholder>"), "placeholder raw: {src}");
+        assert!(!src.contains("<script>alert('legend')"), "legend raw: {src}");
+        assert!(!src.contains("<safe>Save</safe>"), "submit raw: {src}");
+        // action attribute gets escaped (the `<` becomes `&lt;`)
+        assert!(!src.contains("action=\"/<bad-action>\""), "action raw: {src}");
+        assert!(src.contains("action=\"/&lt;bad-action&gt;\""), "expected escaped action:\n{src}");
+    }
+
+    #[test]
+    fn input_kind_resolver_is_wired_through_render_kit() {
+        // Smoke: the form-side resolver re-exported from lib.rs is the
+        // one consumers call to pick input controls.
+        assert_eq!(default_input_kind_for("id", None), InputKind::Hidden);
+        assert_eq!(default_input_kind_for("done_ratio", None), InputKind::Range);
+        assert_eq!(default_input_kind_for("description", Some("text")), InputKind::TextArea);
+        assert_eq!(default_input_kind_for("position", Some("integer")), InputKind::Number);
+        assert_eq!(default_input_kind_for("active", Some("boolean")), InputKind::Checkbox);
+        assert_eq!(default_input_kind_for("start_date", Some("date")), InputKind::Date);
+        assert_eq!(default_input_kind_for("updated_at", Some("datetime")), InputKind::DateTime);
+        assert_eq!(default_input_kind_for("subject", Some("string")), InputKind::Text);
     }
 
     #[test]

@@ -28,6 +28,11 @@ pub enum ArtifactKind {
     /// flavour**; mirror of Redmine's `show.html.erb`. Reuses every
     /// `RenderColumn` / `ColumnKind` / cell sub-template from T2.
     HtmlDetailView,
+    /// Create/edit HTML form rendered server-side via `askama_axum`.
+    /// **Render flavour**; mirror of Redmine's `_form.html.erb`. Same
+    /// `RenderColumn` shape; per-attribute `InputKind` dispatches to one
+    /// of nine `<input>` / `<textarea>` / `<select>` sub-templates.
+    HtmlForm,
     /// SurrealQL `DEFINE TABLE` + per-field `DEFINE FIELD` statements.
     /// **Codegen flavour** — DB engine is the final consumer.
     SurrealqlTable,
@@ -50,6 +55,7 @@ impl ArtifactKind {
         Self::RustStruct,
         Self::HtmlListView,
         Self::HtmlDetailView,
+        Self::HtmlForm,
         Self::SurrealqlTable,
         Self::OpenapiSchema,
         Self::NodeGuidRoutingArm,
@@ -62,6 +68,7 @@ impl ArtifactKind {
             Self::RustStruct => "rust_struct",
             Self::HtmlListView => "html_list_view",
             Self::HtmlDetailView => "html_detail_view",
+            Self::HtmlForm => "html_form",
             Self::SurrealqlTable => "surrealql_table",
             Self::OpenapiSchema => "openapi_schema",
             Self::NodeGuidRoutingArm => "node_guid_routing_arm",
