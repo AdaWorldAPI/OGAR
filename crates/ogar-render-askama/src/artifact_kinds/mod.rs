@@ -21,10 +21,13 @@
 //!   Mirror of Redmine `_form.html.erb`. Separate
 //!   [`InputKind`](crate::form_view::InputKind) catalog from `ColumnKind`
 //!   because input controls don't map 1:1 to display formatters.
+//! - [`SurrealqlTable`](surrealql_table::SurrealqlTableEmitter) — T5,
+//!   codegen flavour. Emits `DEFINE TABLE` + per-field `DEFINE FIELD`
+//!   + family-edge `record<…>` links + primary-label index.
 //!
-//! Remaining kinds (`SurrealqlTable`, `OpenapiSchema`,
-//! `NodeGuidRoutingArm`) use [`Stub`] — placeholder code so callers can
-//! exercise the full pipeline before T5 lands.
+//! Remaining kinds (`OpenapiSchema`, `NodeGuidRoutingArm`) use [`Stub`]
+//! — `OpenapiSchema` is deprecated (anti-pattern #8), `NodeGuidRoutingArm`
+//! is roadmap-only (post-+5+5).
 
 pub(crate) mod cells;
 pub(crate) mod inputs;
@@ -36,6 +39,7 @@ pub mod html_form;
 pub mod html_list_view;
 pub mod rust_struct;
 pub mod stub;
+pub mod surrealql_table;
 
 pub use html_detail_view::{render_detail, HtmlDetailViewEmitter};
 pub use html_form::{render_form, FormFieldSource, FormSource, HtmlFormEmitter};
@@ -44,6 +48,7 @@ pub use html_list_view::{
     RelationEntryOwned, RowSource, UserEntryOwned,
 };
 pub use inputs::{InputData, SelectOptionOwned};
+pub use surrealql_table::SurrealqlTableEmitter;
 
 /// Contract every kind's emitter implements.
 pub trait ArtifactEmitter {
@@ -61,6 +66,7 @@ pub fn for_kind(kind: ArtifactKind) -> Box<dyn ArtifactEmitter> {
         ArtifactKind::HtmlListView => Box::new(html_list_view::HtmlListViewEmitter),
         ArtifactKind::HtmlDetailView => Box::new(html_detail_view::HtmlDetailViewEmitter),
         ArtifactKind::HtmlForm => Box::new(html_form::HtmlFormEmitter),
+        ArtifactKind::SurrealqlTable => Box::new(surrealql_table::SurrealqlTableEmitter),
         other => Box::new(stub::Stub { kind: other }),
     }
 }
