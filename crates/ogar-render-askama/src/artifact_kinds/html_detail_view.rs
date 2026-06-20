@@ -27,7 +27,7 @@ use ogar_vocab::canonical_concept_id;
 // ── Spine binding struct ─────────────────────────────────────────────
 
 #[derive(Template)]
-#[template(path = "dispatch/html_detail_view.askama", escape = "none")]
+#[template(path = "dispatch/html_detail_view.askama", escape = "html")]
 struct HtmlDetailViewCtx {
     class_id_hex: String,
     canonical_concept: String,

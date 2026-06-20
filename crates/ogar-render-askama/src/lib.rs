@@ -333,6 +333,169 @@ mod tests {
         assert!(src.contains("<span class=\"badge\">5</span>"), "{src}");
     }
 
+    // ── XSS regression — codex P1 on #83 + #84 ──────────────────────
+
+    #[test]
+    fn html_list_view_escapes_data_derived_strings_xss_regression() {
+        // Codex P1 on PR #83: the spine template was compiled with
+        // `escape = "none"`, so every interpolation was raw — a malicious
+        // group-header label, title, caption, or css_class would inject
+        // raw HTML into the page. The fix is `escape = "html"` on the
+        // spine binding + `|safe` only on the intentionally-pre-rendered
+        // `cell.body_html`. This test pins the contract: untrusted
+        // strings get escaped; only cell bodies are raw.
+        let col = RenderColumn::new(
+            "subject",
+            "<script>alert(1)</script>", // poisoned caption
+            ColumnKind::PrimaryLink,
+        );
+        let row = RowSource {
+            record_id: 1,
+            css_classes: "<malicious-class>",
+            group: Some(GroupHeader {
+                label: "<img src=x onerror=alert(2)>",
+                count: 0,
+            }),
+            inline: vec![CellSource {
+                column: &col,
+                css_classes: "<bad-cell-class>",
+                data: CellData::PrimaryLink {
+                    label: "<safe>label</safe>",
+                    href: "/i/1",
+                },
+            }],
+            block: vec![],
+        };
+        let src = render_list(
+            "<title-xss>x</title-xss>",
+            0x0102,
+            "project_work_item",
+            std::slice::from_ref(&col),
+            &[],
+            std::slice::from_ref(&row),
+        )
+        .unwrap();
+
+        // Untrusted strings MUST be escaped — no raw `<script>` etc.
+        assert!(
+            !src.contains("<script>alert(1)"),
+            "caption was rendered raw — XSS hazard:\n{src}"
+        );
+        assert!(
+            src.contains("&lt;script&gt;alert(1)"),
+            "caption should be HTML-escaped:\n{src}"
+        );
+        assert!(
+            !src.contains("<img src=x onerror"),
+            "group label was rendered raw — XSS hazard:\n{src}"
+        );
+        assert!(
+            !src.contains("<malicious-class>"),
+            "row css_classes was rendered raw — XSS hazard:\n{src}"
+        );
+        assert!(
+            !src.contains("<title-xss>"),
+            "title was rendered raw — XSS hazard:\n{src}"
+        );
+        // The pre-rendered cell body comes from the PrimaryLink cell
+        // sub-template, which DOES escape its `label` field — the
+        // `<safe>` markers in the label become `&lt;safe&gt;` inside the
+        // already-escaped `<a>...</a>` HTML, which is then `|safe`-passed
+        // through the spine. Both layers escape: the spine doesn't
+        // re-escape, the sub-template escapes once.
+        assert!(
+            src.contains("&lt;safe&gt;label&lt;/safe&gt;"),
+            "primary_link cell should escape its label:\n{src}"
+        );
+        // The intentional HTML — the `<a>` element wrapping the label —
+        // DOES make it through (cell body is pre-rendered + `|safe`).
+        assert!(src.contains("<a href=\"/i/1\""), "cell body lost:\n{src}");
+    }
+
+    #[test]
+    fn html_detail_view_escapes_data_derived_strings_xss_regression() {
+        // Codex P1 on PR #84 (sibling of the list-view P1). Same
+        // contract: subtitle / labels / css_classes get escaped;
+        // only headline_html + cell.body_html + section.body_html
+        // are pre-rendered and marked safe.
+        let col = RenderColumn::new(
+            "status",
+            "<script>alert('label')</script>",
+            ColumnKind::PrimaryLink,
+        );
+        let block = RenderColumn::new(
+            "description",
+            "<script>alert('block-label')</script>",
+            ColumnKind::RichText,
+        )
+        .block();
+        let columns = vec![col, block];
+        let cells = vec![
+            CellSource {
+                column: &columns[0],
+                css_classes: "<inline-css>",
+                data: CellData::PrimaryLink {
+                    label: "<safe>x</safe>",
+                    href: "/s/1",
+                },
+            },
+            CellSource {
+                column: &columns[1],
+                css_classes: "<block-css>",
+                data: CellData::RichText {
+                    body: "<p>Trusted prose.</p>", // intentional HTML
+                },
+            },
+        ];
+
+        let src = render_detail(
+            0x0102,
+            "project_work_item",
+            42,
+            // headline_html — intentional HTML, gets through
+            "<a href=\"/issues/42\">Headline</a>",
+            // subtitle — data-derived, MUST be escaped
+            "<img src=x onerror=alert(3)>",
+            &columns,
+            &cells,
+        )
+        .unwrap();
+
+        // Subtitle XSS attempt must not survive.
+        assert!(
+            !src.contains("<img src=x onerror"),
+            "subtitle was rendered raw — XSS hazard:\n{src}"
+        );
+        // Section labels (block labels) must be escaped.
+        assert!(
+            !src.contains("<script>alert('block-label')"),
+            "block section label was rendered raw — XSS hazard:\n{src}"
+        );
+        // Inline field labels must be escaped.
+        assert!(
+            !src.contains("<script>alert('label')"),
+            "inline field label was rendered raw — XSS hazard:\n{src}"
+        );
+        // CSS classes must be escaped.
+        assert!(
+            !src.contains("<inline-css>"),
+            "cell css_classes was rendered raw — XSS hazard:\n{src}"
+        );
+        assert!(
+            !src.contains("<block-css>"),
+            "section css_classes was rendered raw — XSS hazard:\n{src}"
+        );
+        // Pre-rendered intentional HTML DOES get through.
+        assert!(
+            src.contains("<a href=\"/issues/42\">Headline</a>"),
+            "headline_html should be marked safe and pass through:\n{src}"
+        );
+        assert!(
+            src.contains("<p>Trusted prose.</p>"),
+            "rich-text section body should pass through (cell|safe):\n{src}"
+        );
+    }
+
     // ── T3 (HtmlDetailView) tests ───────────────────────────────────
 
     #[test]
