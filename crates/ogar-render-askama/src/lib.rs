@@ -73,8 +73,8 @@ pub mod list_view;
 pub mod spec;
 
 pub use artifact_kinds::{
-    for_kind, render_list, ArtifactEmitter, AttachmentEntryOwned, CellData, CellSource,
-    GroupHeader, RelationEntryOwned, RowSource, UserEntryOwned,
+    for_kind, render_detail, render_list, ArtifactEmitter, AttachmentEntryOwned, CellData,
+    CellSource, GroupHeader, RelationEntryOwned, RowSource, UserEntryOwned,
 };
 pub use list_view::{default_kind_for, ColumnKind, RenderColumn, SortOrder};
 pub use spec::{ArtifactKind, ArtifactSpec};
@@ -126,12 +126,13 @@ mod tests {
         assert!(
             all.contains(&ArtifactKind::RustStruct)
                 && all.contains(&ArtifactKind::HtmlListView)
+                && all.contains(&ArtifactKind::HtmlDetailView)
                 && all.contains(&ArtifactKind::SurrealqlTable)
                 && all.contains(&ArtifactKind::OpenapiSchema)
                 && all.contains(&ArtifactKind::NodeGuidRoutingArm),
             "ArtifactKind::ALL missing a variant"
         );
-        assert_eq!(all.len(), 5);
+        assert_eq!(all.len(), 6);
     }
 
     #[test]
@@ -330,6 +331,104 @@ mod tests {
         assert!(src.contains("class=\"group open\""), "{src}");
         assert!(src.contains("<span class=\"name\">Open</span>"), "{src}");
         assert!(src.contains("<span class=\"badge\">5</span>"), "{src}");
+    }
+
+    // ── T3 (HtmlDetailView) tests ───────────────────────────────────
+
+    #[test]
+    fn html_detail_view_proof_of_shape_renders_dl_with_class_meta() {
+        // Codebook-only emit: synthesised dl from class attributes, "—"
+        // placeholders, no headline. Pins data-class-id + data-concept.
+        let class = project_work_item();
+        let src = render(&class, ArtifactKind::HtmlDetailView).unwrap();
+        assert!(
+            src.contains("data-class-id=\"0x0102\""),
+            "expected data-class-id in:\n{src}"
+        );
+        assert!(src.contains("data-concept=\"project_work_item\""));
+        assert!(src.contains("<dl class=\"detail-fields\">"), "{src}");
+        // Every typed attribute should land as a detail-field-<name>.
+        for attr in &class.attributes {
+            assert!(
+                src.contains(&format!("detail-field-{}", attr.name)),
+                "missing detail-field-{} in:\n{src}",
+                attr.name
+            );
+        }
+    }
+
+    #[test]
+    fn html_detail_view_renders_inline_dl_and_block_sections() {
+        let inline = RenderColumn::new("status", "Status", ColumnKind::PrimaryLink);
+        let pct = RenderColumn::new("done_ratio", "% Done", ColumnKind::ProgressBar);
+        let block_desc =
+            RenderColumn::new("description", "Description", ColumnKind::RichText).block();
+
+        let columns = vec![inline.clone(), pct.clone(), block_desc.clone()];
+        let cells = vec![
+            CellSource {
+                column: &columns[0],
+                css_classes: "",
+                data: CellData::PrimaryLink {
+                    label: "Open",
+                    href: "/statuses/1",
+                },
+            },
+            CellSource {
+                column: &columns[1],
+                css_classes: "num",
+                data: CellData::ProgressBar { pct: 60 },
+            },
+            CellSource {
+                column: &columns[2],
+                css_classes: "",
+                data: CellData::RichText {
+                    body: "<p>Detailed body here.</p>",
+                },
+            },
+        ];
+
+        let src = render_detail(
+            0x0102,
+            "project_work_item",
+            42,
+            "<a href=\"/issues/42\" class=\"primary-link\">Fix the foo</a>",
+            "Open · High",
+            &columns,
+            &cells,
+        )
+        .unwrap();
+
+        // Header
+        assert!(src.contains("data-record-id=\"42\""), "{src}");
+        assert!(src.contains("class=\"detail-id\">#42"), "{src}");
+        assert!(src.contains("Fix the foo"), "headline missing in:\n{src}");
+        assert!(src.contains("Open · High"), "subtitle missing in:\n{src}");
+        // Inline dl entries
+        assert!(src.contains("detail-field-status"), "{src}");
+        assert!(src.contains("detail-field-done_ratio"), "{src}");
+        // Inline cells render through the per-kind sub-templates.
+        assert!(src.contains("href=\"/statuses/1\""), "{src}");
+        assert!(src.contains("aria-valuenow=\"60\""), "{src}");
+        // Block section for description
+        assert!(src.contains("detail-section-description"), "{src}");
+        assert!(src.contains("<section class=\"detail-section"), "{src}");
+        assert!(src.contains("Detailed body here."), "{src}");
+        // Block content should NOT appear inside the inline `<dl>`.
+        // (Negative pin: detail-field-description should not exist.)
+        assert!(
+            !src.contains("detail-field-description"),
+            "block field leaked into inline dl in:\n{src}"
+        );
+    }
+
+    #[test]
+    fn html_detail_view_column_cell_arity_mismatch_returns_error() {
+        let col = RenderColumn::new("subject", "Subject", ColumnKind::PrimaryLink);
+        let columns = vec![col];
+        let cells: Vec<CellSource<'_>> = vec![]; // intentional mismatch
+        let r = render_detail(0x0102, "project_work_item", 1, "", "", &columns, &cells);
+        assert!(r.is_err(), "expected mismatch to error, got Ok:\n{r:?}");
     }
 
     #[test]

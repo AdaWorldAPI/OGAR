@@ -24,10 +24,12 @@ pub(crate) mod cells;
 
 use crate::spec::{ArtifactKind, ArtifactSpec};
 
+pub mod html_detail_view;
 pub mod html_list_view;
 pub mod rust_struct;
 pub mod stub;
 
+pub use html_detail_view::{render_detail, HtmlDetailViewEmitter};
 pub use html_list_view::{
     render_list, AttachmentEntryOwned, CellData, CellSource, GroupHeader, HtmlListViewEmitter,
     RelationEntryOwned, RowSource, UserEntryOwned,
@@ -47,6 +49,7 @@ pub fn for_kind(kind: ArtifactKind) -> Box<dyn ArtifactEmitter> {
     match kind {
         ArtifactKind::RustStruct => Box::new(rust_struct::RustStructEmitter),
         ArtifactKind::HtmlListView => Box::new(html_list_view::HtmlListViewEmitter),
+        ArtifactKind::HtmlDetailView => Box::new(html_detail_view::HtmlDetailViewEmitter),
         other => Box::new(stub::Stub { kind: other }),
     }
 }

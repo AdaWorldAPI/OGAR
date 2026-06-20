@@ -23,6 +23,11 @@ pub enum ArtifactKind {
     /// `ClassView` substrate. Spec: `docs/integration/REDMINE-QUERY-
     /// HARVEST.md` §3.
     HtmlListView,
+    /// Single-record HTML detail view: definition-list inline fields +
+    /// `<section>` blocks for prose / family-edge collections. **Render
+    /// flavour**; mirror of Redmine's `show.html.erb`. Reuses every
+    /// `RenderColumn` / `ColumnKind` / cell sub-template from T2.
+    HtmlDetailView,
     /// SurrealQL `DEFINE TABLE` + per-field `DEFINE FIELD` statements.
     /// **Codegen flavour** — DB engine is the final consumer.
     SurrealqlTable,
@@ -44,6 +49,7 @@ impl ArtifactKind {
     pub const ALL: &'static [Self] = &[
         Self::RustStruct,
         Self::HtmlListView,
+        Self::HtmlDetailView,
         Self::SurrealqlTable,
         Self::OpenapiSchema,
         Self::NodeGuidRoutingArm,
@@ -55,6 +61,7 @@ impl ArtifactKind {
         match self {
             Self::RustStruct => "rust_struct",
             Self::HtmlListView => "html_list_view",
+            Self::HtmlDetailView => "html_detail_view",
             Self::SurrealqlTable => "surrealql_table",
             Self::OpenapiSchema => "openapi_schema",
             Self::NodeGuidRoutingArm => "node_guid_routing_arm",
