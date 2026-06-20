@@ -192,12 +192,11 @@ mod tests {
 
     #[test]
     fn stub_emits_marker_for_unimplemented_kinds() {
-        // Three stub kinds remain after T1+T2 (RustStruct + HtmlListView)
-        // landed real emitters. Each compiles + emits a marker comment
-        // naming the kind + class.
+        // After T1-T5, only the deprecated `OpenapiSchema` and the
+        // roadmap-only `NodeGuidRoutingArm` remain stubbed. Both compile
+        // and emit a marker comment naming the kind + class.
         let class = project();
         for kind in [
-            ArtifactKind::SurrealqlTable,
             ArtifactKind::OpenapiSchema,
             ArtifactKind::NodeGuidRoutingArm,
         ] {
@@ -861,6 +860,124 @@ mod tests {
         assert_eq!(default_input_kind_for("start_date", Some("date")), InputKind::Date);
         assert_eq!(default_input_kind_for("updated_at", Some("datetime")), InputKind::DateTime);
         assert_eq!(default_input_kind_for("subject", Some("string")), InputKind::Text);
+    }
+
+    // ── T5 (SurrealqlTable) tests ───────────────────────────────────
+
+    #[test]
+    fn surrealql_table_emits_define_table_with_codebook_meta() {
+        // Proof of shape: render project_work_item — verify the emitted
+        // DDL declares `DEFINE TABLE project_work_item` + COMMENT with
+        // the codebook id + at least one DEFINE FIELD per attribute.
+        let class = project_work_item();
+        let src = render(&class, ArtifactKind::SurrealqlTable).unwrap();
+        assert!(
+            src.contains("DEFINE TABLE project_work_item SCHEMAFULL"),
+            "expected DEFINE TABLE in:\n{src}"
+        );
+        assert!(
+            src.contains("COMMENT \"OGAR codebook id 0x0102 (project_work_item)\""),
+            "expected codebook id COMMENT in:\n{src}"
+        );
+        for attr in &class.attributes {
+            assert!(
+                src.contains(&format!("DEFINE FIELD {} ON project_work_item", attr.name)),
+                "missing DEFINE FIELD {} in:\n{src}",
+                attr.name
+            );
+        }
+    }
+
+    #[test]
+    fn surrealql_table_maps_rails_types_to_surql() {
+        // Type mapping pin against project_role (which carries `name`
+        // string, `position` integer, `permissions` text).
+        let class = project_role();
+        let src = render(&class, ArtifactKind::SurrealqlTable).unwrap();
+        assert!(src.contains("DEFINE FIELD name ON project_role TYPE string"), "{src}");
+        assert!(
+            src.contains("DEFINE FIELD position ON project_role TYPE int"),
+            "{src}"
+        );
+        assert!(
+            src.contains("DEFINE FIELD permissions ON project_role TYPE string"),
+            "{src}"
+        );
+    }
+
+    #[test]
+    fn surrealql_table_emits_record_links_for_family_edges() {
+        // billable_work_entry has 12 family edges. belongs_to / has_one
+        // → `option<record<…>>`; has_many / habtm → `array<record<…>>`.
+        let class = billable_work_entry();
+        let src = render(&class, ArtifactKind::SurrealqlTable).unwrap();
+        for edge in &class.associations {
+            assert!(
+                src.contains(&format!(
+                    "DEFINE FIELD {} ON billable_work_entry TYPE",
+                    edge.name
+                )),
+                "missing edge `{}`:\n{src}",
+                edge.name
+            );
+        }
+        // At least one belongs_to / has_one should appear as option<record<…>>
+        assert!(
+            src.contains("TYPE option<record<"),
+            "expected at least one optional record link in:\n{src}"
+        );
+        // billable_work_entry's edges are mostly belongs_to; verify the
+        // record-link target follows snake_case lowercasing of class_name.
+        // billable_work_entry's `classified_by` edge → `TaxPolicy` →
+        // snake_case `tax_policy` (or already-snake-case canonical name).
+        assert!(
+            src.contains("record<tax_policy>"),
+            "expected snake_case'd record<tax_policy> target in:\n{src}"
+        );
+    }
+
+    #[test]
+    fn surrealql_table_emits_primary_label_index() {
+        // Classes with a `name`/`subject`/`title`/`label` primary
+        // attribute get a default non-unique index on it.
+        let class = project_role();
+        let src = render(&class, ArtifactKind::SurrealqlTable).unwrap();
+        assert!(
+            src.contains("DEFINE INDEX idx_name ON project_role FIELDS name"),
+            "expected idx_name on project_role:\n{src}"
+        );
+    }
+
+    #[test]
+    fn surrealql_table_escapes_reserved_identifiers() {
+        // SurrealQL reserves words like `type`, `value`, `id`, `for`, …
+        // The emitter back-tick-quotes them in field names so the DDL
+        // parses. project_actor declares an attribute literally named
+        // `type`, exercising this.
+        let class = project_actor();
+        let src = render(&class, ArtifactKind::SurrealqlTable).unwrap();
+        // The illegal bare form must NOT appear in field position.
+        assert!(
+            !src.contains("DEFINE FIELD type ON project_actor"),
+            "bare reserved `type` field name — SurQL parse hazard:\n{src}"
+        );
+        // The back-tick-escaped form MUST appear.
+        assert!(
+            src.contains("DEFINE FIELD `type` ON project_actor"),
+            "expected back-ticked `type` field:\n{src}"
+        );
+    }
+
+    #[test]
+    fn surrealql_table_default_indexes_only_when_class_has_primary_label() {
+        // billable_work_entry has no `name`/`subject`/`title`/`label`
+        // primary attribute, so no default index is emitted.
+        let class = billable_work_entry();
+        let src = render(&class, ArtifactKind::SurrealqlTable).unwrap();
+        assert!(
+            !src.contains("DEFINE INDEX idx_"),
+            "billable_work_entry should not get a default primary-label index:\n{src}"
+        );
     }
 
     #[test]
