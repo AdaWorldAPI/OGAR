@@ -152,7 +152,7 @@ epiphany #4).
 public name "WorkPackage"
        │
        ▼
-  NamespaceBridge<OpenProject>.entity("WorkPackage")    [lance-graph-ontology]
+  UnifiedBridge<OpenProjectPort>.entity("WorkPackage")  [lance-graph-ogar]
        │
        ▼
   UnifiedBridge<OpenProjectBridge>.authorize_read(...)  [lance-graph-callcenter]
@@ -215,11 +215,25 @@ of the first emitted concept).
 | C1 | `op-codegen-projection` adopts `ogar-render-askama` for paths currently using `format!` | `openproject-nexgen-rs` |
 | C2 | `redmine-canon` re-exports `OgarClassView` (symmetric with the existing `class_ids` re-export) | `redmine-rs` |
 | C3 | `op-surreal-ast::from_class_view` adapter — feeds the canonical shape into the byte-identical-pinned typed AST | `openproject-nexgen-rs` |
-| C4 | `OpenProjectBridge: impl NamespaceBridge` — `g_lock` to "OpenProject" namespace, public-name dictionary populated from `op-canon` snapshot. `entity_type_id()` returns OGAR codebook ids. | `openproject-nexgen-rs` (sibling of `MedcareBridge`) |
-| C5 | `RedmineBridge: impl NamespaceBridge` — symmetric, "Redmine" namespace, same codebook ids. | `redmine-rs` |
+| C4 | `OpenProjectBridge: impl NamespaceBridge` — `g_lock` to "OpenProject" namespace, `entity_type_id()` returns OGAR codebook ids. | `lance-graph-ogar` (sibling of `MedcareBridge`) |
+| C5 | `RedmineBridge: impl NamespaceBridge` — symmetric, "Redmine" namespace, same codebook ids. | `lance-graph-ogar` |
 
-After C4 + C5: a consumer holding `UnifiedBridge<OpenProjectBridge>` AND
-`UnifiedBridge<RedmineBridge>` resolves `"WorkPackage"` OR `"Issue"`
+**How C4 + C5 actually landed (location corrected post-merge).** The
+original plan listed C4 in `openproject-nexgen-rs` and C5 in `redmine-rs`,
+"sibling of `MedcareBridge`." During implementation the bridges converged
+on a single generic harness instead of two cloned structs:
+`OpenProjectBridge` / `RedmineBridge` are now **type aliases over
+`UnifiedBridge<P: PortSpec>`**, where `OpenProjectPort` / `RedminePort`
+(the per-port `NAMESPACE` / `BRIDGE_ID` / alias table) live in
+`ogar-vocab::ports` (lance-graph PR #570). The bridges first landed in
+`lance-graph-ontology` (#558/#559), then **moved to `lance-graph-ogar`
+by #585** to restore the OGIT/OGAR separation of concerns — OGIT
+(`lance-graph-ontology`) must not depend on `ogar-vocab`. The codebook
+itself (the `(public_name → class_id)` data) stays in `ogar-vocab`; only
+the bridge *harness* lives in `lance-graph-ogar`.
+
+After C4 + C5: a consumer holding `UnifiedBridge<OpenProjectPort>` AND
+`UnifiedBridge<RedminePort>` resolves `"WorkPackage"` OR `"Issue"`
 through the policy-evaluated, audit-chained path → gets an `EntityRef`
 whose `class_id` routes to the *same* `OgarClassView` arm.
 
