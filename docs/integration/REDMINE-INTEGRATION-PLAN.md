@@ -78,9 +78,17 @@ parallel after this lands.
 - New crate `redmine-rs/crates/rm-store`.
 - Connect to SurrealDB (in-memory for dev, file-backed for prod).
 - Apply the schema emitted by
-  `op_codegen_projection::render_classes_schema(&ogar_canonical_classes())`
-  at startup. (The schema generator is already a sibling crate; we just
-  drive it.)
+  [`ogar_adapter_surrealql::emit_surrealql_ddl(&[Class])`](../../crates/ogar-adapter-surrealql/src/lib.rs)
+  at startup — the existing exported emitter in OGAR, hand-written
+  formatter, round-trip-pinned.
+- **Prerequisite (OGAR-side, ~1 day, blocks W0.2):** add
+  `pub fn all_promoted_classes() -> Vec<Class>` to `ogar-vocab` that
+  returns every promoted class fn's output (`project()`,
+  `project_work_item()`, …) in `class_ids::ALL` order. Today the 26
+  project-arm `Class` constructors exist but aren't enumerable as a
+  slice; `rm-store` needs one call site to drive `emit_surrealql_ddl`.
+  Sibling alternative if the enumerator slips: hand-list the calls in
+  `rm-store` and pin order via a `class_ids::ALL`-walking test.
 - `CRUD<T>` trait: `find_one`, `find_all`, `find_by_filter`, `insert`,
   `update`, `delete`. Generic over a `T: PortSpec`-derived row type.
 - Seed fixture: at minimum 3 Projects, 10 Issues, 5 TimeEntries —
