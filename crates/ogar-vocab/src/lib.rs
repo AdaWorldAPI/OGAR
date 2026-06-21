@@ -2206,6 +2206,15 @@ pub fn all_promoted_classes() -> Vec<Class> {
         billing_party(),
         payment_record(),
         currency_policy(),
+        // 0x09XX — health arm (7 OGIT Healthcare concepts), in
+        // class_ids::ALL order.
+        patient(),
+        diagnosis(),
+        lab_value(),
+        medication(),
+        treatment(),
+        visit(),
+        vital_sign(),
     ]
 }
 
