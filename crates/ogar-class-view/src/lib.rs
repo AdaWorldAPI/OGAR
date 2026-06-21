@@ -62,17 +62,16 @@ use std::collections::HashMap;
 use lance_graph_contract::{
     class_view::{ClassId, ClassView},
     ontology::{DisplayTemplate, FieldRef, ObjectView},
-    property::Marking,
 };
 use ogar_vocab::{
-    billable_work_entry, billing_party, canonical_concept_domain, canonical_concept_id,
-    commercial_document, commercial_line_item, currency_policy, diagnosis, lab_value, medication,
-    patient, payment_record, priority, project, project_actor, project_attachment,
-    project_changeset, project_comment, project_custom_field, project_custom_value,
-    project_enabled_module, project_forum, project_journal, project_member_role, project_membership,
-    project_message, project_news, project_query, project_relation, project_repository,
-    project_role, project_status, project_type, project_version, project_watcher, project_wiki_page,
-    project_work_item, tax_policy, treatment, visit, vital_sign, Class, ConceptDomain,
+    billable_work_entry, billing_party, canonical_concept_id, commercial_document,
+    commercial_line_item, currency_policy, diagnosis, lab_value, medication, patient,
+    payment_record, priority, project, project_actor, project_attachment, project_changeset,
+    project_comment, project_custom_field, project_custom_value, project_enabled_module,
+    project_forum, project_journal, project_member_role, project_membership, project_message,
+    project_news, project_query, project_relation, project_repository, project_role,
+    project_status, project_type, project_version, project_watcher, project_wiki_page,
+    project_work_item, tax_policy, treatment, visit, vital_sign, Class,
 };
 
 /// All 32 promoted canonical concepts: `(canonical_concept_name, Class)`.
@@ -212,39 +211,6 @@ impl OgarClassView {
     /// needs the `primary_label` or `DisplayTemplate` directly.
     pub fn object_view(&self, class: ClassId) -> Option<&ObjectView> {
         self.by_id.get(&class)
-    }
-
-    /// The RBAC data-classification [`Marking`] a class **inherits from
-    /// its codebook domain** — the reusable, fail-closed marking-
-    /// inheritance hook.
-    ///
-    /// The marking is derived from `class >> 8` (the domain byte) via
-    /// [`canonical_concept_domain`], so it is defined for *every* class
-    /// id, registered or not — a consumer never has to hand-author a
-    /// per-class sensitivity table:
-    ///
-    /// | Domain        | Marking              | Why |
-    /// |---------------|----------------------|-----|
-    /// | `Health`      | [`Marking::Restricted`] | PHI — highest, explicit grant |
-    /// | `Commerce`    | [`Marking::Financial`]  | bookkeeping / tax-relevant |
-    /// | `ProjectMgmt` | [`Marking::Internal`]   | internal, not externally shared |
-    /// | anything else | [`Marking::Restricted`] | **fail-closed** — deny until classified |
-    ///
-    /// The default arm is `Restricted`, not `Public`: an id whose domain
-    /// has no explicit classification (reserved blocks, a future domain,
-    /// an unknown id) is treated as maximally sensitive, so a concept
-    /// promoted upstream is access-controlled *before* anyone authors a
-    /// rule for it — never silently world-readable.
-    #[must_use]
-    pub fn access_marking(&self, class: ClassId) -> Marking {
-        match canonical_concept_domain(class) {
-            ConceptDomain::Health => Marking::Restricted,
-            ConceptDomain::Commerce => Marking::Financial,
-            ConceptDomain::ProjectMgmt => Marking::Internal,
-            // Reserved / Osint / Ocr / Unassigned and any unknown id:
-            // fail closed.
-            _ => Marking::Restricted,
-        }
     }
 }
 
@@ -492,27 +458,4 @@ mod tests {
         assert_eq!(fields[11].predicate_iri, "encounter");
     }
 
-    #[test]
-    fn access_marking_inherits_domain_sensitivity_fail_closed() {
-        let v = OgarClassView::new();
-        // Health → Restricted (PHI), for every Health concept.
-        for concept in [
-            "patient", "diagnosis", "lab_value", "medication", "treatment", "visit", "vital_sign",
-        ] {
-            let id = canonical_concept_id(concept).unwrap();
-            assert_eq!(v.access_marking(id), Marking::Restricted, "{concept}");
-        }
-        // Commerce → Financial; ProjectMgmt → Internal.
-        assert_eq!(
-            v.access_marking(canonical_concept_id("payment_record").unwrap()),
-            Marking::Financial
-        );
-        assert_eq!(
-            v.access_marking(canonical_concept_id("project").unwrap()),
-            Marking::Internal
-        );
-        // Unknown / unclassified id → fail-closed Restricted, NOT Public.
-        assert_eq!(v.access_marking(0xFFFF), Marking::Restricted);
-        assert_eq!(v.access_marking(0x0000), Marking::Restricted);
-    }
 }
