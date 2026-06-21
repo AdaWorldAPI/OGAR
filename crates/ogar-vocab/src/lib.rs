@@ -2132,6 +2132,83 @@ pub fn canonical_concept_in_domain(name: &str, domain: Option<ConceptDomain>) ->
     }
 }
 
+/// Every promoted canonical class, materialised once and returned in
+/// [`class_ids::ALL`] order — the single enumerator a consumer drives to
+/// touch all 32 promoted concepts at once.
+///
+/// # Why this exists
+///
+/// Until now the codebook exposed 32 separate constructor fns
+/// (`project()`, `project_work_item()`, `billable_work_entry()`, …) but
+/// no enumerator. A consumer that wanted to drive **every** promoted
+/// concept (e.g. emit a SurrealQL schema covering all of them via
+/// [`ogar_adapter_surrealql::emit_surrealql_ddl`](../../ogar-adapter-surrealql/src/lib.rs))
+/// had to hand-list the 32 calls — drift-prone, breaks silently when a
+/// new concept gets promoted.
+///
+/// `all_promoted_classes()` is the canonical answer:
+///
+/// ```ignore
+/// use ogar_vocab::all_promoted_classes;
+/// use ogar_adapter_surrealql::emit_surrealql_ddl;
+///
+/// let ddl = emit_surrealql_ddl(&all_promoted_classes());
+/// // → one SurrealQL string for the full 32-concept schema, in
+/// //   codebook (class_ids::ALL) order.
+/// ```
+///
+/// # Order
+///
+/// Matches [`class_ids::ALL`] exactly. The test
+/// [`tests::all_promoted_classes_matches_class_ids_all_order`] pins
+/// this so a new codebook promotion that adds to `ALL` but forgets to
+/// list a class fn here fails CI, and vice versa.
+///
+/// # Cost
+///
+/// Each call constructs 32 fresh `Class` values. Cheap (each is a
+/// `Class::new(name)` + a few `Vec::push`) but not free; callers
+/// caching the result for repeated reads is fine.
+#[must_use]
+pub fn all_promoted_classes() -> Vec<Class> {
+    vec![
+        // 0x01XX — project-mgmt arm (26 concepts).
+        project(),
+        project_work_item(),
+        billable_work_entry(),
+        project_actor(),
+        project_status(),
+        project_type(),
+        priority(),
+        project_membership(),
+        project_journal(),
+        project_repository(),
+        project_version(),
+        project_wiki_page(),
+        project_query(),
+        project_attachment(),
+        project_comment(),
+        project_custom_field(),
+        project_relation(),
+        project_changeset(),
+        project_watcher(),
+        project_news(),
+        project_message(),
+        project_forum(),
+        project_role(),
+        project_member_role(),
+        project_custom_value(),
+        project_enabled_module(),
+        // 0x02XX — commerce arm (6 concepts).
+        commercial_line_item(),
+        commercial_document(),
+        tax_policy(),
+        billing_party(),
+        payment_record(),
+        currency_policy(),
+    ]
+}
+
 /// The promoted canonical class for the **first convergence invariant**:
 /// booked work / time / cost against a project or order. The shared shape
 /// under OpenProject `TimeEntry` (project domain), Odoo
@@ -4290,6 +4367,81 @@ mod tests {
         a.on_enter = Some(EnterEffect::transition("state", "sale"));
         assert_eq!(a.on_enter.as_ref().unwrap().field, "state");
         assert_eq!(a.on_enter.as_ref().unwrap().to_value, "sale");
+    }
+
+    // ── all_promoted_classes() — enumerator pinned to class_ids::ALL ──
+
+    #[test]
+    fn all_promoted_classes_matches_class_ids_all_in_length() {
+        // Forward gate: the enumerator returns exactly the codebook's
+        // count of promoted concepts. A new `ALL` entry that doesn't
+        // get a constructor call here fails THIS test before any
+        // consumer hits a drift.
+        let classes = all_promoted_classes();
+        assert_eq!(
+            classes.len(),
+            class_ids::ALL.len(),
+            "all_promoted_classes() count ({}) must match class_ids::ALL ({})",
+            classes.len(),
+            class_ids::ALL.len(),
+        );
+    }
+
+    #[test]
+    fn all_promoted_classes_matches_class_ids_all_order() {
+        // Tighter gate: each position in the enumerator produces a
+        // class whose canonical_concept matches the same position in
+        // class_ids::ALL. Order is part of the contract (drives
+        // deterministic SurrealQL emission via emit_surrealql_ddl).
+        let classes = all_promoted_classes();
+        for (i, (expected_name, expected_id)) in class_ids::ALL.iter().enumerate() {
+            let got = &classes[i];
+            assert_eq!(
+                got.canonical_concept.as_deref(),
+                Some(*expected_name),
+                "position {i}: expected canonical_concept `{expected_name}`",
+            );
+            assert_eq!(
+                got.canonical_id(),
+                Some(*expected_id),
+                "position {i}: expected canonical_id 0x{expected_id:04X}",
+            );
+        }
+    }
+
+    #[test]
+    fn all_promoted_classes_has_no_duplicates() {
+        // Defensive: a sloppy copy-paste in the enumerator (two calls
+        // to the same constructor) shows up here, even if both class
+        // ids happen to be in the codebook.
+        use std::collections::HashSet;
+        let classes = all_promoted_classes();
+        let mut seen: HashSet<&str> = HashSet::new();
+        for c in &classes {
+            let name = c
+                .canonical_concept
+                .as_deref()
+                .expect("every promoted class must carry a canonical_concept");
+            assert!(
+                seen.insert(name),
+                "duplicate `{name}` in all_promoted_classes()",
+            );
+        }
+    }
+
+    #[test]
+    fn all_promoted_classes_every_class_has_canonical_id() {
+        // Every entry must carry a `canonical_id()` — the class's bridge
+        // out to the codebook id. A class that was constructed but
+        // forgot to set its canonical_concept slips through `Class::new`
+        // but fails here.
+        for c in all_promoted_classes() {
+            assert!(
+                c.canonical_id().is_some(),
+                "class `{}` is in all_promoted_classes() but has no canonical_id",
+                c.name,
+            );
+        }
     }
 }
 
