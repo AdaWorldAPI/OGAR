@@ -2948,6 +2948,216 @@ pub fn currency_policy() -> Class {
     c
 }
 
+// ─────────────────────────────────────────────────────────────────────
+// 0x09XX — Health domain (OGIT Healthcare). The reusable Active-Record
+// shape for the clinical concepts. `diagnosis` (0x0902) is the worked
+// example carried to full fidelity; the six siblings are competent
+// schemas in the same idiom. Field NAMES are English schema labels —
+// never German PII labels, never PHI values (OGAR Non-negotiable: PII).
+// ─────────────────────────────────────────────────────────────────────
+
+/// Patient — the clinical subject (OGIT `Patient`, `0x0901`). The root
+/// of every Health family edge; diagnoses / visits / labs / medications
+/// all `belongs_to` a patient.
+#[must_use]
+pub fn patient() -> Class {
+    let mut c = Class::new("Patient");
+    c.language = Language::Unknown;
+    c.canonical_concept = Some("patient".to_string());
+    c.associations = vec![
+        family_has_many("diagnoses", "Diagnosis"),
+        family_has_many("visits", "Visit"),
+    ];
+    let mut mrn = Attribute::new("mrn"); // medical record number (identity)
+    mrn.type_name = Some("string".to_string());
+    let mut given_name = Attribute::new("given_name");
+    given_name.type_name = Some("string".to_string());
+    let mut family_name = Attribute::new("family_name");
+    family_name.type_name = Some("string".to_string());
+    let mut birth_date = Attribute::new("birth_date");
+    birth_date.type_name = Some("date".to_string());
+    let mut sex = Attribute::new("sex");
+    sex.type_name = Some("string".to_string());
+    c.attributes = vec![mrn, given_name, family_name, birth_date, sex];
+    c
+}
+
+/// Diagnosis — a clinical finding / condition (OGIT `Diagnosis`,
+/// `0x0902`). **The worked example for the Health domain's reusable
+/// stack:** a full typed-attribute schema (ICD coding, FHIR-shaped
+/// clinical/verification status, onset/resolution dates, primary flag)
+/// plus two family edges (`patient`, the subject; `encounter`, the
+/// [`visit`] it was recorded in). A consumer (medcare-rs) maps this one
+/// canonical shape onto its own SoA columns; the class_id (`0x0902`) is
+/// the identity, the attribute set is the bit-basis, and the RBAC
+/// sensitivity is inherited from the Health domain (see
+/// `ogar_class_view::OgarClassView::access_marking`).
+#[must_use]
+pub fn diagnosis() -> Class {
+    let mut c = Class::new("Diagnosis");
+    c.language = Language::Unknown;
+    c.canonical_concept = Some("diagnosis".to_string());
+    c.description = Some("A clinical finding or condition attributed to a patient".to_string());
+    c.associations = vec![
+        family_edge("patient", "Patient"),
+        family_edge("encounter", "Visit"),
+    ];
+    let mut icd_code = Attribute::new("icd_code"); // ICD-10/11 coded identity
+    icd_code.type_name = Some("string".to_string());
+    let mut description = Attribute::new("description");
+    description.type_name = Some("string".to_string());
+    let mut category = Attribute::new("category");
+    category.type_name = Some("string".to_string());
+    let mut clinical_status = Attribute::new("clinical_status"); // active|recurrence|resolved
+    clinical_status.type_name = Some("string".to_string());
+    let mut verification_status = Attribute::new("verification_status"); // provisional|confirmed
+    verification_status.type_name = Some("string".to_string());
+    let mut severity = Attribute::new("severity");
+    severity.type_name = Some("string".to_string());
+    let mut onset_date = Attribute::new("onset_date");
+    onset_date.type_name = Some("date".to_string());
+    let mut resolved_date = Attribute::new("resolved_date");
+    resolved_date.type_name = Some("date".to_string());
+    let mut is_primary = Attribute::new("is_primary");
+    is_primary.type_name = Some("boolean".to_string());
+    let mut note = Attribute::new("note");
+    note.type_name = Some("text".to_string());
+    c.attributes = vec![
+        icd_code,
+        description,
+        category,
+        clinical_status,
+        verification_status,
+        severity,
+        onset_date,
+        resolved_date,
+        is_primary,
+        note,
+    ];
+    c
+}
+
+/// LabValue — a laboratory measurement (OGIT `LabValue`, `0x0903`).
+/// LOINC-coded, with value/unit/reference-range and an abnormal flag.
+#[must_use]
+pub fn lab_value() -> Class {
+    let mut c = Class::new("LabValue");
+    c.language = Language::Unknown;
+    c.canonical_concept = Some("lab_value".to_string());
+    c.associations = vec![
+        family_edge("patient", "Patient"),
+        family_edge("encounter", "Visit"),
+    ];
+    let mut loinc_code = Attribute::new("loinc_code");
+    loinc_code.type_name = Some("string".to_string());
+    let mut value = Attribute::new("value");
+    value.type_name = Some("decimal".to_string());
+    let mut unit = Attribute::new("unit");
+    unit.type_name = Some("string".to_string());
+    let mut reference_range = Attribute::new("reference_range");
+    reference_range.type_name = Some("string".to_string());
+    let mut abnormal_flag = Attribute::new("abnormal_flag");
+    abnormal_flag.type_name = Some("string".to_string());
+    let mut collected_at = Attribute::new("collected_at");
+    collected_at.type_name = Some("datetime".to_string());
+    c.attributes = vec![loinc_code, value, unit, reference_range, abnormal_flag, collected_at];
+    c
+}
+
+/// Medication — a prescribed / administered drug (OGIT `Medication`,
+/// `0x0904`). ATC-coded, with dose / route / frequency and a date range.
+#[must_use]
+pub fn medication() -> Class {
+    let mut c = Class::new("Medication");
+    c.language = Language::Unknown;
+    c.canonical_concept = Some("medication".to_string());
+    c.associations = vec![family_edge("patient", "Patient")];
+    let mut atc_code = Attribute::new("atc_code");
+    atc_code.type_name = Some("string".to_string());
+    let mut name = Attribute::new("name");
+    name.type_name = Some("string".to_string());
+    let mut dose = Attribute::new("dose");
+    dose.type_name = Some("string".to_string());
+    let mut route = Attribute::new("route");
+    route.type_name = Some("string".to_string());
+    let mut frequency = Attribute::new("frequency");
+    frequency.type_name = Some("string".to_string());
+    let mut start_date = Attribute::new("start_date");
+    start_date.type_name = Some("date".to_string());
+    let mut end_date = Attribute::new("end_date");
+    end_date.type_name = Some("date".to_string());
+    c.attributes = vec![atc_code, name, dose, route, frequency, start_date, end_date];
+    c
+}
+
+/// Treatment — a procedure / intervention performed (OGIT `Treatment`,
+/// `0x0905`). Coded, with a performed-at timestamp and an outcome.
+#[must_use]
+pub fn treatment() -> Class {
+    let mut c = Class::new("Treatment");
+    c.language = Language::Unknown;
+    c.canonical_concept = Some("treatment".to_string());
+    c.associations = vec![
+        family_edge("patient", "Patient"),
+        family_edge("encounter", "Visit"),
+    ];
+    let mut code = Attribute::new("code");
+    code.type_name = Some("string".to_string());
+    let mut description = Attribute::new("description");
+    description.type_name = Some("string".to_string());
+    let mut performed_at = Attribute::new("performed_at");
+    performed_at.type_name = Some("datetime".to_string());
+    let mut outcome = Attribute::new("outcome");
+    outcome.type_name = Some("string".to_string());
+    c.attributes = vec![code, description, performed_at, outcome];
+    c
+}
+
+/// Visit — a clinical encounter (OGIT `Visit`, `0x0906`). The temporal
+/// container diagnoses / labs / treatments / vitals are recorded within.
+#[must_use]
+pub fn visit() -> Class {
+    let mut c = Class::new("Visit");
+    c.language = Language::Unknown;
+    c.canonical_concept = Some("visit".to_string());
+    c.associations = vec![family_edge("patient", "Patient")];
+    let mut visit_number = Attribute::new("visit_number");
+    visit_number.type_name = Some("string".to_string());
+    let mut visit_type = Attribute::new("visit_type"); // inpatient|outpatient|emergency
+    visit_type.type_name = Some("string".to_string());
+    let mut department = Attribute::new("department");
+    department.type_name = Some("string".to_string());
+    let mut admitted_at = Attribute::new("admitted_at");
+    admitted_at.type_name = Some("datetime".to_string());
+    let mut discharged_at = Attribute::new("discharged_at");
+    discharged_at.type_name = Some("datetime".to_string());
+    c.attributes = vec![visit_number, visit_type, department, admitted_at, discharged_at];
+    c
+}
+
+/// VitalSign — a point-in-time physiological measurement (OGIT
+/// `VitalSign`, `0x0907`). Coded value/unit with a measured-at timestamp.
+#[must_use]
+pub fn vital_sign() -> Class {
+    let mut c = Class::new("VitalSign");
+    c.language = Language::Unknown;
+    c.canonical_concept = Some("vital_sign".to_string());
+    c.associations = vec![
+        family_edge("patient", "Patient"),
+        family_edge("encounter", "Visit"),
+    ];
+    let mut code = Attribute::new("code"); // e.g. LOINC 8867-4 (heart rate)
+    code.type_name = Some("string".to_string());
+    let mut value = Attribute::new("value");
+    value.type_name = Some("decimal".to_string());
+    let mut unit = Attribute::new("unit");
+    unit.type_name = Some("string".to_string());
+    let mut measured_at = Attribute::new("measured_at");
+    measured_at.type_name = Some("datetime".to_string());
+    c.attributes = vec![code, value, unit, measured_at];
+    c
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -3456,6 +3666,48 @@ mod tests {
         assert_eq!(canonical_concept_domain(0x0600), ConceptDomain::Unassigned);
         assert_eq!(canonical_concept_domain(0x0A00), ConceptDomain::Unassigned);
         assert_eq!(canonical_concept_domain(0xFFFF), ConceptDomain::Unassigned);
+    }
+
+    #[test]
+    fn health_classes_carry_their_canonical_codebook_identity() {
+        // Each Health AR builder resolves to its codebook id (the class_id
+        // is the identity; the PascalCase name is decorative). Mirrors the
+        // project/commerce gates.
+        for (builder, concept, id) in [
+            (patient as fn() -> Class, "patient", 0x0901u16),
+            (diagnosis, "diagnosis", 0x0902),
+            (lab_value, "lab_value", 0x0903),
+            (medication, "medication", 0x0904),
+            (treatment, "treatment", 0x0905),
+            (visit, "visit", 0x0906),
+            (vital_sign, "vital_sign", 0x0907),
+        ] {
+            let c = builder();
+            assert_eq!(c.canonical_concept.as_deref(), Some(concept));
+            assert_eq!(c.canonical_id(), Some(id), "{concept} -> {id:#06x}");
+            assert_eq!(canonical_concept_domain(id), ConceptDomain::Health);
+        }
+    }
+
+    #[test]
+    fn diagnosis_is_the_rich_worked_example() {
+        // The 0x0902 worked example: full typed-attribute schema + two
+        // family edges. Pins the bit-basis so a downstream FieldMask
+        // producer notices a reorder.
+        let d = diagnosis();
+        assert_eq!(d.name, "Diagnosis");
+        // ICD code is the first attribute (the coded identity slot).
+        assert_eq!(d.attributes[0].name, "icd_code");
+        assert_eq!(d.attributes[0].type_name.as_deref(), Some("string"));
+        // Two family edges: the subject and the encounter.
+        let edges: Vec<&str> = d.associations.iter().map(|a| a.name.as_str()).collect();
+        assert_eq!(edges, ["patient", "encounter"]);
+        // Every attribute carries a type (DDL adapters need the shape).
+        for a in &d.attributes {
+            assert!(a.type_name.is_some(), "{} has no type", a.name);
+        }
+        // Comfortably under the FieldMask u64 ceiling.
+        assert!(d.attributes.len() + d.associations.len() <= 64);
     }
 
     #[test]
