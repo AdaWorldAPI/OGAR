@@ -1126,6 +1126,23 @@ const CODEBOOK: &[(&str, u16)] = &[
     ("billing_party", 0x0204),
     ("payment_record", 0x0205),
     ("currency_policy", 0x0206),
+
+    // ── 0x09XX — Health domain (clinical / patient / care) ──
+    // medcare-rs Healthcare-namespace promotion (Northstar T9). The 7
+    // entities the OGIT `NTO/Healthcare/entities/` TTL ships, projected
+    // onto canonical Health ids so `ports::HealthcarePort` resolves them
+    // through the `UnifiedBridge` codebook path (the same way OpenProject
+    // `WorkPackage` and Redmine `Issue` resolve through their ports).
+    // Single-tenant today — no cross-curator convergence yet — but the
+    // ids are minted into the shared codebook so a future second clinical
+    // curator (FMA / SNOMED import) converges here rather than re-mints.
+    ("patient", 0x0901),
+    ("diagnosis", 0x0902),
+    ("lab_value", 0x0903),
+    ("medication", 0x0904),
+    ("treatment", 0x0905),
+    ("visit", 0x0906),
+    ("vital_sign", 0x0907),
 ];
 
 /// Codebook **domain** — the high byte of a canonical id (see
@@ -1170,6 +1187,36 @@ pub fn canonical_concept_domain(id: u16) -> ConceptDomain {
         0x09 => ConceptDomain::Health,
         _ => ConceptDomain::Unassigned,
     }
+}
+
+/// Every promoted `(canonical_concept_name, id)` whose id lives in `domain`,
+/// in codebook order. The **reusable enumeration hook** a domain-scoped
+/// consumer uses to inherit its full concept set from the canonical layer
+/// instead of hand-maintaining a parallel list.
+///
+/// This is the fail-closed primitive behind RBAC marking-inheritance: a
+/// consumer that must access-control every concept in a sensitive domain
+/// (e.g. medcare-rs over [`ConceptDomain::Health`]) derives the required
+/// coverage set from here, so a concept newly promoted into the codebook
+/// upstream becomes a *missing-coverage* signal at the consumer's boot
+/// gate — never a silently-uncovered (fail-open) row.
+///
+/// ```
+/// use ogar_vocab::{concepts_in_domain, ConceptDomain};
+///
+/// let health: Vec<_> = concepts_in_domain(ConceptDomain::Health)
+///     .map(|(name, _id)| name)
+///     .collect();
+/// assert!(health.contains(&"patient"));
+/// assert_eq!(health.len(), 7); // the 7 OGIT Healthcare entities
+/// ```
+pub fn concepts_in_domain(
+    domain: ConceptDomain,
+) -> impl Iterator<Item = (&'static str, u16)> {
+    CODEBOOK
+        .iter()
+        .copied()
+        .filter(move |&(_, id)| canonical_concept_domain(id) == domain)
 }
 
 /// Map a coarse [`Class::source_domain`] tag — as produced by the curator
@@ -1334,6 +1381,30 @@ pub mod class_ids {
     /// Odoo `res.currency`.
     pub const CURRENCY_POLICY: u16 = 0x0206;
 
+    // ── 0x09XX — health domain (medcare-rs Healthcare namespace) ──
+
+    /// `patient` (`0x0901`) — the person receiving care. OGIT
+    /// `Healthcare:Patient`.
+    pub const PATIENT: u16 = 0x0901;
+    /// `diagnosis` (`0x0902`) — a clinical finding / condition. OGIT
+    /// `Healthcare:Diagnosis`.
+    pub const DIAGNOSIS: u16 = 0x0902;
+    /// `lab_value` (`0x0903`) — a laboratory measurement. OGIT
+    /// `Healthcare:LabValue`.
+    pub const LAB_VALUE: u16 = 0x0903;
+    /// `medication` (`0x0904`) — a prescribed / administered drug. OGIT
+    /// `Healthcare:Medication`.
+    pub const MEDICATION: u16 = 0x0904;
+    /// `treatment` (`0x0905`) — a therapeutic intervention. OGIT
+    /// `Healthcare:Treatment`.
+    pub const TREATMENT: u16 = 0x0905;
+    /// `visit` (`0x0906`) — a clinical encounter / episode. OGIT
+    /// `Healthcare:Visit`.
+    pub const VISIT: u16 = 0x0906;
+    /// `vital_sign` (`0x0907`) — a measured vital. OGIT
+    /// `Healthcare:VitalSign`.
+    pub const VITAL_SIGN: u16 = 0x0907;
+
     /// Every `(canonical_concept_name, id)` pair the constants vouch for.
     /// Drift-guarded against [`super::CODEBOOK`] by tests in this module.
     pub const ALL: &[(&str, u16)] = &[
@@ -1371,6 +1442,14 @@ pub mod class_ids {
         ("billing_party", BILLING_PARTY),
         ("payment_record", PAYMENT_RECORD),
         ("currency_policy", CURRENCY_POLICY),
+        // 0x09XX — health
+        ("patient", PATIENT),
+        ("diagnosis", DIAGNOSIS),
+        ("lab_value", LAB_VALUE),
+        ("medication", MEDICATION),
+        ("treatment", TREATMENT),
+        ("visit", VISIT),
+        ("vital_sign", VITAL_SIGN),
     ];
 
     #[cfg(test)]
@@ -2127,6 +2206,15 @@ pub fn all_promoted_classes() -> Vec<Class> {
         billing_party(),
         payment_record(),
         currency_policy(),
+        // 0x09XX — health arm (7 OGIT Healthcare concepts), in
+        // class_ids::ALL order.
+        patient(),
+        diagnosis(),
+        lab_value(),
+        medication(),
+        treatment(),
+        visit(),
+        vital_sign(),
     ]
 }
 
@@ -2946,6 +3034,216 @@ pub fn currency_policy() -> Class {
     c
 }
 
+// ─────────────────────────────────────────────────────────────────────
+// 0x09XX — Health domain (OGIT Healthcare). The reusable Active-Record
+// shape for the clinical concepts. `diagnosis` (0x0902) is the worked
+// example carried to full fidelity; the six siblings are competent
+// schemas in the same idiom. Field NAMES are English schema labels —
+// never German PII labels, never PHI values (OGAR Non-negotiable: PII).
+// ─────────────────────────────────────────────────────────────────────
+
+/// Patient — the clinical subject (OGIT `Patient`, `0x0901`). The root
+/// of every Health family edge; diagnoses / visits / labs / medications
+/// all `belongs_to` a patient.
+#[must_use]
+pub fn patient() -> Class {
+    let mut c = Class::new("Patient");
+    c.language = Language::Unknown;
+    c.canonical_concept = Some("patient".to_string());
+    c.associations = vec![
+        family_has_many("diagnoses", "Diagnosis"),
+        family_has_many("visits", "Visit"),
+    ];
+    let mut mrn = Attribute::new("mrn"); // medical record number (identity)
+    mrn.type_name = Some("string".to_string());
+    let mut given_name = Attribute::new("given_name");
+    given_name.type_name = Some("string".to_string());
+    let mut family_name = Attribute::new("family_name");
+    family_name.type_name = Some("string".to_string());
+    let mut birth_date = Attribute::new("birth_date");
+    birth_date.type_name = Some("date".to_string());
+    let mut sex = Attribute::new("sex");
+    sex.type_name = Some("string".to_string());
+    c.attributes = vec![mrn, given_name, family_name, birth_date, sex];
+    c
+}
+
+/// Diagnosis — a clinical finding / condition (OGIT `Diagnosis`,
+/// `0x0902`). **The worked example for the Health domain's reusable
+/// stack:** a full typed-attribute schema (ICD coding, FHIR-shaped
+/// clinical/verification status, onset/resolution dates, primary flag)
+/// plus two family edges (`patient`, the subject; `encounter`, the
+/// [`visit`] it was recorded in). A consumer (medcare-rs) maps this one
+/// canonical shape onto its own SoA columns; the class_id (`0x0902`) is
+/// the identity, the attribute set is the bit-basis, and the RBAC
+/// sensitivity is inherited from the Health domain (see
+/// `ogar_class_view::OgarClassView::access_marking`).
+#[must_use]
+pub fn diagnosis() -> Class {
+    let mut c = Class::new("Diagnosis");
+    c.language = Language::Unknown;
+    c.canonical_concept = Some("diagnosis".to_string());
+    c.description = Some("A clinical finding or condition attributed to a patient".to_string());
+    c.associations = vec![
+        family_edge("patient", "Patient"),
+        family_edge("encounter", "Visit"),
+    ];
+    let mut icd_code = Attribute::new("icd_code"); // ICD-10/11 coded identity
+    icd_code.type_name = Some("string".to_string());
+    let mut description = Attribute::new("description");
+    description.type_name = Some("string".to_string());
+    let mut category = Attribute::new("category");
+    category.type_name = Some("string".to_string());
+    let mut clinical_status = Attribute::new("clinical_status"); // active|recurrence|resolved
+    clinical_status.type_name = Some("string".to_string());
+    let mut verification_status = Attribute::new("verification_status"); // provisional|confirmed
+    verification_status.type_name = Some("string".to_string());
+    let mut severity = Attribute::new("severity");
+    severity.type_name = Some("string".to_string());
+    let mut onset_date = Attribute::new("onset_date");
+    onset_date.type_name = Some("date".to_string());
+    let mut resolved_date = Attribute::new("resolved_date");
+    resolved_date.type_name = Some("date".to_string());
+    let mut is_primary = Attribute::new("is_primary");
+    is_primary.type_name = Some("boolean".to_string());
+    let mut note = Attribute::new("note");
+    note.type_name = Some("text".to_string());
+    c.attributes = vec![
+        icd_code,
+        description,
+        category,
+        clinical_status,
+        verification_status,
+        severity,
+        onset_date,
+        resolved_date,
+        is_primary,
+        note,
+    ];
+    c
+}
+
+/// LabValue — a laboratory measurement (OGIT `LabValue`, `0x0903`).
+/// LOINC-coded, with value/unit/reference-range and an abnormal flag.
+#[must_use]
+pub fn lab_value() -> Class {
+    let mut c = Class::new("LabValue");
+    c.language = Language::Unknown;
+    c.canonical_concept = Some("lab_value".to_string());
+    c.associations = vec![
+        family_edge("patient", "Patient"),
+        family_edge("encounter", "Visit"),
+    ];
+    let mut loinc_code = Attribute::new("loinc_code");
+    loinc_code.type_name = Some("string".to_string());
+    let mut value = Attribute::new("value");
+    value.type_name = Some("decimal".to_string());
+    let mut unit = Attribute::new("unit");
+    unit.type_name = Some("string".to_string());
+    let mut reference_range = Attribute::new("reference_range");
+    reference_range.type_name = Some("string".to_string());
+    let mut abnormal_flag = Attribute::new("abnormal_flag");
+    abnormal_flag.type_name = Some("string".to_string());
+    let mut collected_at = Attribute::new("collected_at");
+    collected_at.type_name = Some("datetime".to_string());
+    c.attributes = vec![loinc_code, value, unit, reference_range, abnormal_flag, collected_at];
+    c
+}
+
+/// Medication — a prescribed / administered drug (OGIT `Medication`,
+/// `0x0904`). ATC-coded, with dose / route / frequency and a date range.
+#[must_use]
+pub fn medication() -> Class {
+    let mut c = Class::new("Medication");
+    c.language = Language::Unknown;
+    c.canonical_concept = Some("medication".to_string());
+    c.associations = vec![family_edge("patient", "Patient")];
+    let mut atc_code = Attribute::new("atc_code");
+    atc_code.type_name = Some("string".to_string());
+    let mut name = Attribute::new("name");
+    name.type_name = Some("string".to_string());
+    let mut dose = Attribute::new("dose");
+    dose.type_name = Some("string".to_string());
+    let mut route = Attribute::new("route");
+    route.type_name = Some("string".to_string());
+    let mut frequency = Attribute::new("frequency");
+    frequency.type_name = Some("string".to_string());
+    let mut start_date = Attribute::new("start_date");
+    start_date.type_name = Some("date".to_string());
+    let mut end_date = Attribute::new("end_date");
+    end_date.type_name = Some("date".to_string());
+    c.attributes = vec![atc_code, name, dose, route, frequency, start_date, end_date];
+    c
+}
+
+/// Treatment — a procedure / intervention performed (OGIT `Treatment`,
+/// `0x0905`). Coded, with a performed-at timestamp and an outcome.
+#[must_use]
+pub fn treatment() -> Class {
+    let mut c = Class::new("Treatment");
+    c.language = Language::Unknown;
+    c.canonical_concept = Some("treatment".to_string());
+    c.associations = vec![
+        family_edge("patient", "Patient"),
+        family_edge("encounter", "Visit"),
+    ];
+    let mut code = Attribute::new("code");
+    code.type_name = Some("string".to_string());
+    let mut description = Attribute::new("description");
+    description.type_name = Some("string".to_string());
+    let mut performed_at = Attribute::new("performed_at");
+    performed_at.type_name = Some("datetime".to_string());
+    let mut outcome = Attribute::new("outcome");
+    outcome.type_name = Some("string".to_string());
+    c.attributes = vec![code, description, performed_at, outcome];
+    c
+}
+
+/// Visit — a clinical encounter (OGIT `Visit`, `0x0906`). The temporal
+/// container diagnoses / labs / treatments / vitals are recorded within.
+#[must_use]
+pub fn visit() -> Class {
+    let mut c = Class::new("Visit");
+    c.language = Language::Unknown;
+    c.canonical_concept = Some("visit".to_string());
+    c.associations = vec![family_edge("patient", "Patient")];
+    let mut visit_number = Attribute::new("visit_number");
+    visit_number.type_name = Some("string".to_string());
+    let mut visit_type = Attribute::new("visit_type"); // inpatient|outpatient|emergency
+    visit_type.type_name = Some("string".to_string());
+    let mut department = Attribute::new("department");
+    department.type_name = Some("string".to_string());
+    let mut admitted_at = Attribute::new("admitted_at");
+    admitted_at.type_name = Some("datetime".to_string());
+    let mut discharged_at = Attribute::new("discharged_at");
+    discharged_at.type_name = Some("datetime".to_string());
+    c.attributes = vec![visit_number, visit_type, department, admitted_at, discharged_at];
+    c
+}
+
+/// VitalSign — a point-in-time physiological measurement (OGIT
+/// `VitalSign`, `0x0907`). Coded value/unit with a measured-at timestamp.
+#[must_use]
+pub fn vital_sign() -> Class {
+    let mut c = Class::new("VitalSign");
+    c.language = Language::Unknown;
+    c.canonical_concept = Some("vital_sign".to_string());
+    c.associations = vec![
+        family_edge("patient", "Patient"),
+        family_edge("encounter", "Visit"),
+    ];
+    let mut code = Attribute::new("code"); // e.g. LOINC 8867-4 (heart rate)
+    code.type_name = Some("string".to_string());
+    let mut value = Attribute::new("value");
+    value.type_name = Some("decimal".to_string());
+    let mut unit = Attribute::new("unit");
+    unit.type_name = Some("string".to_string());
+    let mut measured_at = Attribute::new("measured_at");
+    measured_at.type_name = Some("datetime".to_string());
+    c.attributes = vec![code, value, unit, measured_at];
+    c
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -3433,6 +3731,15 @@ mod tests {
             assert_eq!(id >> 8, 0x02, "{commerce_concept} id {id:#06x} not in 0x02XX block");
             assert_eq!(canonical_concept_domain(id), ConceptDomain::Commerce);
         }
+        for health_concept in [
+            "patient", "diagnosis", "lab_value", "medication",
+            "treatment", "visit", "vital_sign",
+        ] {
+            let id = canonical_concept_id(health_concept)
+                .unwrap_or_else(|| panic!("{health_concept} missing from codebook"));
+            assert_eq!(id >> 8, 0x09, "{health_concept} id {id:#06x} not in 0x09XX block");
+            assert_eq!(canonical_concept_domain(id), ConceptDomain::Health);
+        }
         // Reserved + named future-domain blocks.
         assert_eq!(canonical_concept_domain(0x0000), ConceptDomain::Reserved);
         assert_eq!(canonical_concept_domain(0x00FF), ConceptDomain::Reserved);
@@ -3445,6 +3752,78 @@ mod tests {
         assert_eq!(canonical_concept_domain(0x0600), ConceptDomain::Unassigned);
         assert_eq!(canonical_concept_domain(0x0A00), ConceptDomain::Unassigned);
         assert_eq!(canonical_concept_domain(0xFFFF), ConceptDomain::Unassigned);
+    }
+
+    #[test]
+    fn health_classes_carry_their_canonical_codebook_identity() {
+        // Each Health AR builder resolves to its codebook id (the class_id
+        // is the identity; the PascalCase name is decorative). Mirrors the
+        // project/commerce gates.
+        for (builder, concept, id) in [
+            (patient as fn() -> Class, "patient", 0x0901u16),
+            (diagnosis, "diagnosis", 0x0902),
+            (lab_value, "lab_value", 0x0903),
+            (medication, "medication", 0x0904),
+            (treatment, "treatment", 0x0905),
+            (visit, "visit", 0x0906),
+            (vital_sign, "vital_sign", 0x0907),
+        ] {
+            let c = builder();
+            assert_eq!(c.canonical_concept.as_deref(), Some(concept));
+            assert_eq!(c.canonical_id(), Some(id), "{concept} -> {id:#06x}");
+            assert_eq!(canonical_concept_domain(id), ConceptDomain::Health);
+        }
+    }
+
+    #[test]
+    fn diagnosis_is_the_rich_worked_example() {
+        // The 0x0902 worked example: full typed-attribute schema + two
+        // family edges. Pins the bit-basis so a downstream FieldMask
+        // producer notices a reorder.
+        let d = diagnosis();
+        assert_eq!(d.name, "Diagnosis");
+        // ICD code is the first attribute (the coded identity slot).
+        assert_eq!(d.attributes[0].name, "icd_code");
+        assert_eq!(d.attributes[0].type_name.as_deref(), Some("string"));
+        // Two family edges: the subject and the encounter.
+        let edges: Vec<&str> = d.associations.iter().map(|a| a.name.as_str()).collect();
+        assert_eq!(edges, ["patient", "encounter"]);
+        // Every attribute carries a type (DDL adapters need the shape).
+        for a in &d.attributes {
+            assert!(a.type_name.is_some(), "{} has no type", a.name);
+        }
+        // Comfortably under the FieldMask u64 ceiling.
+        assert!(d.attributes.len() + d.associations.len() <= 64);
+    }
+
+    #[test]
+    fn concepts_in_domain_enumerates_exactly_each_domains_codebook_set() {
+        // The reusable fail-closed coverage hook: a domain-scoped consumer
+        // (e.g. medcare-rs over Health) inherits its required concept set
+        // from here. Drift = a concept promoted upstream without the
+        // consumer noticing => exactly what the boot-time coverage gate
+        // must catch.
+        let health: Vec<&str> = concepts_in_domain(ConceptDomain::Health)
+            .map(|(name, _)| name)
+            .collect();
+        assert_eq!(
+            health,
+            [
+                "patient", "diagnosis", "lab_value", "medication",
+                "treatment", "visit", "vital_sign",
+            ],
+            "Health domain set drift — re-sync the consumer coverage gate",
+        );
+        // Every yielded id really is in-domain.
+        for (_, id) in concepts_in_domain(ConceptDomain::Health) {
+            assert_eq!(canonical_concept_domain(id), ConceptDomain::Health);
+        }
+        // Counts line up with the codebook blocks.
+        assert_eq!(concepts_in_domain(ConceptDomain::Health).count(), 7);
+        assert_eq!(concepts_in_domain(ConceptDomain::Commerce).count(), 6);
+        assert_eq!(concepts_in_domain(ConceptDomain::ProjectMgmt).count(), 26);
+        // An empty (reserved-but-unpopulated) domain yields nothing.
+        assert_eq!(concepts_in_domain(ConceptDomain::Osint).count(), 0);
     }
 
     #[test]

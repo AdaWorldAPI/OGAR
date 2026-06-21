@@ -65,12 +65,13 @@ use lance_graph_contract::{
 };
 use ogar_vocab::{
     billable_work_entry, billing_party, canonical_concept_id, commercial_document,
-    commercial_line_item, currency_policy, payment_record, priority, project, project_actor,
-    project_attachment, project_changeset, project_comment, project_custom_field,
-    project_custom_value, project_enabled_module, project_forum, project_journal,
-    project_member_role, project_membership, project_message, project_news, project_query,
-    project_relation, project_repository, project_role, project_status, project_type,
-    project_version, project_watcher, project_wiki_page, project_work_item, tax_policy, Class,
+    commercial_line_item, currency_policy, diagnosis, lab_value, medication, patient,
+    payment_record, priority, project, project_actor, project_attachment, project_changeset,
+    project_comment, project_custom_field, project_custom_value, project_enabled_module,
+    project_forum, project_journal, project_member_role, project_membership, project_message,
+    project_news, project_query, project_relation, project_repository, project_role,
+    project_status, project_type, project_version, project_watcher, project_wiki_page,
+    project_work_item, tax_policy, treatment, visit, vital_sign, Class,
 };
 
 /// All 32 promoted canonical concepts: `(canonical_concept_name, Class)`.
@@ -115,6 +116,14 @@ fn all_canonical_classes() -> Vec<(&'static str, Class)> {
         ("billing_party", billing_party()),
         ("payment_record", payment_record()),
         ("currency_policy", currency_policy()),
+        // ── 0x09XX — health (OGIT Healthcare) ──
+        ("patient", patient()),
+        ("diagnosis", diagnosis()),
+        ("lab_value", lab_value()),
+        ("medication", medication()),
+        ("treatment", treatment()),
+        ("visit", visit()),
+        ("vital_sign", vital_sign()),
     ]
 }
 
@@ -420,4 +429,33 @@ mod tests {
         // project() has a `name` attribute, so primary_label is set.
         assert_eq!(view.primary_label.as_deref(), Some("name"));
     }
+
+    #[test]
+    fn health_concepts_are_registered_with_their_fields() {
+        // The 7 OGIT Healthcare concepts resolve to registry entries —
+        // this is what makes `every_codebook_id_appears_in_class_ids_all`
+        // green for the 0x09XX block.
+        let v = OgarClassView::new();
+        for concept in [
+            "patient", "diagnosis", "lab_value", "medication", "treatment", "visit", "vital_sign",
+        ] {
+            let id = canonical_concept_id(concept).unwrap();
+            let view = v.object_view(id).unwrap_or_else(|| panic!("{concept} not registered"));
+            assert!(!view.fields.is_empty(), "{concept} has no field basis");
+        }
+    }
+
+    #[test]
+    fn diagnosis_field_basis_is_ten_attributes_then_two_edges() {
+        // The 0x0902 worked example, projected: attributes first (icd_code
+        // leads), then the two family edges, in declaration order.
+        let v = OgarClassView::new();
+        let id = canonical_concept_id("diagnosis").unwrap();
+        let fields = v.fields(id);
+        assert_eq!(fields.len(), 12); // 10 attributes + 2 edges
+        assert_eq!(fields[0].predicate_iri, "icd_code");
+        assert_eq!(fields[10].predicate_iri, "patient");
+        assert_eq!(fields[11].predicate_iri, "encounter");
+    }
+
 }
