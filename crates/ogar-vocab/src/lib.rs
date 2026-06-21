@@ -1189,6 +1189,36 @@ pub fn canonical_concept_domain(id: u16) -> ConceptDomain {
     }
 }
 
+/// Every promoted `(canonical_concept_name, id)` whose id lives in `domain`,
+/// in codebook order. The **reusable enumeration hook** a domain-scoped
+/// consumer uses to inherit its full concept set from the canonical layer
+/// instead of hand-maintaining a parallel list.
+///
+/// This is the fail-closed primitive behind RBAC marking-inheritance: a
+/// consumer that must access-control every concept in a sensitive domain
+/// (e.g. medcare-rs over [`ConceptDomain::Health`]) derives the required
+/// coverage set from here, so a concept newly promoted into the codebook
+/// upstream becomes a *missing-coverage* signal at the consumer's boot
+/// gate — never a silently-uncovered (fail-open) row.
+///
+/// ```
+/// use ogar_vocab::{concepts_in_domain, ConceptDomain};
+///
+/// let health: Vec<_> = concepts_in_domain(ConceptDomain::Health)
+///     .map(|(name, _id)| name)
+///     .collect();
+/// assert!(health.contains(&"patient"));
+/// assert_eq!(health.len(), 7); // the 7 OGIT Healthcare entities
+/// ```
+pub fn concepts_in_domain(
+    domain: ConceptDomain,
+) -> impl Iterator<Item = (&'static str, u16)> {
+    CODEBOOK
+        .iter()
+        .copied()
+        .filter(move |&(_, id)| canonical_concept_domain(id) == domain)
+}
+
 /// Map a coarse [`Class::source_domain`] tag — as produced by the curator
 /// namespace classifier (`"project"`, `"erp"`, `"german-erp"`, …) — to the
 /// [`ConceptDomain`] its promotions live in. Returns `None` for an
@@ -3405,6 +3435,15 @@ mod tests {
             assert_eq!(id >> 8, 0x02, "{commerce_concept} id {id:#06x} not in 0x02XX block");
             assert_eq!(canonical_concept_domain(id), ConceptDomain::Commerce);
         }
+        for health_concept in [
+            "patient", "diagnosis", "lab_value", "medication",
+            "treatment", "visit", "vital_sign",
+        ] {
+            let id = canonical_concept_id(health_concept)
+                .unwrap_or_else(|| panic!("{health_concept} missing from codebook"));
+            assert_eq!(id >> 8, 0x09, "{health_concept} id {id:#06x} not in 0x09XX block");
+            assert_eq!(canonical_concept_domain(id), ConceptDomain::Health);
+        }
         // Reserved + named future-domain blocks.
         assert_eq!(canonical_concept_domain(0x0000), ConceptDomain::Reserved);
         assert_eq!(canonical_concept_domain(0x00FF), ConceptDomain::Reserved);
@@ -3417,6 +3456,36 @@ mod tests {
         assert_eq!(canonical_concept_domain(0x0600), ConceptDomain::Unassigned);
         assert_eq!(canonical_concept_domain(0x0A00), ConceptDomain::Unassigned);
         assert_eq!(canonical_concept_domain(0xFFFF), ConceptDomain::Unassigned);
+    }
+
+    #[test]
+    fn concepts_in_domain_enumerates_exactly_each_domains_codebook_set() {
+        // The reusable fail-closed coverage hook: a domain-scoped consumer
+        // (e.g. medcare-rs over Health) inherits its required concept set
+        // from here. Drift = a concept promoted upstream without the
+        // consumer noticing => exactly what the boot-time coverage gate
+        // must catch.
+        let health: Vec<&str> = concepts_in_domain(ConceptDomain::Health)
+            .map(|(name, _)| name)
+            .collect();
+        assert_eq!(
+            health,
+            [
+                "patient", "diagnosis", "lab_value", "medication",
+                "treatment", "visit", "vital_sign",
+            ],
+            "Health domain set drift — re-sync the consumer coverage gate",
+        );
+        // Every yielded id really is in-domain.
+        for (_, id) in concepts_in_domain(ConceptDomain::Health) {
+            assert_eq!(canonical_concept_domain(id), ConceptDomain::Health);
+        }
+        // Counts line up with the codebook blocks.
+        assert_eq!(concepts_in_domain(ConceptDomain::Health).count(), 7);
+        assert_eq!(concepts_in_domain(ConceptDomain::Commerce).count(), 6);
+        assert_eq!(concepts_in_domain(ConceptDomain::ProjectMgmt).count(), 26);
+        // An empty (reserved-but-unpopulated) domain yields nothing.
+        assert_eq!(concepts_in_domain(ConceptDomain::Osint).count(), 0);
     }
 
     #[test]
