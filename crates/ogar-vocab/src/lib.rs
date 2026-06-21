@@ -1126,6 +1126,23 @@ const CODEBOOK: &[(&str, u16)] = &[
     ("billing_party", 0x0204),
     ("payment_record", 0x0205),
     ("currency_policy", 0x0206),
+
+    // ── 0x09XX — Health domain (clinical / patient / care) ──
+    // medcare-rs Healthcare-namespace promotion (Northstar T9). The 7
+    // entities the OGIT `NTO/Healthcare/entities/` TTL ships, projected
+    // onto canonical Health ids so `ports::HealthcarePort` resolves them
+    // through the `UnifiedBridge` codebook path (the same way OpenProject
+    // `WorkPackage` and Redmine `Issue` resolve through their ports).
+    // Single-tenant today — no cross-curator convergence yet — but the
+    // ids are minted into the shared codebook so a future second clinical
+    // curator (FMA / SNOMED import) converges here rather than re-mints.
+    ("patient", 0x0901),
+    ("diagnosis", 0x0902),
+    ("lab_value", 0x0903),
+    ("medication", 0x0904),
+    ("treatment", 0x0905),
+    ("visit", 0x0906),
+    ("vital_sign", 0x0907),
 ];
 
 /// Codebook **domain** — the high byte of a canonical id (see
@@ -1334,6 +1351,30 @@ pub mod class_ids {
     /// Odoo `res.currency`.
     pub const CURRENCY_POLICY: u16 = 0x0206;
 
+    // ── 0x09XX — health domain (medcare-rs Healthcare namespace) ──
+
+    /// `patient` (`0x0901`) — the person receiving care. OGIT
+    /// `Healthcare:Patient`.
+    pub const PATIENT: u16 = 0x0901;
+    /// `diagnosis` (`0x0902`) — a clinical finding / condition. OGIT
+    /// `Healthcare:Diagnosis`.
+    pub const DIAGNOSIS: u16 = 0x0902;
+    /// `lab_value` (`0x0903`) — a laboratory measurement. OGIT
+    /// `Healthcare:LabValue`.
+    pub const LAB_VALUE: u16 = 0x0903;
+    /// `medication` (`0x0904`) — a prescribed / administered drug. OGIT
+    /// `Healthcare:Medication`.
+    pub const MEDICATION: u16 = 0x0904;
+    /// `treatment` (`0x0905`) — a therapeutic intervention. OGIT
+    /// `Healthcare:Treatment`.
+    pub const TREATMENT: u16 = 0x0905;
+    /// `visit` (`0x0906`) — a clinical encounter / episode. OGIT
+    /// `Healthcare:Visit`.
+    pub const VISIT: u16 = 0x0906;
+    /// `vital_sign` (`0x0907`) — a measured vital. OGIT
+    /// `Healthcare:VitalSign`.
+    pub const VITAL_SIGN: u16 = 0x0907;
+
     /// Every `(canonical_concept_name, id)` pair the constants vouch for.
     /// Drift-guarded against [`super::CODEBOOK`] by tests in this module.
     pub const ALL: &[(&str, u16)] = &[
@@ -1371,6 +1412,14 @@ pub mod class_ids {
         ("billing_party", BILLING_PARTY),
         ("payment_record", PAYMENT_RECORD),
         ("currency_policy", CURRENCY_POLICY),
+        // 0x09XX — health
+        ("patient", PATIENT),
+        ("diagnosis", DIAGNOSIS),
+        ("lab_value", LAB_VALUE),
+        ("medication", MEDICATION),
+        ("treatment", TREATMENT),
+        ("visit", VISIT),
+        ("vital_sign", VITAL_SIGN),
     ];
 
     #[cfg(test)]

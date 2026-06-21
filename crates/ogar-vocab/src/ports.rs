@@ -196,6 +196,49 @@ pub const REDMINE_ALIASES: &[(&str, u16)] = &[
     ("EnabledModule", class_ids::PROJECT_ENABLED_MODULE),
 ];
 
+// ── Healthcare (medcare-rs) port ────────────────────────────────────
+
+/// MedCare-rs's `PortSpec` — maps the `Healthcare` namespace's OGIT
+/// entity names (`Patient`, `Diagnosis`, `LabValue`, `Medication`,
+/// `Treatment`, `Visit`, `VitalSign`) onto the canonical OGAR Health
+/// codebook (`0x09XX`).
+///
+/// Unlike [`OpenProjectPort`] / [`RedminePort`] — which converge two
+/// project-management forks on a shared codebook — Healthcare is a
+/// single-tenant namespace today, so there is no cross-port convergence
+/// pin yet. The port exists so `lance_graph_ontology`'s `MedcareBridge`
+/// collapses to `UnifiedBridge<HealthcarePort>`: the namespace,
+/// bridge_id, and alias table are now **inherited from this canonical
+/// class schema** instead of being re-declared per bridge in lance-graph.
+/// Northstar T9 (Healthcare codebook promotion).
+///
+/// When a second clinical curator lands (FMA / SNOMED / RadLex import,
+/// `lance-graph-rdf-fma-snomed-v1`), its port maps onto these same
+/// `class_ids::*` constants — at which point Healthcare gains the same
+/// apple-meets-apple convergence the project-management ports have.
+pub struct HealthcarePort;
+
+impl PortSpec for HealthcarePort {
+    const NAMESPACE: &'static str = "Healthcare";
+    const BRIDGE_ID: &'static str = "medcare";
+    fn aliases() -> &'static [(&'static str, u16)] {
+        HEALTHCARE_ALIASES
+    }
+}
+
+/// The Healthcare port's `(public_name, class_id)` alias slice — the OGIT
+/// `NTO/Healthcare/entities/` entity names projected onto `class_ids::*`.
+/// `pub` for symmetry with [`OPENPROJECT_ALIASES`] / [`REDMINE_ALIASES`].
+pub const HEALTHCARE_ALIASES: &[(&str, u16)] = &[
+    ("Patient", class_ids::PATIENT),
+    ("Diagnosis", class_ids::DIAGNOSIS),
+    ("LabValue", class_ids::LAB_VALUE),
+    ("Medication", class_ids::MEDICATION),
+    ("Treatment", class_ids::TREATMENT),
+    ("Visit", class_ids::VISIT),
+    ("VitalSign", class_ids::VITAL_SIGN),
+];
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -210,6 +253,45 @@ mod tests {
     fn redmine_namespace_and_bridge_id_match_canonical_strings() {
         assert_eq!(RedminePort::NAMESPACE, "Redmine");
         assert_eq!(RedminePort::BRIDGE_ID, "redmine");
+    }
+
+    #[test]
+    fn healthcare_namespace_and_bridge_id_match_canonical_strings() {
+        assert_eq!(HealthcarePort::NAMESPACE, "Healthcare");
+        assert_eq!(HealthcarePort::BRIDGE_ID, "medcare");
+    }
+
+    #[test]
+    fn healthcare_entities_resolve_into_the_health_domain() {
+        use crate::{canonical_concept_domain, ConceptDomain};
+        for &(name, _) in HealthcarePort::aliases() {
+            let id = HealthcarePort::class_id(name)
+                .unwrap_or_else(|| panic!("`{name}` must resolve"));
+            assert_eq!(
+                canonical_concept_domain(id),
+                ConceptDomain::Health,
+                "`{name}` -> 0x{id:04X} must live in the Health (0x09XX) domain",
+            );
+        }
+        assert_eq!(HealthcarePort::class_id("Patient"), Some(class_ids::PATIENT));
+        assert_eq!(HealthcarePort::class_id("Patient"), Some(0x0901));
+    }
+
+    #[test]
+    fn healthcare_alias_count_matches_ogit_entities() {
+        // Patient / Diagnosis / LabValue / Medication / Treatment / Visit
+        // / VitalSign — the 7 OGIT `NTO/Healthcare/entities/` classes.
+        assert_eq!(
+            HealthcarePort::aliases().len(),
+            7,
+            "Healthcare alias count drift — re-count against OGIT entities"
+        );
+    }
+
+    #[test]
+    fn healthcare_unknown_public_names_resolve_to_none() {
+        assert_eq!(HealthcarePort::class_id("WorkPackage"), None);
+        assert_eq!(HealthcarePort::class_id(""), None);
     }
 
     #[test]
@@ -312,6 +394,12 @@ mod tests {
             assert!(
                 codebook_ids.contains(&id),
                 "RedminePort alias `{name}` -> 0x{id:04X} not in class_ids::ALL"
+            );
+        }
+        for &(name, id) in HealthcarePort::aliases() {
+            assert!(
+                codebook_ids.contains(&id),
+                "HealthcarePort alias `{name}` -> 0x{id:04X} not in class_ids::ALL"
             );
         }
     }
