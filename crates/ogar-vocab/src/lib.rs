@@ -1431,6 +1431,11 @@ pub mod class_ids {
     }
 }
 
+// Per-port specifications consumed by `lance_graph_ontology::UnifiedBridge`.
+// One module per port-vs-port concern stays here at the canonical-layer level
+// so the bridge harness in lance-graph stays generic.
+pub mod ports;
+
 /// **Cross-domain bridge concepts** — promoted concepts whose convergence
 /// is intentionally *across* domains, so they must be exempt from the
 /// domain gate in [`canonical_concept_in_domain`].
