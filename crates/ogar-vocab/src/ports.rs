@@ -1,6 +1,6 @@
 //! Port specifications — `(namespace, bridge_id, public_name → class_id)`
-//! triples consumed by `lance_graph_ontology::UnifiedBridge` to project
-//! per-port public name vocabularies onto the shared OGAR codebook.
+//! triples consumed by `lance_graph_ogar::bridges::UnifiedBridge` to
+//! project per-port public name vocabularies onto the shared OGAR codebook.
 //!
 //! # The goal — one bridge harness, port-specific data
 //!
@@ -12,7 +12,7 @@
 //! NamespaceBridge impl AND duplicating its alias table.
 //!
 //! [`PortSpec`] flips that: the bridge becomes one generic
-//! [`lance_graph_ontology::UnifiedBridge<P: PortSpec>`] harness, and
+//! `lance_graph_ogar::bridges::UnifiedBridge<P: PortSpec>` harness, and
 //! the per-port differences (namespace, bridge_id, alias table) live
 //! here as data attached to the canonical class schema. Adding a port
 //! is now one `impl PortSpec for FooPort {...}` block with three
@@ -91,7 +91,7 @@ impl PortSpec for OpenProjectPort {
 
 /// The OpenProject port's `(public_name, class_id)` alias slice,
 /// exposed for downstream `pub const` re-exports
-/// (e.g. `lance_graph_ontology::bridges::OPENPROJECT_CODEBOOK` keeps
+/// (e.g. `lance_graph_ogar::bridges::OPENPROJECT_CODEBOOK` keeps
 /// its pre-migration shape by aliasing this slice). Prefer
 /// [`OpenProjectPort::aliases`] in new code — going through the
 /// `PortSpec` impl works generically across ports.
@@ -206,7 +206,7 @@ pub const REDMINE_ALIASES: &[(&str, u16)] = &[
 /// Unlike [`OpenProjectPort`] / [`RedminePort`] — which converge two
 /// project-management forks on a shared codebook — Healthcare is a
 /// single-tenant namespace today, so there is no cross-port convergence
-/// pin yet. The port exists so `lance_graph_ontology`'s `MedcareBridge`
+/// pin yet. The port exists so `lance_graph_ogar`'s `MedcareBridge`
 /// collapses to `UnifiedBridge<HealthcarePort>`: the namespace,
 /// bridge_id, and alias table are now **inherited from this canonical
 /// class schema** instead of being re-declared per bridge in lance-graph.
