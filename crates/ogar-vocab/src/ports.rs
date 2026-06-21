@@ -89,14 +89,34 @@ impl PortSpec for OpenProjectPort {
     }
 }
 
-const OPENPROJECT_ALIASES: &[(&str, u16)] = &[
+/// The OpenProject port's `(public_name, class_id)` alias slice,
+/// exposed for downstream `pub const` re-exports
+/// (e.g. `lance_graph_ontology::bridges::OPENPROJECT_CODEBOOK` keeps
+/// its pre-migration shape by aliasing this slice). Prefer
+/// [`OpenProjectPort::aliases`] in new code — going through the
+/// `PortSpec` impl works generically across ports.
+pub const OPENPROJECT_ALIASES: &[(&str, u16)] = &[
     ("Project", class_ids::PROJECT),
     ("WorkPackage", class_ids::PROJECT_WORK_ITEM),
     ("TimeEntry", class_ids::BILLABLE_WORK_ENTRY),
+    // STI chain → project_actor (codex P2 on PR #87). Both OpenProject
+    // and Redmine ship `User`, `Principal`, and `Group` as three classes
+    // backed by one table; the codebook intentionally collapses them
+    // ("Principal + User + Group STI chain collapsed" — see
+    // `class_ids::PROJECT_ACTOR` doc). All three aliases route to the
+    // SAME canonical id so dispatching on `entity_type_id()` reaches the
+    // same arm regardless of which name the consumer hands in.
     ("User", class_ids::PROJECT_ACTOR),
+    ("Principal", class_ids::PROJECT_ACTOR),
+    ("Group", class_ids::PROJECT_ACTOR),
     ("Status", class_ids::PROJECT_STATUS),
     ("Type", class_ids::PROJECT_TYPE),
-    ("Priority", class_ids::PRIORITY),
+    // Both ports expose the priority class as `IssuePriority` (Rails
+    // STI on Enumeration); codex P2 on PR #87 caught the original
+    // `Priority` entry was the canonical-concept *name*, not the Rails
+    // class name. Match the actual class so `class_id("IssuePriority")`
+    // resolves.
+    ("IssuePriority", class_ids::PRIORITY),
     ("Membership", class_ids::PROJECT_MEMBERSHIP),
     ("Journal", class_ids::PROJECT_JOURNAL),
     ("Repository", class_ids::PROJECT_REPOSITORY),
@@ -137,13 +157,24 @@ impl PortSpec for RedminePort {
     }
 }
 
-const REDMINE_ALIASES: &[(&str, u16)] = &[
+/// The Redmine port's `(public_name, class_id)` alias slice — the
+/// `pub` counterpart of [`OPENPROJECT_ALIASES`] for symmetry. See its
+/// doc for rationale.
+pub const REDMINE_ALIASES: &[(&str, u16)] = &[
     ("Project", class_ids::PROJECT),
     ("Issue", class_ids::PROJECT_WORK_ITEM),
     ("TimeEntry", class_ids::BILLABLE_WORK_ENTRY),
+    // STI chain → project_actor (codex P2 on PR #87). Same fold as
+    // OpenProject's aliases — see OPENPROJECT_ALIASES doc.
     ("User", class_ids::PROJECT_ACTOR),
+    ("Principal", class_ids::PROJECT_ACTOR),
+    ("Group", class_ids::PROJECT_ACTOR),
     ("IssueStatus", class_ids::PROJECT_STATUS),
     ("Tracker", class_ids::PROJECT_TYPE),
+    // IssuePriority maps to the shared `priority` codebook arm
+    // (codex P2 on PR #87 — Redmine's port previously had no
+    // priority entry at all).
+    ("IssuePriority", class_ids::PRIORITY),
     ("Member", class_ids::PROJECT_MEMBERSHIP),
     ("Journal", class_ids::PROJECT_JOURNAL),
     ("Repository", class_ids::PROJECT_REPOSITORY),
@@ -210,9 +241,14 @@ mod tests {
             ("Project", "Project", class_ids::PROJECT),
             ("WorkPackage", "Issue", class_ids::PROJECT_WORK_ITEM),
             ("TimeEntry", "TimeEntry", class_ids::BILLABLE_WORK_ENTRY),
+            // STI fold (PROJECT_ACTOR): User / Principal / Group all
+            // share the same id in both ports.
             ("User", "User", class_ids::PROJECT_ACTOR),
+            ("Principal", "Principal", class_ids::PROJECT_ACTOR),
+            ("Group", "Group", class_ids::PROJECT_ACTOR),
             ("Status", "IssueStatus", class_ids::PROJECT_STATUS),
             ("Type", "Tracker", class_ids::PROJECT_TYPE),
+            ("IssuePriority", "IssuePriority", class_ids::PRIORITY),
             ("Membership", "Member", class_ids::PROJECT_MEMBERSHIP),
             ("Journal", "Journal", class_ids::PROJECT_JOURNAL),
             ("Repository", "Repository", class_ids::PROJECT_REPOSITORY),
@@ -281,13 +317,63 @@ mod tests {
     }
 
     #[test]
-    fn each_port_has_25_aliases() {
-        // 25 of the 26 project-mgmt concepts are common across both
-        // ports. OpenProject doesn't have Comment as a top-level model
-        // (Journal carries comments); Redmine doesn't have Priority as
-        // a top-level model (Enumeration::IssuePriority is the shape).
-        // Both end up with 25 alias rows.
-        assert_eq!(OpenProjectPort::aliases().len(), 25);
-        assert_eq!(RedminePort::aliases().len(), 25);
+    fn each_port_has_expected_alias_count() {
+        // Asymmetric by design — each port carries exactly the Rails
+        // classes its corpus ships, no phantom aliases for concepts
+        // the port doesn't expose as a top-level model.
+        //
+        // OpenProject (27): 25 distinct concept entries + 2 STI-fold
+        //   rows (Principal, Group fold into PROJECT_ACTOR alongside
+        //   User). No `Comment` entry — OpenProject's Journal carries
+        //   the comment-equivalent state, no standalone Comment model.
+        // Redmine (28): 26 distinct concept entries + 2 STI-fold rows.
+        //   Has a standalone `Comment` model on top of `Journal` (the
+        //   one extra row vs OpenProject).
+        //
+        // Both gained the same +2 STI-fold rows and +0/+1 IssuePriority
+        // entry under codex P2 on PR #87 (Redmine previously had no
+        // priority entry; OpenProject's was misnamed `Priority`).
+        assert_eq!(
+            OpenProjectPort::aliases().len(),
+            27,
+            "OpenProject alias count drift — re-count the table"
+        );
+        assert_eq!(
+            RedminePort::aliases().len(),
+            28,
+            "Redmine alias count drift — re-count the table"
+        );
+    }
+
+    #[test]
+    fn sti_actor_fold_routes_user_principal_group_to_project_actor() {
+        // Codex P2 on PR #87: User/Principal/Group all map to the same
+        // codebook id in both ports.
+        for name in ["User", "Principal", "Group"] {
+            assert_eq!(
+                OpenProjectPort::class_id(name),
+                Some(class_ids::PROJECT_ACTOR),
+                "OpenProjectPort `{name}` should fold into PROJECT_ACTOR",
+            );
+            assert_eq!(
+                RedminePort::class_id(name),
+                Some(class_ids::PROJECT_ACTOR),
+                "RedminePort `{name}` should fold into PROJECT_ACTOR",
+            );
+        }
+    }
+
+    #[test]
+    fn issue_priority_resolves_via_actual_rails_class_name() {
+        // Codex P2 on PR #87: both ports expose IssuePriority (not
+        // the canonical-concept name `Priority`) as the Rails class.
+        assert_eq!(
+            OpenProjectPort::class_id("IssuePriority"),
+            Some(class_ids::PRIORITY)
+        );
+        assert_eq!(
+            RedminePort::class_id("IssuePriority"),
+            Some(class_ids::PRIORITY)
+        );
     }
 }
