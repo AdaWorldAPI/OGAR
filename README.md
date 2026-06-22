@@ -1,3 +1,5 @@
+<img src="docs/assets/ogar-logo.svg" alt="OGAR" height="64"/>
+
 # OGAR — Open Graph of Active Record
 
 > **English** · [Deutsch](README.de.md) · [Philosophy](docs/PHILOSOPHY.md)
