@@ -1,0 +1,18 @@
+@prefix dcterms:                <http://purl.org/dc/terms/> .
+@prefix ogit:                   <http://www.purl.org/ogit/> .
+@prefix ogit.Automation:        <http://www.purl.org/ogit/Automation/> .
+@prefix ogit.Forum:             <http://www.purl.org/ogit/Forum/> .
+@prefix owl:                    <http://www.w3.org/2002/07/owl#> .
+@prefix rdfs:                   <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix ogit.MRO.Aviation:              <http://www.purl.org/ogit/MRO/Aviation/> .
+
+
+ogit:worksOn
+	a owl:ObjectProperty;
+	rdfs:subPropertyOf ogit:Verb;
+	rdfs:label "worksOn";
+	dcterms:description "Indicates if one entity is currently working on another entity.";
+	# For ranges, see https://www.dublincore.org/specifications/dublin-core/dcmi-period/
+	dcterms:valid "start=2015-06-24;";
+	dcterms:creator "Peter Larem";
+.

@@ -1,0 +1,62 @@
+@prefix ogit.Datacenter:        <http://www.purl.org/ogit/Datacenter/> .
+@prefix ogit.Software:          <http://www.purl.org/ogit/Software/> .
+@prefix ogit.Price:             <http://www.purl.org/ogit/Price/> .
+@prefix ogit.Network:           <http://www.purl.org/ogit/Network/> .
+@prefix ogit.Data:              <http://www.purl.org/ogit/Data/> .
+@prefix ogit.MARS:              <http://www.purl.org/ogit/MARS/> .
+@prefix ogit.MRP:               <http://www.purl.org/ogit/MRP/> .
+@prefix ogit.Forum:		        <http://www.purl.org/ogit/Forum/> .
+@prefix owl:                    <http://www.w3.org/2002/07/owl#> .
+@prefix ogit.ServiceManagement: <http://www.purl.org/ogit/ServiceManagement/> .
+@prefix ogit.UserMeta:          <http://www.purl.org/ogit/UserMeta/> .
+@prefix ogit.Knowledge:         <http://www.purl.org/ogit/Knowledge/> .
+@prefix ogit.Automation:        <http://www.purl.org/ogit/Automation/> .
+@prefix ogit:                   <http://www.purl.org/ogit/> .
+@prefix rdfs:                   <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix dcterms:                <http://purl.org/dc/terms/> .
+
+ogit.Automation:MAID
+	a rdfs:Class;
+	rdfs:subClassOf ogit:Entity;
+	rdfs:label "MAID";
+	dcterms:description """The Monitoring-Automation Interface Description (MAID) is an abstract definition of
+
+
+1. a timeseries to be monitored
+
+2. desired normalizations of that timeseries
+
+3. a set of condition->event mappings to apply to the timeseries or its normalizations
+
+
+ These time series definitions can be parameterized for more flexibility. Usually each MAID should describe 
+exactly one raw timeseries. Depending of the type of monitoring or event management system connected to 
+the engine, the corresponding adapter may choose to either supply the raw timeseries itself or directly 
+create issues using the contained Event structures if it the raw data is not available.
+
+
+The abstract MAID definitions are then mapped to the MARS model within the engine using so-called \"Binding Blocks\".
+
+
+Thus MAID ensures that the arago Automation Engine is compatible to any monitoring system and can fully interact 
+with them. By formalizing the interface the information verification process and definition of required add-ons 
+to the monitoring systems becomes possible.""";
+	# For ranges, see https://www.dublincore.org/specifications/dublin-core/dcmi-period/
+	dcterms:valid "start=2015-05-21;";
+	dcterms:creator "Peter Larem";
+	ogit:scope "NTO";
+	ogit:parent ogit:Node;
+	ogit:mandatory-attributes (
+		ogit.Automation:maidFormalRepresentation
+	);
+	ogit:optional-attributes (
+		
+	);
+	ogit:indexed-attributes (
+		
+	);
+	ogit:allowed (
+			[ ogit:generates  ogit:Timeseries ]
+			[ ogit:defines  ogit:Timeseries ]
+	);
+.

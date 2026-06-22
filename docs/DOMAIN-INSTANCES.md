@@ -52,12 +52,14 @@
 | **Odoo / ERP** | **production instance** | `docs/ODOO-TRANSCODING.md` + a production ERP deployment | shipping |
 | **HIPAA / healthcare** | **production instance** | a production healthcare (HIPAA) deployment | shipping |
 | **Geospatial / OSM** | calibration (geographic) | `docs/RDF-OWL-ALIGNMENT.md §10` Phase 2c + `lance-graph` PR #473 `cesium-osm-substrate-v1.md` (D-OSM-1..7) | spec'd; runtime addendum shipped; `ogar-from-osm-pbf` queued |
+| **MARS (HIRO/bardioc CMDB)** | calibration (closed-formal, XSD-frozen) | `docs/MARS-TRANSCODING.md` + `vocab/imports/ogit/NTO/MARS/` (1:1 mirror) + `_oracle/MARSSchema2015.xsd` + `crates/ogar-from-schema` | spec'd; lift shipping; bijection mechanically tested (15 tests green) |
 
 The first three are how the substrate is *calibrated* (chess proves the
 Semantik/Syntax/Pragmatik trichotomy separates cleanly; OpenProject
 proves production-Rails-AR survives; Elixir-HIRO is the migration spine).
-The last two are how the substrate is *already used in anger* — named by
-domain, per §0.
+Odoo/ERP and HIPAA/healthcare are how the substrate is *already used in
+anger*. Geospatial/OSM and MARS are the structural-arm calibrations: OSM
+proves spatial prefix routing, MARS proves frozen-schema bijection.
 
 ## 2. Per-instance — what each exercises
 
@@ -202,25 +204,69 @@ contributes the schema lift; the runtime side contributes the
 rendering substrate; together they form the geographic counterpart
 to the FMA-bones anatomical case (`docs/RDF-OWL-ALIGNMENT.md §6`).
 
+### 2.7 MARS (HIRO/bardioc CMDB) — XSD-frozen calibration
+
+**The third closed-formal calibration domain** (after chess and OSM).
+The bardioc engine's existing MARS-Schema XSD (frozen since 2015,
+version 5.3.8) becomes the bijective oracle for the four-entity
+A→R→S→M dependency taxonomy. The OGIT NTO/MARS TTL files are mirrored
+1:1 into `vocab/imports/ogit/NTO/MARS/`; the OGAR producer
+(`ogar-from-schema`) reads them and the lifted classifications agree
+byte-for-enum with the XSD-extracted set. Round-trip is mechanically
+enforced: every MARS TTL parses → emits → re-parses to an **equal**
+lifted form, and every one of 176 SGO verbs (the AST predicate
+vocabulary) does the same. Exercises:
+
+- **Frozen-schema calibration** — the bijection oracle pattern
+  (`docs/MARS-TRANSCODING.md §2`) extended from a behavioural-arm
+  oracle (chess) to a structural-arm oracle (MARS XSD). Same
+  chess-grade discipline applied to the schema layer.
+- **The schema-vs-source duality** (`docs/HIRO-IN-CLASSES.md §2`) —
+  the funny insight: schemas lift the structural arm bijectively;
+  source ASTs lift the behavioural arm best-effort; the two are
+  disjoint and become each other's oracle at the structural boundary.
+  This is what makes Foundry's paid "ontology change management" a
+  free `extract_classes.py` + 50 LOC of producer.
+- **Reverse engineering** — the producer is symmetric. OGAR `Class`
+  structures emit back to OGIT-flavoured TTL preserved
+  semantically; colleagues can author/edit in Rust and feed back into
+  bardioc's existing ingest with no two-way translation table.
+- **AST predicate vocabulary lift** — SGO's 176 verbs (`dependsOn`,
+  `contains`, `runsOn`, `generates`, `relates`, `causes`, …) become
+  the canonical OGAR `Association`/`ActionDef` predicate vocabulary
+  via `ogar-from-schema::sgo`. Every NTO `ogit:allowed (...)` block's
+  verb references resolve against this typed registry.
+
+MARS sits with OSM and chess in the "calibration trio" — none of them
+are a production deployment the workspace owns, but they hard-prove
+properties production deployments depend on. MARS specifically proves
+**frozen-schema bijection** + **schema↔source cross-validation** —
+which is what makes the bardioc behavioural-arm migration
+(`docs/ELIXIR-HIRO-PREFETCH.md`) survive without losing OIIT/HIRO
+schema fidelity.
+
 ## 3. Capability coverage matrix
 
 Which domain proves which substrate capability (Foundry-parity columns
 from `SUBSTRATE-ENDGAME.md §5.2`):
 
-| Capability | Chess | OpenProject | Elixir/HIRO | Odoo/ERP | HIPAA | OSM |
-|---|:--:|:--:|:--:|:--:|:--:|:--:|
-| Ontology (Class/Association) | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| Action types / lifecycle FSM | ✓ | ✓ | ✓ (gen_statem) | ✓ (workflows) | ✓ | — |
-| `Postpone` / `StateTimeout` | ✓ (premove/clock) | partial | ✓ | — | — | — |
-| `Depends` (data-causal) | — | ✓ (reactive) | ✓ | ✓ (`@api.depends`) | — | — |
-| Time-versioned / time-travel | ✓ | ✓ (paper-trail) | ✓ | ✓ | ✓ (audit) | ✓ (changesets) |
-| **Row-level permissions** | — | partial (RBAC) | — | partial | **✓ (HIPAA, palette256)** | — (ODbL-public) |
-| **Immutable audit** | — | ✓ (journals) | — | ✓ | **✓ (HIPAA, signed)** | ✓ (OSM changeset history) |
-| Multi-language frontends | (Rust) | Ruby | Elixir | Python (Odoo)+SeaORM | Rust | Rust (via `osmpbf`) |
-| Money/decimal fidelity | — | — | — | **✓ (ERP)** | — | — |
-| Migration scaffold | — | ✓ (target) | ✓ (spine) | (already Rust) | (already Rust) | (already Rust) |
-| **Spatial prefix routing** (Cesium TMS quadkey via NiblePath) | — | — | — | — | — | **✓ (OSM)** |
-| **Palette256 codec adoption** (ADR-024) | — | — | — | — | ✓ (security) | **✓ (tag values + tile-local coords)** |
+| Capability | Chess | OpenProject | Elixir/HIRO | Odoo/ERP | HIPAA | OSM | MARS |
+|---|:--:|:--:|:--:|:--:|:--:|:--:|:--:|
+| Ontology (Class/Association) | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Action types / lifecycle FSM | ✓ | ✓ | ✓ (gen_statem) | ✓ (workflows) | ✓ | — | — (structural arm only) |
+| `Postpone` / `StateTimeout` | ✓ (premove/clock) | partial | ✓ | — | — | — | — |
+| `Depends` (data-causal) | — | ✓ (reactive) | ✓ | ✓ (`@api.depends`) | — | — | — |
+| Time-versioned / time-travel | ✓ | ✓ (paper-trail) | ✓ | ✓ | ✓ (audit) | ✓ (changesets) | (schema versioned) |
+| **Row-level permissions** | — | partial (RBAC) | — | partial | **✓ (HIPAA, palette256)** | — (ODbL-public) | — |
+| **Immutable audit** | — | ✓ (journals) | — | ✓ | **✓ (HIPAA, signed)** | ✓ (OSM changeset history) | (schema = audit witness) |
+| Multi-language frontends | (Rust) | Ruby | Elixir | Python (Odoo)+SeaORM | Rust | Rust (via `osmpbf`) | Rust (via TTL/XSD) |
+| Money/decimal fidelity | — | — | — | **✓ (ERP)** | — | — | — |
+| Migration scaffold | — | ✓ (target) | ✓ (spine) | (already Rust) | (already Rust) | (already Rust) | ✓ (bardioc target) |
+| **Spatial prefix routing** (Cesium TMS quadkey via NiblePath) | — | — | — | — | — | **✓ (OSM)** | — |
+| **Palette256 codec adoption** (ADR-024) | — | — | — | — | ✓ (security) | **✓ (tag values + tile-local coords)** | — |
+| **Frozen-schema bijection oracle** (XSD/TTL ↔ Class) | ✓ (`Position::play`) | — | — | — | — | — | **✓ (XSD ↔ TTL ↔ Class, 3-way)** |
+| **Reverse-emit (Class → schema)** | — | — | — | — | — | — | **✓ (semantic bijection)** |
+| **AST predicate vocabulary registry** | — | — | — | — | — | — | **✓ (176 SGO verbs)** |
 
 **Coverage observation:** no single domain exercises everything, but the
 six together cover the full surface. The HIPAA instance is the *only*

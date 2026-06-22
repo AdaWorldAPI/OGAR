@@ -1,0 +1,30 @@
+@prefix ogit:                   <http://www.purl.org/ogit/> .
+@prefix rdfs:                   <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix dcterms:                <http://purl.org/dc/terms/> .
+@prefix ogit.Forum:             <http://www.purl.org/ogit/Forum/> .
+
+ogit.Forum:Banner
+	a rdfs:Class;
+	rdfs:subClassOf ogit:Entity;
+	rdfs:label "Banner";
+	dcterms:description """Standout content, i.e. a header, hero-unit or part of a carousel.
+Examples:
+    http://getbootstrap.com/examples/carousel/ (a carousel of banners)
+    http://getbootstrap.com/examples/jumbotron/ (the content at the top is a banner)""";
+	# For ranges, see https://www.dublincore.org/specifications/dublin-core/dcmi-period/
+	dcterms:valid "start=2015-04-27;";
+	dcterms:creator "cwalker@arago.de";
+	ogit:scope "NTO";
+	ogit:parent ogit:Node;
+	ogit:mandatory-attributes (
+		ogit:content
+	);
+	ogit:optional-attributes (
+		
+	);
+	ogit:indexed-attributes (
+		
+	);
+	ogit:allowed (
+	);
+.

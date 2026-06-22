@@ -1,0 +1,38 @@
+@prefix ogit.EmailCorrespondance:        <http://www.purl.org/ogit/EmailCorrespondance/> .
+@prefix owl:                    <http://www.w3.org/2002/07/owl#> .
+@prefix ogit:                   <http://www.purl.org/ogit/> .
+@prefix rdfs:                   <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix dcterms:                <http://purl.org/dc/terms/> .
+@prefix ogit.Automation:          <http://www.purl.org/ogit/Automation/> .
+
+ogit:Email
+	a rdfs:Class;
+	rdfs:subClassOf ogit:Entity;
+	rdfs:label "Email";
+	dcterms:description "An Email message";
+	# For ranges, see https://www.dublincore.org/specifications/dublin-core/dcmi-period/
+	dcterms:valid "start=2016-01-22;";
+	dcterms:creator "Peter Larem";
+	ogit:scope "SGO";
+	ogit:parent ogit:Node;
+	ogit:mandatory-attributes (
+		ogit:status
+		ogit:author
+		ogit:recipients
+	);
+	ogit:optional-attributes (
+		ogit:subject
+		ogit:content
+		ogit.EmailCorrespondance:CarbonCopy
+		ogit.EmailCorrespondance:BlindCarbonCopy
+	);
+	ogit:indexed-attributes (
+		
+	);
+	ogit:allowed (
+		[ ogit:responds  ogit:Person ]
+		[ ogit:has  ogit:Attachment ]
+		[ ogit:sameAs  ogit:Comment ]
+		[ ogit:generates  ogit.Automation:AutomationIssue ]
+	);
+.

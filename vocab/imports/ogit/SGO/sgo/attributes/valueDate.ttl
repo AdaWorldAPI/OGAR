@@ -1,0 +1,13 @@
+@prefix ogit:                   <http://www.purl.org/ogit/> .
+@prefix owl:                    <http://www.w3.org/2002/07/owl#> .
+@prefix rdfs:                   <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix dcterms:                <http://purl.org/dc/terms/> .
+
+ogit:valueDate
+	a owl:DatatypeProperty;
+	rdfs:subPropertyOf ogit:Attribute;
+	rdfs:label "valueDate";
+    dcterms:description "Unix timestamp representing the point in time when the associated value in this node is valid." ;
+	dcterms:valid "start=2025-09-09;";
+	dcterms:creator "Calvin Spolwind";
+.

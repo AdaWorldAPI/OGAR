@@ -1,0 +1,33 @@
+@prefix owl:                    <http://www.w3.org/2002/07/owl#> .
+@prefix ogit.Software:          <http://www.purl.org/ogit/Software/> .
+@prefix ogit.ServiceManagement: <http://www.purl.org/ogit/ServiceManagement/> .
+@prefix ogit:                   <http://www.purl.org/ogit/> .
+@prefix rdfs:                   <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix dcterms:                <http://purl.org/dc/terms/> .
+@prefix ogit.Network:           <http://www.purl.org/ogit/Network/> .
+
+ogit.Network:NetworkInterface
+	a rdfs:Class;
+	rdfs:subClassOf ogit:Entity;
+	rdfs:label "NetworkInterface";
+	dcterms:description "Logical or physical network interface.";
+	# For ranges, see https://www.dublincore.org/specifications/dublin-core/dcmi-period/
+	dcterms:valid "start=2015-05-21;";
+	dcterms:creator "Peter Larem";
+	ogit:scope "NTO";
+	ogit:parent ogit:Node;
+	ogit:mandatory-attributes (
+		
+	);
+	ogit:optional-attributes (
+		ogit:id
+		ogit:ipAddress
+	);
+	ogit:indexed-attributes (
+		
+	);
+	ogit:allowed (
+			[ ogit:complies  ogit.Network:NetworkSetting ]
+			[ ogit:locatedAt  ogit:Location ]
+	);
+.

@@ -1,0 +1,14 @@
+@prefix ogit.GeoProfile:     <http://www.purl.org/ogit/GeoProfile/> .
+@prefix ogit:                   <http://www.purl.org/ogit/> .
+@prefix owl:                    <http://www.w3.org/2002/07/owl#> .
+@prefix rdfs:                   <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix dcterms:                <http://purl.org/dc/terms/> .
+
+ogit.GeoProfile:spokenLanguages
+        a owl:DatatypeProperty;
+        rdfs:subPropertyOf ogit:Attribute;
+        rdfs:label "spokenLanguages";
+        dcterms:description "A list or mapping of languages spoken within a geographic region or geo-political union, optionally ordered by prevelance or status in the given union or region.";
+        dcterms:valid "start=2025-07-28;";
+        dcterms:creator "Calvin Spolwind";
+.

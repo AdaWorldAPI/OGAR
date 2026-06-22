@@ -1,0 +1,45 @@
+
+@prefix ogit.Publications:      <http://www.purl.org/ogit/Publications/> .
+@prefix ogit.Forum:      		<http://www.purl.org/ogit/Forum/> .
+@prefix owl:                    <http://www.w3.org/2002/07/owl#> .
+@prefix ogit:                   <http://www.purl.org/ogit/> .
+@prefix rdfs:                   <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix dcterms:                <http://purl.org/dc/terms/> .
+
+ogit.Publications:Publication
+	a rdfs:Class;
+	rdfs:subClassOf ogit:Entity;
+	rdfs:label "Publication";
+	dcterms:description "A public or private publication. Could be a newspaper article, book, or other.";
+	# For ranges, see https://www.dublincore.org/specifications/dublin-core/dcmi-period/
+	dcterms:valid "start=2015-04-27;";
+	dcterms:creator "esteban.moreno@almato.de";
+	ogit:scope "NTO";
+	ogit:parent ogit:Node;
+	ogit:mandatory-attributes (
+		ogit:externalId
+		ogit:content
+	);
+	ogit:optional-attributes (
+		ogit:createdAt
+		ogit:type
+		ogit:name
+		ogit:source
+		ogit:webPage
+		ogit:sourceId
+		ogit:author
+	);
+	ogit:indexed-attributes (
+		
+	);
+	ogit:allowed (
+			[ ogit:connects  ogit.Forum:Topic ]
+			[ ogit.Forum:mentions ogit:ReportedStatistic ]
+			[ ogit.Forum:mentions ogit:Region ]
+			[ ogit.Forum:mentions ogit:Person ]
+			[ ogit.Forum:mentions ogit:Organization ]
+			[ ogit.Forum:mentions ogit:Location ]
+			[ ogit:has ogit:Tone ]
+			[ ogit:contains  ogit.Publications:Mention ]
+	);
+.

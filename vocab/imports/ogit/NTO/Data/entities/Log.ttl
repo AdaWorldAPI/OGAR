@@ -1,0 +1,30 @@
+@prefix ogit:                   <http://www.purl.org/ogit/> .
+@prefix rdfs:                   <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix ogit.Data:              <http://www.purl.org/ogit/Data/> .
+@prefix dcterms:                <http://purl.org/dc/terms/> .
+
+ogit.Data:Log
+	a rdfs:Class;
+	rdfs:subClassOf ogit:Entity;
+	rdfs:label "Log";
+	dcterms:description """This entity defines a log. It used to store a sequence of log records""";
+	# For ranges, see https://www.dublincore.org/specifications/dublin-core/dcmi-period/
+	dcterms:valid "start=2017-06-14;";
+	dcterms:creator "stravlos@arago.de";
+	ogit:scope "NTO";
+	ogit:parent ogit:Node;
+	ogit:mandatory-attributes (
+
+	);
+	ogit:optional-attributes (
+		ogit:name
+		ogit:description
+                ogit.Data:timeToLive
+	);
+	ogit:indexed-attributes (
+		ogit:name
+		ogit:description
+	);
+	ogit:allowed (
+	);
+.

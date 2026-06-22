@@ -1,0 +1,16 @@
+@prefix ogit:                   <http://www.purl.org/ogit/> .
+@prefix owl:                    <http://www.w3.org/2002/07/owl#> .
+@prefix rdfs:                   <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix dcterms:                <http://purl.org/dc/terms/> .
+@prefix ogit.Project:           <http://www.purl.org/ogit/Project/> .
+@prefix ogit.Survey:           <http://www.purl.org/ogit/Survey/> .
+
+ogit:consumes
+	a owl:ObjectProperty;
+	rdfs:subPropertyOf ogit:Verb;
+	rdfs:label "consumes";
+	dcterms:description "This relationship indicates that one consumes result of work from another.";
+	# For ranges, see https://www.dublincore.org/specifications/dublin-core/dcmi-period/
+	dcterms:valid "start=2016-08-08;";
+	dcterms:creator "Alexander Ryabtsev";
+.

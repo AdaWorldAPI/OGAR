@@ -1,0 +1,17 @@
+@prefix ogit:                   <http://www.purl.org/ogit/> .
+@prefix owl:                    <http://www.w3.org/2002/07/owl#> .
+@prefix rdfs:                   <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix dcterms:                <http://purl.org/dc/terms/> .
+
+ogit:accessControl
+	a owl:DatatypeProperty;
+	rdfs:subPropertyOf ogit:Attribute;
+	rdfs:label "accessControl";
+	dcterms:description """The access control level of this Node. Value could mean different things to different
+applications / policies. Initial intent is that policies would treat \"public-read\"
+(inspired by Amazon AWS S3 ACLs) to mean anyone would have read-only access to this
+node.""";
+	# For ranges, see https://www.dublincore.org/specifications/dublin-core/dcmi-period/
+	dcterms:valid "start=2015-03-26;";
+	dcterms:creator "Chris Walker";
+.

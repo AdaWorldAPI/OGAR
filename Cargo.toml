@@ -13,6 +13,7 @@ members = [
     "crates/ogar-from-elixir",
     "crates/ogar-from-ruff",
     "crates/ogar-from-rails",
+    "crates/ogar-from-schema",
     "crates/ogar-class-view",
     "crates/ogar-render-askama",
 ]

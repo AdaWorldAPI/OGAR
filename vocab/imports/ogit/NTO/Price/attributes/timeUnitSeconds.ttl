@@ -1,0 +1,17 @@
+@prefix ogit:                   <http://www.purl.org/ogit/> .
+@prefix owl:                    <http://www.w3.org/2002/07/owl#> .
+@prefix rdfs:                   <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix ogit.Price:             <http://www.purl.org/ogit/Price/> .
+@prefix dcterms:                <http://purl.org/dc/terms/> .
+
+ogit.Price:timeUnitSeconds
+	a owl:DatatypeProperty;
+	rdfs:subPropertyOf ogit:Attribute;
+	rdfs:label "timeUnitSeconds";
+	dcterms:description """Time unit (in seconds) that price applies to. A time unit of 0 for a quantity means a one-time fee is charged. A time 
+unit of 0 for an activity means the price is charged for every instance of the activity. All pricing elements of an 
+attribute pricing must have the same time unit. The time unit is irrelevant for factor pricing elements.""";
+	# For ranges, see https://www.dublincore.org/specifications/dublin-core/dcmi-period/
+	dcterms:valid "start=2015-05-21;";
+	dcterms:creator "Peter Larem";
+.

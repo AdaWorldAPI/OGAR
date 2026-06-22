@@ -1,0 +1,30 @@
+@prefix ogit.Network:           <http://www.purl.org/ogit/Network/> .
+@prefix owl:                    <http://www.w3.org/2002/07/owl#> .
+@prefix ogit:                   <http://www.purl.org/ogit/> .
+@prefix rdfs:                   <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix dcterms:                <http://purl.org/dc/terms/> .
+
+ogit.Network:NetworkElement
+	a rdfs:Class;
+	rdfs:subClassOf ogit:Entity;
+	rdfs:label "NetworkElement";
+	dcterms:description "A Network Element represents a manageable entity in a network. either a single physical device or a group of devices.";
+	dcterms:valid "start=2020-09-04;";
+	dcterms:creator "Marek Meyer";
+	ogit:scope "NTO";
+	ogit:parent ogit:Node;
+	ogit:mandatory-attributes (
+		
+	);
+	ogit:optional-attributes (
+		ogit:id
+		ogit:name
+		ogit:subType
+	);
+	ogit:indexed-attributes (
+		
+	);
+	ogit:allowed (
+			[ ogit:locatedAt ogit.Network:Site ]
+	);
+.

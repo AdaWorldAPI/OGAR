@@ -1,0 +1,14 @@
+@prefix ogit.GeoProfile:     <http://www.purl.org/ogit/GeoProfile/> .
+@prefix ogit:                   <http://www.purl.org/ogit/> .
+@prefix owl:                    <http://www.w3.org/2002/07/owl#> .
+@prefix rdfs:                   <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix dcterms:                <http://purl.org/dc/terms/> .
+
+ogit.GeoProfile:politicalSystem
+    a owl:DatatypeProperty;
+    rdfs:subPropertyOf ogit:Attribute;
+    rdfs:label "politicalSystem";
+    dcterms:description "The type of political system governing a geo-political region (e.g., democracy, monarchy, authoritarian regime).";
+    dcterms:valid "start=2025-07-28;";
+    dcterms:creator "Calvin Spolwind";
+.

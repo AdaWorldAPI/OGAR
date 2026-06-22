@@ -1,0 +1,36 @@
+@prefix owl:                    <http://www.w3.org/2002/07/owl#> .
+@prefix ogit.Version:           <http://www.purl.org/ogit/Version/> .
+@prefix ogit:                   <http://www.purl.org/ogit/> .
+@prefix ogit.SaaS:              <http://www.purl.org/ogit/SaaS/> .
+@prefix rdfs:                   <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix dcterms:                <http://purl.org/dc/terms/> .
+
+ogit.SaaS:EventHandler
+	a rdfs:Class;
+	rdfs:subClassOf ogit:Entity;
+	rdfs:label "EventHandler";
+	dcterms:description "A configured event handler that responds to system events.";
+	dcterms:valid "start=2021-06-08;";
+	dcterms:creator "Marek Meyer";
+	ogit:scope "NTO";
+	ogit:parent "http://www.purl.org/ogit/Node";
+	ogit:mandatory-attributes (
+		ogit.SaaS:active
+		ogit:name
+	);
+	ogit:optional-attributes (
+		ogit:description
+		ogit.SaaS:eventMode
+		ogit.SaaS:filterExpression
+		ogit.SaaS:scopes
+		ogit.SaaS:handlerFunction
+		ogit.SaaS:messageQueueType
+		ogit.SaaS:messageQueueName
+		ogit.SaaS:credentialsReference
+	);
+	ogit:indexed-attributes (
+		ogit:name
+	);
+	ogit:allowed (
+	);
+.

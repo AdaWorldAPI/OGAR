@@ -1,0 +1,36 @@
+@prefix owl:                    <http://www.w3.org/2002/07/owl#> .
+@prefix ogit.Auth:              <http://www.purl.org/ogit/Auth/> .
+@prefix ogit:                   <http://www.purl.org/ogit/> .
+@prefix rdfs:                   <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix dcterms:                <http://purl.org/dc/terms/> .
+@prefix ogit.ServiceManagement: <http://www.purl.org/ogit/ServiceManagement/> .
+@prefix ogit.Forms: <http://www.purl.org/ogit/Forms/> .
+
+
+ogit:Rating
+	a rdfs:Class;
+	rdfs:subClassOf ogit:Entity;
+	rdfs:label "Rating";
+	dcterms:description "Rating is used to rank nodes based on an arbitrary integer `value`";
+	# For ranges, see https://www.dublincore.org/specifications/dublin-core/dcmi-period/
+	dcterms:valid "start=2018-08-01;";
+	dcterms:creator "qikram@arago.de";
+	ogit:scope "SGO";
+	ogit:parent ogit:Node;
+	ogit:mandatory-attributes (
+		ogit:value
+	);
+	ogit:optional-attributes (
+		ogit:comment
+		ogit:id
+		ogit:name
+	);
+	ogit:indexed-attributes (
+		
+	);
+	ogit:allowed (
+			[ ogit:rates  ogit.Auth:Application ]
+			[ ogit:rates  ogit.ServiceManagement:Service ]
+			[ ogit:rates  ogit.Forms:Form]
+	);
+.

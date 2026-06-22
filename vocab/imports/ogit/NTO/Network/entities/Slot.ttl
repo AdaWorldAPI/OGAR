@@ -1,0 +1,28 @@
+@prefix ogit:                   <http://www.purl.org/ogit/> .
+@prefix rdfs:                   <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix dcterms:                <http://purl.org/dc/terms/> .
+@prefix ogit.Network:           <http://www.purl.org/ogit/Network/> .
+
+ogit.Network:Slot
+	a rdfs:Class;
+	rdfs:subClassOf ogit:Entity;
+	rdfs:label "Slot";
+	dcterms:description "Slot is a physical entity inside a shelf allowing to plug in extension moduls, e. g. network interface moduls oder CPU modules.";
+	# For ranges, see https://www.dublincore.org/specifications/dublin-core/dcmi-period/
+	dcterms:valid "start=2015-05-21;";
+	dcterms:creator "Peter Larem";
+	ogit:scope "NTO";
+	ogit:parent ogit:Node;
+	ogit:mandatory-attributes (
+		
+	);
+	ogit:optional-attributes (
+		ogit:name
+		ogit:id
+	);
+	ogit:indexed-attributes (
+		
+	);
+	ogit:allowed (
+	);
+.

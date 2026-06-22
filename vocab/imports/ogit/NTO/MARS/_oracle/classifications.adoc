@@ -1,0 +1,628 @@
+= Node classifications from MARS Schema 5.3.8
+:toc:
+:revdate: 22-Jun-2026
+
+<<<
+
+[NOTE]
+====
+The MARS Schema uses a different versioning cycle from HIRO Product. It is expected to see the two versions deviate from each other.
+
+This list was last updated on: *{revdate}*
+====
+
+
+== Application Node Classifications
+
+[cols="1,1,3", options="header"]
+|===
+|ApplicationClass|ApplicationSubClass|Description
+|Data|DataManagement|Management of Data
+      
+|Data|Datawarehouse|A central Data
+      Warehousing Application
+      
+|Data|DigitalAssetManagement|Digital management of
+      assets
+      
+|Data|DocumentManagementSystem|Centralized document
+      management
+      
+|Data|GeographicInformationSystem|Management of geograpical
+      informations
+      
+|Development|ComputerAidedEngineering|Computer-aided
+      engineering
+      
+|Development|Diagramming|Diagram Generation
+      
+|Development|HardwareEngineering|Hardware design and
+      production
+      
+|Development|IntegratedDevelopmentEnvironment|integrated development
+      envirotment
+      
+|Development|ProductEngineering|Product creation
+      
+|Development|Simulation|Creation of simulations
+      
+|Development|SoftwareEngineering|Engineering and
+      development of software
+      
+|Development|Testing|Test and Approval
+      
+|Development|WebDevelopment|Development of Websites
+      and Webapplications
+      
+|Education|ClassroomManagement|School and classroom
+      management
+      
+|Education|Teaching|Educational sector
+      
+|Enterprise|ApplicationSuite|Collection of
+      applications like Office.suite
+      
+|Enterprise|AssetManagement|Management of Assets
+      
+|Enterprise|BusinessWorkflow|Business processes and
+      workflow
+      
+|Enterprise|CustomerRelationshipManagement|A Customer Relationship
+      Management application(CRM)
+      
+|Enterprise|Email|Services for receiving
+      and sending emails
+      
+|Enterprise|EnterpriseInfrastructure|Components to provide a
+      business infrastructure
+      
+|Enterprise|EnterprisePortal|Company portal
+      
+|Enterprise|EnterpriseResourcePlanning|Enterprise resource
+      planning
+      
+|Enterprise|KnowledgeManagement|Management and storage of
+      knowledge
+      
+|Enterprise|ProcessManagement|Management of business
+      processes
+      
+|Financial|Accounting|Accounting system
+      
+|Financial|Banking|Bank transaction system
+      
+|Financial|ClearingSystems|Clearing System
+      
+|Financial|Compliance|Check and secure
+      compliance
+      
+|Financial|Controlling|Support for enterprise
+      controlling
+      
+|Financial|FinancialModelling|Support for enterprise
+      controlling
+      
+|Financial|RiskManagement|Management and prognosis
+      of risk factors in a company
+      
+|Financial|Trading|Transactionssystem
+      
+|Media|Animation|Creation of computer
+      animations
+      
+|Media|Blog|Creation of blogs
+      
+|Media|ComputerAidedDesign|Creation of computer
+      aided designs
+      
+|Media|ComputerGraphics|Creation of computer
+      graphics
+      
+|Media|DesktopPublishing|Computer bases publishing
+      
+|Media|DocumentAssembly|Assembly of documents
+      
+|Media|DocumentAutomation|Automated document
+      creation
+      
+|Media|InformationManagementPortal|Portal for information
+      management
+      
+|Media|MediaDevelopment|General development of
+      media types
+      
+|Media|Presentation|Creation and execution of
+      presentations
+      
+|Media|SoundEditing|Editing of audio files
+      
+|Media|VideoEditing|Editing of video files
+      
+|Others|FieldServiceManagement|Field staff management
+      
+|Others|ReferenceSystems|Reference Application
+      
+|Others|ReservationSystems|Reservation Applications
+      
+|Others|TransactionSystem|Transactionssystems
+      
+|===
+
+== Resource Node Classifications
+
+[cols="1,5", options="header"]
+|===
+|ResourceClass|Description
+|Backend|In IT, backend is
+      commonly used in connection with a layer based classification.
+      Typically, the backend is close to the underlying system.
+      
+|Computation|Mathematical calculation
+      of any kind
+      
+|ContentDelivery|Content Delivery and
+      Provision
+      
+|CoreApplication|Central resource, which
+      is responsible for the core functionality of the system.
+      
+|Database|A database is a system
+      for electronic data management to save huge amount of data
+      efficently and to provide subsets of it in a demand-oriented manner
+      for users and applications.
+      
+|Environment|Environment, or at least a
+      part of it, which sets the needed parameters for the operation of the
+      Application.
+      
+|Frontend|In IT, frontend is
+      commonly used in connection with a layer based classification.
+      Typically, the frontend is close to the user.
+      
+|Infrastructure|Part of the
+      infrastructure which is responsible for operating an application.
+      
+|Interface|Interface with other
+      systems
+      
+|Logistics|Logistics concetrates on
+      organisation, control, provision and optimisation of processes of
+      streams in the freight-, information-, energy-, money-, and human
+      resource business.
+      
+|Middleware|Middleware defines a
+      layer in a complex system, which provdes different software
+      components with the possibility to exchange data.
+      
+|Monitoring|Monitoring is an umbrella
+      term for all sorts of systematic and direct collection ,inspection
+      or observation of a an event with the usage of technical expedience
+      or other surveilance systems
+      
+|PhysicalObject|A relevant and needed
+      phyisical object
+      
+|Place|A relevant and needed
+      place
+      
+|Process|A chain of tasks, which
+      are executed step by step to achieve a business or operational
+      related goal.
+      
+|Provider|Provider of services,
+      images and it services, which are crucial for the usage or the
+      operation
+      
+|Security|Security includes
+      network- and data-security and processes compliance, possibilities
+      of distribution of user rights and the detection and avoidance of
+      attacks or wrongful usage.
+      
+|Service|Providing or requesting
+      of a specific service
+      
+|Storage|Storage and provision of
+      huge amount of data
+      
+|===
+
+== Software Node Classifications
+
+[cols="1,1,3", options="header"]
+|===
+|SoftwareClass|SoftwareSubClass|Description
+|Administration|BMC|
+|Administration|BMCPatrolAgent|The active component of BPPM installed on each endpoint
+|Administration|BMCPerformanceManager|
+|Administration|BigBrother|
+|Administration|HPAdministration|
+|Administration|MSRDP|
+|Administration|McAfeeCommonManagementAgent|
+|Administration|McAfeeVirusScan|
+|Administration|Nagios|
+|Administration|NetCrunch|
+|Administration|OpenNMS|
+|Administration|OpenSSH|
+|Administration|OpenView|
+|Administration|Proxmox|
+|Administration|SCOM|
+|Administration|ServiceNow|
+|Administration|SophosAntiVirus|Sophos Endpoint protection
+|Administration|SpectrumEM|
+|Administration|Tivoli|
+|Administration|Unicenter|
+|Administration|WatchMe|
+|Administration|Zabbix|
+|Administration|Zenoss|
+|AntiSpam|AbacaEPG|
+|AntiSpam|BarracudaSF|
+|AntiSpam|DSPAM|
+|AntiSpam|Ironport|
+|AntiSpam|MXEmailDefense|
+|AntiSpam|MailMarshall|
+|AntiSpam|MailWasherPro|
+|AntiSpam|RoadRunner|
+|AntiSpam|SonicWALL|
+|AntiSpam|SpamAssassin|
+|AntiSpam|SpamCop|
+|AntiSpam|eTrustAS|
+|ApplicationServer|ColdFusion|
+|ApplicationServer|FujitsuISA|
+|ApplicationServer|Geronimo|
+|ApplicationServer|Glassfish|
+|ApplicationServer|JBoss|
+|ApplicationServer|JOnAS|
+|ApplicationServer|Liferay|
+|ApplicationServer|NetWeaver|
+|ApplicationServer|Orion|
+|ApplicationServer|Resin|
+|ApplicationServer|TomEE|
+|ApplicationServer|Tomcat|
+|ApplicationServer|Weblogic|
+|ApplicationServer|Websphere|
+|ApplicationServer|jRun|
+|Automation|AutoPilot|arago AutoPilot engine (https://docs.hiro.arago.co/autopilot)
+|Automation|HIROEngine|arago HIRO Engine (https://docs.hiro.arago.co). Formerly known as arago AutoPilot engine
+|Backup|EMCNetWorker|EMC NetWorker (formerly Legato NetWorker) is a suite of enterprise level data protection software that unifies and automates backup to tape, disk-based, and flash-based storage media across physical and virtual environments for granular and disaster recovery.
+|BusinessIntelligence|Antares|
+|BusinessIntelligence|BI|
+|BusinessIntelligence|BOARD|
+|BusinessIntelligence|BusinessObjects|
+|BusinessIntelligence|BusinessOne|
+|BusinessIntelligence|DIDiver|
+|BusinessIntelligence|DynamicsBI|
+|BusinessIntelligence|EAS|
+|BusinessIntelligence|EIP|
+|BusinessIntelligence|GusOsSuite|
+|BusinessIntelligence|HiQube|
+|BusinessIntelligence|JedoxBiSuite|
+|BusinessIntelligence|KPIMonitor|
+|BusinessIntelligence|LISA|
+|BusinessIntelligence|Mariner|
+|BusinessIntelligence|OracleBIS|
+|BusinessIntelligence|OracleDiscoverer|
+|BusinessIntelligence|OracleEBS|
+|BusinessIntelligence|OracleReports|
+|BusinessIntelligence|Planalyzer|
+|BusinessIntelligence|QlikView|
+|BusinessIntelligence|Statistica|
+|CMS|DocMe|
+|CMS|Drupal|
+|CMS|Ektron|
+|CMS|ExpressionEngine|
+|CMS|Joomla|
+|CMS|MODx|
+|CMS|MagnoliaCMS|
+|CMS|ProArc|ProArc is a Document management system. roArc is mostly used for technical documentation, and is used by many players in the oil and gas sector and construction industry.
+|CMS|RedDotCMS|
+|CMS|SilverStripeCMS|
+|CMS|Typo3|TYPO3 - Open Source Enterprise CMS. https://typo3.org
+|CMS|Umbraco|
+|CMS|WordPress|
+|CMS|dotCMS|
+|CRM|DynamicsCRM|Microsoft Dynamics CRM
+|CRM|FieldOne|
+|CRM|GenesisWorld|
+|CRM|MaximizerCRM|
+|CRM|PlanPlusOnline|
+|CRM|SAPCRM|
+|CRM|SageAct|
+|CRM|SalesforceCom|
+|CRM|SiebelCRM|
+|CRM|SugarCRM|
+|CRM|ZohoCRM|
+|CRM|updateSeven|
+|Communication|CiscoUC|
+|Communication|Openfire|
+|Communication|Skype|
+|Communication|Yammer|
+|Community|Appleseed|
+|Community|Dolphin|
+|Community|Mahara|
+|Community|Oxwall|
+|Community|WebligoSE|
+|Community|elgg|
+|Community|vBulletin|
+|DBMS|Accumulo|
+|DBMS|Cassandra|Apache Cassandra is a free and open-source distributed database management system designed to handle large amounts of data across many commodity servers, providing high availability with no single point of failure.
+|DBMS|DB2|
+|DBMS|DBS|
+|DBMS|Empress|
+|DBMS|HSQLDB|HSQLDB (Hyper SQL Database) is a relational database management system written in Java.
+|DBMS|Hypertable|
+|DBMS|Informix|
+|DBMS|MSSQL|
+|DBMS|MaxDB|
+|DBMS|MongoDB|MongoDB (from humongous) is a free and open-source cross-platform document-oriented database program. Classified as a NoSQL database program, MongoDB uses JSON-like documents with schemas.
+|DBMS|MySQL|
+|DBMS|Oracle|
+|DBMS|PostgreSQL|
+|DBMS|Redis|Redis is a data structure server. It is open-source, networked, in-memory, and stores keys with optional durability
+|DBMS|SimpleDB|
+|DBMS|Sybase|
+|DBMS|Zookeeper|Apache ZooKeeper is a software project of the Apache Software Foundation. It is essentially a distributed hierarchical key-value store, which is used to provide a distributed configuration service, synchronization service, and naming registry for large distributed systems.
+|DNSServer|bind|
+|DataProcessing|Flink|Apache Flink is an open-source stream processing framework for distributed, high-performing, always-available, and accurate data streaming applications. (https://flink.apache.org/)
+|DataProcessing|GraphIT|arago GraphIT server (https://docs.hiro.arago.co/autopilot)
+|DataProcessing|GuardusMES|
+|DataProcessing|HIROConnect|arago HIRO Connect (https://docs.hiro.arago.co)
+|DataProcessing|HIROGraphDB|arago HIRO Graph DB (https://docs.hiro.arago.co). Formerly known as arago GraphIT server
+|DataProcessing|Hadoop|Apache Hadoop is an open-source software framework used for distributed storage and processing of very large data sets.
+|DevelopmentTools|Bluefish|
+|DevelopmentTools|Eclipse|
+|DevelopmentTools|Netbeans|
+|DevelopmentTools|OracleForms|
+|DevelopmentTools|QuantaPlus|
+|DevelopmentTools|VisualStudio|
+|DevelopmentTools|Xcode|
+|EAI|Adeptia|
+|EAI|AutomationAnywhere|
+|EAI|BPEL|
+|EAI|CDI|
+|EAI|Camel|
+|EAI|ESB|
+|EAI|FlowSoftware|
+|EAI|InformaticaPowerCenter|
+|EAI|MLTConnectelligence|
+|EAI|MapForce|
+|EAI|NetWeaverPI|
+|EAI|ServiceMix|
+|EAM|MSIServicePro|
+|EAM|Proteus|
+|EAM|TMTFleetMaintenance|
+|EAM|VisionFM|
+|EAM|WebWorkCMMS|
+|ERP|Abas|
+|ERP|DynamicsAX|
+|ERP|EpicorERP|
+|ERP|NetSuite|
+|ERP|OracleERP|
+|ERP|SAPBusinessOne|
+|ERP|SAPERP|
+|ERP|Sage|
+|ERP|Syspro|
+|Educational|Educational|
+|Entertainment|Entertainment|
+|FactoryManagement|FactoryManagement|
+|FileServices|Dropbox|
+|FileServices|FTP|
+|FileServices|GoogleDocs|
+|FileServices|NFS|
+|FileServices|OracleASM|Oracle Automatic Storage Management
+|FileServices|SFTP|
+|FileServices|SMB|
+|FileServices|Samba|
+|Firewall|ACE|
+|Firewall|ASA|
+|Firewall|CPAppControl|
+|Firewall|CPFirewall|
+|Firewall|ForefrontTMG|
+|Firewall|Fortigate|
+|Firewall|GENuGate|
+|Firewall|Netscreen|
+|Firewall|StingrayFirewall|
+|IAM|ADS|Microsoft's Active Directory Services
+|IAM|Altor|
+|IAM|BoschCCS|
+|IAM|CAIM|
+|IAM|CloudwareCity|
+|IAM|Courion|
+|IAM|JOSSO2|Java Open Single Sign-On from Atricore (http://atrictore.com)
+|IAM|Mitto|
+|IAM|NovellIM|
+|IAM|OpenAM|
+|IAM|OracleIDM|also known as Oracle Internet Directory
+|IAM|PasswordManagerPro|Password Manager Pro is a secure vault for storing and managing shared sensitive information such as passwords, documents and digital identities of enterprises.
+|IAM|RSAAM|
+|IAM|RedFoxCrypto|
+|IAM|Spectra|
+|IAM|TivoliIDM|
+|IAM|WSO2IS|WSO2 Identity Server: http://wso2.com/products/identity-server
+|ITSM|Axios|
+|ITSM|FrontrageiTSM|
+|ITSM|JIRA|
+|ITSM|MSSCSM|
+|ITSM|OperationsManager|
+|ITSM|OracleOPMN|
+|ITSM|RemedyARS|
+|ITSM|ServiceDeskExpress|
+|ITSM|Spiceworks|
+|ITSM|SummusITMS|
+|ITSM|Sunview|
+|ITSM|TivoliITSM|
+|ITSM|ZenossITSM|
+|IndividualApplication|IndividualApplication|
+|LDAP|DirectoryServer389|The 389 Directory Server (previously Fedora Directory Server) is an LDAP (Lightweight Directory Access Protocol) server developed by Red Hat, as part of Red Hat's community-supported Fedora Project.
+|LDAP|OpenLDAP|OpenLDAP is a free, open source implementation of the Lightweight Directory Access Protocol (LDAP) developed by the OpenLDAP Project. It is released under its own BSD-style license called the OpenLDAP Public License
+|MIS|Basecamp|
+|MIS|PlanviewEnterprise|
+|MIS|SOAGovernance|
+|MailServer|CourierMailServer|
+|MailServer|Dovecot|
+|MailServer|ExchangeServer|Microsoft Exchange Server is a mail server and calendaring server developed by Microsoft.
+|MailServer|Postfix|
+|MailServer|Qmail|
+|MailServer|Sendmail|
+|Networking|A10ADC|
+|Networking|ADCVX|
+|Networking|Alteon|
+|Networking|ApacheBalancer|
+|Networking|AppVelocity|
+|Networking|BIGIP|
+|Networking|BarracudaLB|
+|Networking|CiscoACE|
+|Networking|CiscoACEGSS|
+|Networking|CiscoCSM|
+|Networking|CiscoSecurityManager|
+|Networking|Equalizer|
+|Networking|FortiAnalyzer|
+|Networking|FortiManager|
+|Networking|HPOpenView|
+|Networking|LVS|
+|Networking|LoadMaster|
+|Networking|NetScaler|
+|Networking|RiverbedCascade|
+|Networking|ServerIron|
+|Networking|Steelhead|
+|Networking|StingrayTrafficManager|
+|Networking|profense|
+|Productivity|IBMDomino|IBM Domino (formerly IBM Lotus Domino) is an advanced platform for hosting social business applications. It delivers scalable, security-rich applications at a low cost, helping you improve productivity, accelerate operations and enhance decision-making.
+|Productivity|LibreOffice|
+|Productivity|LotusSymphony|
+|Productivity|MSProjectServer|Microsoft Project Server: A flexible solution for project portfolio management (PPM) and everyday work.
+|Productivity|MSSharePointServer|enhanced version of Microsoft SharePoint that can be deployed on premises
+|Productivity|OfficeSuite|
+|Proxy|BlueCoatProxyAV|
+|Proxy|BlueCoatProxySG|
+|Proxy|MSISA|
+|Proxy|OracleWebCache|
+|Proxy|Squid|
+|Proxy|SterlingSecureProxy|
+|Proxy|Varnish|
+|QueueAndCache|AmazonSQS|
+|QueueAndCache|Biztalk|
+|QueueAndCache|ElastiCache|
+|QueueAndCache|Kafka|Kafka is a distributed streaming platform (https://kafka.apache.org)
+|QueueAndCache|Mule|
+|QueueAndCache|OracleESB|
+|QueueAndCache|RabbitMQ|
+|QueueAndCache|TibcoEMS|
+|QueueAndCache|WebsphereESB|
+|QueueAndCache|WebsphereMB|
+|QueueAndCache|WebsphereMQ|
+|QueueAndCache|ZeroMQ|
+|RTE|JDK|
+|RTE|JRE|
+|RTE|PHP-FPM|
+|RTE|Perl|
+|RTE|Python|
+|Reference|Confluence|
+|Reference|Jive|
+|Reference|MediaWiki|
+|Reference|Refworks|
+|Reference|Zotero|
+|Reporting|PentahoReporting|http://community.pentaho.com/projects/reporting/
+|SearchEngines|Elasticsearch|Elasticsearch is a distributed, RESTful search and analytics engine capable of solving a growing number of use cases.
+|SearchEngines|GoogleMini|
+|SearchEngines|GoogleSA|
+|SearchEngines|Lucene|
+|SearchEngines|MSSearchServer|
+|SearchEngines|Solr|
+|SearchEngines|htdig|
+|SupplyChainManagement|Brightpearl|
+|SupplyChainManagement|EnterpriseIQ|
+|SupplyChainManagement|Epicor|
+|SupplyChainManagement|GenevaBMS|
+|SupplyChainManagement|IDSCNetwise|
+|SupplyChainManagement|JDA|
+|SupplyChainManagement|OracleSCM|
+|SupplyChainManagement|ProntoXI|
+|SupplyChainManagement|QAD|
+|SupplyChainManagement|RedPrairie|
+|SupplyChainManagement|SAPSCM|
+|SupplyChainManagement|TECSYSWMS|
+|SupplyChainManagement|ThreePLWM|
+|SupplyChainManagement|ThreePlink|
+|SupplyChainManagement|WarehouseAdvantage|
+|SupplyChainManagement|Wolin|
+|SystemService|Crond|Unix/Linux cron daemon
+      
+|SystemService|SSHD|
+|SystemService|Telnetd|
+|Virtualization|CitrixXen|
+|Virtualization|GoogleAppEngine|
+|Virtualization|HyperV|
+|Virtualization|IntegrityVM|
+|Virtualization|KVM|
+|Virtualization|LPAR|
+|Virtualization|OpenVZ|
+|Virtualization|OracleVM|
+|Virtualization|PowerVM|
+|Virtualization|SolarisZones|
+|Virtualization|VMWare|can stand for any virtualization product from the VMWare family
+|Virtualization|VirtualBox|
+|Virtualization|vSphere|
+|Virtualization|zVM|
+|WebServer|ApacheHTTPD|
+|WebServer|IIS|
+|WebServer|OracleFusionHTTPServer|
+|WebServer|lighttpd|
+|WebServer|nginx|
+|===
+
+== Machine Node Classifications
+
+[cols="1,5", options="header"]
+|===
+|MachineClass|Description
+|AIX|AIX (Advanced Interactive
+      eXecutive) is a series of proprietary Unix operating systems
+      developed and sold by IBM for several of its computer platforms.
+      
+|Appliance|A computer appliance is
+      generally a separate and discrete hardware device with integrated
+      software (firmware), specifically designed to provide a specific
+      computing resource.
+      
+|BSD|Berkeley Software Distribution (BSD, sometimes called Berkeley Unix) is a Unix operating system derivative developed and distributed by the Computer Systems Research Group (CSRG) of the University of California, Berkeley.
+      The BSD MachineClass is used to cover the following descendants of the original BSD: FreeBSD, NetBSD, OpenBSD
+      
+|HPUX|HP-UX (Hewlett-Packard
+      UniX) is Hewlett-Packard's proprietary implementation of the Unix
+      operating system, based on UNIX System V (initially System III).
+      
+|Linux|Linux is a Unix-like
+      computer operating system assembled under the model of free and open
+      source software development and distribution.
+      
+|Router|A router is a networking device
+      that forwards data packets between computer networks.
+      
+|Solaris|Solaris is a Unix
+      operating system originally developed by Sun Microsystems. Oracle
+      Solaris, as it is now known, has been owned by Oracle Corporation.
+      
+|Switch|A network switch (also called switching hub,
+      bridging hub, officially MAC bridge) is a computer networking device that
+      connects devices together on a computer network, by using packet switching to receive,
+      process and forward data to the destination device.
+      
+|UNIX|Unix is a multitasking,
+      multi-user computer operating system originally developed in 1969 by
+      a group of AT&T employees at Bell Labs.
+      
+|WiFi|The Wi-Fi Alliance defines Wi-Fi as any
+      "wireless local area network" (WLAN) product based on the
+      Institute of Electrical and Electronics Engineers' (IEEE) 802.11 standards.
+      However, the term "Wi-Fi" is used in general English as a synonym for "WLAN"
+      since most modern WLANs are based on these standards. "Wi-Fi" is a trademark
+      of the Wi-Fi Alliance. The "Wi-Fi Certified" trademark can only be used by Wi-Fi
+      products that successfully complete Wi-Fi Alliance interoperability certification testing.
+      
+|Windows|Microsoft Windows is a
+      series of graphical interface operating systems developed, marketed,
+      and sold by Microsoft.
+      
+|===
+
+

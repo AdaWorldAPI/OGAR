@@ -1,0 +1,33 @@
+@prefix ogit.FinancialMarket:     <http://www.purl.org/ogit/FinancialMarket/> .
+@prefix ogit:                   <http://www.purl.org/ogit/> .
+@prefix rdfs:                   <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix dcterms:                <http://purl.org/dc/terms/> .
+
+ogit.FinancialMarket:Contract
+  a rdfs:Class;
+  rdfs:subClassOf ogit:Entity;
+  rdfs:label "Contract";
+  dcterms:description "A contract for a financial instrument sold by corporation in the context of financial markets.";
+  dcterms:valid "start=2019-11-06;";
+  dcterms:creator "Marek Meyer";
+  ogit:scope "NTO";
+  ogit:parent ogit:Node;
+  ogit:mandatory-attributes (
+    ogit:id
+    ogit:currency
+  );
+  ogit:optional-attributes (
+    ogit:title
+    ogit:value
+    ogit.FinancialMarket:issueDate
+    ogit.FinancialMarket:maturityDate
+  );
+  ogit:indexed-attributes (
+  );
+  ogit:allowed (
+	[ ogit:reports ogit:Timeseries ]
+	[ ogit:soldTo ogit.FinancialMarket:Project ]
+	[ ogit:soldTo ogit.FinancialMarket:Corporation ]
+	[ ogit.FinancialMarket:securedBy ogit.FinancialMarket:Protection ]
+  );
+.

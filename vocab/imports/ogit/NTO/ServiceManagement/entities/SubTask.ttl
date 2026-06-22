@@ -1,0 +1,78 @@
+@prefix ogit.Auth:              <http://www.purl.org/ogit/Auth/> .
+@prefix ogit.Project:           <http://www.purl.org/ogit/Project/> .
+@prefix ogit.Automation: 	    <http://www.purl.org/ogit/Automation/> .
+@prefix ogit.Survey:            <http://www.purl.org/ogit/Survey/> .
+@prefix ogit.Forum:   		    <http://www.purl.org/ogit/Forum/> .
+@prefix ogit.MRP:              <http://www.purl.org/ogit/MRP/> .
+@prefix ogit.Software:          <http://www.purl.org/ogit/Software/> .
+@prefix ogit.Forum:             <http://www.purl.org/ogit/Forum/> .
+@prefix ogit.Network:           <http://www.purl.org/ogit/Network/> .
+@prefix ogit.Datacenter:        <http://www.purl.org/ogit/Datacenter/> .
+@prefix ogit.MRP:               <http://www.purl.org/ogit/MRP/> .
+@prefix ogit.Factory:   <http://www.purl.org/ogit/Factory/> .
+@prefix ogit.BusinessProcess:   <http://www.purl.org/ogit/BusinessProcess/> .
+@prefix ogit.Automation:        <http://www.purl.org/ogit/Automation/> .
+@prefix owl:                    <http://www.w3.org/2002/07/owl#> .
+@prefix ogit.MARS:              <http://www.purl.org/ogit/MARS/> .
+@prefix ogit.MRO.Aviation:      <http://www.purl.org/ogit/MRO/Aviation/> .
+@prefix ogit:                   <http://www.purl.org/ogit/> .
+@prefix rdfs:                   <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix dcterms:                <http://purl.org/dc/terms/> .
+@prefix ogit.ServiceManagement: <http://www.purl.org/ogit/ServiceManagement/> .
+@prefix ogit.CustomerSupport: <http://www.purl.org/ogit/CustomerSupport/> .
+
+ogit.ServiceManagement:SubTask
+	a rdfs:Class;
+	rdfs:subClassOf ogit:Entity;
+	rdfs:label "SubTask";
+	dcterms:description """This entity type defines sub-tasks for a ticket. Mostly used for ChangeRequest.
+Comman alternative names with same meaning are: task, activity, work order.""";
+	# For ranges, see https://www.dublincore.org/specifications/dublin-core/dcmi-period/
+	dcterms:valid "start=2015-05-21;";
+	dcterms:creator "Peter Larem";
+	ogit:scope "NTO";
+	ogit:parent ogit:Node;
+	ogit:mandatory-attributes (
+		ogit:id
+	);
+	ogit:optional-attributes (
+		ogit.ServiceManagement:taskStatus
+		ogit.ServiceManagement:sourceStatus
+		ogit:description
+		ogit:taskLog
+		ogit:startedAt
+		ogit:finishedAt
+		ogit.ServiceManagement:targetStartAt
+		ogit.ServiceManagement:targetFinishAt
+		ogit.ServiceManagement:scheduledStartAt
+		ogit.ServiceManagement:scheduledFinishAt
+		ogit:effort
+		ogit:lastUpdatedAt
+		ogit.ServiceManagement:resolutionCode
+		ogit:name
+		ogit:assignedGroup
+		ogit.ServiceManagement:customer
+		ogit:type
+	);
+	ogit:indexed-attributes (
+		
+	);
+	ogit:allowed (
+			[ ogit:belongs  ogit.ServiceManagement:Ticket ]
+			[ ogit:belongs  ogit.ServiceManagement:Problem ]
+			[ ogit:belongs  ogit.ServiceManagement:Incident ]
+			[ ogit:belongs  ogit.ServiceManagement:ChangeRequest ]
+			[ ogit:belongs  ogit.ServiceManagement:Order ]
+			[ ogit:belongs  ogit.ServiceManagement:SubTask ]
+			[ ogit:relates  ogit.ServiceManagement:SubTask ]
+			[ ogit:assignedTo  ogit.CustomerSupport:Group ]
+			[ ogit:belongs  ogit.ServiceManagement:ServiceRequest ]
+			[ ogit:assignedTo  ogit:Person ]
+			[ ogit:assignedTo  ogit:Organization ]
+			[ ogit:precedes  ogit.ServiceManagement:SubTask ]
+			[ ogit:corresponds  ogit:Task ]
+			[ ogit:corresponds  ogit.Automation:AutomationIssue ]
+			[ ogit:locatedIn  ogit:Location ]
+			[ ogit:affects  ogit:ConfigurationItem ]
+	);
+.

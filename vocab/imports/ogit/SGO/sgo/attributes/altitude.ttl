@@ -1,0 +1,13 @@
+@prefix ogit:                   <http://www.purl.org/ogit/> .
+@prefix owl:                    <http://www.w3.org/2002/07/owl#> .
+@prefix rdfs:                   <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix dcterms:                <http://purl.org/dc/terms/> .
+
+ogit:altitude
+	a owl:DatatypeProperty;
+	rdfs:subPropertyOf ogit:Attribute;
+	rdfs:label "altitude";
+	dcterms:description """Altitude is a distance measurement, usually in the vertical direction, in relation to a reference point or object.""";
+	dcterms:valid "start=2025-10-15;";
+	dcterms:creator "Markus Noack";
+.

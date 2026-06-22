@@ -1,0 +1,44 @@
+@prefix ogit.Automation:        <http://www.purl.org/ogit/Automation/> .
+@prefix ogit.Datacenter:        <http://www.purl.org/ogit/Datacenter/> .
+@prefix ogit.Network:           <http://www.purl.org/ogit/Network/> .
+@prefix ogit.Software:          <http://www.purl.org/ogit/Software/> .
+@prefix ogit.Knowledge:         <http://www.purl.org/ogit/Knowledge/> .
+@prefix owl:                    <http://www.w3.org/2002/07/owl#> .
+@prefix ogit:                   <http://www.purl.org/ogit/> .
+@prefix rdfs:                   <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix dcterms:                <http://purl.org/dc/terms/> .
+@prefix ogit.Forum:             <http://www.purl.org/ogit/Forum/> .
+
+ogit.Forum:Post
+	a rdfs:Class;
+	rdfs:subClassOf ogit:Entity;
+	rdfs:label "Post";
+	dcterms:description "A Post is an online publication. Could be a blog post, or a posting on a forum/messageboard.";
+	# For ranges, see https://www.dublincore.org/specifications/dublin-core/dcmi-period/
+	dcterms:valid "start=2015-04-27;";
+	dcterms:creator "cwalker@arago.de";
+	ogit:scope "NTO";
+	ogit:parent ogit:Node;
+	ogit:mandatory-attributes (
+		ogit:content
+	);
+	ogit:optional-attributes (
+		
+	);
+	ogit:indexed-attributes (
+		
+	);
+	ogit:allowed (
+			[ ogit:connects  ogit.Forum:WorkflowStep ]
+			[ ogit:connects  ogit.Forum:KnowledgeItemHistory ]
+			[ ogit:connects  ogit.Forum:Profile ]
+			[ ogit:connects  ogit.Forum:Topic ]
+			[ ogit:connects  ogit:Comment ]
+			[ ogit:connects  ogit.Forum:Reply ]
+			[ ogit:connects  ogit.Forum:KnowledgeBundle ]
+			[ ogit:connects  ogit.Automation:KnowledgeItem ]
+			[ ogit:connects  ogit.Forum:Post ]
+			[ ogit:connects  ogit:Hyperlink ]
+			[ ogit.Forum:mentions  ogit.Forum:Profile ]
+	);
+.

@@ -1,0 +1,17 @@
+@prefix ogit.Automation:		<http://www.purl.org/ogit/Automation/> .
+@prefix ogit.Forum:				<http://www.purl.org/ogit/Forum/> .
+@prefix ogit:					<http://www.purl.org/ogit/> .
+@prefix owl:                    <http://www.w3.org/2002/07/owl#> .
+@prefix rdfs:                   <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix dcterms:                <http://purl.org/dc/terms/> .
+@prefix ogit.Auth:              <http://www.purl.org/ogit/Auth/> .
+
+ogit:provides
+	a owl:ObjectProperty;
+	rdfs:subPropertyOf ogit:Verb;
+	rdfs:label "provides";
+	dcterms:description "Verb showing if one entity provides something to another.";
+	# For ranges, see https://www.dublincore.org/specifications/dublin-core/dcmi-period/
+	dcterms:valid "start=2015-07-24;";
+	dcterms:creator "Aymen Ayoub";
+.

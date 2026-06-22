@@ -1,0 +1,14 @@
+@prefix ogit.Accounting:        <http://www.purl.org/ogit/Accounting/> .
+@prefix ogit:                   <http://www.purl.org/ogit/> .
+@prefix owl:                    <http://www.w3.org/2002/07/owl#> .
+@prefix rdfs:                   <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix dcterms:                <http://purl.org/dc/terms/> .
+
+ogit.Accounting:signatoryRule
+	a owl:DatatypeProperty;
+	rdfs:subPropertyOf ogit:Attribute;
+	rdfs:label "signatoryRule";
+	dcterms:description "A signatory Rule (in the German Legal Sense), either for a company or a company officer";
+	dcterms:valid "start=2025-10-02;";
+	dcterms:creator "Moritz Vannahme";
+.

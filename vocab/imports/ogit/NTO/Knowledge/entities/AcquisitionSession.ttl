@@ -1,0 +1,38 @@
+@prefix ogit.Automation:        <http://www.purl.org/ogit/Automation/> .
+@prefix ogit.Knowledge:         <http://www.purl.org/ogit/Knowledge/> .
+@prefix owl:                    <http://www.w3.org/2002/07/owl#> .
+@prefix ogit:                   <http://www.purl.org/ogit/> .
+@prefix rdfs:                   <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix dcterms:                <http://purl.org/dc/terms/> .
+
+ogit.Knowledge:AcquisitionSession
+    a rdfs:Class;
+    rdfs:subClassOf ogit:Entity;
+    rdfs:label "AcquisitionSession";
+    dcterms:description "Entity to describe a Knowledge Acquisition Session, linking to Conversation, Structured Task Steps and the Knowledge";
+    # For ranges, see https://www.dublincore.org/specifications/dublin-core/dcmi-period/
+    dcterms:valid "start=2017-03-14;";
+    dcterms:creator "cwalker@arago.de";
+    ogit:scope "NTO";
+    ogit:parent ogit:Node;
+    ogit:mandatory-attributes (
+
+    );
+    ogit:optional-attributes (
+        ogit:title
+        ogit:description
+        ogit.Knowledge:archived
+        ogit:version
+    );
+    ogit:indexed-attributes (
+        ogit:title
+        ogit:description
+    );
+    ogit:allowed (
+        [ ogit:contains  ogit:Comment ]
+        [ ogit:contains  ogit.Knowledge:AcquisitionRoom ]
+        [ ogit:defines  ogit.Automation:KnowledgeItem ]
+        [ ogit:defines  ogit.Knowledge:Step ]
+        [ ogit:defines  ogit.Knowledge:StepReference ]
+    );
+.

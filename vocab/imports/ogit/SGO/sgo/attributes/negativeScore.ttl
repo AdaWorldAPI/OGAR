@@ -1,0 +1,13 @@
+@prefix ogit:                   <http://www.purl.org/ogit/> .
+@prefix owl:                    <http://www.w3.org/2002/07/owl#> .
+@prefix rdfs:                   <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix dcterms:                <http://purl.org/dc/terms/> .
+
+ogit:negativeScore
+        a owl:DatatypeProperty;
+        rdfs:subPropertyOf ogit:Attribute;
+        rdfs:label "negativeScore";
+        dcterms:description "Percentage representing the proportion of elements within an entity that have a negative connotation";
+        dcterms:valid "start=2025-09-04;";
+        dcterms:creator "esteban.moreno@almato.com";
+.

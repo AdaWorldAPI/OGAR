@@ -1,0 +1,71 @@
+@prefix ogit.Survey:            <http://www.purl.org/ogit/Survey/> .
+@prefix ogit.Knowledge:         <http://www.purl.org/ogit/Knowledge/> .
+@prefix ogit.MRP:               <http://www.purl.org/ogit/MRP/> .
+@prefix ogit.Forum:   		    <http://www.purl.org/ogit/Forum/> .
+@prefix ogit.MRP:              <http://www.purl.org/ogit/MRP/> .
+@prefix ogit.Datacenter:        <http://www.purl.org/ogit/Datacenter/> .
+@prefix ogit.Forum:             <http://www.purl.org/ogit/Forum/> .
+@prefix ogit.Software:          <http://www.purl.org/ogit/Software/> .
+@prefix ogit.Network:           <http://www.purl.org/ogit/Network/> .
+@prefix ogit.BusinessProcess:   <http://www.purl.org/ogit/BusinessProcess/> .
+@prefix ogit.Automation:        <http://www.purl.org/ogit/Automation/> .
+@prefix owl:                    <http://www.w3.org/2002/07/owl#> .
+@prefix ogit.MARS:              <http://www.purl.org/ogit/MARS/> .
+@prefix ogit.MRO.Aviation:      <http://www.purl.org/ogit/MRO/Aviation/> .
+@prefix ogit:                   <http://www.purl.org/ogit/> .
+@prefix rdfs:                   <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix dcterms:                <http://purl.org/dc/terms/> .
+@prefix ogit.ServiceManagement: <http://www.purl.org/ogit/ServiceManagement/> .
+
+ogit.ServiceManagement:Problem
+	a rdfs:Class;
+	rdfs:subClassOf ogit:Entity;
+	rdfs:label "Problem";
+	dcterms:description "This entity type defines a problem ticket.";
+	# For ranges, see https://www.dublincore.org/specifications/dublin-core/dcmi-period/
+	dcterms:valid "start=2015-05-21;";
+	dcterms:creator "Peter Larem";
+	ogit:scope "NTO";
+	ogit:parent ogit:Node;
+	ogit:mandatory-attributes (
+		ogit:id
+	);
+	ogit:optional-attributes (
+		ogit.ServiceManagement:problemStatus
+		ogit:reportedAt
+		ogit.ServiceManagement:solution
+		ogit.ServiceManagement:resolutionCode
+		ogit.ServiceManagement:rootCause
+		ogit.ServiceManagement:workAround
+	);
+	ogit:indexed-attributes (
+		
+	);
+	ogit:allowed (
+			[ ogit:relates  ogit.ServiceManagement:Problem ]
+			[ ogit:relates  ogit.ServiceManagement:Incident ]
+			[ ogit:relates  ogit.ServiceManagement:ChangeRequest ]
+			[ ogit:relates  ogit.ServiceManagement:Order ]
+			[ ogit:relates  ogit.ServiceManagement:ServiceRequest ]
+			[ ogit:causes  ogit.ServiceManagement:Problem ]
+			[ ogit:causes  ogit.ServiceManagement:ChangeRequest ]
+			[ ogit:assignedTo  ogit:Person ]
+			[ ogit:assignedTo  ogit:Organization ]
+			[ ogit:assignedTo  ogit.ServiceManagement:Service ]
+			[ ogit:reportedOn  ogit.MARS:Machine ]
+			[ ogit:reportedOn  ogit.MARS:Software ]
+			[ ogit:reportedOn  ogit.MARS:Resource ]
+			[ ogit:reportedOn  ogit.MARS:Application ]
+			[ ogit:reportedOn  ogit.Automation:MARSNode ]
+			[ ogit:opens  ogit.ServiceManagement:Problem ]
+			[ ogit:corresponds  ogit.ServiceManagement:Ticket ]
+			[ ogit:corresponds  ogit.Automation:AutomationIssue ]
+			[ ogit:complies  ogit.ServiceManagement:SLA ]
+			[ ogit:affects  ogit:Person ]
+			[ ogit:affects  ogit.MARS:Application ]
+			[ ogit:affects  ogit.MARS:Resource ]
+			[ ogit:affects  ogit.MARS:Software ]
+			[ ogit:affects  ogit.MARS:Machine ]
+			[ ogit:affects  ogit.Automation:MARSNode ]
+	);
+.

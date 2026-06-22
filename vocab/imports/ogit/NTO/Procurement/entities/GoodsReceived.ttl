@@ -1,0 +1,30 @@
+@prefix ogit.Procurement:     <http://www.purl.org/ogit/Procurement/> .
+@prefix ogit:                   <http://www.purl.org/ogit/> .
+@prefix rdfs:                   <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix dcterms:                <http://purl.org/dc/terms/> .
+
+ogit.Procurement:GoodsReceived
+  a rdfs:Class;
+  rdfs:subClassOf ogit:Entity;
+  rdfs:label "GoodsReceived";
+  dcterms:description "A shipment of goods received in the procurement process.";
+  dcterms:valid "start=2022-01-27;";
+  dcterms:creator "Marek Meyer";
+  ogit:scope "NTO";
+  ogit:parent ogit:Node;
+  ogit:mandatory-attributes (
+  );
+  ogit:optional-attributes (
+    ogit:id
+    ogit:name
+    ogit:description
+  );
+  ogit:indexed-attributes (
+    ogit:name
+    ogit:description
+  );
+  ogit:allowed (
+	[ ogit:contains  ogit.Procurement:PurchaseOrderItem ]
+	[ ogit:causes  ogit.Procurement:Invoice ]
+  );
+.

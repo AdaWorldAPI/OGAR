@@ -15,6 +15,102 @@
 
 ## Entries (newest first)
 
+## 2026-06-22 — Schema-vs-source duality: schemas lift structure bijectively; source ASTs lift behaviour best-effort; they cross-validate at the structural boundary
+**Status:** FINDING
+**Scope:** producer architecture × MARS calibration × Foundry-Odoo lens × the bardioc migration
+
+The work landing this session imported OGIT's MARS taxonomy (NTO/MARS,
+SGO upper ontology, root `ogit.ttl`, MARS XSD oracle) and built the
+`ogar-from-schema` producer to lift it. In the process the
+structural-vs-behavioural arm split — already carved on the **codegen**
+side by `SURREAL-AST-AS-ADAPTER.md` — turned out to apply with equal
+sharpness on the **producer** side. Schema-driven producers (XSD, TTL,
+JSON-Schema, OpenAPI, Prisma) lift the **structural arm** bijectively
+because schemas are declarative-by-construction. Source-AST producers
+(`ogar-from-rails`, `ogar-from-elixir`, future `ogar-from-python`) lift
+the **behavioural arm** best-effort because source code is dynamic
+(Ruby `method_missing`, Python decorators, Elixir macros all defeat
+static extraction).
+
+The two are not redundant. They cover **disjoint surfaces** that meet
+only at the structural arm. At that meeting point they become each
+other's **oracle**: emit a schema from a source-lifted `Class`, diff
+against the committed schema, every PR catches structural drift on the
+way in. **This is exactly what Palantir Foundry charges money for
+("ontology change management"); the schema producer + 50 LOC of
+reverse-emit gets it for free.**
+
+For bardioc concretely: MARS-Schema XSD + OGIT NTO/MARS TTL are TWO
+independent encodings of the same taxonomy. The schema lift's
+agreement with the XSD oracle (`ttl::tests::application_class_values_appear_in_xsd_oracle`)
+is the chess-grade calibration applied at the schema-vs-schema boundary
+— stronger than chess's source-vs-runtime oracle because both witnesses
+are frozen schemas.
+
+This finding reshapes every future producer: structural arm gets a
+schema front-end first (cheap, bijective); behavioural arm gets a
+source-AST front-end second (expensive, best-effort); the cross-check
+at the structural boundary is free and replaces a paid platform feature.
+
+Evidence:
+- `crates/ogar-from-schema/` (lift) + `ttl_emit::all_mars_ttl_files_roundtrip` (29 MARS TTLs)
+- `sgo::all_sgo_verbs_roundtrip` (176 SGO verbs)
+- `_oracle/extract_classes.py` (Python 2, runs unchanged on Py3 via mechanical 2to3)
+- `vocab/imports/ogit/NTO/MARS/_oracle/classifications.adoc` (XSD-extracted reference)
+- `docs/HIRO-IN-CLASSES.md §2` (the framing)
+- `docs/MARS-TRANSCODING.md` (the calibration spec)
+- `docs/FOUNDRY-ODOO-MARS-LENS.md` (the cross-domain learning)
+
+The funny part: this was already implicit in the carved spine-adapter
+split, just on the other side. The session ended with both ends of the
+producer↔codegen pipeline using the same structural/behavioural carving.
+
+## 2026-06-22 — Reverse-engineering bijection: OGAR Class structures emit back to OGIT-flavoured TTL with semantic equality
+**Status:** FINDING
+**Scope:** producer round-trip × bardioc migration safety × no two-way translation tables
+
+The `ogar-from-schema::ttl` parser was made symmetric by adding
+`ttl_emit::emit_entity` and `emit_attribute`. The contract is
+**semantic bijection**: `parse(emit(parse(src))) == parse(src)` for
+every predicate the OGIT TTL dialect uses; whitespace, comment
+positions, and `@prefix` declaration order are not preserved (and
+should not be — they are not load-bearing for the structural arm).
+
+Pursuing byte-bijection would force the producer to carry raw text
+alongside the parsed structure, defeating the "schema as IR" pattern.
+The right contract is what survives a meaningful re-emit, not what
+survives `diff -q`. Tested on every MARS TTL (29 files) and every SGO
+verb TTL (176 files); zero failures.
+
+**Migration consequence:** colleagues can author OGAR `Class`
+structures in Rust, emit OGIT-flavoured TTL, and feed it back into
+bardioc's existing ingest pipeline. No migration cliff, no two-way
+translation table, no separate drift detector to wire up. **The
+producer IS the translator.**
+
+## 2026-06-22 — SGO is the AST predicate vocabulary
+**Status:** FINDING
+**Scope:** AST design × `ogit:allowed` resolution × Foundry-parity
+
+Every NTO entity's `ogit:allowed ([verb target])` block references
+verbs that live in OGIT's upper ontology (`SGO/sgo/verbs/`). 176 verb
+TTLs — `dependsOn`, `contains`, `runsOn`, `generates`, `relates`,
+`causes`, `affects`, `assignedTo`, `audits`, `bornIn`, `bills`, … —
+each with a `dcterms:description`, `dcterms:creator`, validity range.
+
+Before this session: those references were captured as raw strings;
+no validation that a verb existed or matched its declared semantics.
+After this session: `ogar-from-schema::sgo::parse_verb` lifts each
+SGO verb TTL into a typed `VerbDecl`, and the NTO `ogit:allowed`
+references resolve against a typed registry instead of string
+compare. This is the **AST predicate vocabulary** OGAR's `Association`
+and `ActionDef` surfaces have been needing — it was sitting in OGIT
+the whole time.
+
+The 176 verbs are the same verbs every Foundry "object graph link
+type" represents. Foundry curates them as a platform feature; OGIT
+ships them as MIT-licensed TTL. OGAR makes them typed Rust.
+
 ## 2026-06-04 — Sprint 7 muscle-memory is canonical; the OGAR#7 std::sync correction round-tripped
 **Status:** FINDING
 **Scope:** Sprint 7 wiring spec × three-way alignment (Kanban/ractor/SurrealQL) × cross-session correction round-trip

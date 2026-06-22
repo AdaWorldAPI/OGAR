@@ -1,0 +1,244 @@
+@prefix ogit.Data:              <http://www.purl.org/ogit/Data/> .
+@prefix ogit.Auth:              <http://www.purl.org/ogit/Auth/> .
+@prefix ogit.UserMeta:          <http://www.purl.org/ogit/UserMeta/> .
+@prefix ogit.Knowledge:         <http://www.purl.org/ogit/Knowledge/> .
+@prefix ogit.BusinessProcess:   <http://www.purl.org/ogit/BusinessProcess/> .
+@prefix ogit.MARS:              <http://www.purl.org/ogit/MARS/> .
+@prefix ogit.Politics:          <http://www.purl.org/ogit/Politics/> .
+@prefix ogit.Cost:              <http://www.purl.org/ogit/Cost/> .
+@prefix ogit.Price:             <http://www.purl.org/ogit/Price/> .
+@prefix ogit.OSLC-crtv:         <http://www.purl.org/ogit/OSLC-crtv/> .
+@prefix ogit.Automation:        <http://www.purl.org/ogit/Automation/> .
+@prefix ogit.Datacenter:        <http://www.purl.org/ogit/Datacenter/> .
+@prefix ogit.MRP:               <http://www.purl.org/ogit/MRP/> .
+@prefix ogit.Software:          <http://www.purl.org/ogit/Software/> .
+@prefix ogit.Network:           <http://www.purl.org/ogit/Network/> .
+@prefix ogit.ServiceManagement: <http://www.purl.org/ogit/ServiceManagement/> .
+@prefix ogit.CustomerSupport:   <http://www.purl.org/ogit/CustomerSupport/> .
+@prefix ogit.Survey:            <http://www.purl.org/ogit/Survey/> .
+@prefix ogit.Project:           <http://www.purl.org/ogit/Project/> .
+@prefix ogit.Factory:   		<http://www.purl.org/ogit/Factory/> .
+@prefix ogit.MRO.Aviation:      <http://www.purl.org/ogit/MRO/Aviation/> .
+@prefix ogit.FinancialMarket:   <http://www.purl.org/ogit/FinancialMarket/> .
+@prefix ogit.Health.Diagnostics:<http://www.purl.org/ogit/Health/Diagnostics/> .
+@prefix ogit.Schedule:          <http://www.purl.org/ogit/Schedule/> .
+@prefix ogit.Publications:      <http://www.purl.org/ogit/Publications/> .
+@prefix ogit.Accounting:        <http://www.purl.org/ogit/Accounting/> .
+@prefix ogit.Legal:             <http://www.purl.org/ogit/Legal/> .
+@prefix ogit.Documents:         <http://www.purl.org/ogit/Documents/> .
+@prefix ogit.Location:          <http://www.purl.org/ogit/Location/> .
+@prefix ogit.Religion:      	<http://www.purl.org/ogit/Religion/> .
+@prefix ogit:					<http://www.purl.org/ogit/> .
+@prefix owl:                    <http://www.w3.org/2002/07/owl#> .
+@prefix rdfs:                   <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix dcterms:                <http://purl.org/dc/terms/> .
+@prefix ogit.ClassificationStandard:              <http://www.purl.org/ogit/ClassificationStandard/> .
+@prefix ogit.Compliance:        <http://www.purl.org/ogit/Compliance/> .
+@prefix ogit.HR.Recruiting:     <http://www.purl.org/ogit/HR/Recruiting/> .
+
+ogit:Organization
+	a rdfs:Class;
+	rdfs:subClassOf ogit:Entity;
+	rdfs:label "Organization";
+	dcterms:description """An identity that represents an organization, company, or some other grouping of Person objects.
+Entities of this type should be created with a predefined ID. Those IDs should be named like a domain name, i.e.
+a concatention of some strings separated with a dot. if organization data is created from a LDAP then a mapping
+like \"cn=John Doe,dc=example,dc=com\" => \"john_doe.example.com\" should be employed.
+The ogit/function attribute should be used to tell what kind of grouping an entity of type Organization is: company, department, group, ...""";
+	# For ranges, see https://www.dublincore.org/specifications/dublin-core/dcmi-period/
+	dcterms:valid "start=2015-05-21;";
+	dcterms:creator "Peter Larem";
+	ogit:scope "SGO";
+	ogit:parent ogit:Node;
+	ogit:any-attributes "true";
+	ogit:mandatory-attributes (
+		ogit:name
+	);
+	ogit:optional-attributes (
+		ogit:description
+		ogit:function
+		ogit:status
+		ogit:email
+		ogit:streetAddress
+		ogit:city
+		ogit:country
+		ogit:postalCode
+		ogit:businessCategory
+		ogit:webPage
+		ogit:tenantId
+		ogit:sourceId
+		ogit:phone
+		ogit:alias
+		ogit:externalId
+		ogit:sharedWith
+		ogit.FinancialMarket:legalForm
+		ogit:source
+		ogit.FinancialMarket:value
+		ogit.FinancialMarket:currency
+		ogit.Accounting:signatoryRule
+		ogit:codeType
+		ogit:identifierCode
+		ogit:foundingDate
+		ogit:id
+		ogit:type
+		ogit:subType
+		ogit:sharedWith
+		ogit:createdAt
+		ogit:endedAt
+	);
+	ogit:indexed-attributes (
+		ogit:name
+		ogit:description
+	);
+	ogit:allowed (
+			[ ogit:supports  ogit.Survey:Iteration ]
+			[ ogit:supports  ogit.Project:Project ]
+			[ ogit:supports  ogit:Organization ]
+			[ ogit:supports  ogit:ConfigurationItem ]
+			[ ogit:manages  ogit:Organization ]
+			[ ogit:manages  ogit:ConfigurationItem ]
+			[ ogit:manages  ogit.Software:Application ]
+			[ ogit:manages  ogit.Datacenter:Room ]
+			[ ogit:manages  ogit.Datacenter:Rack ]
+			[ ogit:manages  ogit:Device ]
+			[ ogit:manages  ogit.Datacenter:Datacenter ]
+			[ ogit:manages  ogit.Datacenter:Cooling ]
+			[ ogit:manages  ogit.Datacenter:Building ]
+			[ ogit:competes  ogit:Organization ]
+			[ ogit:relates  ogit:Organization ]
+			[ ogit:employs  ogit:Person ]
+			[ ogit:creates  ogit:Certificate ]
+			[ ogit:creates  ogit:Organization ]
+			[ ogit:creates  ogit:ConfigurationItem ]
+			[ ogit:leads  ogit:Organization ]
+			[ ogit:leads  ogit.CustomerSupport:Group ]
+			[ ogit:generates  ogit:Timeseries ]
+			[ ogit:generates  ogit:Catalog ]
+			[ ogit:belongs  ogit:Alert ]
+			[ ogit:contains  ogit:Organization ]
+			[ ogit:concludes  ogit:Contract ]
+			[ ogit:provides  ogit:ConfigurationItem ]
+			[ ogit:provides  ogit.Documents:Document ]
+			[ ogit:provides  ogit:Product ]
+			[ ogit:supervises  ogit.ServiceManagement:SubTask ]
+			[ ogit:supervises  ogit.ServiceManagement:ChangeRequest ]
+			[ ogit:supervises  ogit.ServiceManagement:Order ]
+			[ ogit:supervises  ogit.ServiceManagement:Ticket ]
+			[ ogit:supervises  ogit.ServiceManagement:Problem ]
+			[ ogit:supervises  ogit.ServiceManagement:Incident ]
+			[ ogit:supervises  ogit.ServiceManagement:ServiceRequest ]
+			[ ogit:governs  ogit:Organization ]
+			[ ogit:governs ogit:Region ]
+			[ ogit:approves  ogit:ConfigurationItem ]
+			[ ogit:approves  ogit:ConfigurationItem ]
+			[ ogit:plans  ogit.Cost:Budget ]
+			[ ogit:associates  ogit:Role ]
+			[ ogit:consumes  ogit.Survey:Iteration ]
+			[ ogit:consumes  ogit.Project:Project ]
+			[ ogit:hosts  ogit:Environment ]
+			[ ogit:represents  ogit:Organization ]
+			[ ogit:represents  ogit:Person ]
+			[ ogit:owns  ogit:Certificate ]
+			[ ogit:owns  ogit.MRO.Aviation:Aircraft ]
+			[ ogit:owns  ogit.Automation:MARSNode ]
+			[ ogit:owns  ogit:Asset ]
+			[ ogit:owns  ogit.Network:NetworkInterface]
+			[ ogit:defines  ogit:Role ]
+			[ ogit:defines  ogit.ServiceManagement:Offering ]
+			[ ogit:uses  ogit:Product ]
+			[ ogit:uses  ogit:License ]
+			[ ogit:locatedIn  ogit:Location ]
+			[ ogit:locatedIn  ogit:Region ]
+			[ ogit:complies  ogit:Policy ]
+			[ ogit:deliversTo  ogit:Organization ]
+			[ ogit:sellsTo  ogit:Organization ]
+			[ ogit:communicatesWith  ogit:Organization ]
+			[ ogit:produces  ogit:Product ]
+			[ ogit:produces  ogit.Survey:Iteration ]
+			[ ogit:produces  ogit.Project:Project ]
+			[ ogit.MRO.Aviation:orders  ogit.MRO.Aviation:Layover ]
+			[ ogit:manages  ogit.Health.Diagnostics:Equipment ]
+			[ ogit:manages ogit.ServiceManagement:Service]
+			[ ogit:utilizes ogit.ServiceManagement:Service]
+			[ ogit:organizes  ogit.Schedule:Event ]
+			[ ogit:isPresent ogit:Organization ]
+			[ ogit:isMemberOf ogit:Organization ]
+			[ ogit:organizes ogit:Event ]
+			[ ogit:has ogit.Politics:Reaction ]
+			[ ogit:issues ogit.Legal:LegalNorm ]
+			[ ogit:conducts ogit.FinancialMarket:Activity ]
+			[ ogit.ClassificationStandard:classifiedUnder ogit.ClassificationStandard:ClassificationStandardTreeBranch ]
+			[ ogit:supports  ogit.ServiceManagement:ServiceMapping ]
+			[ ogit:publishes ogit.Publications:Publication ]
+			[ ogit:publishes ogit.ClassificationStandard:ClassificationStandardTreeRoot ]
+			[ ogit:has ogit:Attachment ]
+			[ ogit:locatedIn ogit.Location:Address ]
+			[ ogit:leads ogit.Religion:BeliefSystem ]
+			[ ogit:follows ogit.Religion:BeliefSystem ]
+
+			# --- OSINT Security Extension additions (2026-05-02) ---
+			# Reuse existing verbs (extending allowed-target lists)
+			[ ogit:precedes                ogit:Organization ]
+			[ ogit:sameAs                  ogit:Organization ]
+			[ ogit:owns                    ogit:Organization ]
+			[ ogit.HR.Recruiting:worksFor  ogit:Organization ]
+
+			# Org-to-Org structural (NEW verbs; corporate-law-specific concepts)
+			[ ogit:subsidiaryOf              ogit:Organization ]
+			[ ogit:whollyOwnedSubsidiaryOf   ogit:Organization ]
+			[ ogit:controlledBy              ogit:Organization ]
+			[ ogit:controlledBy              ogit:Person ]
+			[ ogit:affiliateOf               ogit:Organization ]
+			[ ogit:mergedWith                ogit:Organization ]
+			[ ogit:partneredWith             ogit:Organization ]
+
+			# Beneficial ownership (NEW verb)
+			[ ogit:beneficialOwnerOf  ogit:Organization ]
+
+			# Org acts on behalf of Org/Person (front-company patterns)
+			[ ogit:actsOnBehalfOf     ogit:Organization ]
+			[ ogit:actsOnBehalfOf     ogit:Person ]
+
+			# Service provision and lobbying (NEW verbs)
+			[ ogit:providesServicesTo  ogit:Organization ]
+			[ ogit:lobbyistFor         ogit:Organization ]
+			[ ogit:lobbyistFor         ogit:Person ]
+
+			# Trust-structure fiduciary (Org as trustee, settlor, beneficiary)
+			[ ogit:trusteeOf      ogit:Organization ]
+			[ ogit:settlorOf      ogit:Organization ]
+			[ ogit:beneficiaryOf  ogit:Organization ]
+
+			# Insolvency / receivership (Org as receiver/liquidator)
+			[ ogit:receiverFor                  ogit:Organization ]
+			[ ogit:liquidatorOf                 ogit:Organization ]
+			[ ogit:administratorInInsolvencyOf  ogit:Organization ]
+
+			# Audit (Org as audit firm)
+			[ ogit:auditorOf  ogit:Organization ]
+
+			# Investment management (Org-level)
+			[ ogit:investmentManagerOf  ogit:Person ]
+			[ ogit:investmentManagerOf  ogit:Organization ]
+			[ ogit:custodianOf          ogit:Person ]
+			[ ogit:custodianOf          ogit:Organization ]
+
+			# Reuse ogit.Legal:empowers (Org grants legal authority to Person/Org)
+			[ ogit.Legal:empowers  ogit:Person ]
+			[ ogit.Legal:empowers  ogit:Organization ]
+
+			# Nominee (Org as nominee for, e.g. nominee shareholders)
+			[ ogit:nomineeFor  ogit:Person ]
+			[ ogit:nomineeFor  ogit:Organization ]
+
+			# Sanctions (existing predicate, add to allowed list)
+			[ ogit.Compliance:sanctionedUnder ogit.Compliance:SanctionsEntry ]
+
+			# Sanctions-specific (NEW verbs in Compliance scope)
+			[ ogit.Compliance:procuresFor          ogit:Person ]
+			[ ogit.Compliance:procuresFor          ogit:Organization ]
+			[ ogit.Compliance:financiallySupports  ogit:Person ]
+			[ ogit.Compliance:financiallySupports  ogit:Organization ]
+
+	);
+.

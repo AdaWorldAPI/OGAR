@@ -1,0 +1,30 @@
+@prefix ogit:                   <http://www.purl.org/ogit/> .
+@prefix rdfs:                   <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix ogit.Datacenter:        <http://www.purl.org/ogit/Datacenter/> .
+@prefix dcterms:                <http://purl.org/dc/terms/> .
+
+ogit.Datacenter:Cooling
+	a rdfs:Class;
+	rdfs:subClassOf ogit:Entity;
+	rdfs:label "Cooling";
+	dcterms:description "A physical Cooling Unit used for data centers and computer rooms";
+	# For ranges, see https://www.dublincore.org/specifications/dublin-core/dcmi-period/
+	dcterms:valid "start=2015-05-21;";
+	dcterms:creator "Peter Larem";
+	ogit:scope "NTO";
+	ogit:parent ogit:Node;
+	ogit:mandatory-attributes (
+		
+	);
+	ogit:optional-attributes (
+		ogit:id
+		ogit.Datacenter:roomId
+		ogit:capacity
+		ogit:powerConsumption
+	);
+	ogit:indexed-attributes (
+		
+	);
+	ogit:allowed (
+	);
+.

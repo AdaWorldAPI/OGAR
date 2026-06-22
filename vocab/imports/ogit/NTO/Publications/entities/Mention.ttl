@@ -1,0 +1,32 @@
+@prefix ogit.Publications:      <http://www.purl.org/ogit/Publications/> .
+@prefix owl:                    <http://www.w3.org/2002/07/owl#> .
+@prefix ogit:                   <http://www.purl.org/ogit/> .
+@prefix rdfs:                   <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix dcterms:                <http://purl.org/dc/terms/> .
+@prefix ogit.Forum:             <http://www.purl.org/ogit/Forum/> .
+
+ogit.Publications:Mention
+	a rdfs:Class;
+	rdfs:subClassOf ogit:Entity;
+	rdfs:label "Mention";
+	dcterms:description "Describes a Mention of an Event in a Publication.";
+	# For ranges, see https://www.dublincore.org/specifications/dublin-core/dcmi-period/
+	dcterms:valid "start=2025-09-04;";
+	dcterms:creator "esteban.moreno@almato.de";
+	ogit:scope "NTO";
+	ogit:parent ogit:Node;
+	ogit:mandatory-attributes (
+		
+	);
+	ogit:optional-attributes (
+		ogit.Publications:confidence
+		ogit:tone
+		ogit:createdAt
+	);
+	ogit:indexed-attributes (
+		
+	);
+	ogit:allowed (
+		[ ogit:relates ogit:Event]
+	);
+.

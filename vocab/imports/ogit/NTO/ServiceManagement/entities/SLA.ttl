@@ -1,0 +1,35 @@
+@prefix owl:                    <http://www.w3.org/2002/07/owl#> .
+@prefix ogit:                   <http://www.purl.org/ogit/> .
+@prefix rdfs:                   <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix dcterms:                <http://purl.org/dc/terms/> .
+@prefix ogit.ServiceManagement: <http://www.purl.org/ogit/ServiceManagement/> .
+
+ogit.ServiceManagement:SLA
+	a rdfs:Class;
+	rdfs:subClassOf ogit:Entity;
+	rdfs:label "SLA";
+	dcterms:description "A service level agreement.";
+	# For ranges, see https://www.dublincore.org/specifications/dublin-core/dcmi-period/
+	dcterms:valid "start=2015-05-21;";
+	dcterms:creator "Peter Larem";
+	ogit:scope "NTO";
+	ogit:parent ogit:Node;
+	ogit:mandatory-attributes (
+		
+	);
+	ogit:optional-attributes (
+		ogit:name
+		ogit:startedAt
+		ogit.ServiceManagement:scheduledFinishAt
+		ogit.ServiceManagement:leftTime
+		ogit.ServiceManagement:elapsedTime
+		ogit.ServiceManagement:slaStage
+		ogit.ServiceManagement:resolvedInTime
+	);
+	ogit:indexed-attributes (
+		
+	);
+	ogit:allowed (
+			[ ogit:triggers  ogit:Penalty ]
+	);
+.

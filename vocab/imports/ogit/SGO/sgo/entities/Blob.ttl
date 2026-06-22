@@ -1,0 +1,32 @@
+@prefix ogit:                   <http://www.purl.org/ogit/> .
+@prefix rdfs:                   <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix dcterms:                <http://purl.org/dc/terms/> .
+
+ogit:Blob
+	a rdfs:Class;
+	rdfs:subClassOf ogit:Entity;
+	rdfs:label "Blob";
+	dcterms:description """This entity represents the binary content of a file, stored uniquely for deduplication and efficient storage. 
+    Blobs are referenced by one or more attachment nodes and contain immutable raw data (e.g., images, PDFs). 
+    When multiple attachments share identical content, they all reference the same blob to avoid duplication.""";
+	dcterms:valid "start=2025-08-05;";
+	dcterms:creator "Calvin Spolwind";
+	ogit:scope "SGO";
+	ogit:blob "true";
+	ogit:parent ogit:Node;
+	ogit:mandatory-attributes (
+
+	);
+	ogit:optional-attributes (
+		ogit:id
+		ogit:size
+		ogit:lastUpdatedAt
+		ogit:createdAt
+		ogit:lastUpdatedBy
+	);
+	ogit:indexed-attributes (
+
+	);
+	ogit:allowed (
+	);
+.

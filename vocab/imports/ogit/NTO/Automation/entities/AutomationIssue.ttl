@@ -1,0 +1,63 @@
+@prefix ogit.Knowledge:         <http://www.purl.org/ogit/Knowledge/> .
+@prefix owl:                    <http://www.w3.org/2002/07/owl#> .
+@prefix ogit.RL:        		<http://www.purl.org/ogit/RL/> .
+@prefix ogit.Automation:        <http://www.purl.org/ogit/Automation/> .
+@prefix ogit:                   <http://www.purl.org/ogit/> .
+@prefix rdfs:                   <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix dcterms:                <http://purl.org/dc/terms/> .
+
+ogit.Automation:AutomationIssue
+	a rdfs:Class;
+	rdfs:subClassOf ogit:Entity;
+	rdfs:label "AutomationIssue";
+	dcterms:description """Dynamic information exists within an automation engine in the form of Issues otherwise referred to as
+Task or Situational Data. From the technical perspective an Issue is a number of attributes (Key/Value tuples) with
+unique names. From the logical point of view Issues contain information about the change of states on a system.
+Issues can be injected into an automation engine from external systems e.g. Monitoring or result from the execution of a Knowledge Item.
+By comparing an Issue with the Issue Condition of a Knowledge Item an automation engine decides which Knowledge Items are are processed
+in which order. If multiple Knowledge Items can be applied to an Issue the KI with the more precisely defined
+IssueCondition is processed first.""";
+	# For ranges, see https://www.dublincore.org/specifications/dublin-core/dcmi-period/
+	dcterms:valid "start=2015-05-21;";
+	dcterms:creator "Peter Larem";
+	ogit:scope "NTO";
+	ogit:parent ogit:Node;
+	ogit:mandatory-attributes (
+	);
+	ogit:optional-attributes (
+		ogit.Automation:issueType
+		ogit.Automation:originNode
+		ogit.Automation:processingNode
+		ogit.Automation:issueFormalRepresentation
+		ogit:status
+		ogit:subject
+		ogit.Automation:processingTimestamp
+		ogit:modificationTime
+		ogit:creationTime
+		ogit:deliveredAt
+		ogit.Automation:isDeployed
+		ogit.Automation:deployStatus
+		ogit.Automation:parentIssue
+		ogit.Automation:suspendUntil
+		ogit.Automation:maxIdleTime
+		ogit:tenantId
+    	ogit.Automation:webhook
+    	ogit.RL:state
+    	ogit.RL:totalReward
+	);
+	ogit:indexed-attributes (
+		ogit:subject
+		ogit.Automation:issueFormalRepresentation
+	);
+	ogit:allowed (
+			[ ogit:relates  ogit.Knowledge:AcquisitionSession ]
+			[ ogit:relates  ogit.Automation:MARSNode ]
+			[ ogit:generates  ogit:Timeseries ]
+			[ ogit:generates  ogit.Automation:History ]
+			[ ogit:worksOn  ogit.Automation:MARSNode ]
+			[ ogit:contains  ogit:Task ]
+			[ ogit:contains  ogit.Automation:DynamicEngineData ]
+			[ ogit:contains  ogit.Automation:Item ]
+			[ ogit:associates  ogit:Question ]
+	);
+.

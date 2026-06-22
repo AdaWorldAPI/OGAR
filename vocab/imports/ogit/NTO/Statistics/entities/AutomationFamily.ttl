@@ -1,0 +1,31 @@
+@prefix ogit.Automation:        <http://www.purl.org/ogit/Automation/> .
+@prefix ogit:                   <http://www.purl.org/ogit/> .
+@prefix ogit.Statistics:        <http://www.purl.org/ogit/Statistics/> .
+@prefix rdfs:                   <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix dcterms:                <http://purl.org/dc/terms/> .
+
+ogit.Statistics:AutomationFamily
+	a rdfs:Class;
+	rdfs:subClassOf ogit:Entity;
+	rdfs:label "AutomationFamily";
+	dcterms:description "AutomationFamily defines the group of cases for automation of IT environment and its functionality.";
+	# For ranges, see https://www.dublincore.org/specifications/dublin-core/dcmi-period/
+	dcterms:valid "start=2016-03-07;";
+	dcterms:creator "Liudmyla Nechepurenko";
+	ogit:scope "NTO";
+	ogit:parent ogit:Node;
+	ogit:mandatory-attributes (
+		ogit:name
+	);
+	ogit:optional-attributes (
+		ogit:description
+		ogit:category
+		ogit.Automation:marsNodeType
+	);
+	ogit:indexed-attributes (
+		ogit:name
+		ogit:description
+	);
+	ogit:allowed (
+	);
+.

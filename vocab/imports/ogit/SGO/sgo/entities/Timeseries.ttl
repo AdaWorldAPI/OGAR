@@ -1,0 +1,39 @@
+@prefix ogit:                   <http://www.purl.org/ogit/> .
+@prefix rdfs:                   <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix dcterms:                <http://purl.org/dc/terms/> .
+
+ogit:Timeseries
+	a rdfs:Class;
+	rdfs:subClassOf ogit:Entity;
+	rdfs:label "Timeseries";
+	dcterms:description "A time series is a sequence of data points, measured typically at successive points in time spaced at uniform time intervals.";
+	# For ranges, see https://www.dublincore.org/specifications/dublin-core/dcmi-period/
+	dcterms:valid "start=2015-05-21;";
+	dcterms:creator "Peter Larem";
+	ogit:scope "SGO";
+	ogit:parent ogit:Node;
+	ogit:mandatory-attributes (
+		
+	);
+	ogit:optional-attributes (
+		ogit:unit
+		ogit:unitDescription
+		ogit:value # Current value
+		ogit:valueDate # Date for which the value is valid
+		ogit:type # type of value 
+		ogit:source
+		ogit:sourceId
+		ogit:name
+		ogit:description
+		ogit:instance
+		ogit:isMutable
+		ogit:isPermanent
+	);
+	ogit:indexed-attributes (
+		ogit:name
+		ogit:description
+		ogit:instance
+	);
+	ogit:allowed (
+	);
+.
