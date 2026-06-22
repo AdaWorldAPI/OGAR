@@ -393,6 +393,65 @@ pub const SMB_ALIASES: &[(&str, u16)] = &[
     ("Zeiterfassung", class_ids::BILLABLE_WORK_ENTRY),
 ];
 
+// ── Odoo (odoo-rs) port ─────────────────────────────────────────────
+
+/// Odoo's `PortSpec` — maps Odoo model names (`account.move`,
+/// `account.move.line`, `account.tax`, …) onto the canonical OGAR
+/// **commerce** codebook (`0x02XX`), plus the one cross-arm bridge to
+/// the project domain (`account.analytic.line` → `billable_work_entry`,
+/// `0x0103`).
+///
+/// This is the commerce-arm sibling of [`OpenProjectPort`] /
+/// [`RedminePort`] — Northstar plan §7 T10 ("convergence proof for the
+/// commerce arm … mirroring the project-mgmt arm, same shape, different
+/// domain"). Odoo's `account.*` ERP models are the first commerce
+/// curator on the codebook; a second (OSB) maps onto these same
+/// `class_ids::*` to complete the apple-meets-apple pin for commerce.
+///
+/// **Why this matters (severity).** `odoo-rs` currently lowers Odoo's
+/// ontology through a *bespoke* SurrealQL AST + triple pipeline that
+/// forks `op-surreal-ast` / `ogar-adapter-surrealql` and never touches
+/// `ogar-vocab`. OGAR exists precisely to own the AR-shaped Class / AST
+/// / ClassView surface; this port is the beachhead that lets `odoo-rs`
+/// converge onto the canonical layer (lower onto `ogar_vocab::Class`,
+/// emit via `ogar-adapter-surrealql`) instead of re-deriving it.
+pub struct OdooPort;
+
+impl PortSpec for OdooPort {
+    const NAMESPACE: &'static str = "Odoo";
+    const BRIDGE_ID: &'static str = "odoo";
+    fn aliases() -> &'static [(&'static str, u16)] {
+        ODOO_ALIASES
+    }
+}
+
+/// Odoo model name → canonical class_id. Commerce-arm core
+/// (`account.*` + `res.*`) plus the `account.analytic.line` cross-arm
+/// bridge. `pub` for symmetry with the other `*_ALIASES`.
+///
+/// `account.move` is Odoo's journal-entry / invoice model — the posted
+/// commercial document (`od-ontology`'s "Slice 1" target). `sale.order`
+/// is the upstream quote/order shape; it also converges on
+/// `commercial_document` (many curator models → one canonical concept,
+/// same as OpenProject `Status` / Redmine `IssueStatus` → `project_status`).
+pub const ODOO_ALIASES: &[(&str, u16)] = &[
+    // Commerce arm (0x02XX).
+    ("account.move", class_ids::COMMERCIAL_DOCUMENT),
+    ("sale.order", class_ids::COMMERCIAL_DOCUMENT),
+    ("account.move.line", class_ids::COMMERCIAL_LINE_ITEM),
+    ("sale.order.line", class_ids::COMMERCIAL_LINE_ITEM),
+    ("account.tax", class_ids::TAX_POLICY),
+    ("res.partner", class_ids::BILLING_PARTY),
+    ("account.payment", class_ids::PAYMENT_RECORD),
+    ("res.currency", class_ids::CURRENCY_POLICY),
+    // Cross-arm bridge: the timesheet / cost line converges on the
+    // project-arm `billable_work_entry` (0x0103) — the SAME id
+    // OpenProject `TimeEntry` and Redmine `TimeEntry` resolve to.
+    // See `billable_work_entry`'s doc: "OpenProject TimeEntry, Redmine
+    // TimeEntry, Odoo account.analytic.line all converge here."
+    ("account.analytic.line", class_ids::BILLABLE_WORK_ENTRY),
+];
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -581,6 +640,12 @@ mod tests {
             assert!(
                 codebook_ids.contains(&id),
                 "SmbPort alias `{name}` -> 0x{id:04X} not in class_ids::ALL"
+            );
+        }
+        for &(name, id) in OdooPort::aliases() {
+            assert!(
+                codebook_ids.contains(&id),
+                "OdooPort alias `{name}` -> 0x{id:04X} not in class_ids::ALL"
             );
         }
     }
@@ -779,5 +844,84 @@ mod tests {
             RedminePort::class_id("IssuePriority"),
             Some(class_ids::PRIORITY)
         );
+    }
+
+    // ── Odoo (commerce arm + the planning↔ERP bridge) ───────────────
+
+    #[test]
+    fn odoo_namespace_and_bridge_id_match_canonical_strings() {
+        assert_eq!(OdooPort::NAMESPACE, "Odoo");
+        assert_eq!(OdooPort::BRIDGE_ID, "odoo");
+    }
+
+    #[test]
+    fn odoo_account_move_maps_to_commercial_document() {
+        assert_eq!(
+            OdooPort::class_id("account.move"),
+            Some(class_ids::COMMERCIAL_DOCUMENT)
+        );
+        assert_eq!(OdooPort::class_id("account.move"), Some(0x0202));
+    }
+
+    #[test]
+    fn odoo_commerce_models_resolve_into_the_commerce_domain() {
+        use crate::{canonical_concept_domain, ConceptDomain};
+        // Every commerce-arm alias lands in the Commerce (0x02XX) domain.
+        // `account.analytic.line` is the deliberate exception — it's the
+        // cross-arm bridge into the project domain (asserted separately).
+        for &(name, _) in OdooPort::aliases() {
+            if name == "account.analytic.line" {
+                continue;
+            }
+            let id = OdooPort::class_id(name)
+                .unwrap_or_else(|| panic!("`{name}` must resolve"));
+            assert_eq!(
+                canonical_concept_domain(id),
+                ConceptDomain::Commerce,
+                "`{name}` -> 0x{id:04X} must live in the Commerce (0x02XX) domain",
+            );
+        }
+    }
+
+    /// **The planning ↔ ERP convergence pin.** A logged unit of work is
+    /// one canonical concept — `billable_work_entry` (0x0103) — whether
+    /// it arrives as an OpenProject `TimeEntry`, a Redmine `TimeEntry`,
+    /// or an Odoo `account.analytic.line` (the ERP timesheet/cost line).
+    /// This is the codebook's named "first cross-domain bridge": the
+    /// planning arm (work performed) and the commerce arm (work billed)
+    /// meet here. Drift on any side splits a hour-logged-in-planning from
+    /// the-same-hour-billed-in-ERP.
+    #[test]
+    fn planning_and_erp_converge_on_billable_work_entry() {
+        let op = OpenProjectPort::class_id("TimeEntry");
+        let rm = RedminePort::class_id("TimeEntry");
+        let odoo = OdooPort::class_id("account.analytic.line");
+        assert_eq!(op, Some(class_ids::BILLABLE_WORK_ENTRY));
+        assert_eq!(rm, Some(class_ids::BILLABLE_WORK_ENTRY));
+        assert_eq!(odoo, Some(class_ids::BILLABLE_WORK_ENTRY));
+        assert_eq!(op, odoo, "OpenProject TimeEntry ↔ Odoo analytic line must converge");
+        assert_eq!(rm, odoo, "Redmine TimeEntry ↔ Odoo analytic line must converge");
+        assert_eq!(odoo, Some(0x0103));
+    }
+
+    #[test]
+    fn odoo_alias_count_is_stable() {
+        // 9 Odoo model aliases = 8 commerce-arm (account.move,
+        // sale.order, account.move.line, sale.order.line, account.tax,
+        // res.partner, account.payment, res.currency) + 1 cross-arm
+        // bridge (account.analytic.line → billable_work_entry).
+        // Re-count on drift.
+        assert_eq!(
+            OdooPort::aliases().len(),
+            9,
+            "Odoo alias count drift — re-count the ODOO_ALIASES table",
+        );
+    }
+
+    #[test]
+    fn odoo_unknown_model_names_resolve_to_none() {
+        assert_eq!(OdooPort::class_id("ir.cron"), None);
+        assert_eq!(OdooPort::class_id("WorkPackage"), None);
+        assert_eq!(OdooPort::class_id(""), None);
     }
 }
