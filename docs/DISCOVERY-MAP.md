@@ -527,3 +527,45 @@ isolation. The map's job is to keep them visible.
   - **Baldo/Adachi/Forrest** (~100% internal phosphorescence, *J. Appl.
     Phys.* 90:5048, 2001) + **Uoyama/Adachi** (TADF, *Nature* 492:234, 2012)
     — the harvest‑the‑dark physics (`[G]`‑real, ≠ the substrate link).
+
+---
+
+- **D-APPCLASS (classid = APP(hi u16) ‖ class(lo u16); 2026-06-22; [H]):**
+  the GUID's `classid` is u32 (8 hex) but only the low u16 (`0xDDCC`
+  domain|concept) was ever used; the high u16 was reserved-zero, NOT SoA
+  versioning (`ENVELOPE_LAYOUT_VERSION: u8 = 2`,
+  `lance-graph-contract/src/soa_envelope.rs:54`). Claimed: **hi u16 =
+  APP / codebook-namespace + render prefix; lo u16 = shared canonical
+  concept.** The two halves carry orthogonal facts — lo = WHAT it is
+  (RBAC grant + ontology + cross-app identity, shared), hi = WHOSE
+  rendering (app `ClassView` / Askama template / SoA layout, per-app).
+  Additive (every existing id is `0x0000_DDCC`); zero
+  `ENVELOPE_LAYOUT_VERSION` cost (classid keeps fixed key offset 0..4);
+  RESERVE-DON'T-RECLAIM holds. Resolves the operator's "codebook per
+  project avoids radix-trie codebook limits" — each app prefix roots its
+  own centroid-codebook hierarchy + template set. Spec:
+  `docs/APP-CLASS-CODEBOOK-LAYOUT.md`. Migration (Odoo/WoA/SMB/q2):
+  `docs/APP-CODEBOOK-MIGRATION-PLAN.md`. Medcare worked example:
+  patient = `0x0005_0901` (lo `0x0901` shared patient grant+ontology, hi
+  `0x0005` Medcare clinical template). Gated on the 5+3 codebook pass;
+  nothing minted yet. `[H]` pending the pass + a render-path probe.
+- **D-KV-RENDER (rendering + RAG are key-value egress; 2026-06-22; [H]):**
+  the operator's stated goal — strings / text / media / online sources
+  rendered via key-value so **no serialization exists in the hot path**
+  (the Firewall, ADR-022/023). The registry axiom (I-K0: label=KEY,
+  meaning=VALUE) applied to *content*: every renderable field is a key
+  into a typed content store (string dictionary / text column / media
+  bytes / URI registry), resolved by zero-copy columnar/dictionary
+  lookup — never inlined as a serde blob. A rendered object is a **tree
+  of keys**: classid → Askama template (hi u16), each field → content
+  key. **Two membranes, one rule:** UI render and the RAG-to-LLM path
+  (rs-graph-llm `graph-flow` over lance-graph retrieval) both move keys
+  in the hot path and materialize content **only at the membrane,
+  exactly once** — RAG context is a `Vec<key>` (pointer set), content
+  lands in the LLM prompt at egress (the MarkovBarrier / "boundary
+  parsed once" pattern). Litmus: any `serde::Deserialize` /
+  `serde_json::from_*` on a render or retrieval hot path = a blob that
+  entered too early; make it a key. Build-time codegen that *generates*
+  the ClassView from a manifest is fine ("compile types", not hot-path
+  serde). Detail: `docs/APP-CLASS-CODEBOOK-LAYOUT.md` §3.5–3.7. `[H]`
+  pending a hot-path no-serde probe across one render + one RAG path.
