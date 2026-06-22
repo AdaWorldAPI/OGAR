@@ -1264,6 +1264,30 @@ pub fn canonical_concept_id(concept: &str) -> Option<u16> {
         .find_map(|(name, id)| if *name == concept { Some(*id) } else { None })
 }
 
+/// Inverse of [`canonical_concept_id`]: the canonical concept name for a
+/// codebook `id`, or `None` if the id is not a promoted concept.
+///
+/// Ids are unique in [`CODEBOOK`] (a concept arrives once and never moves —
+/// asserted by [`tests::canonical_concept_name_round_trips`]), so the mapping
+/// is 1:1 and round-trips both ways:
+/// `canonical_concept_id(canonical_concept_name(id)?) == Some(id)`.
+///
+/// This is the reverse lookup a consumer needs to turn a *resolved* classid
+/// back into its human-readable concept without re-deriving (or copying) the
+/// codebook locally — e.g. to stamp `COMMENT 'commercial_document
+/// (classid:0x00020202)'` into emitted DDL, or to populate a `Class`'s
+/// `canonical_concept` from an id. The forward `name -> id` step
+/// ([`canonical_concept_id`] via a port alias) followed by this `id -> name`
+/// step resolves the alias asymmetry that lexical canonicalisation cannot
+/// (e.g. both `sale.order` and `account.move` resolve to `0x0202` ->
+/// `commercial_document`, where neither name lexically *is* the concept).
+#[must_use]
+pub fn canonical_concept_name(id: u16) -> Option<&'static str> {
+    CODEBOOK
+        .iter()
+        .find_map(|(name, cid)| if *cid == id { Some(*name) } else { None })
+}
+
 /// **Compile-time class-id constants** — every promoted concept's id
 /// exposed as a named `pub const u16` so downstream consumers can dispatch
 /// on canonical identity at compile time without a [`canonical_concept_id`]
@@ -3510,6 +3534,34 @@ mod tests {
         assert_eq!(canonical_concept_id("handle_out"), None);
         assert_eq!(canonical_concept_id(""), None);
         assert_eq!(canonical_concept_id("user"), None);
+    }
+
+    #[test]
+    fn canonical_concept_name_round_trips() {
+        // Every codebook id reverses to its name, and that name maps forward
+        // to the same id — proving the reverse lookup is total over the
+        // codebook AND that ids are unique (a collision would break one
+        // direction). This is the gate `PROBE-OGAR-ID-TO-CONCEPT-NAME` (odoo-rs
+        // UPSTREAM_WISHLIST) asks for before the consumer fusion can land.
+        for &(name, id) in CODEBOOK {
+            assert_eq!(
+                canonical_concept_name(id),
+                Some(name),
+                "id 0x{id:04X} must reverse to `{name}`",
+            );
+            assert_eq!(canonical_concept_id(name), Some(id));
+        }
+    }
+
+    #[test]
+    fn canonical_concept_name_known_ids_and_none_for_unknown() {
+        assert_eq!(canonical_concept_name(0x0202), Some("commercial_document"));
+        assert_eq!(canonical_concept_name(0x0103), Some("billable_work_entry"));
+        assert_eq!(canonical_concept_name(0x0204), Some("billing_party"));
+        // Ids outside the codebook (the 0x0000 default sentinel, the 0xFFFF
+        // max) have no canonical concept — None, never a synthesised name.
+        assert_eq!(canonical_concept_name(0x0000), None);
+        assert_eq!(canonical_concept_name(0xFFFF), None);
     }
 
     #[test]
