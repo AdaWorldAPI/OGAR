@@ -28,8 +28,9 @@ The APP‖class model changes only *where new ids come from* when an app
 genuinely needs a private one.
 
 **Reserved prefixes** (from `APP-CLASS-CODEBOOK-LAYOUT.md` §2):
-`0x0002` Odoo · `0x0003` WoA · `0x0004` SMB · `0x0006` q2. `0x0000` is
-core (auth lives here at domain `0x0B`).
+`0x0001` OpenProject · `0x0002` Odoo · `0x0003` WoA · `0x0004` SMB ·
+`0x0005` Medcare · `0x0006` q2 · `0x0007` Redmine. `0x0000` is core
+(auth lives here at domain `0x0B`).
 
 ---
 
@@ -37,14 +38,75 @@ core (auth lives here at domain `0x0B`).
 
 | Wave | App | Port status | Private codebook needed? | Gating |
 |---|---|---|---|---|
+| **W0** | OpenProject (`0x0001`) + Redmine (`0x0007`) | `OpenProjectPort` ✅ + `RedminePort` ✅ | no (maps to project-mgmt `0x01`) | none — flagship repoint + the showcase |
 | **W1** | WoA / woa-rs | `WoaPort` ✅ (OGAR #93) | no (maps to commerce `0x02`) | none — pure repoint |
 | **W2** | SMB / smb-office-rs | `SmbPort` ✅ (OGAR #93) | no (maps to commerce `0x02`) | none — pure repoint |
 | **W3** | Odoo / odoo-rs | `OdooPort` ✅ (OGAR #94) | no, but **delete the fork** | converge `od-ontology` |
 | **W4** | q2 (Gotham/aiwar/neo4j) | ❌ no port | **likely yes** (`0x0006`) | author port FIRST |
 
-W1–W2 are mechanical (the ports exist, concepts are canonical commerce).
-W3 is the severity case (odoo-rs re-derives the AR layer). W4 is
-greenfield (no port, domain not yet in the codebook).
+W0 is the **flagship** (ports exist, project-mgmt `0x01XX` is the
+most-developed core block at 25 concepts, and OpenProject ↔ Redmine is
+the cleanest two-renders-one-concept proof). W1–W2 are mechanical (ports
+exist, concepts are canonical commerce). W3 is the severity case
+(odoo-rs re-derives the AR layer). W4 is greenfield (no port, domain not
+yet in the codebook).
+
+---
+
+## W0 — OpenProject (`0x0001`) + Redmine (`0x0007`)  (consume project-mgmt `0x01`) — THE FLAGSHIP
+
+**Ports:** `OpenProjectPort` ✅ and `RedminePort` ✅ both exist. The
+project-mgmt block is the most-developed core domain — 25 canonical
+concepts (`project = 0x0101` … `project_enabled_module = 0x011A`),
+already encoded as "OpenProject ↔ Redmine" curator aliases collapsing to
+one id. **Private codebook: no** — every project concept is canonical.
+
+**Why this is the showcase.** OpenProject and Redmine are **two
+renderers of the same canonical concepts**. The hi/lo split
+(`APP-CLASS-CODEBOOK-LAYOUT.md` §1) is at its cleanest here:
+
+| Surface name | shared concept (lo u16) | OpenProject id | Redmine id |
+|---|---|---|---|
+| WorkPackage / Issue | `0x0102` project_work_item | `0x0001_0102` | `0x0007_0102` |
+| Project | `0x0101` project | `0x0001_0101` | `0x0007_0101` |
+| Role | `0x0117` project_role | `0x0001_0117` | `0x0007_0117` |
+| TimeEntry / billable | `0x0103` billable_work_entry | `0x0001_0103` | `0x0007_0103` |
+
+- **Same low half ⇒ same RBAC + ontology.** Both authorize on `0x0102`;
+  both inherit the `project_role 0x0117` grant lattice — which is already
+  the keystone's worked example (`CLASSID-RBAC-KEYSTONE-SPEC.md` §4,
+  harvested from the Rails/Redmine model). One grant lattice, two apps.
+- **Different high half ⇒ different render.** `WorkPackage` renders via
+  OpenProject's ClassView/template (`0x0001`); `Issue` renders via
+  Redmine's (`0x0007`) — distinct field layouts, distinct Askama
+  templates, **zero** concept duplication. This is precisely why the
+  high u16 exists (§3.5).
+
+Steps (OpenProject-nexgen-rs is the live migrating consumer; Redmine is
+the alias-twin that proves the model — any Redmine Rust consumer follows
+the identical pattern):
+1. **Pull the concept low half statically.** Repoint off any
+   `OpenProjectBridge` / `RedmineBridge` usage to
+   `OpenProjectPort::class_id(name)` / `RedminePort::class_id(name)`;
+   form the render classid `app_prefix << 16 | concept` (e.g.
+   `0x0001_0000 | 0x0102`).
+2. **Delete the bridges.** No hand-rolled registry/hydration; the
+   consumer holds no ontology.
+3. **Enrich by classid.** Redmine's per-project visibility +
+   role-based access, OpenProject's work-package permissions, become the
+   row-scope axis — compiled to a bitmap, **not** runtime domain-eval
+   (Firewall).
+4. **Authorize by the low half.** `authorize(actor, 0x0102, op)` — the
+   shared project grant lattice. Both apps, one upstream resolution.
+5. **Render by the full classid.** Each app's ClassView selects its own
+   template; fields resolve key-value against content stores (no serde —
+   `APP-CLASS-CODEBOOK-LAYOUT.md` §3.6).
+6. **Private mint only if** an app ships a genuinely non-canonical
+   project object (none known today) → `0x0001_FFCC` / `0x0007_FFCC`.
+
+Cross-ref: `OPENPROJECT-TRANSCODING.md`,
+`CLASSID-RBAC-KEYSTONE-SPEC.md` §4 (the project_role lattice is the
+canonical RBAC worked example).
 
 ---
 

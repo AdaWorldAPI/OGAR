@@ -124,13 +124,21 @@ materialised until the app mints its first private class).
 | `hi u16` | App / namespace | Core domain(s) it consumes | Private codebook today? |
 |---|---|---|---|
 | `0x0000` | **Shared canonical core** | all (`0x01/02/07/08/09` + `0x0B` auth) | n/a (this *is* core) |
-| `0x0001` | OpenProject / Redmine | `0x01` project-mgmt | **no** — maps onto core |
+| `0x0001` | OpenProject (openproject-nexgen-rs) | `0x01` project-mgmt | **no** — maps onto core |
 | `0x0002` | Odoo | `0x02` commerce | **no** — maps onto core (converge `od-ontology`) |
 | `0x0003` | WoA / woa-rs | `0x02` commerce (work orders) | **no** — maps onto core |
 | `0x0004` | SMB-Office / smb-office-rs | `0x02` commerce | **no** — maps onto core |
 | `0x0005` | **Medcare / medcare-rs** | `0x09` health | **escape hatch only** (see §3) |
 | `0x0006` | q2 (Gotham / aiwar / neo4j) | `0x07` osint (+ TBD) | **TBD** — port not yet authored |
+| `0x0007` | Redmine | `0x01` project-mgmt | **no** — same concepts as OpenProject, own templates |
 | `0x00A0` | (reserved) future app block | — | — |
+
+> **OpenProject (`0x0001`) and Redmine (`0x0007`) are the showcase:**
+> same low-u16 concepts (`WorkPackage`/`Issue` both → `0x0102`
+> project_work_item; same RBAC `project_role 0x0117` lattice), different
+> high-u16 render prefix (different ClassView/Askama template). Two
+> renders, one concept — the cleanest demonstration of §1. See
+> `APP-CODEBOOK-MIGRATION-PLAN.md` W0.
 
 Auth is **not** its own APP — auth providers are canonical, cross-app
 profiles, so they live in **core** under a new `0x0B` auth domain
