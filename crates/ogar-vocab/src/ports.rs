@@ -239,6 +239,160 @@ pub const HEALTHCARE_ALIASES: &[(&str, u16)] = &[
     ("VitalSign", class_ids::VITAL_SIGN),
 ];
 
+// ── WoA (work-order management) port ────────────────────────────────
+
+/// WoA's `PortSpec` — maps the `WorkOrder` namespace's public names
+/// (Customer / Vorgang / Position / Stundenzettel / …) onto the shared
+/// OGAR codebook.
+///
+/// The convergence pin that matters: WoA's `Stundenzettel` and
+/// `TimesheetActivity` resolve to [`class_ids::BILLABLE_WORK_ENTRY`] —
+/// the **same** id [`OpenProjectPort::TimeEntry`] and
+/// [`RedminePort::TimeEntry`] resolve to. That's the operator's value
+/// statement ("planner times align with billable hours") realised as
+/// data: a planner consumer's `TimeEntry` and an ERP consumer's
+/// `Stundenzettel` carry the same `entity_type_id()` on the
+/// `EntityRef`, so the cross-system integration is a codebook lookup,
+/// not a translation layer. The pin is asserted in
+/// [`tests::time_entry_converges_across_planner_and_erp_ports`].
+///
+/// Commerce concepts (Customer / Vorgang / Position / TaxRate /
+/// Zahlung) route into the canonical `0x02XX` commerce block —
+/// `BILLING_PARTY` / `COMMERCIAL_DOCUMENT` / `COMMERCIAL_LINE_ITEM` /
+/// `TAX_POLICY` / `PAYMENT_RECORD` — so WoA's `Customer` and SMB's
+/// `Kunde` and a future Odoo `res.partner` all resolve to one id.
+/// Sister of [`SmbPort`]: both ports map their German + English
+/// public names onto the same canonical block, giving German-SMB ERP
+/// consumers cross-fork convergence the project-management ports
+/// already enjoy.
+pub struct WoaPort;
+
+impl PortSpec for WoaPort {
+    const NAMESPACE: &'static str = "WorkOrder";
+    const BRIDGE_ID: &'static str = "woa";
+    fn aliases() -> &'static [(&'static str, u16)] {
+        WOA_ALIASES
+    }
+}
+
+/// The WoA port's `(public_name, class_id)` alias slice. Exposed `pub`
+/// for symmetry with [`OPENPROJECT_ALIASES`] / [`REDMINE_ALIASES`] /
+/// [`HEALTHCARE_ALIASES`]; prefer [`WoaPort::aliases`] in new code.
+///
+/// Includes both German and English synonyms for each canonical
+/// concept (Vorgang ≡ WorkOrder, Stundenzettel ≡ TimesheetActivity ≡
+/// TimeEntry, Zahlung ≡ Payment, etc.) — they all collapse to the
+/// same canonical class_id, so consumers reading either German or
+/// English public names route to the same dispatch arm.
+pub const WOA_ALIASES: &[(&str, u16)] = &[
+    // ── Billing party (BILLING_PARTY 0x0204) ─────────────────────
+    ("Customer", class_ids::BILLING_PARTY),
+    ("Kunde", class_ids::BILLING_PARTY),
+    // ── Commercial document (COMMERCIAL_DOCUMENT 0x0202) ─────────
+    // `Vorgang` is WoA's umbrella for the Quote/Order/Invoice/CreditNote
+    // family (same SQL row, kind enum discriminates). All English and
+    // German specializations collapse to one canonical id.
+    ("Vorgang", class_ids::COMMERCIAL_DOCUMENT),
+    ("WorkOrder", class_ids::COMMERCIAL_DOCUMENT),
+    ("Quote", class_ids::COMMERCIAL_DOCUMENT),
+    ("Angebot", class_ids::COMMERCIAL_DOCUMENT),
+    ("Order", class_ids::COMMERCIAL_DOCUMENT),
+    ("Auftrag", class_ids::COMMERCIAL_DOCUMENT),
+    ("Invoice", class_ids::COMMERCIAL_DOCUMENT),
+    ("Rechnung", class_ids::COMMERCIAL_DOCUMENT),
+    ("CreditNote", class_ids::COMMERCIAL_DOCUMENT),
+    ("Gutschrift", class_ids::COMMERCIAL_DOCUMENT),
+    ("RecurringInvoice", class_ids::COMMERCIAL_DOCUMENT),
+    // ── Commercial line item (COMMERCIAL_LINE_ITEM 0x0201) ───────
+    ("Position", class_ids::COMMERCIAL_LINE_ITEM),
+    ("LineItem", class_ids::COMMERCIAL_LINE_ITEM),
+    // ── Tax (TAX_POLICY 0x0203) ──────────────────────────────────
+    ("TaxRate", class_ids::TAX_POLICY),
+    ("Steuersatz", class_ids::TAX_POLICY),
+    ("Tax", class_ids::TAX_POLICY),
+    // ── Payment (PAYMENT_RECORD 0x0205) ──────────────────────────
+    ("Payment", class_ids::PAYMENT_RECORD),
+    ("Zahlung", class_ids::PAYMENT_RECORD),
+    ("PaymentRecord", class_ids::PAYMENT_RECORD),
+    // ── BILLABLE WORK ENTRY (0x0103) — the convergence pin ───────
+    // Planner-side `TimeEntry` (OpenProject/Redmine) and ERP-side
+    // `Stundenzettel` / `TimesheetActivity` (WoA) resolve to the
+    // SAME canonical id. This is the operator's value statement
+    // realised as data: zero-translation flow between planner hours
+    // and billable hours.
+    ("Stundenzettel", class_ids::BILLABLE_WORK_ENTRY),
+    ("TimesheetActivity", class_ids::BILLABLE_WORK_ENTRY),
+    ("TimeEntry", class_ids::BILLABLE_WORK_ENTRY),
+    ("Zeiterfassung", class_ids::BILLABLE_WORK_ENTRY),
+];
+
+// ── SMB (small-and-medium-business German office ERP) port ──────────
+
+/// SMB-office-rs's `PortSpec` — maps the `SMB` namespace's public
+/// names (Kunde / Auftrag / Rechnung / Stundenzettel / …) onto the
+/// shared OGAR codebook.
+///
+/// Sister of [`WoaPort`]: both ports cover overlapping commerce +
+/// billable-hours surfaces with German-vendor vocabularies. SMB's
+/// `Kunde` and WoA's `Kunde` both resolve to
+/// [`class_ids::BILLING_PARTY`]; SMB's `Stundenzettel` and WoA's
+/// `Stundenzettel` and OpenProject's `TimeEntry` all resolve to
+/// [`class_ids::BILLABLE_WORK_ENTRY`]. The convergence pin lives in
+/// [`tests::time_entry_converges_across_planner_and_erp_ports`].
+///
+/// SMB-specific concepts that don't yet have a canonical class_id
+/// (Artikel / Product / SKU, Geschäftspartner / Lieferant, FiBu
+/// account chart) are intentionally absent; adding them is an
+/// extension of the `0x02XX` commerce block and a paired SmbPort
+/// alias entry. Until then `SmbPort::class_id("Artikel")` returns
+/// `None` and the consumer's `bridge.entity()` call falls through
+/// to the OGIT registry-resolution path (so a TTL-hydrated concept
+/// still resolves; the codebook synthesis just doesn't kick in).
+pub struct SmbPort;
+
+impl PortSpec for SmbPort {
+    const NAMESPACE: &'static str = "SMB";
+    const BRIDGE_ID: &'static str = "smb";
+    fn aliases() -> &'static [(&'static str, u16)] {
+        SMB_ALIASES
+    }
+}
+
+/// The SMB port's `(public_name, class_id)` alias slice. German and
+/// English synonyms collapse to one canonical class_id, matching the
+/// WoaPort approach so both German-SMB consumers route through one
+/// shared codebook.
+pub const SMB_ALIASES: &[(&str, u16)] = &[
+    // ── Billing party (BILLING_PARTY 0x0204) ─────────────────────
+    ("Kunde", class_ids::BILLING_PARTY),
+    ("Customer", class_ids::BILLING_PARTY),
+    // ── Commercial document (COMMERCIAL_DOCUMENT 0x0202) ─────────
+    ("Auftrag", class_ids::COMMERCIAL_DOCUMENT),
+    ("Order", class_ids::COMMERCIAL_DOCUMENT),
+    ("Rechnung", class_ids::COMMERCIAL_DOCUMENT),
+    ("Invoice", class_ids::COMMERCIAL_DOCUMENT),
+    ("Angebot", class_ids::COMMERCIAL_DOCUMENT),
+    ("Quote", class_ids::COMMERCIAL_DOCUMENT),
+    ("Gutschrift", class_ids::COMMERCIAL_DOCUMENT),
+    ("CreditNote", class_ids::COMMERCIAL_DOCUMENT),
+    // ── Commercial line item (COMMERCIAL_LINE_ITEM 0x0201) ───────
+    ("Position", class_ids::COMMERCIAL_LINE_ITEM),
+    ("LineItem", class_ids::COMMERCIAL_LINE_ITEM),
+    // ── Tax (TAX_POLICY 0x0203) ──────────────────────────────────
+    ("Steuer", class_ids::TAX_POLICY),
+    ("Tax", class_ids::TAX_POLICY),
+    ("Steuersatz", class_ids::TAX_POLICY),
+    // ── Payment (PAYMENT_RECORD 0x0205) ──────────────────────────
+    ("Zahlung", class_ids::PAYMENT_RECORD),
+    ("Payment", class_ids::PAYMENT_RECORD),
+    // ── BILLABLE WORK ENTRY (0x0103) — the convergence pin ───────
+    // Same convergence as WoA: SMB `Stundenzettel` ≡ OpenProject
+    // `TimeEntry` ≡ Redmine `TimeEntry` ≡ WoA `Stundenzettel`.
+    ("Stundenzettel", class_ids::BILLABLE_WORK_ENTRY),
+    ("TimeEntry", class_ids::BILLABLE_WORK_ENTRY),
+    ("Zeiterfassung", class_ids::BILLABLE_WORK_ENTRY),
+];
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -263,17 +417,20 @@ mod tests {
 
     #[test]
     fn healthcare_entities_resolve_into_the_health_domain() {
-        use crate::{canonical_concept_domain, ConceptDomain};
+        use crate::{ConceptDomain, canonical_concept_domain};
         for &(name, _) in HealthcarePort::aliases() {
-            let id = HealthcarePort::class_id(name)
-                .unwrap_or_else(|| panic!("`{name}` must resolve"));
+            let id =
+                HealthcarePort::class_id(name).unwrap_or_else(|| panic!("`{name}` must resolve"));
             assert_eq!(
                 canonical_concept_domain(id),
                 ConceptDomain::Health,
                 "`{name}` -> 0x{id:04X} must live in the Health (0x09XX) domain",
             );
         }
-        assert_eq!(HealthcarePort::class_id("Patient"), Some(class_ids::PATIENT));
+        assert_eq!(
+            HealthcarePort::class_id("Patient"),
+            Some(class_ids::PATIENT)
+        );
         assert_eq!(HealthcarePort::class_id("Patient"), Some(0x0901));
     }
 
@@ -338,7 +495,11 @@ mod tests {
             ("WikiPage", "WikiPage", class_ids::PROJECT_WIKI_PAGE),
             ("Query", "Query", class_ids::PROJECT_QUERY),
             ("Attachment", "Attachment", class_ids::PROJECT_ATTACHMENT),
-            ("CustomField", "CustomField", class_ids::PROJECT_CUSTOM_FIELD),
+            (
+                "CustomField",
+                "CustomField",
+                class_ids::PROJECT_CUSTOM_FIELD,
+            ),
             ("Relation", "IssueRelation", class_ids::PROJECT_RELATION),
             ("Changeset", "Changeset", class_ids::PROJECT_CHANGESET),
             ("Watcher", "Watcher", class_ids::PROJECT_WATCHER),
@@ -347,8 +508,16 @@ mod tests {
             ("Forum", "Board", class_ids::PROJECT_FORUM),
             ("Role", "Role", class_ids::PROJECT_ROLE),
             ("MemberRole", "MemberRole", class_ids::PROJECT_MEMBER_ROLE),
-            ("CustomValue", "CustomValue", class_ids::PROJECT_CUSTOM_VALUE),
-            ("EnabledModule", "EnabledModule", class_ids::PROJECT_ENABLED_MODULE),
+            (
+                "CustomValue",
+                "CustomValue",
+                class_ids::PROJECT_CUSTOM_VALUE,
+            ),
+            (
+                "EnabledModule",
+                "EnabledModule",
+                class_ids::PROJECT_ENABLED_MODULE,
+            ),
         ];
         for &(op_name, rm_name, expected) in pairs {
             let op = OpenProjectPort::class_id(op_name);
@@ -402,6 +571,127 @@ mod tests {
                 "HealthcarePort alias `{name}` -> 0x{id:04X} not in class_ids::ALL"
             );
         }
+        for &(name, id) in WoaPort::aliases() {
+            assert!(
+                codebook_ids.contains(&id),
+                "WoaPort alias `{name}` -> 0x{id:04X} not in class_ids::ALL"
+            );
+        }
+        for &(name, id) in SmbPort::aliases() {
+            assert!(
+                codebook_ids.contains(&id),
+                "SmbPort alias `{name}` -> 0x{id:04X} not in class_ids::ALL"
+            );
+        }
+    }
+
+    #[test]
+    fn woa_namespace_and_bridge_id_match_canonical_strings() {
+        assert_eq!(WoaPort::NAMESPACE, "WorkOrder");
+        assert_eq!(WoaPort::BRIDGE_ID, "woa");
+    }
+
+    #[test]
+    fn smb_namespace_and_bridge_id_match_canonical_strings() {
+        assert_eq!(SmbPort::NAMESPACE, "SMB");
+        assert_eq!(SmbPort::BRIDGE_ID, "smb");
+    }
+
+    /// The operator's value statement realised as a test (2026-06-21):
+    /// "in the end planning (openproject) and ERP (odoo, YOU) should
+    /// become reusable ontologies so that the planner times can align
+    /// with billable hours." Every port's time-tracking public name(s)
+    /// — `TimeEntry` (planner), `Stundenzettel` (ERP, both languages),
+    /// `TimesheetActivity`, `Zeiterfassung` — must resolve to ONE
+    /// canonical `class_ids::BILLABLE_WORK_ENTRY = 0x0103`. Drift here
+    /// reintroduces the manual translation layer the codebook exists
+    /// to eliminate.
+    #[test]
+    fn time_entry_converges_across_planner_and_erp_ports() {
+        let target = class_ids::BILLABLE_WORK_ENTRY;
+        // Planner side (OpenProject + Redmine).
+        assert_eq!(OpenProjectPort::class_id("TimeEntry"), Some(target));
+        assert_eq!(RedminePort::class_id("TimeEntry"), Some(target));
+        // ERP side (WoA + SMB) — both German and English public names
+        // collapse to the same id, so the planner→ERP integration is
+        // a codebook lookup, not a translation layer.
+        for name in [
+            "Stundenzettel",
+            "TimesheetActivity",
+            "TimeEntry",
+            "Zeiterfassung",
+        ] {
+            assert_eq!(
+                WoaPort::class_id(name),
+                Some(target),
+                "WoaPort `{name}` must resolve to BILLABLE_WORK_ENTRY (planner-ERP convergence)",
+            );
+        }
+        for name in ["Stundenzettel", "TimeEntry", "Zeiterfassung"] {
+            assert_eq!(
+                SmbPort::class_id(name),
+                Some(target),
+                "SmbPort `{name}` must resolve to BILLABLE_WORK_ENTRY (planner-ERP convergence)",
+            );
+        }
+    }
+
+    /// Commerce-block convergence: WoA's `Customer` / `Kunde` and SMB's
+    /// `Kunde` / `Customer` resolve to the SAME canonical
+    /// `class_ids::BILLING_PARTY = 0x0204`. Same shape for `Position`,
+    /// `Invoice` / `Rechnung`, `Tax` / `Steuer`, `Payment` / `Zahlung`.
+    /// Two German-SMB ERP forks converging on one codebook is exactly
+    /// the OpenProject ↔ Redmine apple-meets-apple pattern.
+    #[test]
+    fn woa_and_smb_converge_on_commerce_block() {
+        let pairs: &[(&str, &str, u16)] = &[
+            ("Customer", "Customer", class_ids::BILLING_PARTY),
+            ("Kunde", "Kunde", class_ids::BILLING_PARTY),
+            ("Invoice", "Invoice", class_ids::COMMERCIAL_DOCUMENT),
+            ("Rechnung", "Rechnung", class_ids::COMMERCIAL_DOCUMENT),
+            ("Order", "Order", class_ids::COMMERCIAL_DOCUMENT),
+            ("Auftrag", "Auftrag", class_ids::COMMERCIAL_DOCUMENT),
+            ("Quote", "Quote", class_ids::COMMERCIAL_DOCUMENT),
+            ("Angebot", "Angebot", class_ids::COMMERCIAL_DOCUMENT),
+            ("CreditNote", "CreditNote", class_ids::COMMERCIAL_DOCUMENT),
+            ("Gutschrift", "Gutschrift", class_ids::COMMERCIAL_DOCUMENT),
+            ("Position", "Position", class_ids::COMMERCIAL_LINE_ITEM),
+            ("LineItem", "LineItem", class_ids::COMMERCIAL_LINE_ITEM),
+            ("Tax", "Tax", class_ids::TAX_POLICY),
+            ("Steuersatz", "Steuersatz", class_ids::TAX_POLICY),
+            ("Payment", "Payment", class_ids::PAYMENT_RECORD),
+            ("Zahlung", "Zahlung", class_ids::PAYMENT_RECORD),
+        ];
+        for &(woa_name, smb_name, expected) in pairs {
+            let woa = WoaPort::class_id(woa_name);
+            let smb = SmbPort::class_id(smb_name);
+            assert_eq!(
+                woa,
+                Some(expected),
+                "WoaPort `{woa_name}` must map to 0x{expected:04X}",
+            );
+            assert_eq!(
+                smb,
+                Some(expected),
+                "SmbPort `{smb_name}` must map to 0x{expected:04X}",
+            );
+            assert_eq!(
+                woa, smb,
+                "convergence broken: WoA `{woa_name}` ↔ SMB `{smb_name}`",
+            );
+        }
+    }
+
+    #[test]
+    fn woa_and_smb_unknown_public_names_resolve_to_none() {
+        assert_eq!(WoaPort::class_id("NotAConcept"), None);
+        assert_eq!(SmbPort::class_id("NotAConcept"), None);
+        assert_eq!(WoaPort::class_id(""), None);
+        assert_eq!(SmbPort::class_id(""), None);
+        // Artikel / Product / SKU is intentionally absent — needs a
+        // codebook extension; until then falls through.
+        assert_eq!(SmbPort::class_id("Artikel"), None);
+        assert_eq!(SmbPort::class_id("Product"), None);
     }
 
     #[test]
@@ -430,6 +720,32 @@ mod tests {
             RedminePort::aliases().len(),
             28,
             "Redmine alias count drift — re-count the table"
+        );
+        // WoA (26): 2 BillingParty (Customer/Kunde) + 11 CommercialDocument
+        //   (Vorgang umbrella + Quote/Angebot, Order/Auftrag, Invoice/
+        //   Rechnung, CreditNote/Gutschrift, RecurringInvoice) + 2
+        //   LineItem (Position, LineItem) + 3 TaxPolicy (TaxRate /
+        //   Steuersatz / Tax) + 3 PaymentRecord (Payment/Zahlung/
+        //   PaymentRecord) + 4 BillableWorkEntry (Stundenzettel /
+        //   TimesheetActivity / TimeEntry / Zeiterfassung). Drift here
+        //   means a public-name was added/removed from the alias table.
+        assert_eq!(
+            WoaPort::aliases().len(),
+            25,
+            "WoA alias count drift — re-count the table"
+        );
+        // SMB (20): 2 BillingParty (Kunde/Customer) + 8 CommercialDocument
+        //   (Auftrag/Order, Rechnung/Invoice, Angebot/Quote, Gutschrift/
+        //   CreditNote) + 2 LineItem (Position, LineItem) + 3 TaxPolicy
+        //   (Steuer / Tax / Steuersatz) + 2 PaymentRecord (Zahlung /
+        //   Payment) + 3 BillableWorkEntry (Stundenzettel / TimeEntry /
+        //   Zeiterfassung). SMB omits some WoA-only synonyms (Vorgang
+        //   umbrella, RecurringInvoice, TimesheetActivity) — those are
+        //   WoA-specific surface concepts the SMB consumer doesn't need.
+        assert_eq!(
+            SmbPort::aliases().len(),
+            20,
+            "SMB alias count drift — re-count the table"
         );
     }
 
