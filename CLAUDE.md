@@ -189,6 +189,15 @@ alignment costs. Until measured: 3×4 stands.
    Operational pre-flight: `docs/SURREAL-AST-TRAP-PREFLIGHT.md` (the
    spellbook — five questions, 90 seconds, MANDATORY before any
    producer→IR / transcode / codegen / `.surql` authoring session).
+8. `docs/OGAR-CONSUMER-BEST-PRACTICES.md` — the muscle-memory guide
+   for every consumer-side session (medcare-rs, woa-rs, smb-office-rs,
+   odoo-rs, openproject-nexgen-rs, q2). One-line invariant: **the
+   classid is pure address; the magic is what it resolves to.** Drilled
+   with worked examples across every PortSpec, the four canonical
+   patterns (pull classid · compose render · authorize · migrate), and
+   an anti-pattern catalogue paired with the right shapes. MANDATORY
+   before authoring any consumer call site that mentions `class_id`,
+   `APP_PREFIX`, `PortSpec`, `ClassView`, or any `*Bridge`/`UnifiedBridge`.
 8. `docs/ARCHITECTURAL-DECISIONS-2026-06-04.md` — ADR-001..025
    (ADR-026 pending).
 9. `.claude/agents/` — the 5+3 hardening pattern (5 research savants +
@@ -207,6 +216,15 @@ alignment costs. Until measured: 3×4 stands.
   … THEN …` carrying lifecycle is the "negative-beauty hijack"
   `SURREAL-AST-AS-ADAPTER.md` §0 rejects. Behavior flows producer →
   OGAR `Class`+`ActionDef` → adapter; never producer → DDL.
+- **Consumer call sites: classid is address, magic is at the
+  resolution target:** before authoring consumer code that pulls a
+  classid, composes a render address, authorizes, or migrates off a
+  bridge, read `docs/OGAR-CONSUMER-BEST-PRACTICES.md` (the muscle-
+  memory guide). The hi u16 chooses **render** skin (per-app
+  ClassView/template), the lo u16 names the **shared concept** (RBAC +
+  ontology); **neither half carries behavior** — class-magic
+  (`ActionDef`+`KausalSpec`) is a property of the Core node the
+  address resolves to, never of the address.
 - **PII:** never emit German PII labels (medcare-rs leaf-rename at the
   adapter is the guarantee). Word-boundary abort-guard before commit.
 - **No model identifier** in any committed artifact (chat only).

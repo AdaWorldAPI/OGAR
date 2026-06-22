@@ -9,6 +9,13 @@
 > prefix** and pins the rule that keeps "classid is shared currency"
 > intact.
 >
+> **Read together with** `docs/OGAR-CONSUMER-BEST-PRACTICES.md` — the
+> muscle-memory guide with worked examples across every consumer. **The
+> classid is pure address (both halves)**; behavior lives at the
+> resolution target (ClassView for the skin / `Class`+`ActionDef` for
+> the canonical shape and magic). Hi u16 selects **render** magic, NOT
+> class magic; class magic is the Core's, never the address's.
+>
 > **The goal it serves (§3.5–3.7):** every renderable thing — strings,
 > text, media, online sources — is rendered by **key-value resolution**
 > against typed content stores, so **no serialization exists in the hot
