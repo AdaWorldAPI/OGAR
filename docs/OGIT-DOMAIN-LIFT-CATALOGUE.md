@@ -17,11 +17,45 @@
 | **Production** | A consumer deployment exercises the lifted form (see `DOMAIN-INSTANCES.md`) |
 
 A domain advances Imported → Lift-tested → Cross-walked → Production
-left-to-right. All 72 are Imported today (just landed). MARS is the
-first Lift-tested. OpenProject/Odoo/Healthcare are Production via the
+left-to-right. All 72 are Imported today (just landed). The following
+**10 domains are Lift-tested** (round-trip mechanically enforced by
+`ttl_emit::tests::nine_domains_lift_surface_round_trip` +
+`all_mars_ttl_files_roundtrip`): MARS, Transport, Accounting,
+SalesDistribution, Credit, Cost, ServiceManagement, WorkOrder,
+Compliance, Audit. OpenProject/Odoo/Healthcare are Production via the
 existing canonical concept work but use the source-AST lift, not the
 schema lift — they enter Lift-tested when their TTLs are added to the
 round-trip stress test.
+
+## Verifying domain authorship (who can change what)
+
+Provenance is `dcterms:creator` on each TTL. Run:
+
+```bash
+python3 - <<'PY'
+import os, re
+from collections import Counter
+creator_re = re.compile(r'dcterms:creator\s+"([^"]+)"')
+for d in sorted(os.listdir('vocab/imports/ogit/NTO')):
+    root = f'vocab/imports/ogit/NTO/{d}'
+    authors = Counter()
+    for r,_,fs in os.walk(root):
+        for f in fs:
+            if not f.endswith('.ttl'): continue
+            with open(os.path.join(r,f)) as fh:
+                for m in creator_re.finditer(fh.read()):
+                    authors[m.group(1)] += 1
+    if not authors: continue
+    top = ', '.join(f'{a} ({c})' for a,c in authors.most_common(5))
+    print(f'{d:<28} {top}')
+PY
+```
+
+Internal-agent authors (`bus-compiler`, `family-codec-smith`, `Claude
+(...)`, etc.) signal "our extension — we can revise without external
+coordination." External authors (`chris.boos@almato.com`, `Viktor Voss`,
+`fotto@arago.de`, …) signal "upstream-owned — structural changes need
+arago/almato coordination."
 
 ## How to add a new domain to the lift
 
@@ -44,16 +78,16 @@ round-trip stress test.
 
 | Domain | Entities | Attributes | Verbs | Status | Notes |
 |---|--:|--:|--:|---|---|
-| `Accounting` | 9 | 20 | 7 | Imported | Covered conceptually via `0x02XX` commerce/ERP via Odoo lift |
+| `Accounting` | 9 | 20 | 7 | Lift-tested | Mixed-authorship: `Viktor Voss` (23 files, original arago/almato) + a prior session's extension (`Claude (AdaWorldAPI/lance-graph 3-hop optim)`, 11 files). Covered conceptually via `0x02XX` commerce/ERP via Odoo lift. Structural changes to the original 23 need upstream coordination; the 11 extensions are ours. |
 | `Advertising` | 16 | 0 | 0 | Imported | |
-| `Audit` | 3 | 0 | 0 | Imported | Audit-as-Lance-version (ADR-013) covers the semantics |
+| `Audit` | 3 | 0 | 0 | Lift-tested | `Marek Meyer` (sole author) — pure upstream. Audit-as-Lance-version (ADR-013) covers the semantics. |
 | `Auth` | 13 | 24 | 6 | Imported | Cross-walk to `0x0BXX` auth domain (Zitadel/Zanzibar) queued |
 | `Automation` | 22 | 105 | 0 | Imported | OLD `marsNodeType` superseded by `NTO/MARS/` |
 | `Botany` | 2 | 0 | 0 | Imported | |
 | `ClassificationStandard` | 2 | 5 | 2 | Imported | |
-| `Compliance` | 1 | 4 | 4 | Imported | |
-| `Cost` | 5 | 0 | 0 | Imported | |
-| `Credit` | 12 | 0 | 9 | Imported | |
+| `Compliance` | 1 | 4 | 4 | Lift-tested | `chris.boos@almato.com` (sole author) — pure upstream |
+| `Cost` | 5 | 0 | 0 | Lift-tested | `Peter Larem` (sole author) — pure upstream |
+| `Credit` | 12 | 0 | 9 | Lift-tested | `Ola Irgens Kylling` (sole author, 21 files) — pure upstream; capitalised `Entities/` + `Verbs/` dirs (content-driven parser is dir-case-agnostic) |
 | `CustomerSupport` | 7 | 31 | 2 | Imported | |
 | `Data` | 1 | 1 | 0 | Imported | |
 | `DataProcessing` | 2 | 6 | 0 | Imported | |
@@ -104,18 +138,18 @@ round-trip stress test.
 | `RPA` | 6 | 1 | 1 | Imported | |
 | `Religion` | 1 | 0 | 0 | Imported | |
 | `SaaS` | 10 | 12 | 0 | Imported | |
-| `SalesDistribution` | 12 | 11 | 0 | Imported | |
+| `SalesDistribution` | 12 | 11 | 0 | Lift-tested | `Marek Meyer` (sole author, 23 files) — pure upstream |
 | `Schedule` | 5 | 7 | 0 | Imported | |
 | `Security` | 2 | 0 | 0 | Imported | |
-| `ServiceManagement` | 17 | 42 | 0 | Imported | MARS Machine `generates` Log/Timeseries lands here |
+| `ServiceManagement` | 17 | 42 | 0 | Lift-tested | 8 distinct authors led by `Peter Larem` (42 files); pure upstream. MARS Machine `generates` Log/Timeseries lands here. |
 | `SharePoint` | 0 | 2 | 0 | Imported | Attributes-only |
 | `Software` | 5 | 0 | 0 | Imported | Distinct from `NTO/MARS/Software/` — this is a software-engineering vocabulary |
 | `Statistics` | 1 | 0 | 0 | Imported | |
 | `Survey` | 3 | 0 | 0 | Imported | |
-| `Transport` | 5 | 14 | 8 | Imported | |
+| `Transport` | 5 | 14 | 8 | Lift-tested | `chris.boos@almato.com` (sole author, 27 files) — pure upstream-arago |
 | `UserMeta` | 4 | 0 | 4 | Imported | |
 | `Version` | 0 | 3 | 0 | Imported | Used by MARS Machine for OS version |
-| `WorkOrder` | 15 | 0 | 12 | Imported | Covered conceptually by WoA (`0x0003`) |
+| **`WorkOrder`** | 27 | 0 | 0 | **Lift-tested** | **Our extension** (`dcterms:creator` = `bus-compiler` + `family-codec-smith` — internal agent authors, zero external). Authored for `woa-rs`. All 27 TTLs declared as `rdfs:Class`, including the 12 in `verbs/` (unusual `rdfs:Class`-as-verb convention). Round-trips cleanly. **Since we're upstream**, the verb files can be re-authored as `owl:ObjectProperty` for the AST predicate registry without external coordination. Previous catalogue row split 15 entities + 12 verbs by directory; content-driven count is 27 entities (what `ogar-from-schema` actually sees). |
 | **TOTALS** | **549** | **599** | **241** | — | + 42 other (Medical sql_mirror, etc.) |
 
 ## Adjacent imports (not NTO)

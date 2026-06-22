@@ -15,6 +15,46 @@
 
 ## Entries (newest first)
 
+## 2026-06-22 — Author provenance via `dcterms:creator` discriminates "ours to revise" from "upstream-coordinated"
+**Status:** FINDING
+**Scope:** OGIT NTO governance × multi-domain lift × who-can-change-what
+
+OGIT TTL files carry `dcterms:creator` on every subject. The field is
+free-form text but carries one of two semantic shapes in practice:
+
+- **Human author + email** (`chris.boos@almato.com`, `Viktor Voss`,
+  `fotto@arago.de`, `Marek Meyer`, `Peter Larem`, `Ola Irgens Kylling`,
+  …) — original arago/almato authors. Structural changes need upstream
+  coordination.
+- **Internal agent name** (`bus-compiler`, `family-codec-smith`,
+  `Claude (AdaWorldAPI/lance-graph 3-hop optim)`, …) — files authored
+  by our agent fleet against this org's forks. We are upstream for
+  these; structural changes need no external coordination.
+
+The 9-domain spot check (Transport, Accounting, SalesDistribution,
+Credit, Cost, ServiceManagement, WorkOrder, Compliance, Audit) revealed:
+
+- **WorkOrder is fully ours** — 100% internal-agent authorship (`bus-compiler`,
+  `family-codec-smith`). The unusual `rdfs:Class`-as-verb convention is
+  ours to revise toward standard `owl:ObjectProperty`-as-verb whenever
+  the AST predicate registry needs the WorkOrder verbs.
+- **Accounting is mixed-authorship** — Viktor Voss (23 files, original)
+  + a prior session's `Claude` extension (11 files). Structural changes
+  to the original 23 require upstream coordination; the 11 are ours.
+- **All other 7 domains are pure-upstream** — single-or-few external
+  human authors.
+
+This makes WorkOrder the **natural prototyping ground** for new TTL
+predicates OGAR wants to add: ship in WorkOrder first (no external
+coordination cost), validate the bijection, then pitch the pattern
+to OGIT upstream once it's proven.
+
+Evidence: the `dcterms:creator` provenance scan recipe lives in
+`docs/OGIT-DOMAIN-LIFT-CATALOGUE.md § Verifying domain authorship`;
+the round-trip stress test for the 9 domains is
+`ttl_emit::tests::nine_domains_lift_surface_round_trip` (zero failures
+on 210 TTLs across the nine).
+
 ## 2026-06-22 — Schema-vs-source duality: schemas lift structure bijectively; source ASTs lift behaviour best-effort; they cross-validate at the structural boundary
 **Status:** FINDING
 **Scope:** producer architecture × MARS calibration × Foundry-Odoo lens × the bardioc migration

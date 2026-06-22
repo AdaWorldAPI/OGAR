@@ -276,20 +276,102 @@ mod tests {
     /// predicate.
     #[test]
     fn all_mars_ttl_files_roundtrip() {
+        let stats = assert_domain_roundtrip("MARS");
+        // 29 .ttl files in NTO/MARS at the SHA pinned by PROVENANCE.md.
+        assert!(
+            stats.total >= 29,
+            "expected ≥ 29 TTL files in MARS, got {}",
+            stats.total
+        );
+    }
+
+    /// Generic helper that walks `vocab/imports/ogit/NTO/<domain>/`,
+    /// dispatches each TTL to the right parser (`parse_file` for entities
+    /// and datatype attributes, `crate::sgo::parse_verb` for in-domain
+    /// `owl:ObjectProperty` verbs), and asserts semantic round-trip.
+    /// Returns per-shape counts so callers can sanity-check the lift
+    /// surface they're claiming.
+    fn assert_domain_roundtrip(domain: &str) -> DomainStats {
         let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../../vocab/imports/ogit/NTO/MARS");
-        let mut checked = 0usize;
+            .join("../../vocab/imports/ogit/NTO")
+            .join(domain);
+        let mut stats = DomainStats::default();
         for entry in walk_ttl(&dir) {
             let src = std::fs::read_to_string(&entry).expect("read");
+            stats.total += 1;
             match parse_file(&src) {
-                Some(TtlDeclaration::Entity(_)) => assert_entity_roundtrip(&src),
-                Some(TtlDeclaration::DatatypeAttribute(_)) => assert_attribute_roundtrip(&src),
-                None => {}
+                Some(TtlDeclaration::Entity(_)) => {
+                    assert_entity_roundtrip(&src);
+                    stats.entities += 1;
+                }
+                Some(TtlDeclaration::DatatypeAttribute(_)) => {
+                    assert_attribute_roundtrip(&src);
+                    stats.attributes += 1;
+                }
+                None => {
+                    // Try the verb path — some NTO domains carry their own
+                    // in-domain `owl:ObjectProperty` verbs (Transport,
+                    // Accounting, Credit, Compliance) alongside SGO's
+                    // upstream-shared vocabulary.
+                    let Some(once) = crate::sgo::parse_verb(&src) else {
+                        panic!(
+                            "TTL has no recognised subject type in {domain}: {}",
+                            entry.display()
+                        );
+                    };
+                    let emitted = crate::sgo::emit_verb(&once);
+                    let twice = crate::sgo::parse_verb(&emitted).expect("re-parse verb");
+                    assert_eq!(
+                        once,
+                        twice,
+                        "verb round-trip lost a predicate in {domain}: {}",
+                        entry.display()
+                    );
+                    stats.verbs += 1;
+                }
             }
-            checked += 1;
         }
-        // 29 .ttl files in NTO/MARS at the SHA pinned by PROVENANCE.md.
-        assert!(checked >= 29, "expected ≥ 29 TTL files, got {checked}");
+        stats
+    }
+
+    #[derive(Debug, Default)]
+    struct DomainStats {
+        total: usize,
+        entities: usize,
+        attributes: usize,
+        verbs: usize,
+    }
+
+    /// Cross-domain bijection coverage. Each row is one of the nine
+    /// domains the operator asked OGAR to verify before promoting
+    /// the lift surface from MARS-only to multi-domain. If any of
+    /// these fails, the producer can't land on that domain without
+    /// extending `EntityDecl` / `AttributeDecl` / `VerbDecl` first.
+    ///
+    /// Counts are also a sanity check on the inventory — they prove
+    /// the catalogue's per-domain numbers match what's actually in
+    /// `vocab/imports/`.
+    #[test]
+    fn nine_domains_lift_surface_round_trip() {
+        for (domain, expected_total) in [
+            ("Transport", 27),
+            ("Accounting", 36),
+            ("SalesDistribution", 23),
+            ("Credit", 21),
+            ("Cost", 5),
+            ("ServiceManagement", 59),
+            ("WorkOrder", 27),
+            ("Compliance", 9),
+            ("Audit", 3),
+        ] {
+            let stats = assert_domain_roundtrip(domain);
+            assert_eq!(
+                stats.total, expected_total,
+                "{domain}: TTL count drifted from inventory \
+                 (expected {expected_total}, got {})",
+                stats.total
+            );
+        }
     }
 
     fn walk_ttl(root: &std::path::Path) -> Vec<std::path::PathBuf> {
