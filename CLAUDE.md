@@ -184,9 +184,14 @@ alignment costs. Until measured: 3×4 stands.
    failure modes the apparatus caught.
 6. `docs/OGAR-AST-CONTRACT.md` — the IR type surface (THINK arm `Class`
    / DO arm `ActionDef`+`ActionInvocation` / membrane `KausalSpec`).
-4. `docs/ARCHITECTURAL-DECISIONS-2026-06-04.md` — ADR-001..025
+7. `docs/SURREAL-AST-AS-ADAPTER.md` — the carved decision: SurrealQL
+   AST is an adapter, not the spine; behavioral arm cannot live in DDL.
+   Operational pre-flight: `docs/SURREAL-AST-TRAP-PREFLIGHT.md` (the
+   spellbook — five questions, 90 seconds, MANDATORY before any
+   producer→IR / transcode / codegen / `.surql` authoring session).
+8. `docs/ARCHITECTURAL-DECISIONS-2026-06-04.md` — ADR-001..025
    (ADR-026 pending).
-5. `.claude/agents/` — the 5+3 hardening pattern (5 research savants +
+9. `.claude/agents/` — the 5+3 hardening pattern (5 research savants +
    3 brutally-honest reviewers). Run it before any claim enters the
    canon. Theorem-checker rule 0: **pin the unit system first** (bits
    vs hex vs bytes — born from a real failure).
@@ -195,6 +200,13 @@ alignment costs. Until measured: 3×4 stands.
 
 - **The Firewall (ADR-022/023):** no serialization in the hot path;
   the IR is wire-truth; inter-mailbox state is Batons.
+- **SurrealQL is an adapter, not a spine:** before any producer→IR /
+  transcode / codegen / `.surql` authoring session, read
+  `docs/SURREAL-AST-TRAP-PREFLIGHT.md` (five-question pre-flight, 90
+  seconds). The behavioral arm cannot live in DDL — `DEFINE EVENT … WHEN
+  … THEN …` carrying lifecycle is the "negative-beauty hijack"
+  `SURREAL-AST-AS-ADAPTER.md` §0 rejects. Behavior flows producer →
+  OGAR `Class`+`ActionDef` → adapter; never producer → DDL.
 - **PII:** never emit German PII labels (medcare-rs leaf-rename at the
   adapter is the guarantee). Word-boundary abort-guard before commit.
 - **No model identifier** in any committed artifact (chat only).
