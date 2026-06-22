@@ -15,6 +15,86 @@
 
 ## Entries (newest first)
 
+## 2026-06-22 — OGIT was already a semantic compiler's symbol table — bardioc built the structural half deliberately, externalized behaviour to HIRO, never unified the two halves
+**Status:** FINDING (shape-inference from the OGIT artifact, not insider history)
+**Scope:** OGAR-AS-IR provenance × the structural/behavioural-arm split × what OGAR's actual contribution is
+
+Question posed: from the shape of OGIT, how likely is it that bardioc
+(arago's HIRO/Bardioc engine, the original OGIT authors) discovered the
+"semantic compiler" superpowers OGAR articulates?
+
+Assessment, reasoning purely from the OGIT artifact read end-to-end
+(NTO 72 domains + SGO upper ontology + MARS XSD + `extract_classes.py`),
+not from any insider knowledge:
+
+**High likelihood they discovered and EXPLOITED it operationally; low
+likelihood they FRAMED it as a compiler.** They built a thing that IS a
+semantic compiler and described it in Semantic-Web vocabulary
+(`rdfs:`/`owl:`/`dcterms:`), not compiler-engineering vocabulary.
+
+The discipline in the artifact is the tell — these are [G] (visible in
+the files), not inference:
+
+- **Symbol table with typed signatures** — SGO's 176 verbs, separately
+  versioned, each with `ogit:from-to` domain→range typing.
+- **Type system with closed constraints** — `validation-type "fixed"` +
+  exhaustive `validation-parameter` enums (round-trippable).
+- **Structural typing with cardinality** — `mandatory-/optional-/indexed-attributes`.
+- **Capability/interface declaration** — `ogit:allowed ([verb target])`.
+- **Module/namespace layering** — `ogit:scope "NTO"`/`"SGO"`; NTO/SGO/SDF split.
+- **Explicit dependency DAG** — MARS A→R→S→M `dependsOn` chain.
+- **Codegen back-end** — `extract_classes.py` lowers XSD/OGIT → rendered tables.
+- **IR-as-canonical-source** — OGIT was the source; HIRO consumed it;
+  automations were driven FROM the ontology.
+
+Most RDF ontologies are loose, under-typed, aspirational. OGIT is none
+of those. `validation-type "fixed"` with exhaustive parameter lists AND
+a Python extractor that preserves them is compiler-grade thinking wearing
+Semantic-Web labels.
+
+**The sharpest single piece of evidence:** OGIT carries ONLY the
+structural arm; the behaviour lived in HIRO (Elixir `gen_statem`,
+automation rules — `ELIXIR-HIRO-PREFETCH.md`). That separation —
+declarative schema here, runtime behaviour there — IS the
+structural-arm / behavioural-arm split this workspace "rediscovered."
+bardioc had it years ago.
+
+On OGAR-AS-IR's own six IR-shape tests, OGIT satisfies ~3 of 6 by
+construction: typed-signature (yes), IR-is-canonical (yes), named-lowering
+(partial — `extract_classes` is one, unlabeled); but effect-annotations
+(no — effects lived in HIRO, not OGIT), SSA (no), semantic-preservation
+guarantee (no explicit one). That profile is precisely "a disciplined
+STRUCTURAL IR with the behavioural half externalized."
+
+**What they did NOT do — and what OGAR's actual contribution is:** the
+UNIFICATION. "These are two arms of ONE IR; the structural arm lowers to
+N back-ends; the behavioural arm stays in the Core; the same address
+resolves both." bardioc had two systems (OGIT + HIRO) with a "HIRO reads
+OGIT" seam, not one IR with two arms. OGAR is not discovering the
+superpower — it is RENAMING what bardioc built (in compiler vocabulary)
+and UNIFYING the two halves they kept apart.
+
+Consequence for how we talk about OGAR: the `OGAR-AS-IR` line "the docs
+were already compiler-shaped, just not labeled" applies one level down
+to OGIT itself. Honest framing in any external-facing material: OGAR
+stands on a deliberately-engineered semantic-compiler symbol table
+(OGIT) and contributes the IR unification + the compiler-vocabulary
+framing, NOT the underlying discovery. Crediting bardioc's structural
+discipline is both accurate and strengthens the claim (the substrate is
+battle-tested, not speculative).
+
+Fences (this is shape-inference, grade honestly):
+- "[G] the shape exhibits compiler properties" — strong, evidenced in files.
+- "[H] bardioc consciously knew they were building a compiler" — inference
+  from discipline; plausible but unprovable from the artifact alone.
+- "[S] they had the full IR-discipline OGAR articulates" — no; the 6-test
+  profile (3/6) falsifies this. The unification is genuinely OGAR's.
+
+Cross-ref: `docs/OGAR-AS-IR.md` (the framing), `docs/HIRO-IN-CLASSES.md`
+(the bardioc-efficiency story), `docs/ELIXIR-HIRO-PREFETCH.md` (HIRO =
+the behavioural arm), `docs/MARS-TRANSCODING.md` (the XSD calibration that
+exercised the structural arm).
+
 ## 2026-06-22 — The "latent re-vendor bug" was a false premise; exports/ is a STAGING tier, not a permanent home (operator-decided)
 **Status:** FINDING
 **Scope:** vocab/ tree model × verify-before-acting × correcting a prior session's claim
