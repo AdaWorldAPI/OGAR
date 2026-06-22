@@ -1,0 +1,363 @@
+#!/usr/bin/env python
+# ----------------------------------------------------------------------- #
+import os
+#import shutil
+import argparse
+import xml.dom.minidom
+import re
+import pprint
+import sys
+import datetime
+
+# TODO: get namespace prefixes from root element
+xs_prefix = 'xs:'
+aae_prefix = 'aae:'
+
+# ASSUMPTION:
+# 1) any elements from XMLSchema are using 'xs' as namespace prefix
+# 2) any definded types are referenced using 'aae' prefix
+# 3) the complex types defining the for 4 node categories are:
+master_types = {
+    'MachineAttributes': 'Machine',
+    'ResourceAttributes': 'Resource',
+    'SoftwareAttributes': 'Software',
+    'ApplicationAttributes': 'Application'
+}
+
+
+# ----------------------------------------------------------------------- #
+# functions
+# ----------------------------------------------------------------------- #
+
+def extract_from_xml(cfg, data_hash):
+    dom = xml.dom.minidom.parse(cfg.schema_file)
+    root = dom.getElementsByTagName(xs_prefix+"schema")
+    version = None
+    #pp = pprint.PrettyPrinter(indent=4)
+    if root:
+        version = root[0].getAttribute("version")
+        # temporary data structures:
+        el_data = {}
+        ct_data = {}
+        for child in root[0].childNodes:
+            if child.nodeType == child.ELEMENT_NODE \
+                    and child.tagName == xs_prefix+'element':
+                el_name = child.getAttribute("name")
+                parsed_data = parse_element_data(child)
+                if parsed_data:
+                    #print "FOUND EL: [%s]" % el_name
+                    el_data[el_name] = parsed_data
+                    #pp.pprint(parsed_data)
+            if child.nodeType == child.ELEMENT_NODE \
+                    and child.tagName == xs_prefix+'complexType':
+                ct_name = child.getAttribute("name")
+                parsed_data = parse_complex_type(child)
+                if parsed_data and "TYPE" in parsed_data:
+                    #print "FOUND CT: [%s]" % ct_name
+                    ct_data[ct_name] = parsed_data
+                    #pp.pprint(parsed_data)
+        # post process phase II:
+        for el_name in list(el_data.keys()):
+            if "TYPE" not in el_data[el_name]:
+                if el_data[el_name]["_base"] in ct_data:
+                    data = ct_data[el_data[el_name]["_base"]]
+                    for attr in list(data.keys()):
+                        if not attr.startswith('_'):
+                            el_data[el_name][attr] = data[attr]
+            #print "POSTPROCESSED: [%s]" % el_name
+            #pp.pprint(el_data[el_name])
+        # prepare man structure of data hash
+        data_hash['Machine'] = { 'elements' : {} }
+        data_hash['Software'] = { 'types' : {} ,
+                                  'elements' : {} }
+        data_hash['Resource'] = { 'types' : {} ,
+                                  'elements' : {} }
+        data_hash['Application'] = { 'types' : {} ,
+                                  'elements' : {} }
+        for el_name in list(el_data.keys()):
+            #print "DEBUG", el_data[el_name]
+            data_hash[el_data[el_name]["TYPE"]]['elements'][el_name] = \
+                el_data[el_name]
+        for ct_name in list(ct_data.keys()):
+            data_hash[ct_data[ct_name]["TYPE"]]['types'][ct_name] = \
+                ct_data[ct_name]
+    else:
+        # TODO: throw exception
+        print("NO ROOT ELEMENT FOUND")
+    return version
+
+
+def parse_element_data(node):
+    parsed_data = {}
+    if node.nodeType != node.ELEMENT_NODE \
+            or node.tagName != xs_prefix+'element':
+        return
+    # search for base type
+    ext_els = node.getElementsByTagName(xs_prefix+"extension")
+    if ext_els == None or ext_els.length == 0:
+        return
+    ext_el = ext_els[0]
+    base_name = strip_aae_prefix(ext_el.getAttribute("base"))
+    parsed_data["_base"] = base_name
+    # and dig for fixed attributes
+    for child in ext_el.childNodes:
+        if child.nodeType == child.ELEMENT_NODE \
+                and child.tagName == xs_prefix+'attribute':
+            fixed = child.getAttribute("fixed")
+            if fixed == None:
+                return
+            parsed_data["_fixed"] = {}
+            parsed_data["_fixed"]["name"] = child.getAttribute("name")
+            parsed_data["_fixed"]["type"] = strip_aae_prefix(child.getAttribute("type"))
+            parsed_data["_fixed"]["value"] = fixed
+    # dig for documentation
+    parsed_data["_doc"] = []
+    for doc_el in node.getElementsByTagName(xs_prefix+"documentation"):
+        lang = doc_el.getAttribute("xml:lang")
+        if lang == None or lang == "" or lang == "en":
+            parsed_data["_doc"].append(getXMLText(doc_el))
+    # post process phase I
+    if parsed_data["_base"] in master_types:
+        parsed_data["TYPE"] = master_types[parsed_data["_base"]]
+    parsed_data[parsed_data["_fixed"]["type"]] = parsed_data["_fixed"]["value"]
+    return parsed_data
+
+def parse_complex_type(node):
+    parsed_data = {}
+    if node.nodeType != node.ELEMENT_NODE \
+            or node.tagName != xs_prefix+'complexType':
+        return
+    # search for base type
+    ext_els = node.getElementsByTagName(xs_prefix+"extension")
+    if ext_els == None or ext_els.length == 0:
+        return
+    ext_el = ext_els[0]
+    base_name = strip_aae_prefix(ext_el.getAttribute("base"))
+    parsed_data["_base"] = base_name
+    # and dig for fixed attributes
+    for child in ext_el.childNodes:
+        if child.nodeType == child.ELEMENT_NODE \
+                and child.tagName == xs_prefix+'attribute':
+            fixed = child.getAttribute("fixed")
+            if fixed == None:
+                return
+            parsed_data["_fixed"] = {}
+            parsed_data["_fixed"]["name"] = child.getAttribute("name")
+            parsed_data["_fixed"]["type"] = strip_aae_prefix(child.getAttribute("type"))
+            parsed_data["_fixed"]["value"] = fixed
+    # dig for documentation
+    parsed_data["_doc"] = []
+    for doc_el in node.getElementsByTagName(xs_prefix+"documentation"):
+        lang = doc_el.getAttribute("xml:lang")
+        if lang == None or lang == "" or lang == "en":
+            parsed_data["_doc"].append(getXMLText(doc_el))
+    # post process phase I
+    if parsed_data["_base"] in master_types:
+        parsed_data["TYPE"] = master_types[parsed_data["_base"]]
+        parsed_data[parsed_data["_fixed"]["type"]] = parsed_data["_fixed"]["value"]
+    return parsed_data
+
+def strip_aae_prefix(inStr):
+    # strip 'aae:'
+    outStr= re.sub(r'^'+aae_prefix, '', inStr)
+    return outStr
+
+# ----------------------------------------------------------------------- #
+# helper functions for XHTML output
+# ----------------------------------------------------------------------- #
+def printHTMLHeader():
+    print("<html><body>")
+
+def printHTMLFooter():
+    print("</body></html>")
+
+def printHTMLTitle(version):
+    print("<h1>Node classifications from MARS Schema %s</h1>" % version)
+
+def printHTMLTable3Col(data_hash, title, classkey, subclasskey):
+    print("<h2>%s</h2>" % title)
+    print("<table><thead><tr><th align=\"left\">%s</th><th align=\"left\">%s</th><th align=\"left\">Description</th></tr></thead>" % (classkey, subclasskey))
+    print("<tbody>")
+    # here we do the data ordering
+    a_classes = {}
+    a_sub_classes = {}
+    for el in list(data_hash.keys()):
+        a_class = data_hash[el][classkey]
+        a_sub_class = data_hash[el][subclasskey]
+        a_classes[a_class] = 0 # dummy value
+        if a_class not in a_sub_classes:
+            a_sub_classes[a_class] = []
+        a_sub_classes[a_class].append(a_sub_class)
+    # sort arrays...
+    for cl in sorted(a_classes.keys()):
+        for sub_cl in sorted(a_sub_classes[cl]):
+            # here we use the fact that 'key' in data_hash equals sub_cl
+            #print "DEBUG: title=[%s] cl=[%s] scl=[%s]" % (title, cl, sub_cl)
+            if sub_cl in data_hash:
+                print("<tr><td>%s</td><td>%s</td><td>%s</td></tr>" % (cl, sub_cl, "<br />".join(data_hash[sub_cl]['_doc'])))
+            else:
+                sys.stderr.write("Error in Schema for "+subclasskey+ " \""+sub_cl+"\"\n")
+
+    print("</tbody></table>")
+
+def printHTMLTable2Col(data_hash, title, classkey):
+    print("<h2>%s</h2>" % title)
+    print("<table><thead><tr><th align=\"left\">%s</th><th align=\"left\">Description</th></tr></thead>" % (classkey))
+    print("<tbody>")
+    # here we do the data ordering
+    a_classes = {}
+    for el in list(data_hash.keys()):
+        a_class = data_hash[el][classkey]
+        a_classes[a_class] = 0 # dummy value
+    # sort arrays...
+    for cl in sorted(a_classes.keys()):
+        # here we use the fact that 'key' in data_hash equals sub_cl
+        #print "DEBUG: title=[%s] cl=[%s] scl=[%s]" % (title, cl, sub_cl)
+        if cl in data_hash:
+            print("<tr><td>%s</td><td>%s</td></tr>" % (cl, "<br />".join(data_hash[cl]['_doc'])))
+        else:
+            sys.stderr.write("Error in Schema for "+classkey+ " \""+cl+"\"\n")
+
+    print("</tbody></table>")
+
+# ----------------------------------------------------------------------- #
+# helper functions for Asciidoc output
+# ----------------------------------------------------------------------- #
+def printAsciiDocHeader(date):
+    print(":toc:")
+    print(":revdate: %s" % date)
+    print("\n<<<\n")
+    print("[NOTE]\n====\nThe MARS Schema uses a different versioning cycle from HIRO Product. It is expected to see the two versions deviate from each other.\n\nThis list was last updated on: *{revdate}*\n====\n\n")
+
+def printAsciiDocFooter():
+    print("")
+
+def printAsciiDocTitle(version):
+    print("= Node classifications from MARS Schema %s" % version)
+
+def printAsciiDocTable3Col(data_hash, title, classkey, subclasskey):
+    print("== %s\n" % title)
+    print("[cols=\"1,1,3\", options=\"header\"]")
+    print("|===")
+    print("|%s|%s|Description" % (classkey, subclasskey))
+    # here we do the data ordering
+    a_classes = {}
+    a_sub_classes = {}
+    for el in list(data_hash.keys()):
+        a_class = data_hash[el][classkey]
+        a_sub_class = data_hash[el][subclasskey]
+        a_classes[a_class] = 0 # dummy value
+        if a_class not in a_sub_classes:
+            a_sub_classes[a_class] = []
+        a_sub_classes[a_class].append(a_sub_class)
+    # sort arrays...
+    for cl in sorted(a_classes.keys()):
+        for sub_cl in sorted(a_sub_classes[cl]):
+            # here we use the fact that 'key' in data_hash equals sub_cl
+            #print "DEBUG: title=[%s] cl=[%s] scl=[%s]" % (title, cl, sub_cl)
+            if sub_cl in data_hash:
+                print("|%s|%s|%s" % (cl, sub_cl, "<br />".join(data_hash[sub_cl]['_doc'])))
+            else:
+                sys.stderr.write("Error in Schema for "+subclasskey+ " \""+sub_cl+"\"\n")
+
+    print("|===\n")
+
+def printAsciiDocTable2Col(data_hash, title, classkey):
+    print("== %s\n" % title)
+    print("[cols=\"1,5\", options=\"header\"]")
+    print("|===")
+    print("|%s|Description" % (classkey))
+    # here we do the data ordering
+    a_classes = {}
+    for el in list(data_hash.keys()):
+        a_class = data_hash[el][classkey]
+        a_classes[a_class] = 0 # dummy value
+    # sort arrays...
+    for cl in sorted(a_classes.keys()):
+        # here we use the fact that 'key' in data_hash equals sub_cl
+        #print "DEBUG: title=[%s] cl=[%s] scl=[%s]" % (title, cl, sub_cl)
+        if cl in data_hash:
+            print("|%s|%s" % (cl, "<br />".join(data_hash[cl]['_doc'])))
+        else:
+            sys.stderr.write("Error in Schema for "+classkey+ " \""+cl+"\"\n")
+
+    print("|===\n")
+
+
+
+# ----------------------------------------------------------------------- #
+# helper function:
+# retrieve text from a XML node
+# ----------------------------------------------------------------------- #
+def getXMLText(node):
+    rc = []
+    for child in node.childNodes:
+        if child.nodeType == child.TEXT_NODE:
+            rc.append(child.data)
+    return ''.join(rc)
+
+
+
+
+# ----------------------------------------------------------------------- #
+# main
+# ----------------------------------------------------------------------- #
+
+date = datetime.datetime.now().strftime("%d-%b-%Y")
+
+parser = argparse.ArgumentParser(description='parse specified MARS Schema file and generates a table of MARS node classifications')
+parser.add_argument("-s", "--schema", dest="schema_file", help="path to MARS schema file", required=True)
+parser.add_argument("-F", "--format", dest="output_format", help="format of result", default='html')
+args = parser.parse_args()
+
+# main data structure
+data = {}
+# will contain:
+
+schema_version = extract_from_xml(args, data)
+
+if args.output_format == 'html':
+    printHTMLHeader()
+    printHTMLTitle(schema_version)
+    printHTMLTable3Col(data['Application']['elements'],
+                       "Application Node Classifications",
+                       "ApplicationClass",
+                       "ApplicationSubClass" )
+    printHTMLTable2Col(data['Resource']['elements'],
+                       "Resource Node Classifications",
+                       "ResourceClass" )
+    printHTMLTable3Col(data['Software']['elements'],
+                       "Software Node Classifications",
+                    "SoftwareClass",
+                       "SoftwareSubClass" )
+    printHTMLTable2Col(data['Machine']['elements'],
+                       "Machine Node Classifications",
+                       "MachineClass" )
+    printHTMLFooter()
+elif args.output_format == 'asciidoc':
+    printAsciiDocTitle(schema_version)
+    printAsciiDocHeader(date)
+    printAsciiDocTable3Col(data['Application']['elements'],
+                       "Application Node Classifications",
+                       "ApplicationClass",
+                       "ApplicationSubClass" )
+    printAsciiDocTable2Col(data['Resource']['elements'],
+                       "Resource Node Classifications",
+                       "ResourceClass" )
+    printAsciiDocTable3Col(data['Software']['elements'],
+                       "Software Node Classifications",
+                    "SoftwareClass",
+                       "SoftwareSubClass" )
+    printAsciiDocTable2Col(data['Machine']['elements'],
+                       "Machine Node Classifications",
+                       "MachineClass" )
+    printAsciiDocFooter()
+else:
+    print("Unsupported output format: %s" %  args.output_format)
+    exit(1)
+
+
+# DEBUGGING OUTPUT
+#pp = pprint.PrettyPrinter(indent=4)
+#pp.pprint(data['Application']['types'])
+#pp.pprint(data['Software']['elements'])

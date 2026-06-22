@@ -1,0 +1,39 @@
+@prefix ogit.Automation:        <http://www.purl.org/ogit/Automation/> .
+@prefix owl:                    <http://www.w3.org/2002/07/owl#> .
+@prefix ogit.Datacenter:        <http://www.purl.org/ogit/Datacenter/> .
+@prefix ogit.Software:          <http://www.purl.org/ogit/Software/> .
+@prefix ogit.Forum:             <http://www.purl.org/ogit/Forum/> .
+@prefix ogit.Network:           <http://www.purl.org/ogit/Network/> .
+@prefix ogit.ServiceManagement: <http://www.purl.org/ogit/ServiceManagement/> .
+@prefix ogit.Survey:            <http://www.purl.org/ogit/Survey/> .
+@prefix ogit.Knowledge:         <http://www.purl.org/ogit/Knowledge/> .
+@prefix ogit.MARS:              <http://www.purl.org/ogit/MARS/> .
+@prefix ogit.MRP:               <http://www.purl.org/ogit/MRP/> .
+@prefix ogit.MRO.Aviation:      <http://www.purl.org/ogit/MRO/Aviation/> .
+@prefix ogit:                   <http://www.purl.org/ogit/> .
+@prefix rdfs:                   <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix dcterms:                <http://purl.org/dc/terms/> .
+
+ogit:Status
+	a rdfs:Class;
+	rdfs:subClassOf ogit:Entity;
+	rdfs:label "Status";
+	dcterms:description "Any kind of status";
+	# For ranges, see https://www.dublincore.org/specifications/dublin-core/dcmi-period/
+	dcterms:valid "start=2017-04-19;";
+	dcterms:creator "stravlos@arago.de";
+	ogit:scope "SGO";
+	ogit:parent ogit:Node;
+	ogit:mandatory-attributes (
+	);
+	ogit:optional-attributes (
+		ogit:status
+	);
+	ogit:indexed-attributes (
+		
+	);
+	ogit:allowed (
+			[ ogit:relates  ogit:Series ]
+			[ ogit:relates  ogit:Course ]
+	);
+.

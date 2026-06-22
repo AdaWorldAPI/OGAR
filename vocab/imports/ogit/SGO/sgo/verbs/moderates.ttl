@@ -1,0 +1,17 @@
+@prefix dcterms:                <http://purl.org/dc/terms/> .
+@prefix ogit:                   <http://www.purl.org/ogit/> .
+@prefix ogit.Forum:             <http://www.purl.org/ogit/Forum/> .
+@prefix owl:                    <http://www.w3.org/2002/07/owl#> .
+@prefix rdfs:                   <http://www.w3.org/2000/01/rdf-schema#> .
+
+ogit:moderates
+	a owl:ObjectProperty;
+	rdfs:subPropertyOf ogit:Verb;
+	rdfs:label "moderates";
+	dcterms:description """Moderation as a verb, in the context of a forum, is a supervisory role. It implies that the
+entity takes a responsibility for the maintenance and upkeep of the connected entity.""";
+	# For ranges, see https://www.dublincore.org/specifications/dublin-core/dcmi-period/
+	dcterms:valid "start=2015-04-23;";
+	dcterms:creator "cwalker@arago.de";
+	ogit:cardinality "many2many";
+.

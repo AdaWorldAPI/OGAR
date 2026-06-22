@@ -1,0 +1,40 @@
+@prefix ogit.BusinessProcess:   <http://www.purl.org/ogit/BusinessProcess/> .
+@prefix ogit.Automation:        <http://www.purl.org/ogit/Automation/> .
+@prefix ogit.MARS:              <http://www.purl.org/ogit/MARS/> .
+@prefix ogit.Cost:              <http://www.purl.org/ogit/Cost/> .
+@prefix ogit.Price:             <http://www.purl.org/ogit/Price/> .
+@prefix ogit.ServiceManagement: <http://www.purl.org/ogit/ServiceManagement/> .
+@prefix ogit.OSLC-crtv:         <http://www.purl.org/ogit/OSLC-crtv/> .
+@prefix ogit.Factory:   <http://www.purl.org/ogit/Factory/> .
+@prefix owl:                    <http://www.w3.org/2002/07/owl#> .
+@prefix ogit.Network:           <http://www.purl.org/ogit/Network/> .
+@prefix ogit:                   <http://www.purl.org/ogit/> .
+@prefix rdfs:                   <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix ogit.Software:          <http://www.purl.org/ogit/Software/> .
+@prefix dcterms:                <http://purl.org/dc/terms/> .
+
+ogit.Software:SoftwareConnection
+	a rdfs:Class;
+	rdfs:subClassOf ogit:Entity;
+	rdfs:label "SoftwareConnection";
+	dcterms:description "Represents the connection between two components, which allows data transmission through a network link.";
+	# For ranges, see https://www.dublincore.org/specifications/dublin-core/dcmi-period/
+	dcterms:valid "start=2015-05-21;";
+	dcterms:creator "Peter Larem";
+	ogit:scope "NTO";
+	ogit:parent ogit:Node;
+	ogit:mandatory-attributes (
+		
+	);
+	ogit:optional-attributes (
+		ogit:type
+	);
+	ogit:indexed-attributes (
+		
+	);
+	ogit:allowed (
+			[ ogit:uses  ogit.Software:SoftwareComponent ]
+			[ ogit:transfers  ogit.Software:Data ]
+			[ ogit:transfers  ogit.Network:NetworkLink ]
+	);
+.

@@ -1,0 +1,30 @@
+@prefix ogit.Network:           <http://www.purl.org/ogit/Network/> .
+@prefix ogit.Location:           <http://www.purl.org/ogit/Location/> .
+@prefix owl:                    <http://www.w3.org/2002/07/owl#> .
+@prefix ogit:                   <http://www.purl.org/ogit/> .
+@prefix rdfs:                   <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix dcterms:                <http://purl.org/dc/terms/> .
+
+ogit.Network:Site
+	a rdfs:Class;
+	rdfs:subClassOf ogit:Entity;
+	rdfs:label "Site";
+	dcterms:description "A site located in on place, which contains a  geographically concentrated computer network.";
+	dcterms:valid "start=2020-09-04;";
+	dcterms:creator "Marek Meyer";
+	ogit:scope "NTO";
+	ogit:parent ogit:Node;
+	ogit:mandatory-attributes (
+		
+	);
+	ogit:optional-attributes (
+		ogit:id
+		ogit:name
+	);
+	ogit:indexed-attributes (
+		
+	);
+	ogit:allowed (
+			[ ogit:locatedIn ogit.Location:NUTSLevel3 ]
+	);
+.

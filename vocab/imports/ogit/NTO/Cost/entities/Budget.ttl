@@ -1,0 +1,29 @@
+@prefix owl:                    <http://www.w3.org/2002/07/owl#> .
+@prefix ogit:                   <http://www.purl.org/ogit/> .
+@prefix rdfs:                   <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix ogit.Cost:              <http://www.purl.org/ogit/Cost/> .
+@prefix dcterms:                <http://purl.org/dc/terms/> .
+
+ogit.Cost:Budget
+	a rdfs:Class;
+	rdfs:subClassOf ogit:Entity;
+	rdfs:label "Budget";
+	dcterms:description "The budget covers the CostElement. It is a list of all the money an Organisation or Business Unit plans to receive, and plans to pay out, over a specified period of time. For a general overview: see the NTO description on github.";
+	# For ranges, see https://www.dublincore.org/specifications/dublin-core/dcmi-period/
+	dcterms:valid "start=2015-05-21;";
+	dcterms:creator "Peter Larem";
+	ogit:scope "NTO";
+	ogit:parent ogit:Node;
+	ogit:mandatory-attributes (
+		
+	);
+	ogit:optional-attributes (
+		
+	);
+	ogit:indexed-attributes (
+		
+	);
+	ogit:allowed (
+			[ ogit:covers  ogit.Cost:CostElement ]
+	);
+.

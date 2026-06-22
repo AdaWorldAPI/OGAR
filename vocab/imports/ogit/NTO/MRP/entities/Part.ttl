@@ -1,0 +1,29 @@
+@prefix owl:                    <http://www.w3.org/2002/07/owl#> .
+@prefix ogit.MRP:              <http://www.purl.org/ogit/MRP/> .
+@prefix ogit:                   <http://www.purl.org/ogit/> .
+@prefix rdfs:                   <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix dcterms:                <http://purl.org/dc/terms/> .
+
+ogit.MRP:Part
+	a rdfs:Class;
+	rdfs:subClassOf ogit:Entity;
+	rdfs:label "Part";
+	dcterms:description "a part or material";
+	dcterms:valid "start=2018-09-07;";
+	dcterms:creator "Kaushik";
+	ogit:scope "NTO";
+	ogit:parent ogit:Node;
+	ogit:mandatory-attributes (
+	);
+	ogit:optional-attributes (
+		ogit.MRP:partNumber
+		ogit:description
+		ogit.MRP:industryStandard
+	);
+    ogit:indexed-attributes (
+    );
+	ogit:allowed (
+			[ ogit:complies  ogit.MRP:NormItem ]
+			[ ogit:consistsOf  ogit.MRP:Part ]
+	);
+.

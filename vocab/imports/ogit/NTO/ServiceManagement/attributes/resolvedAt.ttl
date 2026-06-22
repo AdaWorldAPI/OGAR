@@ -1,0 +1,16 @@
+@prefix ogit:                   <http://www.purl.org/ogit/> .
+@prefix owl:                    <http://www.w3.org/2002/07/owl#> .
+@prefix rdfs:                   <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix dcterms:                <http://purl.org/dc/terms/> .
+@prefix ogit.ServiceManagement: <http://www.purl.org/ogit/ServiceManagement/> .
+
+ogit.ServiceManagement:resolvedAt
+	a owl:DatatypeProperty;
+	rdfs:subPropertyOf ogit:Attribute;
+	rdfs:label "resolvedAt";
+	dcterms:description """Datetime indicating when a ticket was resolved. Can be used for incident or problem tickets when it is necessary to distinguish between the ticket resolving and ticket closure (closedAt).
+The values must be combined date and time with time zone designator according to ISO 8601""";
+	# For ranges, see https://www.dublincore.org/specifications/dublin-core/dcmi-period/
+	dcterms:valid "start=2015-05-21;";
+	dcterms:creator "Peter Larem";
+.

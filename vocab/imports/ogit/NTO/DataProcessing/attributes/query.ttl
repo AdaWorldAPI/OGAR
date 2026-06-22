@@ -1,0 +1,14 @@
+@prefix ogit:                   <http://www.purl.org/ogit/> .
+@prefix owl:                    <http://www.w3.org/2002/07/owl#> .
+@prefix rdfs:                   <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix ogit.DataProcessing:    <http://www.purl.org/ogit/DataProcessing/> .
+@prefix dcterms:                <http://purl.org/dc/terms/> .
+
+ogit.DataProcessing:query
+	a owl:DatatypeProperty;
+	rdfs:subPropertyOf ogit:Attribute;
+	rdfs:label "query";
+	dcterms:description "The query of the input data stream";
+	dcterms:valid "start=2017-02-27;";
+	dcterms:creator "Oday Jubran";
+.

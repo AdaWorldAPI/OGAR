@@ -1,0 +1,16 @@
+@prefix ogit:                   <http://www.purl.org/ogit/> .
+@prefix owl:                    <http://www.w3.org/2002/07/owl#> .
+@prefix rdfs:                   <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix dcterms:                <http://purl.org/dc/terms/> .
+@prefix ogit.Forum:             <http://www.purl.org/ogit/Forum/> .
+
+ogit:responds
+	a owl:ObjectProperty;
+	rdfs:subPropertyOf ogit:Verb;
+	rdfs:label "responds";
+	dcterms:description """This relationship indicates that one entity is a response to another. For example, parts of a
+conversation/fourm thread.""";
+	# For ranges, see https://www.dublincore.org/specifications/dublin-core/dcmi-period/
+	dcterms:valid "start=2015-04-27;";
+	dcterms:creator "cwalker@arago.de";
+.

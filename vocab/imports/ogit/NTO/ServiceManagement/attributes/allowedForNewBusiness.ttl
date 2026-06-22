@@ -1,0 +1,15 @@
+@prefix ogit:                   <http://www.purl.org/ogit/> .
+@prefix owl:                    <http://www.w3.org/2002/07/owl#> .
+@prefix rdfs:                   <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix dcterms:                <http://purl.org/dc/terms/> .
+@prefix ogit.ServiceManagement: <http://www.purl.org/ogit/ServiceManagement/> .
+
+ogit.ServiceManagement:allowedForNewBusiness
+	a owl:DatatypeProperty;
+	rdfs:subPropertyOf ogit:Attribute;
+	rdfs:label "allowedForNewBusiness";
+	dcterms:description "If the value of this flag is true, the service could be offered in a store to new users for order. If flag is false, the service will only be available to users with already existing instances/entities of a specific service.";
+	# For ranges, see https://www.dublincore.org/specifications/dublin-core/dcmi-period/
+	dcterms:valid "start=2015-05-21;";
+	dcterms:creator "Peter Larem";
+.

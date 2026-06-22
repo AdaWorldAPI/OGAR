@@ -1,0 +1,35 @@
+@prefix ogit.DataProcessing:    <http://www.purl.org/ogit/DataProcessing/> .
+@prefix ogit:                   <http://www.purl.org/ogit/> .
+@prefix rdfs:                   <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix dcterms:                <http://purl.org/dc/terms/> .
+
+ogit.DataProcessing:Program
+	a rdfs:Class;
+	rdfs:subClassOf ogit:Entity;
+	rdfs:label "Program";
+	dcterms:description """The program is used for creating data streams,
+		and applying transformations to them.""";
+	dcterms:valid "start=2017-02-28;";
+	dcterms:creator "Oday Jubran";
+	ogit:scope "NTO";
+	ogit:parent ogit:Node;
+	ogit:mandatory-attributes (
+		ogit.DataProcessing:queryType
+		ogit.DataProcessing:query
+		ogit.DataProcessing:parameters
+		ogit.DataProcessing:outputType
+		ogit:content
+	);
+	ogit:optional-attributes (
+		ogit:name
+		ogit:description
+		ogit.DataProcessing:internalJobId
+		ogit.DataProcessing:state
+	);
+	ogit:indexed-attributes (
+		ogit:name
+		ogit:description
+	);
+	ogit:allowed (
+	);
+.

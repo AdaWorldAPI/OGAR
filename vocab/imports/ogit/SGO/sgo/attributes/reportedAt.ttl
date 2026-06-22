@@ -1,0 +1,16 @@
+@prefix ogit:                   <http://www.purl.org/ogit/> .
+@prefix owl:                    <http://www.w3.org/2002/07/owl#> .
+@prefix rdfs:                   <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix dcterms:                <http://purl.org/dc/terms/> .
+
+ogit:reportedAt
+	a owl:DatatypeProperty;
+	rdfs:subPropertyOf ogit:Attribute;
+	rdfs:label "reportedAt";
+	dcterms:description """Defineds the time when something was actually reported.
+The values can combin date and time with time zone designator according to ISO 8601.
+Reported time is used in incident management in the following manner: in most cases the reported time equals the time when the incident is created. In some cases, e.g. the incident is created after the helpdesk has already worked on some request before it was decided to create an incident, the reported time might differ from ticket creation/opening time.""";
+	# For ranges, see https://www.dublincore.org/specifications/dublin-core/dcmi-period/
+	dcterms:valid "start=2015-05-21;";
+	dcterms:creator "Peter Larem";
+.

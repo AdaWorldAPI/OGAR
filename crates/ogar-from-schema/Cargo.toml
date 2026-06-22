@@ -1,0 +1,24 @@
+[package]
+name = "ogar-from-schema"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+description = "Schema-as-input producer family for OGAR IR. Lifts the STRUCTURAL ARM of a domain from declarative schemas (OGIT TTL today; XSD/JSON-Schema/OpenAPI/Prisma queued) into ogar-vocab Class/Attribute/Association/EnumSource without parsing source code. Pair with source-AST producers (ogar-from-rails, ogar-from-elixir) which carry the BEHAVIORAL arm — see docs/HIRO-IN-CLASSES.md §2 'Schema lifts structure; source lifts behavior'."
+
+[features]
+default = []
+serde = ["dep:serde", "ogar-vocab/serde"]
+
+[dependencies]
+ogar-vocab = { path = "../ogar-vocab" }
+serde = { workspace = true, optional = true }
+
+# No external TTL/XSD parser pulled in yet: the v0 reader uses a
+# narrow line-oriented walker that handles the shapes OGIT's TTL
+# actually emits (a tiny, machine-stable subset of full Turtle).
+# When the surface grows (Wikidata-shaped TTL, full RDF/XML, OWL
+# imports), swap in `oxttl` / `oxrdf` here without touching the
+# Class/Attribute target shape this crate produces.

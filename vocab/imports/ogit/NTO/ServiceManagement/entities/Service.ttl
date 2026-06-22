@@ -1,0 +1,74 @@
+@prefix ogit.Project:           <http://www.purl.org/ogit/Project/> .
+@prefix ogit.Survey:           <http://www.purl.org/ogit/Survey/> .
+@prefix ogit.Price:             <http://www.purl.org/ogit/Price/> .
+@prefix ogit.Data:              <http://www.purl.org/ogit/Data/> .
+@prefix ogit.MRP:               <http://www.purl.org/ogit/MRP/> .
+@prefix ogit.Datacenter:        <http://www.purl.org/ogit/Datacenter/> .
+@prefix ogit.Forum:             <http://www.purl.org/ogit/Forum/> .
+@prefix ogit.Software:          <http://www.purl.org/ogit/Software/> .
+@prefix ogit.Network:           <http://www.purl.org/ogit/Network/> .
+@prefix ogit.BusinessProcess:   <http://www.purl.org/ogit/BusinessProcess/> .
+@prefix ogit.Automation:        <http://www.purl.org/ogit/Automation/> .
+@prefix owl:                    <http://www.w3.org/2002/07/owl#> .
+@prefix ogit.MARS:              <http://www.purl.org/ogit/MARS/> .
+@prefix ogit.MRO.Aviation:      <http://www.purl.org/ogit/MRO/Aviation/> .
+@prefix ogit.Forms: 				<http://www.purl.org/ogit/Forms/> .
+@prefix ogit:                   <http://www.purl.org/ogit/> .
+@prefix rdfs:                   <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix dcterms:                <http://purl.org/dc/terms/> .
+@prefix ogit.ServiceManagement: <http://www.purl.org/ogit/ServiceManagement/> .
+
+ogit.ServiceManagement:Service
+	a rdfs:Class;
+	rdfs:subClassOf ogit:Entity;
+	rdfs:label "Service";
+	dcterms:description "A technology service item, which combined or not with other technology services can constitute a service offering (ogit/ServiceManagement/Offering).";
+	# For ranges, see https://www.dublincore.org/specifications/dublin-core/dcmi-period/
+	dcterms:valid "start=2015-05-21;";
+	dcterms:creator "Peter Larem";
+	ogit:scope "NTO";
+	ogit:parent ogit:Node;
+	ogit:mandatory-attributes (
+		ogit:id
+	);
+	ogit:optional-attributes (
+		ogit:description
+		ogit:name
+		ogit:uri
+		ogit:type 		# Type of the service (e.g. OnlineService)
+		ogit:version 	
+		ogit:content
+		ogit:status
+		ogit:email 	
+		ogit:tenantId
+		ogit:subType
+		ogit:createdAt
+		ogit:reviewedBy
+		ogit:reviewedAt
+		ogit:lastUpdatedAt
+		ogit:favorite
+	);
+	ogit:indexed-attributes (
+		
+	);
+	ogit:allowed (
+			[ ogit:supports  ogit.ServiceManagement:Action ]
+			[ ogit:generates  ogit.ServiceManagement:Report ]
+			[ ogit:requires  ogit.ServiceManagement:Service ]
+			[ ogit:requires  ogit.ServiceManagement:Action ]
+			[ ogit:relates  ogit.ServiceManagement:ServiceRequest ]
+			[ ogit:opens  ogit.ServiceManagement:Ticket ]
+			[ ogit:opens  ogit.ServiceManagement:Incident ]
+			[ ogit:implements  ogit.Software:Application ]
+			[ ogit:corresponds  ogit:CatalogItem ]
+			[ ogit:manages  ogit:ConfigurationItem ]
+			[ ogit:calls  ogit.ServiceManagement:Service ]
+			[ ogit:complies  ogit.ServiceManagement:SLA ]
+			[ ogit:affects  ogit:Person ]
+			[ ogit:availableIn ogit:Region]
+			[ ogit:uses ogit.Forms:Form ]
+			[ ogit:has  ogit:Requirements ]
+			[ ogit:describes  ogit.ServiceManagement:Service ]
+			[ ogit:references  ogit:Catalog ]
+	);
+.

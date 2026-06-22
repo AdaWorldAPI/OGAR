@@ -1,0 +1,15 @@
+@prefix ogit:                   <http://www.purl.org/ogit/> .
+@prefix owl:                    <http://www.w3.org/2002/07/owl#> .
+@prefix rdfs:                   <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix dcterms:                <http://purl.org/dc/terms/> .
+@prefix ogit.Forum:             <http://www.purl.org/ogit/Forum/> .
+
+ogit:rejects
+	a owl:ObjectProperty;
+	rdfs:subPropertyOf ogit:Verb;
+	rdfs:label "rejects";
+	dcterms:description "Indicates if an entity rejects something else.";
+	# For ranges, see https://www.dublincore.org/specifications/dublin-core/dcmi-period/
+	dcterms:valid "start=2015-09-02;";
+	dcterms:creator "bmoore@arago.de";
+.

@@ -1,0 +1,53 @@
+@prefix ogit.Automation:        <http://www.purl.org/ogit/Automation/> .
+@prefix ogit.MARS:              <http://www.purl.org/ogit/MARS/> .
+@prefix ogit.BusinessProcess:   <http://www.purl.org/ogit/BusinessProcess/> .
+@prefix ogit.Cost:              <http://www.purl.org/ogit/Cost/> .
+@prefix ogit.Datacenter:        <http://www.purl.org/ogit/Datacenter/> .
+@prefix ogit.Forum:             <http://www.purl.org/ogit/Forum/> .
+@prefix ogit.Knowledge:         <http://www.purl.org/ogit/Knowledge/> .
+@prefix ogit.Network:           <http://www.purl.org/ogit/Network/> .
+@prefix ogit.Software:          <http://www.purl.org/ogit/Software/> .
+@prefix ogit.Factory:           <http://www.purl.org/ogit/Factory/> .
+@prefix ogit.Auth:              <http://www.purl.org/ogit/Auth/> .
+@prefix ogit.MRP:               <http://www.purl.org/ogit/MRP/> .
+@prefix owl:                    <http://www.w3.org/2002/07/owl#> .
+@prefix ogit.ServiceManagement: <http://www.purl.org/ogit/ServiceManagement/> .
+@prefix ogit:                   <http://www.purl.org/ogit/> .
+@prefix rdfs:                   <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix dcterms:                <http://purl.org/dc/terms/> .
+
+ogit:Alert
+	a rdfs:Class;
+	rdfs:subClassOf ogit:Entity;
+	rdfs:label "Alert";
+	dcterms:description "Alerts are used to notify users if certain events happen.";
+	# For ranges, see https://www.dublincore.org/specifications/dublin-core/dcmi-period/
+	dcterms:valid "start=2016-10-26;";
+	dcterms:creator "stravlos@arago.de";
+	ogit:scope "SGO";
+	ogit:parent ogit:Node;
+	ogit:mandatory-attributes (
+		ogit:type
+		ogit:creator
+		ogit:category
+	);
+	ogit:optional-attributes (
+		ogit:id
+		ogit:function
+		ogit:value
+		ogit:status
+		ogit:startedAt
+		ogit:endedAt
+	);
+	ogit:indexed-attributes (
+
+	);
+	ogit:allowed (
+			[ ogit:contains  ogit:Contract ]
+			[ ogit:contains  ogit:License ]
+			[ ogit:alerts  ogit:Person ]
+			[ ogit:triggers  ogit:Event ]
+			[ ogit:affects  ogit.MARS:Machine ]
+			[ ogit:affects  ogit.MARS:Software ]
+	);
+.

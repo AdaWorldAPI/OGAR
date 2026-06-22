@@ -1,0 +1,43 @@
+@prefix ogit.Automation:        <http://www.purl.org/ogit/Automation/> .
+@prefix owl:                    <http://www.w3.org/2002/07/owl#> .
+@prefix ogit.Cost:              <http://www.purl.org/ogit/Cost/> .
+@prefix ogit.Price:             <http://www.purl.org/ogit/Price/> .
+@prefix ogit.ServiceManagement: <http://www.purl.org/ogit/ServiceManagement/> .
+@prefix ogit:                   <http://www.purl.org/ogit/> .
+@prefix rdfs:                   <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix dcterms:                <http://purl.org/dc/terms/> .
+@prefix ogit.Forum:             <http://www.purl.org/ogit/Forum/> .
+
+ogit.Forum:ShortId
+	a rdfs:Class;
+	rdfs:subClassOf ogit:Entity;
+	rdfs:label "ShortId";
+	dcterms:description """A Reference to another Entity, used to track access via a specific channel/referrer.
+For example in TabTab, a Post has many shortIds which relate to different sharing
+methods, e.g. one for Twitter, one for Yammer, one for Email, etc... TabTab uses them
+as 'short urls' in the App and redirect the user to the correct content after tracking
+the access by the channel (`ogit/function`) attribute. The `ogit/function` attribute
+is used for this as the function of this shortId is to track a specific channel of
+inbound traffic. The ShortId can be used without this channel/referrer data, albeit
+to more limited use.
+The `ogit/id` attribute in this instance would be a short URL safe string.""";
+	# For ranges, see https://www.dublincore.org/specifications/dublin-core/dcmi-period/
+	dcterms:valid "start=2015-04-23;";
+	dcterms:creator "cwalker@arago.de";
+	ogit:scope "NTO";
+	ogit:parent ogit:Node;
+	ogit:mandatory-attributes (
+		ogit:id
+	);
+	ogit:optional-attributes (
+		ogit:function
+	);
+	ogit:indexed-attributes (
+		
+	);
+	ogit:allowed (
+			[ ogit:specifies  ogit.Forum:KnowledgeItemHistory ]
+			[ ogit:specifies  ogit.Automation:KnowledgeItem ]
+			[ ogit:specifies  ogit.Forum:Post ]
+	);
+.

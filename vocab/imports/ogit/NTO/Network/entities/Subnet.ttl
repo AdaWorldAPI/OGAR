@@ -1,0 +1,28 @@
+@prefix ogit:                   <http://www.purl.org/ogit/> .
+@prefix rdfs:                   <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix dcterms:                <http://purl.org/dc/terms/> .
+@prefix ogit.Network:           <http://www.purl.org/ogit/Network/> .
+
+ogit.Network:Subnet
+	a rdfs:Class;
+	rdfs:subClassOf ogit:Entity;
+	rdfs:label "Subnet";
+	dcterms:description "Subnet is a group of IDAddresses located in one place.";
+	# For ranges, see https://www.dublincore.org/specifications/dublin-core/dcmi-period/
+	dcterms:valid "start=2015-05-21;";
+	dcterms:creator "Peter Larem";
+	ogit:scope "NTO";
+	ogit:parent ogit:Node;
+	ogit:mandatory-attributes (
+		
+	);
+	ogit:optional-attributes (
+		ogit:name
+		ogit:id
+	);
+	ogit:indexed-attributes (
+		
+	);
+	ogit:allowed (
+	);
+.

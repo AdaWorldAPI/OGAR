@@ -1,0 +1,13 @@
+@prefix ogit:      <http://www.purl.org/ogit/> .
+@prefix owl:       <http://www.w3.org/2002/07/owl#> .
+@prefix rdfs:      <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix dcterms:   <http://purl.org/dc/terms/> .
+
+ogit:codeType
+    a owl:DatatypeProperty ;
+    rdfs:subPropertyOf ogit:Attribute ;
+    rdfs:label "codeType" ;
+    dcterms:description "Specifies the classification or standard system the identifierCode belongs to (e.g., ISO, NAICS, UNSPSC, ICD). This attribute disambiguates the semantics of identifierCode." ;
+    dcterms:valid "start=2025-09-09;" ;
+    dcterms:creator "Calvin Spolwind" ;
+.

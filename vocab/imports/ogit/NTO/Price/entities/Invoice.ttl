@@ -1,0 +1,32 @@
+@prefix owl:                    <http://www.w3.org/2002/07/owl#> .
+@prefix ogit.ServiceManagement: <http://www.purl.org/ogit/ServiceManagement/> .
+@prefix ogit:                   <http://www.purl.org/ogit/> .
+@prefix rdfs:                   <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix ogit.Price:             <http://www.purl.org/ogit/Price/> .
+@prefix dcterms:                <http://purl.org/dc/terms/> .
+
+ogit.Price:Invoice
+	a rdfs:Class;
+	rdfs:subClassOf ogit:Entity;
+	rdfs:label "Invoice";
+	dcterms:description "Models any type of invoice";
+	# For ranges, see https://www.dublincore.org/specifications/dublin-core/dcmi-period/
+	dcterms:valid "start=2015-05-21;";
+	dcterms:creator "Peter Larem";
+	ogit:scope "NTO";
+	ogit:parent ogit:Node;
+	ogit:mandatory-attributes (
+		ogit:currency
+		ogit.Price:priceAmount
+	);
+	ogit:optional-attributes (
+		ogit:name
+		ogit:description
+	);
+	ogit:indexed-attributes (
+		
+	);
+	ogit:allowed (
+			[ ogit:bills  ogit.ServiceManagement:Order ]
+	);
+.

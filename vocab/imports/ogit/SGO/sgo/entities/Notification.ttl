@@ -1,0 +1,45 @@
+@prefix owl:                    <http://www.w3.org/2002/07/owl#> .
+@prefix ogit.ServiceManagement: <http://www.purl.org/ogit/ServiceManagement/> .
+@prefix ogit:                   <http://www.purl.org/ogit/> .
+@prefix rdfs:                   <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix dcterms:                <http://purl.org/dc/terms/> .
+
+ogit:Notification
+	a rdfs:Class;
+	rdfs:subClassOf ogit:Entity;
+	rdfs:label "Notification";
+	dcterms:description """A notification event""";
+	# For ranges, see https://www.dublincore.org/specifications/dublin-core/dcmi-period/
+	dcterms:valid "start=2015-04-27;";
+	dcterms:creator "cwalker@arago.de";
+	ogit:scope "NTO";
+	ogit:parent ogit:Node;
+	ogit:mandatory-attributes (
+		
+	);
+	ogit:optional-attributes (
+		ogit:type
+		ogit:category
+		ogit:sourceId
+		ogit:onVertex
+		ogit:onAttribute
+		ogit:operation
+		ogit:condition
+		ogit:message
+		ogit:description
+		ogit:severity
+		ogit:priority
+		ogit:firstOccurredAt
+		ogit:lastOccurredAt
+		ogit:expiresAt
+	);
+	ogit:indexed-attributes (
+		
+	);
+	ogit:allowed (
+			[ ogit:readBy  ogit:Person ]
+			[ ogit:hiddenBy  ogit:Person ]
+			[ ogit:seenBy  ogit:Person ]
+			[ ogit:triggers  ogit:Event ]
+	);
+.

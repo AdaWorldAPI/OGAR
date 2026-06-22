@@ -1,0 +1,34 @@
+@prefix ogit.Automation:        <http://www.purl.org/ogit/Automation/> .
+@prefix ogit.Price:             <http://www.purl.org/ogit/Price/> .
+@prefix ogit.Forum:             <http://www.purl.org/ogit/Forum/> .
+@prefix ogit.ServiceManagement: <http://www.purl.org/ogit/ServiceManagement/> .
+@prefix owl:                    <http://www.w3.org/2002/07/owl#> .
+@prefix ogit:                   <http://www.purl.org/ogit/> .
+@prefix rdfs:                   <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix ogit.Cost:              <http://www.purl.org/ogit/Cost/> .
+@prefix dcterms:                <http://purl.org/dc/terms/> .
+
+ogit.Cost:PlanningParameter
+	a rdfs:Class;
+	rdfs:subClassOf ogit:Entity;
+	rdfs:label "PlanningParameter";
+	dcterms:description "A Planning Parameter describes a Planning Template. It will contain a concrete value of a Parameter and the statistics derived from the expected distribution as attributes. For a general overview: see the NTO description on github.";
+	# For ranges, see https://www.dublincore.org/specifications/dublin-core/dcmi-period/
+	dcterms:valid "start=2015-05-21;";
+	dcterms:creator "Peter Larem";
+	ogit:scope "NTO";
+	ogit:parent ogit:Node;
+	ogit:mandatory-attributes (
+		
+	);
+	ogit:optional-attributes (
+		
+	);
+	ogit:indexed-attributes (
+		
+	);
+	ogit:allowed (
+			[ ogit:specifies  ogit:Parameter ]
+			[ ogit:assumes  ogit.Cost:PlanningTemplate ]
+	);
+.

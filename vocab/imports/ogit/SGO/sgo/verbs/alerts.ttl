@@ -1,0 +1,16 @@
+@prefix ogit:                   <http://www.purl.org/ogit/> .
+@prefix owl:                    <http://www.w3.org/2002/07/owl#> .
+@prefix rdfs:                   <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix dcterms:                <http://purl.org/dc/terms/> .
+@prefix ogit.Auth:              <http://www.purl.org/ogit/Auth/> .
+@prefix ogit.MRP:               <http://www.purl.org/ogit/MRP/> .
+
+ogit:alerts
+	a owl:ObjectProperty;
+	rdfs:subPropertyOf ogit:Verb;
+	rdfs:label "alerts";
+	dcterms:description "Verb showing if one entity alerts another.";
+	# For ranges, see https://www.dublincore.org/specifications/dublin-core/dcmi-period/
+	dcterms:valid "start=2016-10-26;";
+	dcterms:creator "stravlos@arago.co";
+.

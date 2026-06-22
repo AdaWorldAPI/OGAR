@@ -1,0 +1,48 @@
+@prefix ogit.BusinessProcess:   <http://www.purl.org/ogit/BusinessProcess/> .
+@prefix ogit.ServiceManagement:   <http://www.purl.org/ogit/ServiceManagement/> .
+@prefix ogit.Automation:        <http://www.purl.org/ogit/Automation/> .
+@prefix ogit.Datacenter:        <http://www.purl.org/ogit/Datacenter/> .
+@prefix ogit.Forum:             <http://www.purl.org/ogit/Forum/> .
+@prefix ogit.Network:           <http://www.purl.org/ogit/Network/> .
+@prefix ogit.Software:          <http://www.purl.org/ogit/Software/> .
+@prefix ogit.Knowledge:         <http://www.purl.org/ogit/Knowledge/> .
+@prefix owl:                    <http://www.w3.org/2002/07/owl#> .
+@prefix ogit:                   <http://www.purl.org/ogit/> .
+@prefix rdfs:                   <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix dcterms:                <http://purl.org/dc/terms/> .
+
+ogit:Account
+	a rdfs:Class;
+	rdfs:subClassOf ogit:Entity;
+	rdfs:label "Account";
+	dcterms:description "A account can be e.g. an facebook-account.";
+	# For ranges, see https://www.dublincore.org/specifications/dublin-core/dcmi-period/
+	dcterms:valid "start=2015-05-21;";
+	dcterms:creator "Peter Larem";
+	ogit:scope "SGO";
+	ogit:parent ogit:Node;
+	ogit:mandatory-attributes (
+		
+	);
+	ogit:optional-attributes (
+		ogit:id
+		ogit:name
+		ogit:description
+		ogit:email
+		ogit:phone
+	);
+	ogit:indexed-attributes (
+		
+	);
+	ogit:allowed (
+			[ ogit:reports  ogit.ServiceManagement:Ticket ]
+			[ ogit:opens  ogit.ServiceManagement:Ticket ]
+			[ ogit:closes  ogit.ServiceManagement:Ticket ]
+			[ ogit:creates  ogit.ServiceManagement:Ticket ]
+			[ ogit:creates  ogit:Comment ]
+			[ ogit:creates  ogit:Attachment ]
+			[ ogit:follows  ogit:Account ]
+			[ ogit:connects  ogit:Person ]
+			[ ogit:belongs  ogit:Organization ]
+	);
+.

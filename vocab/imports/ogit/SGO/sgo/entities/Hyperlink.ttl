@@ -1,0 +1,27 @@
+@prefix ogit:                   <http://www.purl.org/ogit/> .
+@prefix rdfs:                   <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix dcterms:                <http://purl.org/dc/terms/> .
+
+ogit:Hyperlink
+	a rdfs:Class;
+	rdfs:subClassOf ogit:Entity;
+	rdfs:label "Hyperlink";
+	dcterms:description "A representation of an (optionally) titled Hyperlink to some media. No protocol restrictions imposed.";
+	# For ranges, see https://www.dublincore.org/specifications/dublin-core/dcmi-period/
+	dcterms:valid "start=2015-06-09;";
+	dcterms:creator "cwalker@arago.de";
+	ogit:scope "SGO";
+	ogit:parent ogit:Node;
+	ogit:any-attributes "true";
+	ogit:mandatory-attributes (
+		ogit:url
+	);
+	ogit:optional-attributes (
+		ogit:title
+	);
+	ogit:indexed-attributes (
+		
+	);
+	ogit:allowed (
+	);
+.

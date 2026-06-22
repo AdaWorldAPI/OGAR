@@ -1,0 +1,16 @@
+@prefix ogit:                   <http://www.purl.org/ogit/> .
+@prefix owl:                    <http://www.w3.org/2002/07/owl#> .
+@prefix rdfs:                   <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix dcterms:                <http://purl.org/dc/terms/> .
+
+ogit:isCritical
+	a owl:DatatypeProperty;
+	rdfs:subPropertyOf ogit:Attribute;
+	rdfs:label "isCritical";
+	dcterms:description """This field specifies if the CI is critical for day-to-day operation, such as an E-mail server or RDBMS server. 
+If you open an incident on a critical CI, the incident indicates that this is a critical CI. 
+This filed contains a boolean value.""";
+	# For ranges, see https://www.dublincore.org/specifications/dublin-core/dcmi-period/
+	dcterms:valid "start=2015-07-27;";
+	dcterms:creator "Aymen Ayoub";
+.

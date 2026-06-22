@@ -1,0 +1,14 @@
+@prefix ogit:                 <http://www.purl.org/ogit/> .
+@prefix dcterms:              <http://purl.org/dc/terms/> .
+@prefix owl:                  <http://www.w3.org/2002/07/owl#> .
+@prefix rdfs:                 <http://www.w3.org/2000/01/rdf-schema#> .
+
+
+ogit:public
+    a                   owl:DatatypeProperty ;
+    rdfs:subPropertyOf  ogit:Attribute ;
+    rdfs:label          "public" ;
+    dcterms:description """Boolean flag indicating whether this entity is publicly visible.""" ;
+    dcterms:valid       "start=2019-11-15;" ;
+    dcterms:creator     "Calvin Spolwind" ;
+.
