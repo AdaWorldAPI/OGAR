@@ -198,6 +198,16 @@ alignment costs. Until measured: 3×4 stands.
    an anti-pattern catalogue paired with the right shapes. MANDATORY
    before authoring any consumer call site that mentions `class_id`,
    `APP_PREFIX`, `PortSpec`, `ClassView`, or any `*Bridge`/`UnifiedBridge`.
+9. `docs/OGAR-AS-IR.md` — the **compiler framing.** lance-graph is a
+   multi-phase compiler whose IR is OGAR; this doc names the phases
+   (front-end / symbol table / linker / semantic analysis / optimization
+   / codegen back-ends / native codegen / runtime), restates each existing
+   doctrine in compiler vocabulary, lists six IR-shape tests new design
+   must pass, and labels every prior design doc as already-compiler-shaped.
+   READ BEFORE adding a field to `Class`, a variant to `ActionDef`, a
+   slot to `KausalSpec`, a new lowering pass, or any other IR-surface
+   change. The framing changes no existing decision; it changes every
+   future one.
 8. `docs/ARCHITECTURAL-DECISIONS-2026-06-04.md` — ADR-001..025
    (ADR-026 pending).
 9. `.claude/agents/` — the 5+3 hardening pattern (5 research savants +

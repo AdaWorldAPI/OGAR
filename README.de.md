@@ -82,6 +82,7 @@ Auth — führe KEINE `*Bridge` als Notlösung wieder ein.
 
 | Wächter | Lesen vor |
 |---|---|
+| [OGAR als IR](docs/OGAR-AS-IR.md) | Entwurf jeder IR-Erweiterung (neues `Class`-Feld, `ActionDef`-Variante, `KausalSpec`-Slot, Lowering-Pass) |
 | [Consumer Best Practices](docs/OGAR-CONSUMER-BEST-PRACTICES.md) | jeder Consumer-Aufrufstelle (classid · `APP_PREFIX` · `ClassView` · `*Bridge`) |
 | [SurrealQL-AST-Fallen-Pre-Flight](docs/SURREAL-AST-TRAP-PREFLIGHT.md) | Producer→IR · Transcode · Codegen · `.surql`-Authoring |
 | [SurrealQL-AST als Adapter](docs/SURREAL-AST-AS-ADAPTER.md) | Entscheidung Rückgrat vs. Adapter |
