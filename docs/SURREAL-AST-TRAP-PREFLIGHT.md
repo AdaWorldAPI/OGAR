@@ -23,6 +23,44 @@
 > (`core-first-architect`, `adapter-shaper`, `core-gap-auditor`,
 > the `Plan` subagent) loads this Tier-1 before output.
 
+## §0. Why this trap is structurally impossible to fix from inside DDL
+
+> **The classid is pure address. The magic is what the address
+> resolves to.** (Drilled with worked examples in
+> `OGAR-CONSUMER-BEST-PRACTICES.md` §0.)
+
+The classid (`0xAAAA_DDCC`) is **pure address**. Both halves —
+hi u16 (APP / render lens) and lo u16 (canonical concept) — are
+*address dimensions*. Neither carries behavior.
+
+Where does the behavior live? At the **resolution target**:
+
+```
+classid ──┬──► ClassView                  the SKIN     (render — per-app)
+          ├──► Class (structural)         the SHAPE    (canonical — shared)
+          └──► ActionDef + KausalSpec     the MAGIC    (behavioral — lifecycle/
+                                                        callbacks/validations,
+                                                        ALWAYS in OGAR Core)
+```
+
+This is the Core-First identity = classid rule: **the address is dumb,
+the magic is what it points at**. Class-magic (callbacks, lifecycle,
+validations — the rails ActiveRecord blob) is a property of the Core
+node the address resolves to, **never** a property of the address itself.
+
+This is *why* the SurrealQL trap is structurally impossible from inside
+the DDL: SurrealQL has the address but **not** the Core types it
+resolves to. So encoding lifecycle in `DEFINE EVENT … WHEN … THEN …`
+or sentinel comments is trying to **put the value into the key** — to
+forge behavior at the wrong layer entirely. It looks like it works in
+the narrow case and rots immediately at every other layer.
+
+The five questions below are the operational mirror that catches this
+before keyboard. If you find yourself reaching for DDL to express
+something the address can't carry, the question isn't *"how do I
+encode this in DDL?"* — it's *"which Core type does this address
+resolve to, and have I lifted the behavior into THAT?"*
+
 ## The trap, in one paragraph
 
 You're reading an AR-shaped producer — Ruby callbacks, Odoo
@@ -211,6 +249,11 @@ If the prompt mentions ANY of these, this doc is mandatory pre-read.
 
 ## Cross-refs
 
+- `docs/OGAR-CONSUMER-BEST-PRACTICES.md` — the muscle-memory guide:
+  classid-address-vs-class-magic with worked examples across every
+  consumer (medcare, woa, smb, odoo, openproject, redmine); the four
+  canonical patterns; anti-pattern catalogue. Read this if you're
+  working on a consumer-side path.
 - `docs/SURREAL-AST-AS-ADAPTER.md` — the design decision (the *why*)
 - `docs/OGAR-AST-CONTRACT.md` — the canonical IR (the *what*)
 - `docs/THE-FIREWALL.md` — the structural reason DDL can't be the spine
@@ -220,3 +263,7 @@ If the prompt mentions ANY of these, this doc is mandatory pre-read.
   that has no DDL home
 - `docs/APP-CODEBOOK-MIGRATION-PLAN.md` W3 — the worked remediation case
   (odoo-rs)
+- **Parallel-session sibling**: `lance-graph/.claude/knowledge/ogar-consumer-preflight.md`
+  (lance-graph #591) — same spellbook pattern cast in lance-graph's
+  consumer domain; ships the `ISS-CONTRACT-APP-PREFIX-MIRROR` Core-gap
+  entry.
