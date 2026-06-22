@@ -1,5 +1,12 @@
 # SurrealQL AST as the universal adapter — feasibility, beauty, and brutal honesty
 
+> **Operational extract** (pre-flight, 90 seconds, read BEFORE keyboard):
+> `docs/SURREAL-AST-TRAP-PREFLIGHT.md` — the spellbook. Five introspection
+> questions that fire BEFORE materialization, plus diagnostic signatures
+> for review. This doc is the *design* (the *why*); the preflight is the
+> *operational mirror* sessions run on themselves. Mandatory pre-read for
+> any producer→IR / transcode / codegen / `.surql` authoring session.
+
 > **Purpose.** Record the deliberate architectural decision on whether to use
 > `surrealdb-ast` as the *universal* adapter / IR — for both DDL sources
 > (SurrealQL itself) and non-DDL sources (Ruby AR, Python Odoo, Elixir Ecto,
