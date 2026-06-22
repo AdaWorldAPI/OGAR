@@ -15,6 +15,69 @@
 
 ## Entries (newest first)
 
+## 2026-06-22 — OGIT is the canonical template store; Odoo (and any source-AST producer) digests INTO it; consumers relive agnostically via askama
+**Status:** FRAMING
+**Scope:** Foundry-parity collapse × cross-consumer architecture × digest-once-relive-N
+
+The operator's framing — *"basically digest Odoo and store it in TTL
+'Jinja' Templates in OGIT and relive it agnostically for any
+'verb/entity as a class'"* — crystallizes the four pieces shipped
+across this PR (TTL mirror, schema lift, verb-as-class template,
+author-provenance discriminator) into one coherent flow:
+
+```
+Odoo source  →  ogar-from-python  →  Class IR  →  ttl_emit  →  OGIT TTL templates
+                                                                  (stored at
+                                                                   vocab/imports/ogit/NTO/<Domain>/,
+                                                                   dcterms:creator = bus-compiler)
+                                                                  │
+                                                                  ▼
+                                                       ogar-render-askama
+                                                                  │
+                                                                  ▼
+                                  any consumer (woa-rs, smb-office-rs, medcare-rs, q2, future renderers)
+                                  re-instantiates any entity/verb-as-class with a fresh binding;
+                                  never touches Odoo Python
+```
+
+The Python runtime is **only** touched at digest time. After that,
+every consumer talks to TTL templates plus the askama engine.
+
+**Why store in OGIT NTO (not a parallel `vocab/imports/odoo/`):** the
+`dcterms:creator` author-scan finding from this same session makes
+provenance unambiguous without a separate namespace. The precedent
+exists today — `Accounting/` already has 11 Claude-digested files
+sitting alongside 23 Viktor Voss originals.
+
+**Foundry-parity collapse** (the punchline). Foundry's four-layer
+platform pitch (ingest / storage / render / IAM+audit) maps to four
+free open-source pieces already in this repo:
+
+| Foundry layer | Our equivalent | New code needed |
+|---|---|---|
+| Ingest | `ogar-from-python` digest | ~1500 LOC (queued) |
+| Storage | `vocab/imports/ogit/NTO/<Domain>/` TTL with `dcterms:creator` | zero (exists) |
+| Render | `ogar-render-askama::{views, actions}` | ~200 LOC for actions submodule |
+| IAM + audit | verb-as-class `requires-perm` slot + Lance-version-as-audit | zero (exists) |
+| Ontology change mgmt | `diff -r` of digest re-runs | zero |
+
+Total marginal code: <2000 LOC for what Foundry charges $$$ for. The
+architecture was latent the whole time; the digest→relive framing is
+what makes it visible as a single shape.
+
+Concrete next steps (independent, can ship in parallel PRs):
+
+1. `ogar-from-python` digester — structural-arm filter (`_name`,
+   `_inherit`, `fields.*`, selections); behavioural-arm signatures
+   (decorator names + action method signatures); drops method bodies
+2. `ogar-render-askama::actions` — verb-as-class render path, mirroring
+   the existing `views/` submodule
+
+Doc: `docs/ODOO-DIGEST-TO-OGIT.md` (FRAMING v0) carries the full
+pipeline, the v0 mapping table (6 minted concepts + ~9 queued for
+codebook mint), the drift detector recipe, and the Foundry-parity
+collapse table.
+
 ## 2026-06-22 — Verb-as-class is an ontological askama template — compile-time-validated action declaration, not a quirk
 **Status:** FINDING
 **Scope:** WorkOrder convention × `ogar-render-askama` integration × Foundry action-type parity
