@@ -124,18 +124,61 @@ Memorize these. They appear across every consumer doc; recognizing them on sight
 
 Every consumer code path is one of these four. Pattern-match before you write.
 
+> **Two canonical paths — spine vs membrane.** Every pattern below has
+> two forms based on the BBB-barrier: **spine-internal** crates
+> (`lance-graph-*`, `ogar-vocab`, `ogar-ontology`, `ogar-class-view`)
+> freely depend on `ogar-vocab` and use the typed `*Port::*` surface;
+> **membrane / customer binaries** (`woa-rs`, `smb-office-rs`,
+> `medcare-realtime`) are restricted to `lance-graph-contract` only and
+> use the wire-compat mirror `lance_graph_contract::ogar_codebook::*`.
+> Both return identical classids — the choice is about dep-tree posture,
+> not concept identity. The barrier is enforced by each consumer's
+> CLAUDE.md allow-list (e.g. woa-rs Iron Rule 1, smb-office-rs Iron
+> Rule 3). Wire-compat is pinned by parity tests on the contract side.
+>
+> | Crate type | Allowed OGAR deps | Canonical lookup path |
+> |---|---|---|
+> | spine-internal | `ogar-vocab` · `ogar-ontology` · `lance-graph-*` | `ogar_vocab::ports::*Port` |
+> | membrane / customer binary (BBB) | `lance-graph-contract` only | `lance_graph_contract::ogar_codebook` |
+
 ### Pattern 1 — pull a classid (the codebook lookup)
 
-The canonical concept ID, from the consumer's PortSpec, via static
-function call. **No registry, no hydration, no bridge.**
+The canonical concept ID, via pure static function call. **No registry,
+no hydration, no bridge.** Two paths — pick by your crate's BBB posture.
+
+#### Pattern 1a — spine-internal (lance-graph-* + OGAR-internal)
 
 ```rust
-// ✅ CANONICAL — direct PortSpec lookup
+// CANONICAL — direct PortSpec lookup, full typed-port surface
 use ogar_vocab::ports::{HealthcarePort, PortSpec};
 
 let cid: Option<u16> = HealthcarePort::class_id("Patient");
 // → Some(0x0901)
 ```
+
+When: your crate is INSIDE the spine — `lance-graph-*`, `ogar-vocab`,
+`ogar-ontology`, `ogar-class-view`, or another OGAR-internal crate.
+
+#### Pattern 1b — membrane / customer binary (BBB-barrier)
+
+```rust
+// CANONICAL — wire-compat mirror, BBB-safe (zero ogar-vocab dep)
+use lance_graph_contract::ogar_codebook::canonical_concept_id;
+
+let cid: Option<u16> = canonical_concept_id("patient");
+// → Some(0x0901)
+```
+
+When: your crate is BEHIND the BBB-barrier (`woa-rs`, `smb-office-rs`,
+`medcare-realtime`, any customer binary). Per the consumer's allow-list,
+`lance-graph-ogar` / `ogar-vocab` are **forbidden** deps; you depend on
+`lance-graph-contract` only. The contract's `ogar_codebook` mirrors the
+canonical codebook wire-compat (zero-dep, parity-tested against OGAR per
+the `canonical_concept_name` precedent — OGAR #98 — and the APP-prefix
+mirror — lance-graph #592).
+
+Both 1a and 1b return `0x0901`. The choice is which crate's **dep tree**
+you're inside, not which classid you pull.
 
 | Consumer | Port | Example call | Returns |
 |---|---|---|---|
@@ -150,15 +193,15 @@ let cid: Option<u16> = HealthcarePort::class_id("Patient");
 | (any Redmine consumer) | `RedminePort` | `::class_id("Issue")` | `Some(0x0102)` |
 
 ```rust
-// ❌ ANTI — go through the deprecated bridge layer
+// ANTI — go through the deprecated bridge layer
 use lance_graph_ogar::bridges::HealthcarePort;        // ← works, but extra hop;
                                                        //   migrate to ogar_vocab::ports
 
-// ❌ ANTI — re-mint the canonical id locally
+// ANTI — re-mint the canonical id locally
 const PATIENT_CLASSID: u16 = 0x0901;                  // ← bypasses PortSpec;
                                                        //   loses the alias-table mapping
 
-// ❌ ANTI — construct a UnifiedBridge to ask the same question
+// ANTI — construct a UnifiedBridge to ask the same question
 let b = MedcareBridge::new(registry)?;                // ← deprecated alias; round-trip via
 let ent = b.entity("Patient")?;                       //   bridge + registry just to recover
 let cid = ent.schema_ptr.entity_type_id();            //   what PortSpec gives in one call
@@ -166,12 +209,13 @@ let cid = ent.schema_ptr.entity_type_id();            //   what PortSpec gives i
 
 ### Pattern 2 — compose a render classid (concept ‖ APP prefix)
 
-Once you have the concept's low u16 and want the **per-app render
-address** (for ClassView dispatch, template selection, SoA row layout),
-stamp the app's `APP_PREFIX` via OGAR #97's typed helper.
+Stamp the per-app render prefix on the concept. Same spine-vs-membrane
+split as Pattern 1.
+
+#### Pattern 2a — spine-internal (OGAR #97 typed helper)
 
 ```rust
-// ✅ CANONICAL — typed APP_PREFIX from the PortSpec
+// CANONICAL — typed APP_PREFIX from the PortSpec
 use ogar_vocab::ports::{HealthcarePort, PortSpec};
 
 let cid: u16 = HealthcarePort::class_id("Patient").unwrap();   // 0x0901
@@ -199,15 +243,55 @@ OpenProjectPort::APP_PREFIX | 0x0102  →  0x0001_0102  // OpenProject WorkPacka
 RedminePort::APP_PREFIX     | 0x0102  →  0x0007_0102  // Redmine Issue
 ```
 
+#### Pattern 2b — membrane (BBB-safe, per lance-graph #592)
+
 ```rust
-// ❌ ANTI — hardcode the APP prefix as a magic constant
+// CANONICAL — one-call lookup + stamp via the contract mirror
+use lance_graph_contract::{AppPrefix, render_classid_for_concept};
+
+let render: Option<u32> = render_classid_for_concept(
+    AppPrefix::Healthcare,
+    "patient",
+);
+// → Some(0x0005_0901)
+```
+
+Or split (pull then stamp), for symmetry with Pattern 1b:
+
+```rust
+use lance_graph_contract::ogar_codebook::{canonical_concept_id, AppPrefix};
+
+let cid: u16 = canonical_concept_id("patient").unwrap();   // 0x0901
+let render: u32 = AppPrefix::Healthcare.render(cid);       // 0x0005_0901
+```
+
+`AppPrefix` is the OGAR #95 §2 allocation table mirrored into the
+contract as typed data (lance-graph #592 closed `ISS-CONTRACT-APP-PREFIX-MIRROR`,
+following the OGAR #98 `canonical_concept_name` mirror precedent).
+Parity is pinned: the contract's `app_prefixes_match_ogar_allocation_table`
+test fires the moment OGAR re-allocates a prefix. **The membrane never
+hand-stamps `0x000N`** — both halves come from one source.
+
+Worked examples (mirror of 2a, via the contract):
+
+```rust
+AppPrefix::Healthcare.render(0x0901)   →  0x0005_0901  // Medcare patient
+AppPrefix::Woa.render(0x0103)          →  0x0003_0103  // WoA Stundenzettel
+AppPrefix::Smb.render(0x0204)          →  0x0004_0204  // SMB Kunde
+AppPrefix::Odoo.render(0x0103)         →  0x0002_0103  // Odoo HrAttendance
+AppPrefix::OpenProject.render(0x0102)  →  0x0001_0102  // OpenProject WorkPackage
+AppPrefix::Redmine.render(0x0102)      →  0x0007_0102  // Redmine Issue
+```
+
+```rust
+// ANTI — hardcode the APP prefix as a magic constant
 const MEDCARE_APP: u32 = 0x0005_0000;                  // ← drifts from PortSpec
 let render = MEDCARE_APP | (cid as u32);               //   if APP allocation changes
 
-// ❌ ANTI — bit-shift inline
+// ANTI — bit-shift inline
 let render = ((0x0005u32) << 16) | (cid as u32);       // ← un-typed; lose source-of-truth
 
-// ❌ ANTI — store full u32 render classid where lo u16 would do (RBAC, ontology)
+// ANTI — store full u32 render classid where lo u16 would do (RBAC, ontology)
 fn authorize(actor: &Actor, render_cid: u32, op: Op) { … }
 //                                  ^^^^^^^^^^^^ shared grant lattice keys on LO u16;
 //                                               passing the full u32 leaks render lens
@@ -221,7 +305,7 @@ The keystone `authorize(actor, classid, op)` is **[H]** and gated on
 — do NOT re-introduce a bridge as a stopgap.
 
 ```rust
-// ⏳ FUTURE — once lance-graph-rbac keystone ships:
+// FUTURE — once lance-graph-rbac keystone ships:
 use lance_graph_rbac::authorize;
 
 let concept: u16 = HealthcarePort::class_id("Patient").unwrap();   // 0x0901
@@ -231,7 +315,7 @@ let decision = authorize(&actor, concept, Op::Read);
 ```
 
 ```rust
-// ✅ INTERIM — keep existing static_role / Policy / membrane gate
+// INTERIM — keep existing static_role / Policy / membrane gate
 fn authorize_patient_read(actor_role: &str) -> AccessDecision {
     let role_static = static_role(actor_role);
     // medcare-rbac::Policy check, OR MedCareMembraneGate, OR static role map
@@ -241,7 +325,7 @@ fn authorize_patient_read(actor_role: &str) -> AccessDecision {
 ```
 
 ```rust
-// ❌ ANTI — re-introduce a UnifiedBridge to "auth gate" while waiting for keystone
+// ANTI — re-introduce a UnifiedBridge to "auth gate" while waiting for keystone
 let bridge = MedcareBridge::new(registry)?;            // ← deprecated; replaces one
 let decision = bridge.authorize_read("Patient", &role); //  trap with another. Wait
                                                         //  for the real keystone.
@@ -364,7 +448,10 @@ is mandatory pre-read:
 `ClassView` · `MedcareBridge` · `WoaBridge` · `SmbBridge` · `OdooBridge` ·
 `OpenProjectBridge` · `RedmineBridge` · `UnifiedBridge` · `ogar_vocab::ports` ·
 `lance_graph_ogar::bridges` · `render classid` · `concept classid` ·
-`per-consumer bridge` · `consumer migration`
+`per-consumer bridge` · `consumer migration` ·
+**BBB-barrier** · `contract::ogar_codebook` · `canonical_concept_id` ·
+`AppPrefix` · `render_classid_for_concept` · `lance_graph_contract::ogar_codebook` ·
+`membrane consumer` · `spine vs membrane`
 
 **Agents that load it Tier-1**:
 - `core-first-architect` · `adapter-shaper` · `core-gap-auditor`
@@ -381,6 +468,13 @@ is mandatory pre-read:
 - `docs/OGAR-AST-CONTRACT.md` — the canonical Class / ActionDef IR (what the address resolves to)
 - `docs/APP-CODEBOOK-MIGRATION-PLAN.md` — the wave-ordered consumer migration plan (W0–W4)
 - **Parallel-session sibling**: `lance-graph/.claude/knowledge/ogar-consumer-preflight.md`
-  (lance-graph #591) — the spine-side spellbook with the
-  `ISS-CONTRACT-APP-PREFIX-MIRROR` Core-gap entry; pin the same
-  address-vs-magic precision
+  (lance-graph #591) — the spine-side spellbook that surfaced the
+  `ISS-CONTRACT-APP-PREFIX-MIRROR` Core-gap and pinned the
+  spine-vs-membrane BBB-barrier framing now reflected in §2.
+- **Membrane mirror landed**: lance-graph #592 — `lance_graph_contract::ogar_codebook`
+  now carries `AppPrefix`, `render_classid_for_concept`,
+  `classid_app_prefix`, `classid_concept` (mirror of OGAR #97
+  `ogar_vocab::app`, no `ogar-vocab` dep). This is what Pattern 1b/2b
+  call into; the parity test
+  `app_prefixes_match_ogar_allocation_table` fuses drift against OGAR
+  `PortSpec::APP_PREFIX`.
