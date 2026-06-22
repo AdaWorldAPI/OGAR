@@ -60,6 +60,8 @@ use ogar_vocab::{Attribute, Class, EnumDecl, EnumSource, Language};
 pub mod sgo;
 pub mod ttl;
 pub mod ttl_emit;
+#[cfg(feature = "xsd")]
+pub mod xsd;
 
 /// What a single TTL file describes — exactly one of: an entity (`Class`),
 /// a datatype attribute (`Attribute`), or a verb (`Association` shape).

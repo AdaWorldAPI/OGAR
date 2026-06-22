@@ -11,14 +11,21 @@ description = "Schema-as-input producer family for OGAR IR. Lifts the STRUCTURAL
 [features]
 default = []
 serde = ["dep:serde", "ogar-vocab/serde"]
+# The `xsd` feature pulls in a read-only XML parser for the XSD
+# front-end (the faithful Rust transcode of arago/MARS-Schema's
+# extract_classes.py). Kept optional so the default TTL path stays
+# zero-parser-deps.
+xsd = ["dep:roxmltree"]
 
 [dependencies]
 ogar-vocab = { path = "../ogar-vocab" }
 serde = { workspace = true, optional = true }
+roxmltree = { version = "0.20", optional = true }
 
-# No external TTL/XSD parser pulled in yet: the v0 reader uses a
-# narrow line-oriented walker that handles the shapes OGIT's TTL
-# actually emits (a tiny, machine-stable subset of full Turtle).
-# When the surface grows (Wikidata-shaped TTL, full RDF/XML, OWL
-# imports), swap in `oxttl` / `oxrdf` here without touching the
+# The default TTL reader uses a narrow line-oriented walker that
+# handles the shapes OGIT's TTL actually emits (a tiny, machine-stable
+# subset of full Turtle) — no external parser. The `xsd` feature adds
+# roxmltree (pure-Rust, read-only DOM) ONLY for the XSD front-end.
+# When the TTL surface grows (Wikidata-shaped TTL, full RDF/XML, OWL
+# imports), swap in `oxttl` / `oxrdf` without touching the
 # Class/Attribute target shape this crate produces.

@@ -92,15 +92,24 @@ classification taxonomy:
 
 | Direction | Oracle role |
 |---|---|
-| XSD → classifications | `extract_classes.py -s MARSSchema2015.xsd -F asciidoc` enumerates every `(class, subclass)` pair |
+| XSD → classifications (Python) | `extract_classes.py -s MARSSchema2015.xsd -F asciidoc` enumerates every `(class, subclass)` pair |
+| XSD → classifications (Rust) | `ogar-from-schema::xsd::classifications()` — a **faithful transcode** of the Python script; `xsd::to_asciidoc()` reproduces the output **byte-for-byte** (`xsd::tests::asciidoc_matches_python_oracle`) |
 | TTL → classifications | OGIT `Application/attributes/class.ttl` etc. carry the same set in `ogit:validation-parameter` |
 | OGAR → classifications | `ogar-from-schema::ttl::AttributeDecl::fixed_enum_values()` lifts them as `EnumSource::Static` |
 
-The three sets must be byte-equal modulo encoding artefacts (HTML/asciidoc
-escape vs raw). The agreement test
-(`ttl::tests::application_class_values_appear_in_xsd_oracle`) is the v0
-witness; expansion to full set-equality (XSD set == TTL set, no missing,
-no extra) is queued.
+**The bijection is now closed (was queued).** `xsd::tests::xsd_classes_match_ttl_enum`
+asserts **full bidirectional set-equality** — every XSD-extracted
+Application value is in the TTL enum AND every TTL enum value is in the
+XSD set. The earlier one-directional membership test
+(`ttl::tests::application_class_values_appear_in_xsd_oracle`) remains as
+the lighter witness that runs without the `xsd` feature.
+
+**The Python dependency is gone.** Because `ogar-from-schema::xsd` is a
+byte-faithful Rust transcode, the calibration no longer needs a
+`python3` interpreter — `cargo test --features xsd` is the whole proof.
+The Python `extract_classes.py` stays vendored in `_oracle/` as the
+provenance witness (the thing the transcode was proven against), not as
+a runtime dependency.
 
 Counts at MARS Schema 5.3.8:
 

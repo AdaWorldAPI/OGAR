@@ -15,6 +15,58 @@
 
 ## Entries (newest first)
 
+## 2026-06-22 — extract_classes.py transcoded to Rust byte-faithfully; XSD↔TTL bijection closed; Python dependency removed from the oracle
+**Status:** FINDING
+**Scope:** XSD front-end × calibration self-containment × the queued bijection
+
+The MARS XSD classification extractor (`arago/MARS-Schema/tools/extract_classes.py`,
+~360 lines, ~140 logic + ~150 table formatting) is now a faithful Rust
+transcode at `crates/ogar-from-schema/src/xsd.rs`, behind the optional
+`xsd` feature (pulls `roxmltree`, a pure-Rust read-only XML DOM; the
+default TTL path stays zero-parser-deps).
+
+Three things this lands:
+
+1. **Byte-for-byte transcode proof.** `xsd::to_asciidoc()` reproduces
+   the Python `-F asciidoc` output exactly — 628 lines, including the
+   verbatim XSD-documentation whitespace and the `printAsciiDocFooter`
+   trailing newline. Test: `xsd::tests::asciidoc_matches_python_oracle`
+   diffs against the cached `_oracle/classifications.adoc`.
+
+2. **The XSD↔TTL bijection is closed (was "queued" in
+   `MARS-TRANSCODING.md §2`).** `xsd::tests::xsd_classes_match_ttl_enum`
+   asserts FULL bidirectional set-equality between the XSD-extracted
+   Application value set and the TTL `validation-parameter` enum — not
+   just one-directional membership. The XSD and the TTL are two
+   independent encodings of one taxonomy and they now provably agree
+   in both directions.
+
+3. **The Python dependency is removed from the calibration path.**
+   `cargo test --features xsd` is the whole oracle now; no `python3`
+   interpreter needed. `extract_classes.py` stays vendored in
+   `_oracle/` as the provenance witness (what the transcode was proven
+   against), not a runtime dep.
+
+Transcode discipline notes (for the next source→Rust port):
+- The Python `getAttribute("xml:lang")` returns `""` for absent (not
+  `None`); the lang-filter is "absent OR en". roxmltree resolves `xml:`
+  to the xml namespace — match on `attribute.name() == "lang"`.
+- `getXMLText` concatenates DIRECT text-node children only (not
+  recursive); the documentation's internal whitespace is load-bearing
+  for the byte-match.
+- The `:revdate:` is `datetime.now()` in Python (non-deterministic);
+  the Rust `to_asciidoc(c, revdate)` takes it as a parameter so the
+  output is reproducible and testable.
+
+Answer to "is it huge": no — ~360 lines, half output formatting; the
+transcode is ~350 LOC Rust including tests. And it doubles as the seed
+of the broader XSD→`Class` front-end (the same walk that extracts
+classifications is the structural-arm lift for any XSD).
+
+Evidence: `crates/ogar-from-schema/src/xsd.rs` (20/20 tests pass with
+`--features xsd`; 16/16 on default). `docs/MARS-TRANSCODING.md §2`
+updated to mark the bijection closed.
+
 ## 2026-06-22 — OGIT is the canonical template store; Odoo (and any source-AST producer) digests INTO it; consumers relive agnostically via askama
 **Status:** FRAMING
 **Scope:** Foundry-parity collapse × cross-consumer architecture × digest-once-relive-N
