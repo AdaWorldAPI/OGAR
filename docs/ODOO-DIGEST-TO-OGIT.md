@@ -3,7 +3,7 @@
 > **For colleagues building anything that needs Odoo as a typed ontology
 > outside the Odoo Python runtime.** This is the architectural shape:
 > digest Odoo source once into OGIT-shaped TTL templates (stored
-> in-tree at `vocab/imports/ogit/NTO/<Domain>/`), then relive any model
+> in-tree at `vocab/exports/ogit/NTO/<Domain>/`), then relive any model
 > or workflow action agnostically via `ogar-render-askama`.
 >
 > Status: **FRAMING v0** (2026-06-22). Companion to
@@ -11,11 +11,30 @@
 > `docs/VERB-AS-CLASS-TEMPLATE.md` (the askama-template framing this
 > reuses).
 
-The shape in one sentence: **`ogar-from-python` digests Odoo source
-once into the OGAR IR; `ttl_emit` writes the IR back as OGIT-shaped
-TTL templates stored in the existing OGIT NTO tree; consumers
-re-instantiate any model or workflow action by rendering against the
-TTL via `ogar-render-askama`, never touching Odoo Python.**
+The shape in one sentence: **the `ruff_python_spo + ogar-from-ruff`
+pipeline digests Odoo source once into the OGAR IR; `ttl_emit` writes
+the IR back as OGIT-shaped TTL templates stored at
+`vocab/exports/ogit/NTO/<Domain>/`; consumers re-instantiate any model
+or workflow action by rendering against the TTL via
+`ogar-render-askama`, never touching Odoo Python.**
+
+> **Producer naming correction (2026-06-22):** earlier drafts of this
+> doc called the producer "`ogar-from-python`" — that name is wrong.
+> The correct pipeline is the existing **`ruff_python_spo`** AST
+> frontend (sibling of `ruff_ruby_spo` / `ruff_elixir_spo` in the
+> `ruff/` workspace) producing `ruff_spo_triplet::Model`, then the
+> existing **`ogar-from-ruff`** crate mechanically projecting that IR
+> into `ogar_vocab::Class`. A `ruff_python_spo` frontend is queued
+> (the projector `ogar-from-ruff` already exists and works for Ruby).
+> Building a new `ogar-from-python` from scratch would duplicate the
+> projection that's already shipping.
+>
+> **Storage location correction (2026-06-22):** earlier drafts said
+> digests land in `vocab/imports/ogit/NTO/<Domain>/`. That was wrong
+> — it would put OGAR-produced content at re-vendor risk (the
+> `imports/` re-vendor recipe is a destructive `cp -r`). Correct
+> location: **`vocab/exports/ogit/NTO/<Domain>/`** — see
+> `vocab/exports/PROVENANCE.md` for the split rationale.
 
 ---
 
@@ -25,10 +44,15 @@ TTL via `ogar-render-askama`, never touching Odoo Python.**
    Odoo Python source
    (addons/<module>/models/*.py)
             │
-            │  ogar-from-python  (AST schema filter)
+            │  ruff_python_spo  (sibling of ruff_ruby_spo / ruff_elixir_spo;
+            │                    queued — Python AST → ruff_spo_triplet::Model)
             │  — keeps structural arm: _name, _inherit, fields.*, selections
             │  — keeps behavioural-arm SIGNATURES (decorators, action def names)
             │  — drops bodies (computed methods, action implementations)
+            ▼
+   ruff_spo_triplet::Model
+            │
+            │  ogar-from-ruff  (existing — mechanical projection)
             ▼
    OGAR Class IR (in memory)
             │
@@ -37,9 +61,9 @@ TTL via `ogar-render-askama`, never touching Odoo Python.**
             │  — verb-as-class for workflow action signatures
             ▼
    OGIT-shaped TTL templates
-   (vocab/imports/ogit/NTO/<Domain>/<DigestedClass>.ttl)
+   (vocab/EXPORTS/ogit/NTO/<Domain>/<DigestedClass>.ttl)
    — dcterms:creator = bus-compiler  (digester provenance)
-   — alongside upstream arago TTL    (Viktor Voss et al)
+   — distinct tree from imports/ ogit/ (re-vendor safety)
             │
             │  ogar-render-askama  (entity render → views; verb render → actions)
             ▼
@@ -54,26 +78,36 @@ The Python runtime is **only** touched at digest time. Consumers
 (`woa-rs`, `smb-office-rs`, `medcare-rs`, `q2`, any future renderer)
 never depend on Odoo Python, only on TTL + the askama renderer.
 
-## §2. Why store digests in OGIT NTO (not a parallel `vocab/imports/odoo/`)
+## §2. Why digests live in `vocab/exports/ogit/`, not `vocab/imports/ogit/`
 
-The `dcterms:creator` author-scan (`OGIT-DOMAIN-LIFT-CATALOGUE.md
-§ Verifying domain authorship`) gives clean provenance without
-needing a separate storage namespace:
+`imports/` is a READ-ONLY mirror of upstream OGIT (the re-vendor
+recipe is a destructive `cp -r /upstream/. vocab/imports/ogit/`).
+Putting OGAR-produced content in `imports/` would silently nuke
+those files on the next re-vendor. **The split exists for re-vendor
+safety, license/governance, and upstream-contribution path** — see
+`vocab/exports/PROVENANCE.md` for the full rationale.
 
-| `dcterms:creator` value | Meaning | Who can change |
+The digest **mirrors the upstream layout** so consumers see one shape:
+
+| Concept | Upstream OGIT path (READ-only mirror) | Digest target (OGAR-produced) |
 |---|---|---|
-| `Viktor Voss`, `chris.boos@almato.com`, `fotto@arago.de`, … | Upstream arago/almato | Re-vendor requires arago PR; OGAR consumes via the SHA pin |
-| `bus-compiler`, `family-codec-smith`, `Claude (...)`, … | Internal agent digest | Re-run the digester; no external coordination |
+| `Accounting` | `vocab/imports/ogit/NTO/Accounting/` (23 files, Viktor Voss) | `vocab/exports/ogit/NTO/Accounting/` (Odoo-digested) |
+| `SalesDistribution` | `vocab/imports/ogit/NTO/SalesDistribution/` (23 files, Marek Meyer) | `vocab/exports/ogit/NTO/SalesDistribution/` (Odoo sale.* digest) |
+| `Transport` | `vocab/imports/ogit/NTO/Transport/` (27 files, chris.boos@almato.com) | `vocab/exports/ogit/NTO/Transport/` (Odoo stock.* digest) |
+| … | upstream-mirrored | OGAR-produced, OGIT-shape-compatible |
 
-The precedent exists today: `vocab/imports/ogit/NTO/Accounting/`
-already has 11 files from a prior `Claude (AdaWorldAPI/lance-graph
-3-hop optim)` digest sitting alongside Viktor Voss's 23 originals. The
-two co-exist, the author-scan distinguishes them, and lifting both
-into OGAR's `Class` IR is symmetric.
+`dcterms:creator` provenance is now a SECONDARY check (the directory
+split is the primary). The `OGIT-DOMAIN-LIFT-CATALOGUE.md §
+Verifying domain authorship` scan still runs and still discriminates
+authors, but the destructive-overwrite risk is structurally gone.
 
-So **the digest lives where the concept belongs** — `account.move` →
-`Accounting/`, `sale.order` → `SalesDistribution/`, `stock.picking` →
-`Transport/` — and the author scan is the discriminator.
+**Migration note for the existing 11 stranded files.** A prior
+session's `Claude (AdaWorldAPI/lance-graph 3-hop optim)` digest left
+11 OGAR-produced files in `vocab/imports/ogit/NTO/Accounting/`
+alongside Viktor Voss's 23 originals. Those 11 belong in
+`vocab/exports/ogit/NTO/Accounting/`. The migration is a separate
+PR; `vocab/exports/PROVENANCE.md § Migration note` carries the
+list.
 
 ## §3. The four shapes the digester produces
 
@@ -123,12 +157,14 @@ the v0 producer adds rows; concept-mint passes work in parallel.
 
 ```
 Day 1 — digest Odoo at SHA-A
-    ogar-from-python addons/account → vocab/imports/ogit/NTO/Accounting/*.ttl
+    ruff_python_spo addons/account → ruff_spo_triplet::Model
+    ogar-from-ruff               → Class IR
+    ttl_emit::emit_entity        → vocab/exports/ogit/NTO/Accounting/*.ttl
     git commit (the TTL set is the frozen contract)
 
 Day N — Odoo upstream releases SHA-B
-    ogar-from-python addons/account → /tmp/odoo-shaB-digest/
-    diff -r vocab/imports/ogit/NTO/Accounting/ /tmp/odoo-shaB-digest/
+    same pipeline → /tmp/odoo-shaB-digest/
+    diff -r vocab/exports/ogit/NTO/Accounting/ /tmp/odoo-shaB-digest/
 
     Any output line is a structural change Odoo just made:
     - added field            → diff shows a new ogit:optional-attributes entry
@@ -148,15 +184,19 @@ license fee.
 
 | Piece | Status |
 |---|---|
-| Storage location (`vocab/imports/ogit/NTO/<Domain>/`) | exists; 72 domains imported, MARS oracle proven |
+| Read-only upstream mirror (`vocab/imports/ogit/`) | exists; 72 NTO + SGO + ogit.ttl + SDF imported, MARS oracle proven |
+| OGAR-produced export tree (`vocab/exports/ogit/`) | **skeleton exists** (this commit); content populates as digests run |
 | TTL emitter for the structural arm | exists (`ttl_emit::emit_entity`); semantic bijection proven on 29 MARS + 176 SGO TTLs |
 | Verb-as-class template surface | exists (WorkOrder convention; `docs/VERB-AS-CLASS-TEMPLATE.md`) |
-| Author-provenance discriminator | exists (`dcterms:creator` scan in `OGIT-DOMAIN-LIFT-CATALOGUE.md`) |
+| Author-provenance discriminator | exists (`dcterms:creator` scan in `OGIT-DOMAIN-LIFT-CATALOGUE.md`); now a secondary check behind the directory split |
+| `ogar-from-ruff` (mechanical projector from `ruff_spo_triplet::Model` → `Class`) | exists for Ruby AR; same projector handles Python and Elixir once their `ruff_*_spo` frontends ship |
+| `ruff_python_spo` (Python AST frontend, sibling of `ruff_ruby_spo`) | **does not exist** — needs `libcst` or `rustpython-parser`; ~1500 LOC for the structural-arm filter |
+| `ruff_rust_spo` (Rust AST frontend, for digesting medcare-rs / woa-rs / etc.) | **does not exist** — needs `syn` walker; symmetric with the other ruff frontends |
 | `ogar-render-askama::actions` (verb-as-class render path) | **does not exist** — ~200 LOC mirroring the existing `views/` path |
-| `ogar-from-python` (the digester) | **does not exist** — needs `libcst` or `rustpython-parser` to walk Python AST; ~1500 LOC for the structural-arm filter |
 | Concept mints for non-Accounting Odoo models | needs the 5+3 codebook pass per `APP-CLASS-CODEBOOK-LAYOUT.md` |
+| Migration of the 11 stranded Accounting files (`imports/` → `exports/`) | **queued** — separate PR (see `vocab/exports/PROVENANCE.md § Migration note`) |
 
-`ogar-from-python` and `ogar-render-askama::actions` are independent
+`ruff_python_spo` and `ogar-render-askama::actions` are independent
 and can ship in parallel PRs. Concept mints are the slow path
 (codebook discipline) and don't block the digest — a digested model
 without a minted concept_id just gets `Class.name = "sale.order"` and
@@ -170,8 +210,8 @@ this architecture:
 
 | Foundry layer | Vendor cost | Our equivalent | Marginal cost |
 |---|---|---|---|
-| Ingest (vendor pipelines) | $ | `ogar-from-python` digest run (one-shot per Odoo upgrade) | engineer-hours per digester ~1500 LOC |
-| Storage (vendor platform) | $$ | `vocab/imports/ogit/NTO/<Domain>/` TTL templates with `dcterms:creator` provenance | zero |
+| Ingest (vendor pipelines) | $ | `ruff_python_spo + ogar-from-ruff` digest (one-shot per Odoo upgrade) | engineer-hours per frontend ~1500 LOC (projector exists) |
+| Storage (vendor platform) | $$ | `vocab/exports/ogit/NTO/<Domain>/` TTL templates (mirrors upstream OGIT layout) | zero (skeleton shipped) |
 | Render (vendor UI) | $$ | `ogar-render-askama::{views, actions}` | engineer-hours per render path ~200 LOC each |
 | Access control / audit (vendor IAM) | $$$ | verb-as-class `requires-perm` slot + `emits-audit` + Lance-version-as-audit (ADR-013) | zero (the substrate already does it) |
 | Ontology change management (vendor feature) | $$$ | `diff -r` of digest output (§5) | zero |

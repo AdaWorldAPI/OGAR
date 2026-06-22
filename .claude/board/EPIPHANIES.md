@@ -15,6 +15,79 @@
 
 ## Entries (newest first)
 
+## 2026-06-22 — Three corrections to the Odoo digest framing: producer name, storage location, latent re-vendor bug
+**Status:** FINDING
+**Scope:** producer architecture × vocab/ tree layout × re-vendor safety × digest-to-OGIT
+
+Three corrections to the framing in `docs/ODOO-DIGEST-TO-OGIT.md`
+(originally landed in commit `7d68042`) surfaced from operator
+questions on which producer to use and where digests should live.
+
+**Correction 1 — producer name.** The doc named the producer
+"`ogar-from-python`" (a crate that doesn't exist and that we'd be
+duplicating effort to build). The actual pipeline is the existing
+**`ruff_python_spo`** (Python AST frontend, sibling of
+`ruff_ruby_spo` / `ruff_elixir_spo` in the `ruff/` workspace)
+producing `ruff_spo_triplet::Model`, then the existing
+**`ogar-from-ruff`** crate mechanically projecting that IR into
+`ogar_vocab::Class`. `ogar-from-ruff` already exists and works for
+Ruby; what's missing is the `ruff_python_spo` frontend itself.
+
+Same correction applies to medcare-rs digestion: the right pipeline
+is **`ruff_rust_spo` (queued) + `ogar-from-ruff`**, not a fictional
+`ogar-from-rust`. Symmetric with the other frontends; the projector
+is shared.
+
+Lesson for the next architecture-doc draft: NAME THE ACTUAL CRATE
+that exists, don't invent producer names. The cross-repo `ruff` →
+`ogar-from-ruff` projection pattern is the standard; any new source
+language goes through it.
+
+**Correction 2 — `lance-graph-arm-discovery` is not a producer.**
+The "lancegraph arm crate" the operator asked about is
+`lance-graph-arm-discovery`, which is a streaming Association Rule
+Mining engine (Aerial+ paper transcode) that DISCOVERS new SPO rules
+from tabular data via NARS revision. It is **orthogonal** to schema
+digestion. The lance-graph-side OGAR bridge is
+`lance-graph-ogar` (re-export + activation, consumer-side wiring).
+Neither is a digester for source code or schemas.
+
+**Correction 3 — digests belong in `vocab/exports/`, not
+`vocab/imports/`.** The original doc said digests land in
+`vocab/imports/ogit/NTO/<Domain>/` — **wrong**. The `imports/`
+re-vendor recipe is a destructive `cp -r /upstream/. vocab/imports/`
+that would silently nuke any OGAR-produced content sitting there.
+The fix is a sibling tree `vocab/exports/ogit/` mirroring the
+upstream layout 1:1; digests land in `exports/`, mirror stays
+read-only in `imports/`.
+
+The split exists for three reasons:
+- **Re-vendor safety** — `cp -r` to `imports/` can't clobber what's
+  in `exports/`. Structural fix, not a discipline fix.
+- **License/governance** — `imports/` inherits MIT from arago/almato;
+  `exports/` inherits OGAR's own license.
+- **Upstream-contribution path** — files in `exports/` are PR
+  candidates back to OGIT upstream; files in `imports/` are
+  immutable.
+
+**Latent bug surfaced.** The current `vocab/imports/ogit/NTO/Accounting/`
+carries 11 OGAR-produced TTLs from a prior `Claude (AdaWorldAPI/lance-graph
+3-hop optim)` session sitting alongside Viktor Voss's 23 originals.
+Those 11 are at re-vendor-overwrite risk today. Migration to
+`vocab/exports/ogit/NTO/Accounting/` is queued — `vocab/exports/PROVENANCE.md
+§ Migration note` carries the file list.
+
+This session lands the scaffold (empty `exports/` skeleton +
+provenance doc + doc corrections); the 11-file migration is a
+separate PR (operator decision: do we keep the original commit
+hashes for those files via `git mv`, or re-author them under the
+current author? — migration approach decides).
+
+Evidence: `vocab/exports/PROVENANCE.md` (the split rationale),
+`vocab/exports/ogit/README.md` (the layout), `docs/ODOO-DIGEST-TO-OGIT.md`
+(updated with all three corrections + producer pipeline + storage
+path + blocker table).
+
 ## 2026-06-22 — extract_classes.py transcoded to Rust byte-faithfully; XSD↔TTL bijection closed; Python dependency removed from the oracle
 **Status:** FINDING
 **Scope:** XSD front-end × calibration self-containment × the queued bijection
