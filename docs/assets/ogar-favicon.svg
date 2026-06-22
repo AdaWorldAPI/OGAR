@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="currentColor" role="img" aria-label="OGAR">
+  <title>OGAR</title>
+
+  <!-- Bisected node: the O glyph alone, sized for favicon use (16-64px).
+       Outer radius 28, inner radius 16, centered at (32, 32).
+       Bisector sits 1u above geometric center; lower half is slightly
+       heavier to read at small sizes. -->
+
+  <path d="M 32,4 a 28,28 0 1,0 0.001,0 z
+           M 32,16 a 16,16 0 1,1 -0.001,0 z"
+        fill-rule="evenodd"/>
+
+  <rect x="15" y="30" width="34" height="3"/>
+</svg>

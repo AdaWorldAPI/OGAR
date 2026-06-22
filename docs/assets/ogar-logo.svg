@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 150" fill="currentColor" role="img" aria-label="OGAR — Open Graph of Active Record">
+  <title>OGAR — Open Graph of Active Record</title>
+
+  <!-- O glyph: bisected node with outgoing edge to a leaf.
+       Outer radius 45, inner radius 27, centered at (60, 60).
+       The bisector sits 2u above geometric center so the lower half
+       (the canonical concept) reads slightly heavier than the upper
+       half (the per-app render lens). -->
+
+  <!-- Outer ring (annulus via even-odd fill) -->
+  <path d="M 60,15 a 45,45 0 1,0 0.001,0 z
+           M 60,33 a 27,27 0 1,1 -0.001,0 z"
+        fill-rule="evenodd"/>
+
+  <!-- Bisector: horizontal bar across the inner hole -->
+  <rect x="34" y="56" width="52" height="4"/>
+
+  <!-- Outgoing edge -->
+  <rect x="58" y="105" width="4" height="22"/>
+
+  <!-- Leaf dot -->
+  <circle cx="60" cy="133" r="6"/>
+
+  <!-- "GAR" wordmark, geometric sans with system-stack fallback -->
+  <text x="120" y="92"
+        font-family="Inter, 'IBM Plex Sans', 'Helvetica Neue', Arial, system-ui, -apple-system, sans-serif"
+        font-weight="700"
+        font-size="92"
+        letter-spacing="-3">GAR</text>
+</svg>
