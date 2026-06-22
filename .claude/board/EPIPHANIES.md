@@ -15,6 +15,56 @@
 
 ## Entries (newest first)
 
+## 2026-06-22 — Verb-as-class is an ontological askama template — compile-time-validated action declaration, not a quirk
+**Status:** FINDING
+**Scope:** WorkOrder convention × `ogar-render-askama` integration × Foundry action-type parity
+
+WorkOrder's 12 `verbs/*.ttl` are declared as `rdfs:Class`, not
+`owl:ObjectProperty`. The earlier framing (commit `cce8420`) called
+this "an unusual convention we're free to revise toward standard
+`owl:ObjectProperty`" — **that framing was wrong** and is hereby
+corrected.
+
+The verb-as-class encoding is **load-bearing**: it makes each verb a
+typed template carrying its own slot list (`ogit:mandatory-attributes`),
+inheritance chain (`rdfs:subClassOf`), and policy metadata
+(`ogit:requires-perm`, `ogit:emits-audit`). That's not a flat predicate;
+that's a **compile-time-validated action declaration** — the ontological
+counterpart to askama (Rust) and jinja (Python) HTML templating.
+
+The structural correspondence is exact:
+
+- TTL file = template (`.html.j2` equivalent)
+- `ogit:mandatory-attributes` = struct field list (askama context shape)
+- Per-call binding = struct instance (askama render input)
+- Render = SPO triple emit + declared side effects (audit, ACL gate)
+- `rdfs:subClassOf` = template inheritance (`{% extends %}`)
+- Lift-time slot validation = askama's compile-time `{{ field }}` check
+
+This is the integration point `ogar-render-askama` was always going
+to need for actions. The crate currently renders `Class` *views*
+(noun-shaped: HTML/JSON/OpenAPI); a parallel `actions/` submodule
+renders `Class` *actions* (verb-shaped: SPO triple + side-effect spec).
+Same engine, same compile-time-validated context model, different
+output medium.
+
+**Foundry-parity sharpening:** Foundry's "action types" carry exactly
+the four properties this encoding gives — typed parameters, slot
+validation, declared side effects, inheritance. Foundry sells it as a
+paid platform feature; verb-as-class TTL + `ogar-render-askama` gives
+the same four from open-source schemas and Rust templates.
+
+Implications:
+- **WorkOrder's convention stays.** Don't normalise to `owl:ObjectProperty`.
+- **WorkOrder is the natural prototyping ground** (we're upstream per
+  `dcterms:creator` = `bus-compiler` + `family-codec-smith`) for new
+  verb-as-class predicates before pitching the pattern to OGIT upstream.
+- **`ogar-render-askama::actions` is the next natural module** —
+  ~200 LOC mirroring the existing `views/` render path.
+
+Doc: `docs/VERB-AS-CLASS-TEMPLATE.md` (FRAMING v0) carries the full
+analogy table + worked example + render flow.
+
 ## 2026-06-22 — Author provenance via `dcterms:creator` discriminates "ours to revise" from "upstream-coordinated"
 **Status:** FINDING
 **Scope:** OGIT NTO governance × multi-domain lift × who-can-change-what
