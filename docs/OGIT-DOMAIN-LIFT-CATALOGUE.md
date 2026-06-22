@@ -78,7 +78,7 @@ arago/almato coordination."
 
 | Domain | Entities | Attributes | Verbs | Status | Notes |
 |---|--:|--:|--:|---|---|
-| `Accounting` | 9 | 20 | 7 | Lift-tested | Mixed-authorship: `Viktor Voss` (23 files, original arago/almato) + a prior session's extension (`Claude (AdaWorldAPI/lance-graph 3-hop optim)`, 11 files). Covered conceptually via `0x02XX` commerce/ERP via Odoo lift. Structural changes to the original 23 need upstream coordination; the 11 extensions are ours. |
+| `Accounting` | 9 | 20 | 7 | Lift-tested | Mixed-authorship: `Viktor Voss` / `Gibson Xavier` / `Moritz Vannahme` (25 files, original arago/almato) + a prior session's extension (`Claude (AdaWorldAPI/lance-graph 3-hop optim)`, 11 files **promoted to the OGIT fork** via commit `c5dc1b8`). The 11 are a completed promotion (fork → mirrored here), the worked example of the staging-tier model (`vocab/exports/PROVENANCE.md`), NOT stranded content. Covered conceptually via `0x02XX` commerce/ERP via Odoo lift. Structural changes to the upstream files need arago coordination; the 11 OGAR-promoted ones are ours. |
 | `Advertising` | 16 | 0 | 0 | Imported | |
 | `Audit` | 3 | 0 | 0 | Lift-tested | `Marek Meyer` (sole author) — pure upstream. Audit-as-Lance-version (ADR-013) covers the semantics. |
 | `Auth` | 13 | 24 | 6 | Imported | Cross-walk to `0x0BXX` auth domain (Zitadel/Zanzibar) queued |

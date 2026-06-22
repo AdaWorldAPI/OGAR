@@ -15,8 +15,66 @@
 
 ## Entries (newest first)
 
-## 2026-06-22 — Three corrections to the Odoo digest framing: producer name, storage location, latent re-vendor bug
+## 2026-06-22 — The "latent re-vendor bug" was a false premise; exports/ is a STAGING tier, not a permanent home (operator-decided)
 **Status:** FINDING
+**Scope:** vocab/ tree model × verify-before-acting × correcting a prior session's claim
+
+Investigating the "migrate the 11 stranded Accounting files" task
+(queued by the prior PR #107 entry below) caught that its founding
+premise was **factually wrong** — a clean case of the
+verify-before-destructive-action discipline paying off.
+
+The claim (PR #107, exports/PROVENANCE.md, the entry below): "11
+OGAR-produced TTLs sit in `vocab/imports/ogit/NTO/Accounting/` at
+re-vendor-overwrite risk; they should migrate to `exports/`."
+
+What verification found: those 11 files are **committed to the
+AdaWorldAPI/OGIT fork** — commit `c5dc1b8` "shrink 3-hop Odoo lookups
+— promoted attrs + shortcut verbs + FiscalJurisdiction codebook", on
+the fork's `master`, pushed. They were not added directly to OGAR's
+`imports/`; they were promoted to the fork by a prior session, and
+`imports/` faithfully mirrors the fork. The re-vendor recipe copies
+*from* the fork (`cp -r /OGIT/NTO/. vocab/imports/ogit/NTO/`), so it
+**preserves** them. There was never a data-loss risk. NO migration.
+
+The operator resolved the resulting genuine question — what is
+`exports/` actually FOR — to the **staging-tier model**:
+
+```
+producer ──► exports/  (review, CI) ──promote──► OGIT fork ──re-vendor──► imports/ ──► consumers
+```
+
+- `exports/` = produced-but-not-yet-promoted content; transient;
+  the pre-promotion workbench. CI (round-trip + bijection + drift)
+  runs here before anything touches the shared fork.
+- The AdaWorldAPI/OGIT fork = the enriched canonical store (upstream
+  arago/almato + OGAR-promoted additions like `c5dc1b8`).
+- `imports/` = faithful SHA-pinned mirror of the enriched fork.
+- Consumers read ONLY `imports/`. Never `exports/`.
+
+Under this model the 11 Accounting files are a *completed* promotion,
+correctly mirrored in `imports/` — the worked example of the pipeline
+run to its end, not stranded content. `exports/` stays empty until a
+producer stages something that hasn't been promoted yet.
+
+Two lessons:
+1. **Verify the target before claiming a bug about it.** "These files
+   are at risk" is a claim about the fork's state; one `git log` on the
+   OGIT clone falsified it. The CLAUDE.md discipline ("look at the
+   target; if what you find contradicts how it was described, surface
+   that instead of proceeding") caught a migration that would have
+   broken the imports↔fork bijection AND duplicated the 11 files.
+2. **A correction can itself need correcting.** The entry below
+   ("Three corrections…") fixed two real things (producer name,
+   arm-crate role) and introduced one wrong thing (the re-vendor-bug
+   claim). Corrections 1 & 2 stand; correction 3 is superseded here.
+
+Evidence: OGIT fork commit `c5dc1b8` (11 files, `master`, pushed);
+`vocab/exports/PROVENANCE.md` (rewritten to STAGING TIER v1);
+`docs/ODOO-DIGEST-TO-OGIT.md §2` (staging-tier model + the correction).
+
+## 2026-06-22 — Three corrections to the Odoo digest framing: producer name, storage location, latent re-vendor bug
+**Status:** PARTIALLY SUPERSEDED — corrections 1 & 2 stand; correction 3's "latent re-vendor bug" claim was itself wrong, see the 2026-06-22 staging-tier entry above (the 11 Accounting files are committed to the OGIT fork, NOT at risk).
 **Scope:** producer architecture × vocab/ tree layout × re-vendor safety × digest-to-OGIT
 
 Three corrections to the framing in `docs/ODOO-DIGEST-TO-OGIT.md`

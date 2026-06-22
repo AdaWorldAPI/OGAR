@@ -1,95 +1,116 @@
 # PROVENANCE — `vocab/exports/`
 
-> **OGAR-produced TTL templates, in OGIT-compatible shape.** Distinct
-> from `vocab/imports/` (read-only mirror of upstream OGIT, MIT
-> licensed by arago/almato). Files in this tree are AUTHORED in OGAR
-> — either digested from source by a producer (`ruff_*_spo +
-> ogar-from-ruff`, future `ruff_rust_spo`, etc.) or hand-authored —
-> and the OGAR license applies.
+> **Staging tier for OGAR-produced TTL, in OGIT-compatible shape.**
+> Content here is AUTHORED in OGAR (digested from source by a producer
+> — `ruff_*_spo + ogar-from-ruff`, `ogar-from-schema` — or
+> hand-authored) and is **NOT YET PROMOTED** to the AdaWorldAPI/OGIT
+> fork. Once reviewed, content is committed to the OGIT fork and
+> re-vendored into `vocab/imports/` like any other upstream content.
 >
-> Status: **SKELETON v0** (2026-06-22). Scaffold lands empty; content
-> populates as producers digest into it.
+> Status: **STAGING TIER v1** (2026-06-22). Empty until a producer
+> stages content; transient by design.
 
-## Why the split
+## The model (operator-decided 2026-06-22)
 
-`vocab/imports/` and `vocab/exports/` exist for three reasons:
+```
+   OGAR producer  ──►  vocab/exports/ogit/NTO/<Domain>/   (review / iterate)
+   (ruff_*_spo +            │
+    ogar-from-ruff,         │  promote (commit to the OGIT fork on a branch, PR there)
+    ogar-from-schema)       ▼
+                       AdaWorldAPI/OGIT fork  (the enriched canonical OGIT store —
+                            │                  upstream arago/almato + OGAR-promoted)
+                            │  re-vendor (cp -r /OGIT/NTO/. vocab/imports/ogit/NTO/)
+                            ▼
+                       vocab/imports/ogit/   (faithful SHA-pinned mirror of the fork)
+                            │
+                            ▼
+                       consumers read ONLY imports/
+```
 
-1. **Re-vendor safety.** The `imports/` re-vendor recipe is a
-   destructive `cp -r /upstream/. vocab/imports/...`. Putting
-   OGAR-produced content in `imports/` would be silently nuked on
-   the next re-vendor. The split makes the producer-output tree
-   immune.
+- **`exports/` is the staging area** — produced-but-not-yet-promoted
+  content. Review it here, then promote to the fork.
+- **The AdaWorldAPI/OGIT fork is the enriched canonical store** — it
+  already mixes upstream arago/almato content with OGAR-promoted
+  additions (e.g. commit `c5dc1b8` "shrink 3-hop Odoo lookups —
+  promoted attrs + shortcut verbs + FiscalJurisdiction codebook"
+  added 11 Accounting TTLs to the fork deliberately).
+- **`imports/` faithfully mirrors the enriched fork** — including any
+  OGAR-promoted content. Re-vendor is **safe**: it copies *from* the
+  fork, which has everything.
+- **Consumers read only `imports/`.** `exports/` never ships to a
+  consumer; it is the pre-promotion workbench.
 
-2. **License + governance.** `imports/` inherits MIT (Almato AI GmbH,
-   2013–2024) from OGIT upstream. `exports/` inherits OGAR's own
-   license. Authorship discriminator (`dcterms:creator`) becomes a
-   secondary check rather than the primary one.
+## Why a staging tier (not "just commit to the fork directly")
 
-3. **Upstream-contribution path.** Files in `exports/` are candidates
-   for PR back to OGIT upstream (or onward distribution to consumers
-   expecting OGIT shape). Files in `imports/` are immutable mirrors.
-   The directory split makes the contribution flow a one-line check.
+1. **Review surface.** A digest run produces N TTLs at once. Staging
+   them in `exports/` lets the round-trip + bijection tests run, the
+   diff-vs-prior-digest drift check fire, and a human review the lift,
+   all inside the OGAR repo and CI — before anything touches the fork.
+
+2. **License + governance boundary.** Until promoted, OGAR-produced
+   content carries OGAR's license, not the fork's MIT (Almato AI GmbH).
+   Promotion is the deliberate act that relicenses / blesses it into
+   the shared OGIT store.
+
+3. **The producer↔consumer split stays clean.** Producers write
+   `exports/`; consumers read `imports/`. Nothing reads the half-baked
+   tree. The promote step is the single, auditable gate between them.
 
 ## Layout
 
 ```
 vocab/exports/
-└── ogit/                          ← OGIT-shape (consumer-compat)
+└── ogit/                          ← OGIT-shape (matches the fork's layout)
     ├── NTO/
-    │   ├── <Domain>/              ← mirrors upstream OGIT NTO layout
+    │   ├── <Domain>/              ← mirrors the OGIT NTO layout
     │   │   ├── entities/          ← entity TTLs (a rdfs:Class)
     │   │   ├── attributes/        ← datatype-property TTLs (a owl:DatatypeProperty)
     │   │   ├── verbs/             ← verb TTLs (a owl:ObjectProperty
     │   │   │                       OR a rdfs:Class for askama-template verbs)
-    │   │   └── PROVENANCE.md      ← per-domain source provenance (which
-    │   │                            producer ran, which upstream input,
-    │   │                            which Odoo/Medcare/etc. revision)
+    │   │   └── PROVENANCE.md      ← per-domain: which producer ran, which
+    │   │                            source input + revision, promotion status
     │   ├── ...
     └── PROVENANCE.md (this file)
 ```
 
-The layout intentionally mirrors `imports/ogit/` 1:1 so consumers
-discovering both trees see one shape; the choice between
-"upstream-mirrored" and "OGAR-produced" is the path prefix, nothing
-else.
+The layout mirrors `imports/ogit/` 1:1 so a promote step is a plain
+`cp`/`git mv` into the fork at the same relative path.
 
 ## What lives here today
 
-Empty. Producers haven't run yet; content populates as digests land:
+Empty. Producers haven't staged anything yet; content populates as
+digests run:
 
-| Source | Producer (planned) | Lands at |
+| Source | Producer | Stages at |
 |---|---|---|
-| Odoo `addons/account/*` | `ruff_python_spo + ogar-from-ruff` | `exports/ogit/NTO/Accounting/` |
+| Odoo `addons/account/*` | `ruff_python_spo + ogar-from-ruff` (frontend queued) | `exports/ogit/NTO/Accounting/` |
 | Odoo `addons/sale/*` | same | `exports/ogit/NTO/SalesDistribution/` |
 | Odoo `addons/stock/*` | same | `exports/ogit/NTO/Transport/` |
 | Odoo workflow `def action_*` | same (verb-as-class shape) | `exports/ogit/NTO/<Domain>/verbs/` |
-| Medcare-rs domain types | `ruff_rust_spo + ogar-from-ruff` (queued) | `exports/ogit/NTO/Healthcare/` |
+| Medcare-rs domain types | `ruff_rust_spo + ogar-from-ruff` (frontend queued) | `exports/ogit/NTO/Healthcare/` |
 | Medcare-rs MongoDB schemas | `ogar-from-schema` (XSD/JSON-Schema) | `exports/ogit/NTO/Healthcare/` |
 | Hand-authored OGAR Class views | direct authoring | `exports/ogit/NTO/<Domain>/` |
 
-## Migration note — the 11 stranded Accounting files
+## NOT a migration target — the 11 Accounting files are already promoted
 
-The current `vocab/imports/ogit/NTO/Accounting/` carries 11 TTLs
-authored by a prior session (`dcterms:creator = "Claude
-(AdaWorldAPI/lance-graph 3-hop optim)"`) sitting alongside 23 upstream
-files by Viktor Voss. **Those 11 belong in `exports/ogit/NTO/Accounting/`**
-— at re-vendor risk where they sit today. Migration is a separate
-decision and a separate PR; the scaffold here doesn't move them yet.
-The list:
+> **Correction (2026-06-22).** An earlier draft of this file claimed
+> the 11 OGAR-produced TTLs in `vocab/imports/ogit/NTO/Accounting/`
+> were "at re-vendor risk" and "belong in `exports/`". **That was
+> wrong.** Those 11 files are committed to the **AdaWorldAPI/OGIT
+> fork** (commit `c5dc1b8`, on `master`, pushed). `imports/`
+> faithfully mirrors the fork, so re-vendor **preserves** them — there
+> is no data-loss risk, and they are NOT a migration candidate.
+>
+> They are the worked example of a *completed* promotion: produced by
+> a prior session, promoted to the fork, now correctly mirrored in
+> `imports/`. Under the staging-tier model they belong exactly where
+> they are. `exports/` is for content that has **not yet** made that
+> trip.
 
-```
-vocab/imports/ogit/NTO/Accounting/verbs/hasProductCategory.ttl
-vocab/imports/ogit/NTO/Accounting/verbs/hasPickingType.ttl
-vocab/imports/ogit/NTO/Accounting/verbs/hasFiscalCountry.ttl
-vocab/imports/ogit/NTO/Accounting/attributes/productCategoryComplete.ttl
-vocab/imports/ogit/NTO/Accounting/attributes/iso3166Alpha2.ttl
-+ 6 more (run the dcterms:creator scan in
-  docs/OGIT-DOMAIN-LIFT-CATALOGUE.md § Verifying domain authorship
-  to list all 11)
-```
+## License + promotion
 
-## License + contribution
-
-OGAR repository license (see top-level `LICENSE`). Files here are
-authored by OGAR — re-publishing back to OGIT upstream requires
-explicit relicensing or arago/almato acceptance.
+OGAR repository license (see top-level `LICENSE`) applies to content
+**in this tree**. Promotion to the OGIT fork is the deliberate act
+that moves a file into the fork's MIT-licensed store; it requires
+committing to the fork (a separate repo, a separate PR) and is the
+single auditable gate between OGAR-produced and OGIT-canonical.
