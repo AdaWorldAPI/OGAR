@@ -56,6 +56,26 @@ pub trait PortSpec: 'static + Send + Sync {
     /// Lowercase bridge_id for `NamespaceBridge::bridge_id()`.
     const BRIDGE_ID: &'static str;
 
+    /// Reserved APP / render prefix — the high u16 of a full 32-bit
+    /// classid (`APP-CLASS-CODEBOOK-LAYOUT.md` §2).
+    ///
+    /// Composing the full render classid:
+    /// ```text
+    /// render_classid = (APP_PREFIX as u32) << 16 | concept_low_u16
+    /// ```
+    ///
+    /// `0x0000` is the **shared canonical core** — the cross-app ontology
+    /// every consumer reuses. Each app port overrides with its reserved
+    /// prefix from the §2 allocation table, waking its own per-app
+    /// ClassView / Askama template set for rendering while keeping the
+    /// low-u16 concept (RBAC + ontology) shared.
+    ///
+    /// Reserving this prefix costs nothing (§2: "Reserving a prefix costs
+    /// nothing — no codebook is materialised until the app mints its first
+    /// private class"). This constant is the allocation table as typed
+    /// data — consumers re-export it instead of hardcoding `0x0001` etc.
+    const APP_PREFIX: u16 = 0x0000;
+
     /// All `(port-public-name, canonical-class-id)` aliases for this
     /// port. Order is not significant for resolution but kept stable
     /// for human readability.
@@ -84,6 +104,8 @@ pub struct OpenProjectPort;
 impl PortSpec for OpenProjectPort {
     const NAMESPACE: &'static str = "OpenProject";
     const BRIDGE_ID: &'static str = "openproject";
+    /// `0x0001` — OpenProject render prefix (§2 allocation table).
+    const APP_PREFIX: u16 = 0x0001;
     fn aliases() -> &'static [(&'static str, u16)] {
         OPENPROJECT_ALIASES
     }
@@ -152,6 +174,8 @@ pub struct RedminePort;
 impl PortSpec for RedminePort {
     const NAMESPACE: &'static str = "Redmine";
     const BRIDGE_ID: &'static str = "redmine";
+    /// `0x0007` — Redmine render prefix (§2 allocation table).
+    const APP_PREFIX: u16 = 0x0007;
     fn aliases() -> &'static [(&'static str, u16)] {
         REDMINE_ALIASES
     }
@@ -221,6 +245,8 @@ pub struct HealthcarePort;
 impl PortSpec for HealthcarePort {
     const NAMESPACE: &'static str = "Healthcare";
     const BRIDGE_ID: &'static str = "medcare";
+    /// `0x0005` — Medcare / Healthcare render prefix (§2 allocation table).
+    const APP_PREFIX: u16 = 0x0005;
     fn aliases() -> &'static [(&'static str, u16)] {
         HEALTHCARE_ALIASES
     }
@@ -270,6 +296,8 @@ pub struct WoaPort;
 impl PortSpec for WoaPort {
     const NAMESPACE: &'static str = "WorkOrder";
     const BRIDGE_ID: &'static str = "woa";
+    /// `0x0003` — WoA render prefix (§2 allocation table).
+    const APP_PREFIX: u16 = 0x0003;
     fn aliases() -> &'static [(&'static str, u16)] {
         WOA_ALIASES
     }
@@ -353,6 +381,8 @@ pub struct SmbPort;
 impl PortSpec for SmbPort {
     const NAMESPACE: &'static str = "SMB";
     const BRIDGE_ID: &'static str = "smb";
+    /// `0x0004` — SMB-Office render prefix (§2 allocation table).
+    const APP_PREFIX: u16 = 0x0004;
     fn aliases() -> &'static [(&'static str, u16)] {
         SMB_ALIASES
     }
@@ -420,6 +450,8 @@ pub struct OdooPort;
 impl PortSpec for OdooPort {
     const NAMESPACE: &'static str = "Odoo";
     const BRIDGE_ID: &'static str = "odoo";
+    /// `0x0002` — Odoo render prefix (§2 allocation table).
+    const APP_PREFIX: u16 = 0x0002;
     fn aliases() -> &'static [(&'static str, u16)] {
         ODOO_ALIASES
     }
@@ -923,6 +955,30 @@ mod tests {
         assert_eq!(OdooPort::class_id("ir.cron"), None);
         assert_eq!(OdooPort::class_id("WorkPackage"), None);
         assert_eq!(OdooPort::class_id(""), None);
+    }
+
+    /// Pins all six APP_PREFIX overrides against the §2 allocation table
+    /// in `APP-CLASS-CODEBOOK-LAYOUT.md`. The default in the trait is
+    /// `0x0000` (shared canonical core); each app port overrides with its
+    /// reserved high-u16 so consumers can re-export the typed constant
+    /// instead of hardcoding hex literals.
+    ///
+    /// Reserving a prefix costs nothing (§2): no codebook is materialised
+    /// until the app mints its first private class. This test is asserting
+    /// the allocation table as typed data, not minting class_ids.
+    #[test]
+    fn app_prefixes_match_the_allocation_table() {
+        // § 2 table rows that have a PortSpec impl:
+        assert_eq!(OpenProjectPort::APP_PREFIX, 0x0001, "OpenProject prefix must be 0x0001");
+        assert_eq!(OdooPort::APP_PREFIX,         0x0002, "Odoo prefix must be 0x0002");
+        assert_eq!(WoaPort::APP_PREFIX,           0x0003, "WoA prefix must be 0x0003");
+        assert_eq!(SmbPort::APP_PREFIX,           0x0004, "SMB-Office prefix must be 0x0004");
+        assert_eq!(HealthcarePort::APP_PREFIX,    0x0005, "Healthcare/Medcare prefix must be 0x0005");
+        assert_eq!(RedminePort::APP_PREFIX,       0x0007, "Redmine prefix must be 0x0007");
+        // The trait default (0x0000 = shared core) is expressed directly
+        // in the trait definition; ports that do not override it resolve
+        // to the core codebook namespace, which is the bootstrap/core
+        // prefix per §2 ("hi = 0x0000 is the bootstrap/core prefix").
     }
 
     /// **The five-way `billable_work_entry` convergence pin.** Ratifies
