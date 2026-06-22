@@ -80,6 +80,7 @@ Until it ships, keep existing auth — do NOT re-introduce a `*Bridge` as a stop
 
 | Guard | Read before |
 |---|---|
+| [OGAR as IR](docs/OGAR-AS-IR.md) | designing any IR addition (a new `Class` field, `ActionDef` variant, `KausalSpec` slot, lowering pass) |
 | [Consumer best practices](docs/OGAR-CONSUMER-BEST-PRACTICES.md) | any consumer call site (classid · `APP_PREFIX` · `ClassView` · `*Bridge`) |
 | [SurrealQL-AST trap pre-flight](docs/SURREAL-AST-TRAP-PREFLIGHT.md) | producer→IR · transcode · codegen · `.surql` authoring |
 | [SurrealQL AST as adapter](docs/SURREAL-AST-AS-ADAPTER.md) | deciding spine vs. adapter |
