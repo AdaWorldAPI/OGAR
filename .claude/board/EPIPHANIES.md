@@ -15,6 +15,211 @@
 
 ## Entries (newest first)
 
+## 2026-06-22 — extract_classes.py transcoded to Rust byte-faithfully; XSD↔TTL bijection closed; Python dependency removed from the oracle
+**Status:** FINDING
+**Scope:** XSD front-end × calibration self-containment × the queued bijection
+
+The MARS XSD classification extractor (`arago/MARS-Schema/tools/extract_classes.py`,
+~360 lines, ~140 logic + ~150 table formatting) is now a faithful Rust
+transcode at `crates/ogar-from-schema/src/xsd.rs`, behind the optional
+`xsd` feature (pulls `roxmltree`, a pure-Rust read-only XML DOM; the
+default TTL path stays zero-parser-deps).
+
+Three things this lands:
+
+1. **Byte-for-byte transcode proof.** `xsd::to_asciidoc()` reproduces
+   the Python `-F asciidoc` output exactly — 628 lines, including the
+   verbatim XSD-documentation whitespace and the `printAsciiDocFooter`
+   trailing newline. Test: `xsd::tests::asciidoc_matches_python_oracle`
+   diffs against the cached `_oracle/classifications.adoc`.
+
+2. **The XSD↔TTL bijection is closed (was "queued" in
+   `MARS-TRANSCODING.md §2`).** `xsd::tests::xsd_classes_match_ttl_enum`
+   asserts FULL bidirectional set-equality between the XSD-extracted
+   Application value set and the TTL `validation-parameter` enum — not
+   just one-directional membership. The XSD and the TTL are two
+   independent encodings of one taxonomy and they now provably agree
+   in both directions.
+
+3. **The Python dependency is removed from the calibration path.**
+   `cargo test --features xsd` is the whole oracle now; no `python3`
+   interpreter needed. `extract_classes.py` stays vendored in
+   `_oracle/` as the provenance witness (what the transcode was proven
+   against), not a runtime dep.
+
+Transcode discipline notes (for the next source→Rust port):
+- The Python `getAttribute("xml:lang")` returns `""` for absent (not
+  `None`); the lang-filter is "absent OR en". roxmltree resolves `xml:`
+  to the xml namespace — match on `attribute.name() == "lang"`.
+- `getXMLText` concatenates DIRECT text-node children only (not
+  recursive); the documentation's internal whitespace is load-bearing
+  for the byte-match.
+- The `:revdate:` is `datetime.now()` in Python (non-deterministic);
+  the Rust `to_asciidoc(c, revdate)` takes it as a parameter so the
+  output is reproducible and testable.
+
+Answer to "is it huge": no — ~360 lines, half output formatting; the
+transcode is ~350 LOC Rust including tests. And it doubles as the seed
+of the broader XSD→`Class` front-end (the same walk that extracts
+classifications is the structural-arm lift for any XSD).
+
+Evidence: `crates/ogar-from-schema/src/xsd.rs` (20/20 tests pass with
+`--features xsd`; 16/16 on default). `docs/MARS-TRANSCODING.md §2`
+updated to mark the bijection closed.
+
+## 2026-06-22 — OGIT is the canonical template store; Odoo (and any source-AST producer) digests INTO it; consumers relive agnostically via askama
+**Status:** FRAMING
+**Scope:** Foundry-parity collapse × cross-consumer architecture × digest-once-relive-N
+
+The operator's framing — *"basically digest Odoo and store it in TTL
+'Jinja' Templates in OGIT and relive it agnostically for any
+'verb/entity as a class'"* — crystallizes the four pieces shipped
+across this PR (TTL mirror, schema lift, verb-as-class template,
+author-provenance discriminator) into one coherent flow:
+
+```
+Odoo source  →  ogar-from-python  →  Class IR  →  ttl_emit  →  OGIT TTL templates
+                                                                  (stored at
+                                                                   vocab/imports/ogit/NTO/<Domain>/,
+                                                                   dcterms:creator = bus-compiler)
+                                                                  │
+                                                                  ▼
+                                                       ogar-render-askama
+                                                                  │
+                                                                  ▼
+                                  any consumer (woa-rs, smb-office-rs, medcare-rs, q2, future renderers)
+                                  re-instantiates any entity/verb-as-class with a fresh binding;
+                                  never touches Odoo Python
+```
+
+The Python runtime is **only** touched at digest time. After that,
+every consumer talks to TTL templates plus the askama engine.
+
+**Why store in OGIT NTO (not a parallel `vocab/imports/odoo/`):** the
+`dcterms:creator` author-scan finding from this same session makes
+provenance unambiguous without a separate namespace. The precedent
+exists today — `Accounting/` already has 11 Claude-digested files
+sitting alongside 23 Viktor Voss originals.
+
+**Foundry-parity collapse** (the punchline). Foundry's four-layer
+platform pitch (ingest / storage / render / IAM+audit) maps to four
+free open-source pieces already in this repo:
+
+| Foundry layer | Our equivalent | New code needed |
+|---|---|---|
+| Ingest | `ogar-from-python` digest | ~1500 LOC (queued) |
+| Storage | `vocab/imports/ogit/NTO/<Domain>/` TTL with `dcterms:creator` | zero (exists) |
+| Render | `ogar-render-askama::{views, actions}` | ~200 LOC for actions submodule |
+| IAM + audit | verb-as-class `requires-perm` slot + Lance-version-as-audit | zero (exists) |
+| Ontology change mgmt | `diff -r` of digest re-runs | zero |
+
+Total marginal code: <2000 LOC for what Foundry charges $$$ for. The
+architecture was latent the whole time; the digest→relive framing is
+what makes it visible as a single shape.
+
+Concrete next steps (independent, can ship in parallel PRs):
+
+1. `ogar-from-python` digester — structural-arm filter (`_name`,
+   `_inherit`, `fields.*`, selections); behavioural-arm signatures
+   (decorator names + action method signatures); drops method bodies
+2. `ogar-render-askama::actions` — verb-as-class render path, mirroring
+   the existing `views/` submodule
+
+Doc: `docs/ODOO-DIGEST-TO-OGIT.md` (FRAMING v0) carries the full
+pipeline, the v0 mapping table (6 minted concepts + ~9 queued for
+codebook mint), the drift detector recipe, and the Foundry-parity
+collapse table.
+
+## 2026-06-22 — Verb-as-class is an ontological askama template — compile-time-validated action declaration, not a quirk
+**Status:** FINDING
+**Scope:** WorkOrder convention × `ogar-render-askama` integration × Foundry action-type parity
+
+WorkOrder's 12 `verbs/*.ttl` are declared as `rdfs:Class`, not
+`owl:ObjectProperty`. The earlier framing (commit `cce8420`) called
+this "an unusual convention we're free to revise toward standard
+`owl:ObjectProperty`" — **that framing was wrong** and is hereby
+corrected.
+
+The verb-as-class encoding is **load-bearing**: it makes each verb a
+typed template carrying its own slot list (`ogit:mandatory-attributes`),
+inheritance chain (`rdfs:subClassOf`), and policy metadata
+(`ogit:requires-perm`, `ogit:emits-audit`). That's not a flat predicate;
+that's a **compile-time-validated action declaration** — the ontological
+counterpart to askama (Rust) and jinja (Python) HTML templating.
+
+The structural correspondence is exact:
+
+- TTL file = template (`.html.j2` equivalent)
+- `ogit:mandatory-attributes` = struct field list (askama context shape)
+- Per-call binding = struct instance (askama render input)
+- Render = SPO triple emit + declared side effects (audit, ACL gate)
+- `rdfs:subClassOf` = template inheritance (`{% extends %}`)
+- Lift-time slot validation = askama's compile-time `{{ field }}` check
+
+This is the integration point `ogar-render-askama` was always going
+to need for actions. The crate currently renders `Class` *views*
+(noun-shaped: HTML/JSON/OpenAPI); a parallel `actions/` submodule
+renders `Class` *actions* (verb-shaped: SPO triple + side-effect spec).
+Same engine, same compile-time-validated context model, different
+output medium.
+
+**Foundry-parity sharpening:** Foundry's "action types" carry exactly
+the four properties this encoding gives — typed parameters, slot
+validation, declared side effects, inheritance. Foundry sells it as a
+paid platform feature; verb-as-class TTL + `ogar-render-askama` gives
+the same four from open-source schemas and Rust templates.
+
+Implications:
+- **WorkOrder's convention stays.** Don't normalise to `owl:ObjectProperty`.
+- **WorkOrder is the natural prototyping ground** (we're upstream per
+  `dcterms:creator` = `bus-compiler` + `family-codec-smith`) for new
+  verb-as-class predicates before pitching the pattern to OGIT upstream.
+- **`ogar-render-askama::actions` is the next natural module** —
+  ~200 LOC mirroring the existing `views/` render path.
+
+Doc: `docs/VERB-AS-CLASS-TEMPLATE.md` (FRAMING v0) carries the full
+analogy table + worked example + render flow.
+
+## 2026-06-22 — Author provenance via `dcterms:creator` discriminates "ours to revise" from "upstream-coordinated"
+**Status:** FINDING
+**Scope:** OGIT NTO governance × multi-domain lift × who-can-change-what
+
+OGIT TTL files carry `dcterms:creator` on every subject. The field is
+free-form text but carries one of two semantic shapes in practice:
+
+- **Human author + email** (`chris.boos@almato.com`, `Viktor Voss`,
+  `fotto@arago.de`, `Marek Meyer`, `Peter Larem`, `Ola Irgens Kylling`,
+  …) — original arago/almato authors. Structural changes need upstream
+  coordination.
+- **Internal agent name** (`bus-compiler`, `family-codec-smith`,
+  `Claude (AdaWorldAPI/lance-graph 3-hop optim)`, …) — files authored
+  by our agent fleet against this org's forks. We are upstream for
+  these; structural changes need no external coordination.
+
+The 9-domain spot check (Transport, Accounting, SalesDistribution,
+Credit, Cost, ServiceManagement, WorkOrder, Compliance, Audit) revealed:
+
+- **WorkOrder is fully ours** — 100% internal-agent authorship (`bus-compiler`,
+  `family-codec-smith`). The unusual `rdfs:Class`-as-verb convention is
+  ours to revise toward standard `owl:ObjectProperty`-as-verb whenever
+  the AST predicate registry needs the WorkOrder verbs.
+- **Accounting is mixed-authorship** — Viktor Voss (23 files, original)
+  + a prior session's `Claude` extension (11 files). Structural changes
+  to the original 23 require upstream coordination; the 11 are ours.
+- **All other 7 domains are pure-upstream** — single-or-few external
+  human authors.
+
+This makes WorkOrder the **natural prototyping ground** for new TTL
+predicates OGAR wants to add: ship in WorkOrder first (no external
+coordination cost), validate the bijection, then pitch the pattern
+to OGIT upstream once it's proven.
+
+Evidence: the `dcterms:creator` provenance scan recipe lives in
+`docs/OGIT-DOMAIN-LIFT-CATALOGUE.md § Verifying domain authorship`;
+the round-trip stress test for the 9 domains is
+`ttl_emit::tests::nine_domains_lift_surface_round_trip` (zero failures
+on 210 TTLs across the nine).
+
 ## 2026-06-22 — Schema-vs-source duality: schemas lift structure bijectively; source ASTs lift behaviour best-effort; they cross-validate at the structural boundary
 **Status:** FINDING
 **Scope:** producer architecture × MARS calibration × Foundry-Odoo lens × the bardioc migration
