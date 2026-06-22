@@ -1515,6 +1515,10 @@ pub mod class_ids {
 // so the bridge harness in lance-graph stays generic.
 pub mod ports;
 
+// APP‖class composition — the high-u16 render-prefix machinery
+// (APP-CLASS-CODEBOOK-LAYOUT.md §0/§4). Builds on `PortSpec::APP_PREFIX`.
+pub mod app;
+
 /// **Cross-domain bridge concepts** — promoted concepts whose convergence
 /// is intentionally *across* domains, so they must be exempt from the
 /// domain gate in [`canonical_concept_in_domain`].
