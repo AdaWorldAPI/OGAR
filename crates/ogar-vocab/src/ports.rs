@@ -924,4 +924,57 @@ mod tests {
         assert_eq!(OdooPort::class_id("WorkPackage"), None);
         assert_eq!(OdooPort::class_id(""), None);
     }
+
+    /// **The five-way `billable_work_entry` convergence pin.** Ratifies
+    /// the `APP-CODEBOOK-MIGRATION-PLAN.md` W0 + W1 + W2 + W3 worked
+    /// tables: five port-bearing apps all resolve their *own* timesheet
+    /// surface name to one canonical concept ([`class_ids::BILLABLE_WORK_ENTRY`]
+    /// = `0x0103`). Five renderers, one concept — the planning ⟷ ERP
+    /// convergence as a single codebook entry, machine-checked:
+    ///
+    /// | app | surface name | port |
+    /// |---|---|---|
+    /// | OpenProject (`0x0001`) | `TimeEntry` | [`OpenProjectPort`] |
+    /// | Odoo (`0x0002`) | `account.analytic.line` | [`OdooPort`] |
+    /// | WoA (`0x0003`) | `Stundenzettel` | [`WoaPort`] |
+    /// | SMB (`0x0004`) | `Stundenzettel` | [`SmbPort`] |
+    /// | Redmine (`0x0007`) | `TimeEntry` | [`RedminePort`] |
+    ///
+    /// Earlier tests pinned subsets (the four-way planner+ERP test, the
+    /// three-way OpenProject ↔ Redmine ↔ Odoo test); this is the full
+    /// fan-out the migration plan calls "planner times == billable
+    /// hours", asserted in one place so drift on ANY of the five ports
+    /// fails CI here.
+    #[test]
+    fn billable_work_entry_converges_across_all_five_ports() {
+        let target = class_ids::BILLABLE_WORK_ENTRY;
+        assert_eq!(
+            target, 0x0103,
+            "codebook id for billable_work_entry must be 0x0103"
+        );
+        let resolutions: &[(&str, &str, Option<u16>)] = &[
+            (
+                "OpenProject",
+                "TimeEntry",
+                OpenProjectPort::class_id("TimeEntry"),
+            ),
+            (
+                "Odoo",
+                "account.analytic.line",
+                OdooPort::class_id("account.analytic.line"),
+            ),
+            ("WoA", "Stundenzettel", WoaPort::class_id("Stundenzettel")),
+            ("SMB", "Stundenzettel", SmbPort::class_id("Stundenzettel")),
+            ("Redmine", "TimeEntry", RedminePort::class_id("TimeEntry")),
+        ];
+        for &(app, name, got) in resolutions {
+            assert_eq!(
+                got,
+                Some(target),
+                "{app}Port::class_id(\"{name}\") must resolve to BILLABLE_WORK_ENTRY \
+                 (0x{target:04X}) — the planner⟷ERP convergence pin from \
+                 APP-CODEBOOK-MIGRATION-PLAN.md W0+W1+W2+W3",
+            );
+        }
+    }
 }
