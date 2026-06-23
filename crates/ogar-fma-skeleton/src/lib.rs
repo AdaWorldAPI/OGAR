@@ -19,10 +19,8 @@
 //!
 //! 1. **Bones hardcoded & stable.** Each bone is a `kind == Bone` node and is,
 //!    by definition, a [`Bone::is_clamped_anchor`] — there is no un-clamped
-//!    bone. Its [`FamilyAddress`] is immutable: refinement may *extend* depth
-//!    (finer Morton levels) but never rewrite an assigned coarse nibble
-//!    (RESERVE-DON'T-RECLAIM). The [`stability`](crate#tests) snapshot test
-//!    pins the address of every bone.
+//!    bone. Its [`Guid`] classid is immutable (RESERVE-DON'T-RECLAIM); a
+//!    snapshot test pins it for every bone.
 //! 2. **Multi-modal projection.** ViT / X-ray / ultrasound × Doppler are each
 //!    a forward operator onto the shared splat volume; all of them register
 //!    *through the bone frame*. X-ray *shows* bone (the natural fiducial);
@@ -30,15 +28,26 @@
 //!    velocity is the splat SH term. Request 1 (bones stable) is the
 //!    precondition for Request 2 (cross-modal registration).
 //!
-//! # The address (per [`morton`])
+//! # The address (per [`guid`])
 //!
-//! Each bone's identity is a **16×8-bit family-node key** — a uniform 4×4
-//! Morton-tile pyramid. The address is *derived from the rest-pose centroid*
-//! by descending the Morton quadtree of each parent's children, so
-//! `parent.address.is_ancestor_of(child.address)` holds **and** spatially-near
-//! siblings share a longer Morton prefix. Partonomy, spatial mipmap, and the
-//! perturbation pyramid's `(exponent, location)` are one address. The concept
-//! routing prefix is `ogar_vocab::class_ids::BONE` (`0x0A03`).
+//! Each bone's identity is a 16-byte [`Guid`] — a stack of `[256:256]`
+//! `[container:member]` tiers (`src/guid.rs`), **Located-primary** (bones ARE
+//! the position anchor):
+//!
+//! - **classid** tier = `ogar_vocab::class_ids::BONE` (`0x0A03`, Anatomy:bone);
+//! - **HEEL/HIP** = the rest-pose **3-axis CRS** (HEEL coronal `x:y`, HIP depth
+//!   `z`) — ArcGIS / Cesium-addressable, so the body drops into a GIS stack as
+//!   a first-class spatial layer and ViT / ultrasound × Doppler project onto
+//!   the same coordinate;
+//! - **LEAF** = `familyNode:identity` = `[bodypart : bone]` — the categorical
+//!   family (the group) and the instance attached within it.
+//!
+//! The family node groups (a bone's parent group is its family; `identity == 0`
+//! IS the family node, `identity ≥ 1` are its bones), spatial HHTL locates, and
+//! the perturbation pyramid's `(exponent, location)` ride the Morton tiles —
+//! all on one key. (The lower-level Morton primitives + the variable-depth
+//! [`FamilyAddress`] remain in [`morton`] as the value-side splat-refinement
+//! tool.)
 //!
 //! # Honesty fence
 //!
@@ -48,9 +57,10 @@
 //! cranio-caudal order faithfully — enough for the Morton structure and the
 //! invariant tests — but are NOT clinically-precise and are to be refined
 //! against a real FMA-aligned reference mesh in the splat-native arc. What is
-//! rigorous here is the *structure*: tree integrity, prefix=spatial=partonomy
-//! containment, uniform-stride Morton keys, unit-quaternion frames, the
-//! clamped-anchor invariant, and address stability.
+//! rigorous here is the *structure*: tree integrity, the `[container:member]`
+//! tier model, HEEL laterality + HIP depth, family-node grouping with
+//! attached identity, globally-unique node keys, unit-quaternion frames, the
+//! clamped-anchor invariant, and classid stability.
 
 #![warn(missing_docs)]
 #![forbid(unsafe_code)]
@@ -65,14 +75,14 @@ pub use guid::{Guid, HhtlMode, LeafTile, Tier};
 pub use morton::FamilyAddress;
 
 /// Re-export of the `bone` concept id from the canonical OGAR codebook
-/// (`ogar_vocab::class_ids::BONE` = `0x0A03`). The high nibbles of every
-/// bone's [`FamilyAddress`] are this concept's routing prefix.
+/// (`ogar_vocab::class_ids::BONE` = `0x0A03`). It is the classid tier of every
+/// bone's [`Guid`] (`0x0A` Anatomy : `0x03` bone).
 pub const BONE_CONCEPT: u16 = ogar_vocab::class_ids::BONE;
 
 /// Our stable atlas identity for a node. Distinct from an FMA id: this is the
-/// address identity the [`FamilyAddress`] and stability test pin. The FMA id
-/// (when confidently known) is carried separately in [`BoneSpec::fma`] as a
-/// cross-reference — we do not fabricate FMA ids we are unsure of.
+/// curated node identity. The FMA id (when confidently known) is carried
+/// separately in [`BoneSpec::fma`] as a cross-reference — we do not fabricate
+/// FMA ids we are unsure of.
 pub type AtlasId = u32;
 
 /// The FMA axial / appendicular partition — the top split of the skeleton.
@@ -164,12 +174,12 @@ pub struct BoneSpec {
     pub rest_pose: RigidTransform,
 }
 
-/// A resolved node: its [`BoneSpec`] plus the [`FamilyAddress`] derived from
-/// the partonomy + Morton placement.
+/// A resolved node: its [`BoneSpec`] plus the Located-primary [`Guid`] derived
+/// from the rest pose + partonomy family.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Bone {
     spec: BoneSpec,
-    address: FamilyAddress,
+    guid: Guid,
 }
 
 impl Bone {
@@ -213,29 +223,44 @@ impl Bone {
     pub const fn rest_pose(&self) -> RigidTransform {
         self.spec.rest_pose
     }
-    /// The immutable 16×8-bit Morton-tile family-node address — the **routing
-    /// prefix** (concept routing + partonomy + spatial Morton). An interior
-    /// node's address is intentionally a byte-prefix of its descendants'; the
-    /// leaf discriminator is the identity tail (see [`node_key`](Self::node_key)).
+    /// The bone's canonical 16-byte [`Guid`] — Located-primary: classid
+    /// `0x0A03` (Anatomy:bone) · HEEL/HIP = the rest-pose 3-axis CRS · LEAF =
+    /// `familyNode:identity` (`bodypart:bone`).
     #[must_use]
-    pub const fn address(&self) -> FamilyAddress {
-        self.address
+    pub const fn guid(&self) -> Guid {
+        self.guid
     }
 
-    /// The full canonical 16-byte node key: the Morton routing prefix with this
-    /// node's atlas id written into the **identity tail** (bytes 13..16, the
-    /// canon's 24-bit `identity` field, little-endian). This is globally unique
-    /// per node even when two nodes share a routing prefix (ancestor ↔
-    /// descendant, or a corner-tile group ↔ child). The 24-bit field holds atlas
-    /// ids up to `0xFF_FFFF`.
+    /// The HEEL spatial tier (coronal `x:y` plane).
     #[must_use]
-    pub fn node_key(&self) -> [u8; morton::KEY_BYTES] {
-        let mut k = self.address.bytes();
-        let id = self.spec.id;
-        k[13] = (id & 0xFF) as u8;
-        k[14] = ((id >> 8) & 0xFF) as u8;
-        k[15] = ((id >> 16) & 0xFF) as u8;
-        k
+    pub const fn heel(&self) -> Tier {
+        self.guid.heel()
+    }
+
+    /// The LEAF tier as `familyNode:identity`.
+    #[must_use]
+    pub const fn leaf(&self) -> LeafTile {
+        self.guid.leaf()
+    }
+
+    /// The family node — the leaf container (the `bodypart` / group). Bones in
+    /// the same group share this byte; `identity == 0` IS the group's family
+    /// node, `identity ≥ 1` are its bones.
+    #[must_use]
+    pub const fn family_node(&self) -> u8 {
+        self.guid.family_node()
+    }
+
+    /// The instance identity within the family (the leaf member).
+    #[must_use]
+    pub const fn identity(&self) -> u8 {
+        self.guid.identity()
+    }
+
+    /// The full canonical 16-byte node key (the [`Guid`] bytes).
+    #[must_use]
+    pub const fn node_key(&self) -> [u8; morton::KEY_BYTES] {
+        self.guid.bytes()
     }
     /// `true` iff this node is a clamped convergence anchor — i.e. an actual
     /// bone. **Bones are non-negotiable; there is no un-clamped bone.**
@@ -252,78 +277,101 @@ pub struct Skeleton {
 }
 
 impl Skeleton {
-    /// Resolve the curated atlas: build the partonomy tree and derive every
-    /// node's [`FamilyAddress`] by descending the Morton quadtree of each
-    /// parent's children (so the address is the rest-pose centroid's position,
-    /// prefixed by the partonomy, prefixed by the `bone` concept routing).
+    /// Resolve the curated atlas into Located-primary [`Guid`]s: classid
+    /// `0x0A03` · HEEL/HIP = the rest-pose 3-axis CRS · LEAF =
+    /// `familyNode:identity`. The family node is the node's parent group
+    /// (`region nibble · group-index nibble`); the identity is the node's
+    /// 1-based rank among its siblings (`0` for the group node itself).
     #[must_use]
     pub fn resolve() -> Self {
+        use std::collections::HashMap;
         let specs = atlas();
-        let n = specs.len();
 
-        // Index by atlas id.
-        let index = |id: AtlasId| specs.iter().position(|s| s.id == id);
+        let region_code = |r: Region| -> u8 {
+            match r {
+                Region::Axial => 0,
+                Region::AppendicularUpper => 1,
+                Region::AppendicularLower => 2,
+            }
+        };
 
-        // children[parent_pos] = [child positions], in spec order.
-        let mut children: Vec<Vec<usize>> = vec![Vec::new(); n];
-        let mut roots: Vec<usize> = Vec::new();
+        // Each group gets a group-index within its region (the family low nibble).
+        let mut group_index: HashMap<AtlasId, u8> = HashMap::new();
+        let mut region_counter = [0u8; 3];
+        for s in &specs {
+            if matches!(s.kind, NodeKind::Group) {
+                let rc = region_code(s.region) as usize;
+                group_index.insert(s.id, region_counter[rc] & 0x0F);
+                region_counter[rc] = region_counter[rc].wrapping_add(1);
+            }
+        }
+
+        // identity = 1-based rank of a bone among its parent's children; a group
+        // node takes identity 0 — it IS the family node.
+        let mut sibling_counter: HashMap<Option<AtlasId>, u8> = HashMap::new();
+        let mut identity_of = vec![0u8; specs.len()];
         for (pos, s) in specs.iter().enumerate() {
-            match s.parent.and_then(index) {
-                Some(pp) => children[pp].push(pos),
-                None => roots.push(pos),
+            if matches!(s.kind, NodeKind::Bone) {
+                let c = sibling_counter.entry(s.parent).or_insert(0);
+                *c = c.wrapping_add(1);
+                identity_of[pos] = *c;
             }
         }
 
-        // The concept routing prefix shared by every node: the `bone` u16 as
-        // four Morton-tile nibbles (hi nibble first).
-        let concept = BONE_CONCEPT;
-        let concept_prefix = [
-            ((concept >> 12) & 0xF) as u8,
-            ((concept >> 8) & 0xF) as u8,
-            ((concept >> 4) & 0xF) as u8,
-            (concept & 0xF) as u8,
-        ];
-
-        let mut address: Vec<FamilyAddress> = vec![FamilyAddress::ROOT; n];
-        let base = FamilyAddress::from_nibbles(&concept_prefix);
-
-        // BFS from the roots, assigning Morton suffixes per sibling group.
-        let mut stack: Vec<(usize, FamilyAddress)> = Vec::new();
-
-        // Multiple roots are themselves a sibling group under the empty
-        // concept-prefixed base.
-        let root_centroids: Vec<(f32, f32)> = roots
-            .iter()
-            .map(|&p| specs[p].rest_pose.coronal())
-            .collect();
-        let root_suffixes = morton::assign_morton_suffixes(&root_centroids);
-        for (k, &p) in roots.iter().enumerate() {
-            let addr = base.extend(&root_suffixes[k]);
-            address[p] = addr;
-            stack.push((p, addr));
-        }
-
-        while let Some((pos, addr)) = stack.pop() {
-            let kids = &children[pos];
-            if kids.is_empty() {
-                continue;
-            }
-            let centroids: Vec<(f32, f32)> =
-                kids.iter().map(|&c| specs[c].rest_pose.coronal()).collect();
-            let suffixes = morton::assign_morton_suffixes(&centroids);
-            for (k, &c) in kids.iter().enumerate() {
-                let child_addr = addr.extend(&suffixes[k]);
-                address[c] = child_addr;
-                stack.push((c, child_addr));
+        // Body bounding box, for the 8-bit spatial quantize (the CRS extent).
+        let mut min = [f32::INFINITY; 3];
+        let mut max = [f32::NEG_INFINITY; 3];
+        for s in &specs {
+            for a in 0..3 {
+                min[a] = min[a].min(s.rest_pose.translation[a]);
+                max[a] = max[a].max(s.rest_pose.translation[a]);
             }
         }
+        let q = |v: f32, lo: f32, hi: f32| -> u8 {
+            let span = hi - lo;
+            if span <= f32::EPSILON {
+                return 0;
+            }
+            (((v - lo) / span) * 255.0).round().clamp(0.0, 255.0) as u8
+        };
+
+        let classid = Tier {
+            container: (BONE_CONCEPT >> 8) as u8,
+            member: (BONE_CONCEPT & 0xFF) as u8,
+        };
 
         let nodes = specs
             .into_iter()
             .enumerate()
-            .map(|(pos, spec)| Bone {
-                spec,
-                address: address[pos],
+            .map(|(pos, spec)| {
+                // Family node = the node's group (parent for bones, self for groups).
+                let fam_group = match spec.kind {
+                    NodeKind::Group => spec.id,
+                    NodeKind::Bone => spec.parent.unwrap_or(spec.id),
+                };
+                let gi = group_index.get(&fam_group).copied().unwrap_or(0) & 0x0F;
+                let family_node = (region_code(spec.region) << 4) | gi;
+
+                let p = spec.rest_pose.translation;
+                let (heel, hip) = guid::located_heel_hip(
+                    q(p[0], min[0], max[0]),
+                    q(p[1], min[1], max[1]),
+                    q(p[2], min[2], max[2]),
+                );
+
+                let mut g = Guid::ZERO;
+                g.set_tier(guid::TIER_CLASSID, classid);
+                g.set_tier(guid::TIER_HEEL, heel);
+                g.set_tier(guid::TIER_HIP, hip);
+                g.set_tier(
+                    guid::TIER_LEAF,
+                    Tier {
+                        container: family_node,
+                        member: identity_of[pos],
+                    },
+                );
+
+                Bone { spec, guid: g }
             })
             .collect();
         Self { nodes }
@@ -352,14 +400,21 @@ impl Skeleton {
         self.nodes.iter().filter(|b| b.is_clamped_anchor())
     }
 
-    /// `true` if `ancestor` is a partonomy/spatial ancestor of `descendant`
-    /// (by Morton-address prefix containment).
+    /// `true` if `ancestor` is a partonomy ancestor of `descendant` (walking
+    /// the parent links). With Located addressing, partonomy is the parent-link
+    /// tree (the categorical family lives in the leaf byte, the spatial HHTL is
+    /// the orthogonal location axis), so ancestry is a link walk, not an
+    /// address-prefix test.
     #[must_use]
     pub fn is_ancestor(&self, ancestor: AtlasId, descendant: AtlasId) -> bool {
-        match (self.get(ancestor), self.get(descendant)) {
-            (Some(a), Some(d)) => a.address().is_ancestor_of(&d.address()),
-            _ => false,
+        let mut cur = self.get(descendant).and_then(Bone::parent);
+        while let Some(p) = cur {
+            if p == ancestor {
+                return true;
+            }
+            cur = self.get(p).and_then(Bone::parent);
         }
+        false
     }
 }
 
@@ -762,7 +817,7 @@ const RIB_EN: [(&str, &str); 12] = [
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::collections::{HashMap, HashSet};
+    use std::collections::HashSet;
 
     fn skel() -> Skeleton {
         Skeleton::resolve()
@@ -792,70 +847,92 @@ mod tests {
         assert_eq!(roots, 1, "exactly one skeletal-system root");
     }
 
+    fn by_name<'a>(s: &'a Skeleton, name: &str) -> &'a Bone {
+        s.nodes()
+            .iter()
+            .find(|b| b.name_en() == name)
+            .unwrap_or_else(|| panic!("{name} present"))
+    }
+
     #[test]
-    fn address_prefix_is_partonomy_containment() {
-        // The load-bearing canon claim: parent's Morton address is a prefix of
-        // each child's. Partonomy ⟺ address-prefix ⟺ spatial containment.
+    fn classid_tier_is_anatomy_bone() {
+        // Every node's GUID routes on the `bone` concept (Anatomy:bone, 0x0A03).
         let s = skel();
         for b in s.nodes() {
-            if let Some(p) = b.parent() {
-                let parent = s.get(p).unwrap();
-                assert!(
-                    parent.address().is_ancestor_of(&b.address()),
-                    "{} addr {:?} not under parent {} addr {:?}",
-                    b.name_en(),
-                    b.address(),
-                    parent.name_en(),
-                    parent.address(),
-                );
-                assert!(b.address().depth() > parent.address().depth());
-            }
+            assert_eq!(b.guid().classid(), 0x0A03, "{}", b.name_en());
+            let t = b.guid().tier(guid::TIER_CLASSID);
+            assert_eq!((t.container, t.member), (0x0A, 0x03));
         }
     }
 
     #[test]
-    fn sibling_addresses_are_distinct() {
-        // The real Morton invariant: within any parent's children, the derived
-        // addresses differ. assign_morton_suffixes guarantees this for distinct
-        // centroids, so a failure here means two siblings have coincident
-        // rest-pose centroids — the one bug class to fix in the atlas data.
+    fn heel_encodes_laterality() {
+        // Located precondition: left/right twins differ in HEEL (the coronal X
+        // axis = laterality), so an X-ray / ultrasound sweep can tell sides apart
+        // from the spatial tier — while remaining the SAME categorical family.
         let s = skel();
-        let parents: HashSet<AtlasId> = s.nodes().iter().filter_map(Bone::parent).collect();
-        for p in parents {
-            let mut seen: HashSet<(Vec<u8>, u8)> = HashSet::new();
-            for child in s.children_of(p) {
-                let a = child.address();
-                let nibbles: Vec<u8> = (0..a.depth() as usize).map(|l| a.nibble(l)).collect();
-                assert!(
-                    seen.insert((nibbles, a.depth())),
-                    "siblings under {p} share an address — coincident centroids on {}",
-                    child.name_en(),
-                );
-            }
-        }
+        let left_femur = s.get(1021).unwrap();
+        let right_femur = s.get(2021).unwrap();
+        assert_ne!(left_femur.heel(), right_femur.heel(), "laterality in HEEL");
+        assert!(
+            left_femur.guid().same_family(&right_femur.guid()),
+            "both are lower-limb-long-bone family",
+        );
+        assert_ne!(left_femur.identity(), right_femur.identity());
     }
 
     #[test]
-    fn full_node_keys_are_globally_unique() {
-        // The leaf discriminator: the identity tail makes every node's full
-        // 16-byte key unique even when routing prefixes nest (ancestor ↔
-        // descendant, corner-tile group ↔ child).
+    fn hip_encodes_depth() {
+        // HIP = the anterior-posterior depth slice: the sternum (anterior) and a
+        // thoracic vertebra (posterior) sit in different depth tiers.
         let s = skel();
-        let mut seen: HashMap<[u8; morton::KEY_BYTES], AtlasId> = HashMap::new();
-        for b in s.nodes() {
-            if let Some(prev) = seen.insert(b.node_key(), b.id()) {
-                panic!("node-key collision: {} and {}", prev, b.id());
-            }
-        }
-        // And the identity tail never clobbers the (shallow) Morton prefix:
-        // routing prefix and identity tail occupy disjoint byte ranges here.
+        let sternum = by_name(&s, "sternum");
+        let vertebra = by_name(&s, "vertebra T6");
+        let hip = |b: &Bone| b.guid().tier(guid::TIER_HIP);
+        assert_ne!(hip(sternum), hip(vertebra), "anterior vs posterior depth");
+    }
+
+    #[test]
+    fn leaf_is_family_identity_and_node_keys_unique() {
+        let s = skel();
+        let mut keys: HashSet<[u8; morton::KEY_BYTES]> = HashSet::new();
+        let mut leaves: HashSet<(u8, u8)> = HashSet::new();
         for b in s.nodes() {
             assert!(
-                b.address().depth() as usize <= 26,
-                "{} routing prefix would reach the identity tail",
-                b.name_en(),
+                keys.insert(b.node_key()),
+                "node-key collision on {}",
+                b.name_en()
+            );
+            assert!(
+                leaves.insert((b.family_node(), b.identity())),
+                "leaf family:identity collision on {}",
+                b.name_en()
             );
         }
+    }
+
+    #[test]
+    fn family_node_groups_bones_identity_attached() {
+        // Two vertebrae share the vertebral-column family node; their identities
+        // differ ("identity attached to family node"). A femur is a different
+        // family. The group node itself is identity 0 — it IS the family node.
+        let s = skel();
+        let t1 = by_name(&s, "vertebra T1");
+        let t2 = by_name(&s, "vertebra T2");
+        let femur = s.get(1021).unwrap();
+        let column = s.get(200).unwrap(); // vertebral column group
+
+        assert!(t1.guid().same_family(&t2.guid()), "same family node");
+        assert_ne!(
+            t1.identity(),
+            t2.identity(),
+            "identity discriminates within"
+        );
+        assert!(!t1.guid().same_family(&femur.guid()));
+
+        assert_eq!(column.identity(), 0, "the group node IS the family node");
+        assert_eq!(column.family_node(), t1.family_node(), "its bones share it");
+        assert!(t1.identity() >= 1, "bones are members (identity >= 1)");
     }
 
     #[test]
@@ -890,58 +967,27 @@ mod tests {
     }
 
     #[test]
-    fn morton_address_encodes_laterality() {
-        // Projection precondition: left and right twins must differ in their
-        // address (the X axis of the Morton tile = anatomical laterality), so an
-        // X-ray / ultrasound sweep registering onto the coronal plane can tell
-        // sides apart from the address prefix alone.
+    fn partonomy_ancestry_walks_parent_links() {
         let s = skel();
-        let left_femur = s.get(1021).unwrap(); // 1000-block, +21
-        let right_femur = s.get(2021).unwrap();
-        assert!(left_femur.address().bytes() != right_femur.address().bytes());
-        // Their nearest common ancestor is the lower-appendicular group, so they
-        // share that prefix but diverge below it.
-        let cpl = left_femur
-            .address()
-            .common_prefix_len(&right_femur.address());
-        assert!(cpl >= 4, "share at least the bone-concept routing prefix");
+        let sacrum = by_name(&s, "sacrum").id();
+        assert!(s.is_ancestor(200, sacrum), "vertebral column ⊃ sacrum");
         assert!(
-            cpl < left_femur.address().depth(),
-            "but diverge before the leaf (laterality split)",
+            s.is_ancestor(1, sacrum),
+            "skeletal system ⊃ sacrum (transitive)"
+        );
+        assert!(
+            !s.is_ancestor(200, 1021),
+            "column is not an ancestor of the femur"
         );
     }
 
     #[test]
-    fn address_stability_snapshot() {
-        // RESERVE-DON'T-RECLAIM: pin a few well-known bones' addresses. A change
-        // that *moves* (rather than extends) an address breaks this — the
-        // immutability guarantee the splat-fit relies on. Refinement that only
-        // deepens an address (adds finer Morton levels) without rewriting a
-        // coarse nibble keeps the OLD address as a prefix and would update the
-        // snapshot deliberately.
+    fn classid_stability_snapshot() {
+        // Pin the classid tier: every bone routes on Anatomy:bone. A change that
+        // moves this breaks the immutability the splat-fit relies on.
         let s = skel();
-        // The four concept-prefix nibbles are shared by every node.
         for b in s.clamped_anchors() {
-            let a = b.address();
-            assert_eq!(a.nibble(0), 0x0);
-            assert_eq!(a.nibble(1), 0xA);
-            assert_eq!(a.nibble(2), 0x0);
-            assert_eq!(
-                a.nibble(3),
-                0x3,
-                "every bone carries the `bone` concept routing prefix 0x0A03"
-            );
+            assert_eq!(b.guid().classid(), 0x0A03);
         }
-        // Sacrum sits at the column root spatially (near the body origin); it is
-        // a descendant of the vertebral-column group.
-        assert!(s.is_ancestor(200, sacrum_id(&s)));
-    }
-
-    fn sacrum_id(s: &Skeleton) -> AtlasId {
-        s.nodes()
-            .iter()
-            .find(|b| b.name_en() == "sacrum")
-            .map(Bone::id)
-            .expect("sacrum present")
     }
 }

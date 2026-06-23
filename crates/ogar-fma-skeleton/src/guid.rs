@@ -167,13 +167,15 @@ impl Guid {
         self.bytes[2 * TIER_LEAF + 1]
     }
 
-    /// `true` if `self` and `other` are in the **same family**: every tier up
-    /// to and including the leaf's `family_node` agrees; only the leaf
-    /// `identity` differs. This is "identity attached to family node" — the
-    /// family node is the routing prefix, the identity discriminates within.
+    /// `true` if `self` and `other` are in the **same family**: same `classid`
+    /// and same leaf `family_node`. This is "identity attached to family node"
+    /// — the family node groups, the leaf `identity` discriminates within. It
+    /// is mode-agnostic: in Located mode the spatial HHTL is an *orthogonal*
+    /// location axis (two same-family bones sit at different positions), so
+    /// family grouping keys on the categorical leaf byte, not the HHTL prefix.
     #[must_use]
     pub fn same_family(&self, other: &Self) -> bool {
-        self.bytes[..2 * TIER_LEAF + 1] == other.bytes[..2 * TIER_LEAF + 1]
+        self.classid() == other.classid() && self.family_node() == other.family_node()
     }
 }
 
@@ -202,6 +204,23 @@ pub fn spatial_tier(x: u8, y: u8) -> Tier {
         container: coarse,
         member: fine,
     }
+}
+
+/// Encode a 3-axis body position into the Located `(HEEL, HIP)` spatial tier
+/// pair — an ArcGIS / Cesium-addressable coordinate reference system.
+///
+/// - **HEEL** = coronal `(x : y)` 2D-Morton (anatomical-left × superior) — the
+///   plane an X-ray or anterior-ultrasound sweep projects onto.
+/// - **HIP** = depth `(z)` — anterior-posterior, the imaging *slice* axis.
+///
+/// Prefix containment over `HEEL ++ HIP` is therefore 3-axis spatial
+/// containment: a quadkey/octant the GIS stack can `contains` / `buffer` /
+/// page by LOD. v0 fence: this is *coronal-tile + depth-slice* (exactly how
+/// medical imaging is organised), not yet a single interleaved 3D octree —
+/// HIP's odd (Y) bits are reserved for a finer refinement axis.
+#[must_use]
+pub fn located_heel_hip(x: u8, y: u8, z: u8) -> (Tier, Tier) {
+    (spatial_tier(x, y), spatial_tier(z, 0))
 }
 
 /// The **mode** of an HHTL tier — the operator's "heel" distinction
