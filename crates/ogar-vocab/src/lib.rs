@@ -1133,6 +1133,16 @@ const CODEBOOK: &[(&str, u16)] = &[
     ("billing_party", 0x0204),
     ("payment_record", 0x0205),
     ("currency_policy", 0x0206),
+    // Phase-3 OGAR-side mints from the cross-axis identity gap surfaced in
+    // odoo-rs PR #14 (`alignment_pin::seeded_classes_have_compatible_ogar_identity`):
+    // `OdooPort` covered the commerce arm only (9 aliases); the alignment
+    // table extends to 6 basins (BillingCore / SMBAccounting /
+    // SmbFoundryCustomer / SmbFoundryInvoice / ProductCatalog / HRFoundation).
+    // These two mints close the highest-impact gap (4 of 11 missing aliases).
+    // The remaining 7 (pricelist*, uom*, hr*) are queued for follow-up — see
+    // PR description for the queue.
+    ("product", 0x0207),
+    ("accounting_account", 0x0208),
     // ── 0x09XX — Health domain (clinical / patient / care) ──
     // medcare-rs Healthcare-namespace promotion (Northstar T9). The 7
     // entities the OGIT `NTO/Healthcare/entities/` TTL ships, projected
@@ -1432,6 +1442,27 @@ pub mod class_ids {
     /// `currency_policy` (`0x0206`) — currency lookup. OSB `Currency`,
     /// Odoo `res.currency`.
     pub const CURRENCY_POLICY: u16 = 0x0206;
+    /// `product` (`0x0207`) — saleable / billable item (catalogue master).
+    /// OSB `Product`, Odoo `product.template` + `product.product` (both
+    /// converge here; the variant relation lives outside the codebook,
+    /// `commercial_document.line_items.references` target).
+    ///
+    /// Promoted Phase-3 from the cross-axis identity gap surfaced in odoo-rs
+    /// PR #14: the alignment table seeds `product.template → schema:Product`
+    /// + BillingCore (0x61); this id is the OGAR-side identity that closes
+    /// the same axis. `OdooPort` carries `product.template` and
+    /// `product.product` as aliases of `PRODUCT`.
+    pub const PRODUCT: u16 = 0x0207;
+    /// `accounting_account` (`0x0208`) — general-ledger account (SKR-aligned
+    /// chart concept). OSB `Account`, Odoo `account.account` +
+    /// `account.account.template` (the SKR03/04 chart-of-accounts template;
+    /// both converge on this id).
+    ///
+    /// Promoted Phase-3 from the cross-axis identity gap surfaced in odoo-rs
+    /// PR #14: the alignment table seeds `account.account → fibo:Account` +
+    /// SMBAccounting (0x62); this id is the OGAR-side identity that closes
+    /// the same axis.
+    pub const ACCOUNTING_ACCOUNT: u16 = 0x0208;
 
     // ── 0x09XX — health domain (medcare-rs Healthcare namespace) ──
 
@@ -1513,6 +1544,8 @@ pub mod class_ids {
         ("billing_party", BILLING_PARTY),
         ("payment_record", PAYMENT_RECORD),
         ("currency_policy", CURRENCY_POLICY),
+        ("product", PRODUCT),
+        ("accounting_account", ACCOUNTING_ACCOUNT),
         // 0x09XX — health
         ("patient", PATIENT),
         ("diagnosis", DIAGNOSIS),
@@ -1531,7 +1564,7 @@ pub mod class_ids {
     #[cfg(test)]
     mod tests {
         use super::*;
-        use crate::{CODEBOOK, canonical_concept_id};
+        use crate::{canonical_concept_id, CODEBOOK};
 
         #[test]
         fn constants_match_codebook() {
@@ -2356,13 +2389,16 @@ pub fn all_promoted_classes() -> Vec<Class> {
         project_member_role(),
         project_custom_value(),
         project_enabled_module(),
-        // 0x02XX — commerce arm (6 concepts).
+        // 0x02XX — commerce arm (8 concepts: 6 OSB-promoted + 2
+        //          Phase-3 mints per odoo-rs PR #14 + #16).
         commercial_line_item(),
         commercial_document(),
         tax_policy(),
         billing_party(),
         payment_record(),
         currency_policy(),
+        product(),
+        accounting_account(),
         // 0x09XX — health arm (7 OGIT Healthcare concepts), in
         // class_ids::ALL order.
         patient(),
@@ -3175,6 +3211,58 @@ pub fn currency_policy() -> Class {
     c
 }
 
+/// `product` (`0x0207`) — saleable / billable item (catalogue master).
+/// OSB `Product`, Odoo `product.template` + `product.product` (both
+/// converge here; the variant relation is outside the codebook).
+///
+/// Promoted Phase-3 from the cross-axis identity gap surfaced in odoo-rs
+/// PR #14 (`alignment_pin::seeded_classes_have_compatible_ogar_identity`).
+/// Attributes mirror the minimal `schema:Product`-aligned shape: `sku`
+/// (stock-keeping unit / canonical identifier), `name`, `price` (decimal
+/// money), `description` (free-text).
+pub fn product() -> Class {
+    let mut c = Class::new("Product");
+    c.language = Language::Unknown;
+    c.canonical_concept = Some("product".to_string());
+    c.associations = Vec::new();
+    let mut sku = Attribute::new("sku");
+    sku.type_name = Some("string".to_string());
+    let mut name = Attribute::new("name");
+    name.type_name = Some("string".to_string());
+    let mut price = Attribute::new("price");
+    price.type_name = Some("decimal".to_string());
+    let mut description = Attribute::new("description");
+    description.type_name = Some("string".to_string());
+    c.attributes = vec![sku, name, price, description];
+    c
+}
+
+/// `accounting_account` (`0x0208`) — general-ledger account (SKR-aligned
+/// chart concept). OSB `Account`, Odoo `account.account` (live row) +
+/// `account.account.template` (SKR03/04 chart-of-accounts template; both
+/// converge here).
+///
+/// Promoted Phase-3 from the cross-axis identity gap surfaced in odoo-rs
+/// PR #14. Attributes mirror the minimal `fibo:Account`-aligned shape:
+/// `code` (chart code, e.g. SKR `1200`), `name`, `account_type` (asset /
+/// liability / equity / revenue / expense), `currency` (ISO 4217).
+pub fn accounting_account() -> Class {
+    let mut c = Class::new("AccountingAccount");
+    c.language = Language::Unknown;
+    c.canonical_concept = Some("accounting_account".to_string());
+    c.associations = Vec::new();
+    let mut code = Attribute::new("code");
+    code.type_name = Some("string".to_string());
+    let mut name = Attribute::new("name");
+    name.type_name = Some("string".to_string());
+    let mut account_type = Attribute::new("account_type");
+    account_type.type_name = Some("string".to_string());
+    let mut currency = Attribute::new("currency");
+    currency.type_name = Some("string".to_string());
+    c.attributes = vec![code, name, account_type, currency];
+    c
+}
+
 // ─────────────────────────────────────────────────────────────────────
 // 0x09XX — Health domain (OGIT Healthcare). The reusable Active-Record
 // shape for the clinical concepts. `diagnosis` (0x0902) is the worked
@@ -3614,11 +3702,10 @@ mod tests {
     fn tax_policy_is_an_erp_boundary_edge_not_in_project_evidence() {
         // TaxPolicy is a family edge on the canonical shape ...
         let bwe = billable_work_entry();
-        assert!(
-            bwe.associations
-                .iter()
-                .any(|e| e.class_name.as_deref() == Some("TaxPolicy"))
-        );
+        assert!(bwe
+            .associations
+            .iter()
+            .any(|e| e.class_name.as_deref() == Some("TaxPolicy")));
         // ... but the project curator records work evidence with no tax.
         let mut op = Class::new("TimeEntry");
         op.source_domain = Some("project".to_string());
@@ -4034,6 +4121,8 @@ mod tests {
             "billing_party",
             "payment_record",
             "currency_policy",
+            "product",
+            "accounting_account",
         ] {
             let id = canonical_concept_id(commerce_concept)
                 .unwrap_or_else(|| panic!("{commerce_concept} missing from codebook"));
@@ -4174,7 +4263,7 @@ mod tests {
         }
         // Counts line up with the codebook blocks.
         assert_eq!(concepts_in_domain(ConceptDomain::Health).count(), 7);
-        assert_eq!(concepts_in_domain(ConceptDomain::Commerce).count(), 6);
+        assert_eq!(concepts_in_domain(ConceptDomain::Commerce).count(), 8);
         assert_eq!(concepts_in_domain(ConceptDomain::ProjectMgmt).count(), 26);
         // An empty (reserved-but-unpopulated) domain yields nothing.
         assert_eq!(concepts_in_domain(ConceptDomain::Osint).count(), 0);
@@ -4556,7 +4645,7 @@ mod tests {
         assert!(!is_cross_domain_concept("project_role"));
         let id = canonical_concept_id("billable_work_entry").unwrap();
         assert_eq!(canonical_concept_domain(id), ProjectMgmt); // home domain
-        // Project curator (home domain) — kept.
+                                                               // Project curator (home domain) — kept.
         assert_eq!(
             canonical_concept_in_domain("TimeEntry", Some(ProjectMgmt)),
             "billable_work_entry"
@@ -4599,11 +4688,10 @@ mod tests {
                 .any(|a| a.name == "document"
                     && a.class_name.as_deref() == Some("CommercialDocument"))
         );
-        assert!(
-            line.associations
-                .iter()
-                .any(|a| a.name == "tax" && a.class_name.as_deref() == Some("TaxPolicy"))
-        );
+        assert!(line
+            .associations
+            .iter()
+            .any(|a| a.name == "tax" && a.class_name.as_deref() == Some("TaxPolicy")));
 
         let doc = commercial_document();
         let line_items = doc
@@ -4613,23 +4701,20 @@ mod tests {
             .unwrap();
         assert_eq!(line_items.kind, AssociationKind::HasMany);
         assert_eq!(line_items.class_name.as_deref(), Some("CommercialLineItem"));
-        assert!(
-            doc.associations
-                .iter()
-                .any(|a| a.name == "party" && a.class_name.as_deref() == Some("BillingParty"))
-        );
-        assert!(
-            doc.associations
-                .iter()
-                .any(|a| a.name == "currency" && a.class_name.as_deref() == Some("CurrencyPolicy"))
-        );
+        assert!(doc
+            .associations
+            .iter()
+            .any(|a| a.name == "party" && a.class_name.as_deref() == Some("BillingParty")));
+        assert!(doc
+            .associations
+            .iter()
+            .any(|a| a.name == "currency" && a.class_name.as_deref() == Some("CurrencyPolicy")));
 
         let pay = payment_record();
-        assert!(
-            pay.associations
-                .iter()
-                .any(|a| a.name == "party" && a.class_name.as_deref() == Some("BillingParty"))
-        );
+        assert!(pay
+            .associations
+            .iter()
+            .any(|a| a.name == "party" && a.class_name.as_deref() == Some("BillingParty")));
         assert!(
             pay.associations
                 .iter()
