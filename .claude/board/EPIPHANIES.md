@@ -15,6 +15,71 @@
 
 ## Entries (newest first)
 
+## 2026-06-23 — Live 2026 receipt for the semantic-compiler thesis: bardioc is actively extending OGIT's Auth symbol table with a linker-phase external-IAM bridge (probably Zitadel)
+**Status:** FINDING (shape-grounded; external system not named in-file → [H], not [G])
+**Scope:** addendum to the 2026-06-22 "OGIT was already a semantic compiler's symbol table" entry below × Auth-domain dating × the AuthStore-mapping pattern × the queued 0x0BXX cross-walk
+
+The 2026-06-22 entry below argued from the OGIT *shape* that bardioc
+built a semantic compiler. This is a **dated receipt** that they are
+STILL treating OGIT as the canonical symbol table — and that the
+current extension is a textbook **linker / name-resolution** phase.
+
+What the `NTO/Auth/` dates show ([G], read from `dcterms:valid`):
+
+- **The IAM core is arago's own, from 2018** — `Organization`,
+  `OrgDomain`, `Account`, `Application`, `Role`, `RoleAssignment`,
+  `Team`, `DataScope`, all `start=2018-01-01`, creator "arago GmbH".
+  This **predates Zitadel's prominence** (open-sourced ~2020–2022), so
+  the resource model is convergent-universal-IAM, NOT copied from
+  Zitadel.
+- **A January 2026 batch by `Pablo Perez`** adds foreign-key-shaped ID
+  attributes — `organizationId`, `accountId`, `applicationId`,
+  `scopeId`, `configurationData` (all `start=2026-01-12`) — plus the
+  `ApplicationContent` entity (`2026-01-14`). They hang off the
+  `Configuration` entity, described as "individual configuration for an
+  organization, user, application or scope **registered in hiro
+  knowledge core**", `belongs Organization`.
+
+The tell ([H] — pattern, not a named string): **adding FK ID columns
+is what you do to bridge to an EXTERNAL system keyed by those
+identities.** You don't add `organizationId`/`applicationId` columns to
+your OWN native entities — you already have typed edges. You add them to
+point at someone else's primary keys. The config blob lives in HIRO,
+keyed by the external IAM's org/app/user/scope IDs. That's the graph
+*side* of a bridge; the IAM lives elsewhere. Zitadel is the most likely
+external system (its `org_id / project_id / app_id / user_id` are
+exactly these four FK shapes; matches the operator's stated stack) but
+**no file names Zitadel** — hence [H].
+
+Caveat that keeps it honest: OGIT's Auth domain ALSO carries a
+**Zanzibar-relation shape** — `edgeRule` / `vertexRule` attributes
+(2018) + membership verbs (`isMemberOf`, `assigns`, `assumes`,
+`belongs`, `consents`, `uses`). So the domain is positioned to host
+both a Zitadel-resource binding AND an Ory/Keto relation-tuple binding
+— exactly the operator's earlier-this-session framing ("zitadel,
+zanzibar, ory/keto become preminted class profiles").
+
+Two consequences:
+
+1. **Strengthens the semantic-compiler thesis with a fresh receipt.**
+   The 2026-06-22 entry inferred compiler-grade discipline from a static
+   read. This shows the discipline is *live*: in 2026 they extend the
+   symbol table with external-symbol resolution — the linker phase of
+   `OGAR-AS-IR §1`, actively in use. Not a fossil; a running compiler.
+
+2. **The `Configuration`-keyed-by-external-IDs entity IS the OGIT-side
+   precedent for the "AuthStore class that does the mapping"** the
+   operator specified earlier this session, and informs the queued
+   `0x0BXX` auth-domain cross-walk (`OGIT-DOMAIN-LIFT-CATALOGUE.md` Auth
+   row). bardioc already built the bridge node; OGAR's job is to give it
+   a classid and resolve Zitadel/Zanzibar/Keto as preminted profiles.
+
+Evidence: `vocab/imports/ogit/NTO/Auth/attributes/{organizationId,
+accountId,applicationId,scopeId,configurationData}.ttl` (all
+`2026-01-12`, Pablo Perez); `entities/Configuration.ttl` (2018 class,
+2026 attribute list); `entities/ApplicationContent.ttl` (`2026-01-14`).
+Cross-ref the entry below + `docs/OGAR-AS-IR.md` (linker phase).
+
 ## 2026-06-22 — OGIT was already a semantic compiler's symbol table — bardioc built the structural half deliberately, externalized behaviour to HIRO, never unified the two halves
 **Status:** FINDING (shape-inference from the OGIT artifact, not insider history)
 **Scope:** OGAR-AS-IR provenance × the structural/behavioural-arm split × what OGAR's actual contribution is
