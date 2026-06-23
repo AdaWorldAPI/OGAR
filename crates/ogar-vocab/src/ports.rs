@@ -528,7 +528,7 @@ mod tests {
 
     #[test]
     fn healthcare_entities_resolve_into_the_health_domain() {
-        use crate::{canonical_concept_domain, ConceptDomain};
+        use crate::{ConceptDomain, canonical_concept_domain};
         for &(name, _) in HealthcarePort::aliases() {
             let id =
                 HealthcarePort::class_id(name).unwrap_or_else(|| panic!("`{name}` must resolve"));
@@ -951,7 +951,7 @@ mod tests {
 
     #[test]
     fn odoo_commerce_models_resolve_into_the_commerce_domain() {
-        use crate::{canonical_concept_domain, ConceptDomain};
+        use crate::{ConceptDomain, canonical_concept_domain};
         // Every commerce-arm alias lands in the Commerce (0x02XX) domain.
         // `account.analytic.line` is the deliberate exception — it's the
         // cross-arm bridge into the project domain (asserted separately).

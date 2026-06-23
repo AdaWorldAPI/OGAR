@@ -1,0 +1,17 @@
+[package]
+name = "ogar-fma-skeleton"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+description = "FMA skeletal spine — the hand-curated, clamped convergence-anchor atlas: bones as immutable 16×8-bit Morton-tile family-node addresses (partonomy = spatial prefix), the rigid reference frame every imaging modality (ViT / X-ray / ultrasound × Doppler) registers against."
+
+[features]
+default = []
+serde = ["dep:serde", "ogar-vocab/serde"]
+
+[dependencies]
+ogar-vocab = { path = "../ogar-vocab" }
+serde = { workspace = true, optional = true }

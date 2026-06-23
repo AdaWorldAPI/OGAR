@@ -64,16 +64,16 @@ use lance_graph_contract::{
     ontology::{DisplayTemplate, FieldRef, ObjectView},
 };
 use ogar_vocab::{
-    accounting_account, auth_ory_keto, auth_store, auth_zanzibar, auth_zitadel,
-    billable_work_entry, billing_party, canonical_concept_id, commercial_document,
-    commercial_line_item, currency_policy, diagnosis, lab_value, medication, patient,
-    payment_record, priority, product, project, project_actor, project_attachment,
-    project_changeset, project_comment, project_custom_field, project_custom_value,
-    project_enabled_module, project_forum, project_journal, project_member_role,
-    project_membership, project_message, project_news, project_query, project_relation,
-    project_repository, project_role, project_status, project_type, project_version,
-    project_watcher, project_wiki_page, project_work_item, tax_policy, treatment, visit,
-    vital_sign, Class,
+    Class, accounting_account, anatomical_structure, auth_ory_keto, auth_store, auth_zanzibar,
+    auth_zitadel, billable_work_entry, billing_party, bone, canonical_concept_id,
+    commercial_document, commercial_line_item, currency_policy, diagnosis, joint, lab_value,
+    medication, patient, payment_record, priority, product, project, project_actor,
+    project_attachment, project_changeset, project_comment, project_custom_field,
+    project_custom_value, project_enabled_module, project_forum, project_journal,
+    project_member_role, project_membership, project_message, project_news, project_query,
+    project_relation, project_repository, project_role, project_status, project_type,
+    project_version, project_watcher, project_wiki_page, project_work_item, skeleton, tax_policy,
+    treatment, visit, vital_sign,
 };
 
 /// All promoted canonical concepts: `(canonical_concept_name, Class)`.
@@ -128,6 +128,11 @@ fn all_canonical_classes() -> Vec<(&'static str, Class)> {
         ("treatment", treatment()),
         ("visit", visit()),
         ("vital_sign", vital_sign()),
+        // ── 0x0AXX — anatomy (FMA reference kinds) ──
+        ("anatomical_structure", anatomical_structure()),
+        ("skeleton", skeleton()),
+        ("bone", bone()),
+        ("joint", joint()),
         // ── 0x0BXX — auth (the AuthStore class family, keystone §7) ──
         ("auth_store", auth_store()),
         ("auth_zitadel", auth_zitadel()),
