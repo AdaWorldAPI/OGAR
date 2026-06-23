@@ -50,7 +50,7 @@
 //! # Why this crate has no `serde`, no I/O
 //!
 //! It is a *pure* in-process adapter. The registry is constructed at startup
-//! by calling the 32 promoted class fns; nothing reads files or parses JSON.
+//! by calling the promoted class fns; nothing reads files or parses JSON.
 //! Renderers that *do* need persistence (templating output, etc.) sit
 //! downstream.
 
@@ -64,18 +64,19 @@ use lance_graph_contract::{
     ontology::{DisplayTemplate, FieldRef, ObjectView},
 };
 use ogar_vocab::{
-    Class, auth_ory_keto, auth_store, auth_zanzibar, auth_zitadel, billable_work_entry,
-    billing_party, canonical_concept_id, commercial_document, commercial_line_item,
-    currency_policy, diagnosis, lab_value, medication, patient, payment_record, priority, project,
-    project_actor, project_attachment, project_changeset, project_comment, project_custom_field,
-    project_custom_value, project_enabled_module, project_forum, project_journal,
-    project_member_role, project_membership, project_message, project_news, project_query,
-    project_relation, project_repository, project_role, project_status, project_type,
-    project_version, project_watcher, project_wiki_page, project_work_item, tax_policy, treatment,
-    visit, vital_sign,
+    accounting_account, auth_ory_keto, auth_store, auth_zanzibar, auth_zitadel,
+    billable_work_entry, billing_party, canonical_concept_id, commercial_document,
+    commercial_line_item, currency_policy, diagnosis, lab_value, medication, patient,
+    payment_record, priority, product, project, project_actor, project_attachment,
+    project_changeset, project_comment, project_custom_field, project_custom_value,
+    project_enabled_module, project_forum, project_journal, project_member_role,
+    project_membership, project_message, project_news, project_query, project_relation,
+    project_repository, project_role, project_status, project_type, project_version,
+    project_watcher, project_wiki_page, project_work_item, tax_policy, treatment, visit,
+    vital_sign, Class,
 };
 
-/// All 32 promoted canonical concepts: `(canonical_concept_name, Class)`.
+/// All promoted canonical concepts: `(canonical_concept_name, Class)`.
 ///
 /// Walked at startup by [`OgarClassView::new`]. The list is exhaustive against
 /// [`ogar_vocab::CODEBOOK`] — a test in this crate fails if a codebook entry
@@ -117,6 +118,8 @@ fn all_canonical_classes() -> Vec<(&'static str, Class)> {
         ("billing_party", billing_party()),
         ("payment_record", payment_record()),
         ("currency_policy", currency_policy()),
+        ("product", product()),
+        ("accounting_account", accounting_account()),
         // ── 0x09XX — health (OGIT Healthcare) ──
         ("patient", patient()),
         ("diagnosis", diagnosis()),
@@ -164,7 +167,7 @@ fn lift_object_view(class: &Class) -> ObjectView {
     view
 }
 
-/// [`ClassView`] implementation backed by [`ogar_vocab`]'s 32 promoted
+/// [`ClassView`] implementation backed by [`ogar_vocab`]'s promoted
 /// canonical concepts.
 ///
 /// Construct once at startup with [`OgarClassView::new`]; the registry is
@@ -269,7 +272,7 @@ mod tests {
                 "{concept} ({id:#06x}) absent from OgarClassView registry"
             );
         }
-        // The registry knows exactly the 32 promoted concepts.
+        // The registry knows the full promoted concept set.
         assert_eq!(v.known_class_ids().count(), all_canonical_classes().len());
     }
 

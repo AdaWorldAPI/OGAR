@@ -476,6 +476,17 @@ pub const ODOO_ALIASES: &[(&str, u16)] = &[
     ("res.partner", class_ids::BILLING_PARTY),
     ("account.payment", class_ids::PAYMENT_RECORD),
     ("res.currency", class_ids::CURRENCY_POLICY),
+    // Product master record — both `product.template` (master) and
+    // `product.product` (variant) converge on the same `product` id.
+    // Same convergence pattern as `account.move ↔ sale.order →
+    // commercial_document`. Phase-3 mint per odoo-rs PR #14 + #16.
+    ("product.template", class_ids::PRODUCT),
+    ("product.product", class_ids::PRODUCT),
+    // General-ledger account — `account.account` (live row) and
+    // `account.account.template` (SKR03/04 chart concept) converge on the
+    // same `accounting_account` id. Phase-3 mint per odoo-rs PR #14 + #16.
+    ("account.account", class_ids::ACCOUNTING_ACCOUNT),
+    ("account.account.template", class_ids::ACCOUNTING_ACCOUNT),
     // Cross-arm bridge: the timesheet / cost line converges on the
     // project-arm `billable_work_entry` (0x0103) — the SAME id
     // OpenProject `TimeEntry` and Redmine `TimeEntry` resolve to.
@@ -508,7 +519,7 @@ mod tests {
 
     #[test]
     fn healthcare_entities_resolve_into_the_health_domain() {
-        use crate::{ConceptDomain, canonical_concept_domain};
+        use crate::{canonical_concept_domain, ConceptDomain};
         for &(name, _) in HealthcarePort::aliases() {
             let id =
                 HealthcarePort::class_id(name).unwrap_or_else(|| panic!("`{name}` must resolve"));
@@ -897,7 +908,7 @@ mod tests {
 
     #[test]
     fn odoo_commerce_models_resolve_into_the_commerce_domain() {
-        use crate::{ConceptDomain, canonical_concept_domain};
+        use crate::{canonical_concept_domain, ConceptDomain};
         // Every commerce-arm alias lands in the Commerce (0x02XX) domain.
         // `account.analytic.line` is the deliberate exception — it's the
         // cross-arm bridge into the project domain (asserted separately).
@@ -945,12 +956,14 @@ mod tests {
     fn odoo_alias_count_is_stable() {
         // 9 Odoo model aliases = 8 commerce-arm (account.move,
         // sale.order, account.move.line, sale.order.line, account.tax,
-        // res.partner, account.payment, res.currency) + 1 cross-arm
-        // bridge (account.analytic.line → billable_work_entry).
-        // Re-count on drift.
+        // res.partner, account.payment, res.currency) + 4 product/accounting
+        // master-record aliases (product.template, product.product,
+        // account.account, account.account.template — Phase-3 mints per
+        // odoo-rs PR #14 + #16) + 1 cross-arm bridge
+        // (account.analytic.line → billable_work_entry). Re-count on drift.
         assert_eq!(
             OdooPort::aliases().len(),
-            9,
+            13,
             "Odoo alias count drift — re-count the ODOO_ALIASES table",
         );
     }
