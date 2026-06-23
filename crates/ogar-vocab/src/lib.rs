@@ -1069,8 +1069,19 @@ impl Class {
 ///   0x07XX  reserved: OSINT
 ///   0x08XX  reserved: OCR
 ///   0x09XX  reserved: Health
-///   0x0AXX+ unassigned
+///   0x0AXX  Anatomy           (FMA reference ontology; bones/skeleton)
+///   0x0CXX+ unassigned
 /// ```
+///
+/// **Anatomy vs Health (the firewall split).** `0x0AXX` Anatomy is the
+/// **public reference structure** (the femur exists; it is `part_of` the
+/// lower limb) — the FMA atlas frame every imaging modality registers
+/// against. It is deliberately NOT in `0x09XX` Health: a clinical *finding
+/// about* anatomy (a fracture diagnosis on a named patient) is Health PHI,
+/// but the anatomical *structure itself* is public and must not be pulled
+/// into medcare-rs's fail-closed Health RBAC coverage set. This is why the
+/// earlier "FMA / SNOMED converges into Health" forward-note (below) lands
+/// in its own domain instead: reference ≠ PHI.
 ///
 /// Reserved blocks have a placeholder [`ConceptDomain`] variant so a
 /// consumer routing on `id >> 8` returns a stable domain tag even before
@@ -1159,6 +1170,20 @@ const CODEBOOK: &[(&str, u16)] = &[
     ("treatment", 0x0905),
     ("visit", 0x0906),
     ("vital_sign", 0x0907),
+    // ── 0x0AXX — Anatomy domain (FMA reference ontology) ──
+    // The public anatomical reference frame consumed by the splat-native
+    // ultrasound arc (`docs/SPLAT-NATIVE-CUSTOMER.md` §6 litmus) and the FMA
+    // skeletal spine (`crates/ogar-fma-skeleton`). These are the *kinds*
+    // (Bone, Skeleton, …); the ~206 individual bones are NOT concept slots —
+    // they live as cascade-path nodes (FMA partonomy → HEEL/HIP/TWIG prefix
+    // tree), the same way Wikidata-HHTL lives in the path, not the codebook.
+    // `bone` is the clamped convergence-anchor class: bones are the rigid,
+    // non-negotiable frame every imaging modality (ViT / X-ray / ultrasound
+    // × Doppler) registers against. See `docs/FMA-SKELETON-CONVERGENCE-ANCHOR.md`.
+    ("anatomical_structure", 0x0A01),
+    ("skeleton", 0x0A02),
+    ("bone", 0x0A03),
+    ("joint", 0x0A04),
     // ── 0x0BXX — Auth domain (IAM; provider-agnostic — the AuthStore class family) ──
     // Per `docs/CLASSID-RBAC-KEYSTONE-SPEC.md` §7 + `APP-CLASS-CODEBOOK-LAYOUT.md`
     // §2: auth is a CORE domain of its own (`0x0B`), cross-app and
@@ -1203,6 +1228,12 @@ pub enum ConceptDomain {
     Ocr,
     /// `0x09XX` — Health (clinical / patient / care).
     Health,
+    /// `0x0AXX` — Anatomy (FMA reference ontology; the public anatomical
+    /// structure frame — bones / skeleton / joints). Distinct from
+    /// [`Health`](Self::Health): reference structure is public, a clinical
+    /// finding *about* it is PHI. The clamped convergence-anchor frame for
+    /// the splat-native imaging arc.
+    Anatomy,
     /// `0x0BXX` — Auth (IAM; provider-agnostic — the AuthStore class
     /// family: `auth_store` + per-IdP profiles `auth_zitadel` /
     /// `auth_zanzibar` / `auth_ory_keto`). See
@@ -1224,6 +1255,7 @@ pub fn canonical_concept_domain(id: u16) -> ConceptDomain {
         0x07 => ConceptDomain::Osint,
         0x08 => ConceptDomain::Ocr,
         0x09 => ConceptDomain::Health,
+        0x0A => ConceptDomain::Anatomy,
         0x0B => ConceptDomain::Auth,
         _ => ConceptDomain::Unassigned,
     }
@@ -1488,6 +1520,25 @@ pub mod class_ids {
     /// `Healthcare:VitalSign`.
     pub const VITAL_SIGN: u16 = 0x0907;
 
+    // ── 0x0AXX — Anatomy domain (FMA reference ontology) ──
+
+    /// `anatomical_structure` (`0x0A01`) — FMA's universal root kind
+    /// (everything in the atlas `is-a` this). The abstract anchor of the
+    /// anatomy partonomy.
+    pub const ANATOMICAL_STRUCTURE: u16 = 0x0A01;
+    /// `skeleton` (`0x0A02`) — the whole-body skeletal system; the root of
+    /// the bone partonomy (`crates/ogar-fma-skeleton`).
+    pub const SKELETON: u16 = 0x0A02;
+    /// `bone` (`0x0A03`) — a skeletal element. **The clamped convergence
+    /// anchor**: bones are the rigid, non-negotiable reference frame the
+    /// splat-fit registers against (`docs/FMA-SKELETON-CONVERGENCE-ANCHOR.md`).
+    /// The ~206 individual bones are cascade-path nodes under this concept,
+    /// not separate codebook slots.
+    pub const BONE: u16 = 0x0A03;
+    /// `joint` (`0x0A04`) — an articulation between bones (the skeletal
+    /// graph's edges, when materialized).
+    pub const JOINT: u16 = 0x0A04;
+
     // ── 0x0BXX — Auth domain (IAM; the AuthStore class family) ──
 
     /// `auth_store` (`0x0B01`) — the IdP→classid mapping base class. Does
@@ -1554,6 +1605,11 @@ pub mod class_ids {
         ("treatment", TREATMENT),
         ("visit", VISIT),
         ("vital_sign", VITAL_SIGN),
+        // 0x0AXX — anatomy (FMA reference ontology)
+        ("anatomical_structure", ANATOMICAL_STRUCTURE),
+        ("skeleton", SKELETON),
+        ("bone", BONE),
+        ("joint", JOINT),
         // 0x0BXX — auth (AuthStore class family)
         ("auth_store", AUTH_STORE),
         ("auth_zitadel", AUTH_ZITADEL),
@@ -1564,7 +1620,7 @@ pub mod class_ids {
     #[cfg(test)]
     mod tests {
         use super::*;
-        use crate::{canonical_concept_id, CODEBOOK};
+        use crate::{CODEBOOK, canonical_concept_id};
 
         #[test]
         fn constants_match_codebook() {
@@ -2408,6 +2464,11 @@ pub fn all_promoted_classes() -> Vec<Class> {
         treatment(),
         visit(),
         vital_sign(),
+        // 0x0AXX — anatomy arm (FMA reference kinds), in class_ids::ALL order.
+        anatomical_structure(),
+        skeleton(),
+        bone(),
+        joint(),
         // 0x0BXX — auth arm (the AuthStore class family, keystone §7),
         // in class_ids::ALL order.
         auth_store(),
@@ -3549,6 +3610,79 @@ pub fn auth_ory_keto() -> Class {
     auth_provider("AuthOryKeto", "auth_ory_keto")
 }
 
+// ── 0x0AXX — Anatomy domain builders (FMA reference kinds) ──
+//
+// The public anatomical reference frame consumed by the splat-native arc
+// (`docs/SPLAT-NATIVE-CUSTOMER.md`) and the FMA skeletal spine
+// (`crates/ogar-fma-skeleton`). These are the *kinds* (the FMA universal
+// root, the skeletal system, the bone, the joint) — the ~206 individual
+// bones are NOT concept slots; they are cascade-path nodes whose 16×8-bit
+// Morton-tile address places them in the partonomy + body volume. See
+// `docs/FMA-SKELETON-CONVERGENCE-ANCHOR.md`.
+
+/// The `anatomical_structure` (`0x0A01`) — FMA's universal root kind
+/// (everything in the atlas `is-a` this). The abstract anchor of the
+/// anatomy partonomy.
+#[must_use]
+pub fn anatomical_structure() -> Class {
+    let mut c = Class::new("AnatomicalStructure");
+    c.language = Language::Unknown;
+    c.canonical_concept = Some("anatomical_structure".to_string());
+    let mut fma_id = Attribute::new("fma_id");
+    fma_id.type_name = Some("string".to_string());
+    let mut name_la = Attribute::new("name_la"); // Terminologia Anatomica
+    name_la.type_name = Some("string".to_string());
+    c.attributes = vec![fma_id, name_la];
+    c
+}
+
+/// The `skeleton` (`0x0A02`) — the whole-body skeletal system; the root of
+/// the bone partonomy (`crates/ogar-fma-skeleton`).
+#[must_use]
+pub fn skeleton() -> Class {
+    let mut c = Class::new("Skeleton");
+    c.language = Language::Unknown;
+    c.canonical_concept = Some("skeleton".to_string());
+    c.parent = Some("AnatomicalStructure".to_string());
+    c.associations = vec![family_edge("bones", "Bone")];
+    c
+}
+
+/// The `bone` (`0x0A03`) — a skeletal element. **The clamped convergence
+/// anchor**: the rigid, non-negotiable frame the splat-fit registers
+/// against. The ~206 individual bones are cascade-path nodes under this
+/// concept (FMA partonomy → 16×8-bit Morton-tile address), not codebook
+/// slots. See `docs/FMA-SKELETON-CONVERGENCE-ANCHOR.md`.
+#[must_use]
+pub fn bone() -> Class {
+    let mut c = Class::new("Bone");
+    c.language = Language::Unknown;
+    c.canonical_concept = Some("bone".to_string());
+    c.parent = Some("AnatomicalStructure".to_string());
+    c.associations = vec![
+        family_edge("part_of", "Skeleton"),
+        family_edge("articulates", "Joint"),
+    ];
+    let mut rest_pose = Attribute::new("rest_pose"); // rigid transform (T-pose)
+    rest_pose.type_name = Some("string".to_string());
+    let mut clamped = Attribute::new("clamped"); // bones are always anchors
+    clamped.type_name = Some("boolean".to_string());
+    c.attributes = vec![rest_pose, clamped];
+    c
+}
+
+/// The `joint` (`0x0A04`) — an articulation between bones (the skeletal
+/// graph's edges, when materialized).
+#[must_use]
+pub fn joint() -> Class {
+    let mut c = Class::new("Joint");
+    c.language = Language::Unknown;
+    c.canonical_concept = Some("joint".to_string());
+    c.parent = Some("AnatomicalStructure".to_string());
+    c.associations = vec![family_edge("connects", "Bone")];
+    c
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -3702,10 +3836,11 @@ mod tests {
     fn tax_policy_is_an_erp_boundary_edge_not_in_project_evidence() {
         // TaxPolicy is a family edge on the canonical shape ...
         let bwe = billable_work_entry();
-        assert!(bwe
-            .associations
-            .iter()
-            .any(|e| e.class_name.as_deref() == Some("TaxPolicy")));
+        assert!(
+            bwe.associations
+                .iter()
+                .any(|e| e.class_name.as_deref() == Some("TaxPolicy"))
+        );
         // ... but the project curator records work evidence with no tax.
         let mut op = Class::new("TimeEntry");
         op.source_domain = Some("project".to_string());
@@ -4160,10 +4295,12 @@ mod tests {
         assert_eq!(canonical_concept_domain(0x0900), ConceptDomain::Health);
         assert_eq!(canonical_concept_domain(0x0B00), ConceptDomain::Auth);
         assert_eq!(canonical_concept_domain(0x0B04), ConceptDomain::Auth);
-        // Unassigned blocks (3-6, A, C+).
+        // Anatomy block (0x0A) — FMA reference kinds.
+        assert_eq!(canonical_concept_domain(0x0A00), ConceptDomain::Anatomy);
+        assert_eq!(canonical_concept_domain(0x0A03), ConceptDomain::Anatomy);
+        // Unassigned blocks (3-6, C+).
         assert_eq!(canonical_concept_domain(0x0300), ConceptDomain::Unassigned);
         assert_eq!(canonical_concept_domain(0x0600), ConceptDomain::Unassigned);
-        assert_eq!(canonical_concept_domain(0x0A00), ConceptDomain::Unassigned);
         assert_eq!(canonical_concept_domain(0x0C00), ConceptDomain::Unassigned);
         assert_eq!(canonical_concept_domain(0xFFFF), ConceptDomain::Unassigned);
     }
@@ -4645,7 +4782,7 @@ mod tests {
         assert!(!is_cross_domain_concept("project_role"));
         let id = canonical_concept_id("billable_work_entry").unwrap();
         assert_eq!(canonical_concept_domain(id), ProjectMgmt); // home domain
-                                                               // Project curator (home domain) — kept.
+        // Project curator (home domain) — kept.
         assert_eq!(
             canonical_concept_in_domain("TimeEntry", Some(ProjectMgmt)),
             "billable_work_entry"
@@ -4688,10 +4825,11 @@ mod tests {
                 .any(|a| a.name == "document"
                     && a.class_name.as_deref() == Some("CommercialDocument"))
         );
-        assert!(line
-            .associations
-            .iter()
-            .any(|a| a.name == "tax" && a.class_name.as_deref() == Some("TaxPolicy")));
+        assert!(
+            line.associations
+                .iter()
+                .any(|a| a.name == "tax" && a.class_name.as_deref() == Some("TaxPolicy"))
+        );
 
         let doc = commercial_document();
         let line_items = doc
@@ -4701,20 +4839,23 @@ mod tests {
             .unwrap();
         assert_eq!(line_items.kind, AssociationKind::HasMany);
         assert_eq!(line_items.class_name.as_deref(), Some("CommercialLineItem"));
-        assert!(doc
-            .associations
-            .iter()
-            .any(|a| a.name == "party" && a.class_name.as_deref() == Some("BillingParty")));
-        assert!(doc
-            .associations
-            .iter()
-            .any(|a| a.name == "currency" && a.class_name.as_deref() == Some("CurrencyPolicy")));
+        assert!(
+            doc.associations
+                .iter()
+                .any(|a| a.name == "party" && a.class_name.as_deref() == Some("BillingParty"))
+        );
+        assert!(
+            doc.associations
+                .iter()
+                .any(|a| a.name == "currency" && a.class_name.as_deref() == Some("CurrencyPolicy"))
+        );
 
         let pay = payment_record();
-        assert!(pay
-            .associations
-            .iter()
-            .any(|a| a.name == "party" && a.class_name.as_deref() == Some("BillingParty")));
+        assert!(
+            pay.associations
+                .iter()
+                .any(|a| a.name == "party" && a.class_name.as_deref() == Some("BillingParty"))
+        );
         assert!(
             pay.associations
                 .iter()

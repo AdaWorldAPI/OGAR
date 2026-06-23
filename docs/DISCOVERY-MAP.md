@@ -127,6 +127,7 @@ two halves of a cell. ADR‑026 names the cascade that ties them.
 | D‑CASCADE | 64→256→1024→4096→16k→64k→256k = immaterialized Morton enumeration; every level = +1 nibble. **Algorithmically grounded** by generalized Morton/Hilbert ordering for **non‑power‑of‑2 + 3D** dims (arXiv 2309.15199, Walker — the `6×4×4` example = `6 roles × 4×4 tile`; the octant recursion = the cascade; non‑pow‑2 generalization is what lets **Base17 (D‑BGZ17)** be Morton‑ordered). | G | EPIPHANY | SYN §7.5 + §7 papers | D‑MORTON |
 | D‑IMMAT | the cascade is a **coordinate transform, not a stored grid** (`(lat,lon)→quadkey` cheap) | G | EPIPHANY | SYN §7.5 | D‑CASCADE |
 | D‑NEIGH | neighbor‑XOR walk + parent‑prefix = structured‑sparse stencil (block‑banded, not sparse GEMM) | H | EPIPHANY | SYN §6 | D‑MORTON, `[per rt]` blasgraph |
+| D‑FMA‑SKELETON | FMA skeleton = the **clamped convergence anchor**: ~206 bones as immutable **16×8‑bit Morton‑tile family‑node** addresses derived from rest‑pose centroids ⟹ prefix = partonomy = spatial containment (D‑BOTHCASC realized); bones are non‑negotiable Dirichlet anchors, the cross‑modal frame ViT / X‑ray / ultrasound × Doppler register onto. Address structure CODED; splat‑fit convergence CONJECTURE. | G (structure) / H (convergence) | CODED | `crates/ogar-fma-skeleton` + `docs/FMA-SKELETON-CONVERGENCE-ANCHOR.md` | D‑MORTON; `SPLAT-NATIVE-CUSTOMER.md` §6 |
 
 ### 2.2 Selection & bounds
 
