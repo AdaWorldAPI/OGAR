@@ -7,6 +7,48 @@
 
 ---
 
+## 2026-06-23 — E-HIRO-IS-OGAR-DO-ARM — HIRO's Automation domain is a production, externally-validated instance of OGAR's DO arm; the lossless rule is identity-points-to-body
+
+**Status:** FINDING (shape, grounded `[G]`) + CONJECTURE (executable equivalence,
+`[H]`, gated on `PROBE-OGAR-DO-ARM-LIFT`). Investigating "can we lift actionable
+semantics from OGIT/MARS (HIRO)" — read the OGIT `NTO/Automation/entities/*` TTLs
+directly. The Automation domain is HIRO's actuator vocabulary and maps near-1:1
+onto OGAR's DO arm (`ActionDef` / `ActionInvocation` / `KausalSpec`):
+
+- `KnowledgeItem` = `ActionDef` (relations carry the contract; `uses Variable` =
+  params; `contains Trigger` = `KausalSpec::LifecycleTrigger`; `relates
+  MARSNodeTemplate` = `object_class`) — **and `knowledgeItemFormalRepresentation`
+  is an opaque body the schema references but never parses.**
+- `ActionHandler → ActionCapability → ActionApplicability` = `ActionDef` + the
+  `KausalSpec` guard (`environmentFilter` = "on `ogit/_id`"); `ActionHandler`
+  connects `Configuration` (= `auth_store` `0x0B01`) — **the DO arm and the
+  auth/RBAC arm meet at `ActionHandler`.**
+- `AutomationIssue` = `ActionInvocation`; `AutomationIssue generates History` is
+  literally OGAR-AST-CONTRACT's "state history IS the version log."
+
+**The lossless rule (the important answer):** a DO compiler is lossy when it
+flattens behavior into one target (DDL `DEFINE EVENT … WHEN … THEN`). Behavior
+has three irreducible slices — **identity** (Class), **contract+lifecycle**
+(ActionDef + the StateMachine/UnifiedStep interface), **executable body**
+(adapter) — joined by `classid`. **DO is lossless iff the `ActionDef` *points
+to* the body (content-addressed) instead of *compressing it into* DDL** — this is
+`I-VSA-IDENTITIES` applied to the DO arm. Export shape = ActionDef manifest
+(typed SoA, wire-truth per the Firewall) + payload table (opaque blobs) +
+ClassView, never DDL-inline. HIRO already IS this shape — it validates the
+encoding, it doesn't need inventing.
+
+**Consequence:** the MARS import lifted the structural arm (A→R→S→M); the
+Automation domain is the behavioral arm left on the table. A `do_arm` lift
+(extend `ogar-from-schema`) can emit `ActionDef{…, payload_ref}` from the
+Automation TTLs — but stays CONJECTURE until `PROBE-OGAR-DO-ARM-LIFT` proves
+`ActionDef → adapter → execute → result` reproduces the KI's behavior on a fixed
+corpus (same discipline as `PROBE-OGAR-RBAC-AUTHORIZE`). Full mapping +
+worked `KnowledgeItem→ActionDef` example + the producer plan:
+`docs/HIRO-DO-ARM-LIFT.md`. Cross-ref: `SURREAL-AST-AS-ADAPTER.md §0`,
+Core-First doctrine, the Firewall (ADR-022/023), `OGAR-AST-CONTRACT.md`.
+
+---
+
 ## 2026-06-23 — E-NINE-DOMAIN-PROMOTION-DEFERRED — the nine Lift-tested NTO domains correctly stay un-Cross-walked; bulk-minting class_ids is the WRONG move, per the catalogue's own rules
 
 **Status:** FINDING (promotion decision, 2026-06-23). Question raised: promote the
