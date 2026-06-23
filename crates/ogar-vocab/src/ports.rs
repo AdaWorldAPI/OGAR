@@ -897,7 +897,7 @@ mod tests {
 
     #[test]
     fn odoo_commerce_models_resolve_into_the_commerce_domain() {
-        use crate::{canonical_concept_domain, ConceptDomain};
+        use crate::{ConceptDomain, canonical_concept_domain};
         // Every commerce-arm alias lands in the Commerce (0x02XX) domain.
         // `account.analytic.line` is the deliberate exception — it's the
         // cross-arm bridge into the project domain (asserted separately).
@@ -905,8 +905,7 @@ mod tests {
             if name == "account.analytic.line" {
                 continue;
             }
-            let id = OdooPort::class_id(name)
-                .unwrap_or_else(|| panic!("`{name}` must resolve"));
+            let id = OdooPort::class_id(name).unwrap_or_else(|| panic!("`{name}` must resolve"));
             assert_eq!(
                 canonical_concept_domain(id),
                 ConceptDomain::Commerce,
@@ -931,8 +930,14 @@ mod tests {
         assert_eq!(op, Some(class_ids::BILLABLE_WORK_ENTRY));
         assert_eq!(rm, Some(class_ids::BILLABLE_WORK_ENTRY));
         assert_eq!(odoo, Some(class_ids::BILLABLE_WORK_ENTRY));
-        assert_eq!(op, odoo, "OpenProject TimeEntry ↔ Odoo analytic line must converge");
-        assert_eq!(rm, odoo, "Redmine TimeEntry ↔ Odoo analytic line must converge");
+        assert_eq!(
+            op, odoo,
+            "OpenProject TimeEntry ↔ Odoo analytic line must converge"
+        );
+        assert_eq!(
+            rm, odoo,
+            "Redmine TimeEntry ↔ Odoo analytic line must converge"
+        );
         assert_eq!(odoo, Some(0x0103));
     }
 
@@ -969,12 +974,28 @@ mod tests {
     #[test]
     fn app_prefixes_match_the_allocation_table() {
         // § 2 table rows that have a PortSpec impl:
-        assert_eq!(OpenProjectPort::APP_PREFIX, 0x0001, "OpenProject prefix must be 0x0001");
-        assert_eq!(OdooPort::APP_PREFIX,         0x0002, "Odoo prefix must be 0x0002");
-        assert_eq!(WoaPort::APP_PREFIX,           0x0003, "WoA prefix must be 0x0003");
-        assert_eq!(SmbPort::APP_PREFIX,           0x0004, "SMB-Office prefix must be 0x0004");
-        assert_eq!(HealthcarePort::APP_PREFIX,    0x0005, "Healthcare/Medcare prefix must be 0x0005");
-        assert_eq!(RedminePort::APP_PREFIX,       0x0007, "Redmine prefix must be 0x0007");
+        assert_eq!(
+            OpenProjectPort::APP_PREFIX,
+            0x0001,
+            "OpenProject prefix must be 0x0001"
+        );
+        assert_eq!(OdooPort::APP_PREFIX, 0x0002, "Odoo prefix must be 0x0002");
+        assert_eq!(WoaPort::APP_PREFIX, 0x0003, "WoA prefix must be 0x0003");
+        assert_eq!(
+            SmbPort::APP_PREFIX,
+            0x0004,
+            "SMB-Office prefix must be 0x0004"
+        );
+        assert_eq!(
+            HealthcarePort::APP_PREFIX,
+            0x0005,
+            "Healthcare/Medcare prefix must be 0x0005"
+        );
+        assert_eq!(
+            RedminePort::APP_PREFIX,
+            0x0007,
+            "Redmine prefix must be 0x0007"
+        );
         // The trait default (0x0000 = shared core) is expressed directly
         // in the trait definition; ports that do not override it resolve
         // to the core codebook namespace, which is the bootstrap/core

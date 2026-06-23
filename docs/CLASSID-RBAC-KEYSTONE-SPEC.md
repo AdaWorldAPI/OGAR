@@ -134,6 +134,22 @@ hardened to restrictive default-deny.
 > Everything else in §7 (the mapping behaviour, I-K7, the Zitadel 1:1)
 > stands unchanged. Auth classes still target `actor 0x0104` / `role
 > 0x0117` whose low halves are shared core concepts.
+>
+> **MINTED + CONFIRMED (2026-06-23):** the `0x0B` family is now in code
+> — `ogar_vocab::class_ids::{AUTH_STORE 0x0B01, AUTH_ZITADEL 0x0B02,
+> AUTH_ZANZIBAR 0x0B03, AUTH_ORY_KETO 0x0B04}`, `ConceptDomain::Auth`,
+> `all_promoted_classes()` builders (`auth_store()` + the three
+> provider profiles), and `ogar-class-view` registration. These are
+> **reservations** (the enforcement `authorize()` stays gated on §10).
+> The mint is CONFIRMED by the canonical OGIT shape: arago's
+> January-2026 `NTO/Auth/Configuration` entity — keyed by
+> `organizationId`/`accountId`/`applicationId`/`scopeId` +
+> `configurationData`, "registered in hiro knowledge core" — IS
+> `auth_store`, built upstream independently (the convergence is 1:1;
+> see `.claude/board/EPIPHANIES.md` 2026-06-23 + `ISSUES.md`
+> ISS-RBAC-AUTHORIZE-BY-CLASSID). The vision and the upstream shape
+> agree, which is what made this mint a reservation rather than an
+> invention.
 
 The IdP→classid mapping is not a service and not a scattered set of hooks — per the registry axiom (I-K0) **the bridge IS a registry class**, preminted in the codebook:
 
