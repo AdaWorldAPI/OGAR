@@ -177,6 +177,56 @@ impl Guid {
     pub fn same_family(&self, other: &Self) -> bool {
         self.classid() == other.classid() && self.family_node() == other.family_node()
     }
+
+    /// Build a **Located-mode** GUID (the bone case): `classid` · 3D-CRS
+    /// `HEEL/HIP` from the body position `(x, y, z)` · LEAF `familyNode:identity`.
+    /// HHTL is spatial — the address preserves location (Cesium / ArcGIS).
+    #[must_use]
+    pub fn located(classid: Tier, x: u8, y: u8, z: u8, leaf: LeafTile) -> Self {
+        let (heel, hip) = located_3d(x, y, z);
+        let mut g = Self::ZERO;
+        g.set_tier(TIER_CLASSID, classid);
+        g.set_tier(TIER_HEEL, heel);
+        g.set_tier(TIER_HIP, hip);
+        g.set_tier(
+            TIER_LEAF,
+            Tier {
+                container: leaf.family_node,
+                member: leaf.identity,
+            },
+        );
+        g
+    }
+
+    /// Build a **Cascade-mode** GUID (the soft-tissue case): `classid` · a named
+    /// ontology HHTL path (`heel` · `hip` · `twig`) · LEAF `familyNode:identity`.
+    /// HHTL is the self-speaking classification path — e.g. the papillary
+    /// muscle's `ANAT0001-CARD-HERT-LVNT-PAPMUS-…`. No spatial address; the
+    /// node is classified, then a splat projects onto it.
+    #[must_use]
+    pub fn ontological(classid: Tier, heel: Tier, hip: Tier, twig: Tier, leaf: LeafTile) -> Self {
+        let mut g = Self::ZERO;
+        g.set_tier(TIER_CLASSID, classid);
+        g.set_tier(TIER_HEEL, heel);
+        g.set_tier(TIER_HIP, hip);
+        g.set_tier(TIER_TWIG, twig);
+        g.set_tier(
+            TIER_LEAF,
+            Tier {
+                container: leaf.family_node,
+                member: leaf.identity,
+            },
+        );
+        g
+    }
+
+    /// The quantised `(x, y, z)` body position decoded from the Located HEEL/HIP
+    /// tiers (inverse of [`located`](Self::located)). Meaningful only for
+    /// Located-mode GUIDs.
+    #[must_use]
+    pub fn position(&self) -> (u8, u8, u8) {
+        position_3d(self.heel(), self.tier(TIER_HIP))
+    }
 }
 
 impl core::fmt::Debug for Guid {
@@ -221,6 +271,39 @@ pub fn spatial_tier(x: u8, y: u8) -> Tier {
 #[must_use]
 pub fn located_heel_hip(x: u8, y: u8, z: u8) -> (Tier, Tier) {
     (spatial_tier(x, y), spatial_tier(z, 0))
+}
+
+/// Encode a 3-axis body position as a **true 3D-octree** `(HEEL, HIP)` pair —
+/// the ArcGIS / Cesium-grade Located CRS (supersedes the coronal-tile +
+/// depth-slice [`located_heel_hip`] by using HIP's reserved odd bits).
+///
+/// The 24-bit 3D Morton code ([`morton3_encode`](crate::morton::morton3_encode))
+/// is laid big-endian across three bytes — `HEEL.container` (coarsest octant),
+/// `HEEL.member`, `HIP.container` — so prefix containment over `HEEL ++
+/// HIP.container` is 3D spatial containment (the octree the GIS stack pages by
+/// LOD). `HIP.member` (the 4th byte) is reserved for finer (>256³) refinement.
+#[must_use]
+pub fn located_3d(x: u8, y: u8, z: u8) -> (Tier, Tier) {
+    let code = crate::morton::morton3_encode(x, y, z); // 24-bit
+    (
+        Tier {
+            container: ((code >> 16) & 0xFF) as u8,
+            member: ((code >> 8) & 0xFF) as u8,
+        },
+        Tier {
+            container: (code & 0xFF) as u8,
+            member: 0, // reserved: finer octree levels (>256³)
+        },
+    )
+}
+
+/// Recover the quantised `(x, y, z)` body position from a Located 3D `(HEEL,
+/// HIP)` pair built by [`located_3d`] — the inverse, for spatial queries.
+#[must_use]
+pub fn position_3d(heel: Tier, hip: Tier) -> (u8, u8, u8) {
+    let code =
+        ((heel.container as u32) << 16) | ((heel.member as u32) << 8) | (hip.container as u32);
+    crate::morton::morton3_decode(code)
 }
 
 /// The **mode** of an HHTL tier — the operator's "heel" distinction

@@ -67,12 +67,14 @@
 
 pub mod guid;
 pub mod morton;
+pub mod projection;
 
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
 pub use guid::{Guid, HhtlMode, LeafTile, Tier};
 pub use morton::FamilyAddress;
+pub use projection::{Modality, ModalityProjection, ProjectionSample, SampleKind};
 
 /// Re-export of the `bone` concept id from the canonical OGAR codebook
 /// (`ogar_vocab::class_ids::BONE` = `0x0A03`). It is the classid tier of every
@@ -257,6 +259,13 @@ impl Bone {
         self.guid.identity()
     }
 
+    /// The quantised `(x, y, z)` body position decoded from the Located 3D
+    /// HEEL/HIP tiers — `+X` anatomical-left, `+Y` superior, `+Z` anterior.
+    #[must_use]
+    pub fn position(&self) -> (u8, u8, u8) {
+        self.guid.position()
+    }
+
     /// The full canonical 16-byte node key (the [`Guid`] bytes).
     #[must_use]
     pub const fn node_key(&self) -> [u8; morton::KEY_BYTES] {
@@ -353,21 +362,14 @@ impl Skeleton {
                 let family_node = (region_code(spec.region) << 4) | gi;
 
                 let p = spec.rest_pose.translation;
-                let (heel, hip) = guid::located_heel_hip(
+                let g = Guid::located(
+                    classid,
                     q(p[0], min[0], max[0]),
                     q(p[1], min[1], max[1]),
                     q(p[2], min[2], max[2]),
-                );
-
-                let mut g = Guid::ZERO;
-                g.set_tier(guid::TIER_CLASSID, classid);
-                g.set_tier(guid::TIER_HEEL, heel);
-                g.set_tier(guid::TIER_HIP, hip);
-                g.set_tier(
-                    guid::TIER_LEAF,
-                    Tier {
-                        container: family_node,
-                        member: identity_of[pos],
+                    LeafTile {
+                        family_node,
+                        identity: identity_of[pos],
                     },
                 );
 
@@ -866,30 +868,72 @@ mod tests {
     }
 
     #[test]
-    fn heel_encodes_laterality() {
-        // Located precondition: left/right twins differ in HEEL (the coronal X
-        // axis = laterality), so an X-ray / ultrasound sweep can tell sides apart
-        // from the spatial tier — while remaining the SAME categorical family.
+    fn crs_encodes_laterality_and_depth() {
+        // Located 3D CRS: the decoded position recovers anatomical axes.
+        // Laterality (X): left vs right femur. Depth (Z): sternum (anterior) vs
+        // a thoracic vertebra (posterior). Decoding through the 3D-octree HEEL/HIP
+        // is the inverse the GIS / projection layer uses.
         let s = skel();
         let left_femur = s.get(1021).unwrap();
         let right_femur = s.get(2021).unwrap();
-        assert_ne!(left_femur.heel(), right_femur.heel(), "laterality in HEEL");
+        let (lx, _, _) = left_femur.position();
+        let (rx, _, _) = right_femur.position();
+        assert_ne!(lx, rx, "laterality recovered from the 3D CRS");
+        assert_ne!(left_femur.heel(), right_femur.heel(), "and visible in HEEL");
         assert!(
             left_femur.guid().same_family(&right_femur.guid()),
-            "both are lower-limb-long-bone family",
+            "yet the SAME categorical family (spatial is orthogonal)",
         );
         assert_ne!(left_femur.identity(), right_femur.identity());
+
+        let (_, _, sternum_z) = by_name(&s, "sternum").position();
+        let (_, _, vertebra_z) = by_name(&s, "vertebra T6").position();
+        assert!(
+            sternum_z > vertebra_z,
+            "sternum is anterior (+Z) of the vertebra: {sternum_z} vs {vertebra_z}",
+        );
     }
 
     #[test]
-    fn hip_encodes_depth() {
-        // HIP = the anterior-posterior depth slice: the sternum (anterior) and a
-        // thoracic vertebra (posterior) sit in different depth tiers.
-        let s = skel();
-        let sternum = by_name(&s, "sternum");
-        let vertebra = by_name(&s, "vertebra T6");
-        let hip = |b: &Bone| b.guid().tier(guid::TIER_HIP);
-        assert_ne!(hip(sternum), hip(vertebra), "anterior vs posterior depth");
+    fn cascade_ontology_guid_builds_the_self_speaking_path() {
+        // The soft-tissue (Cascade) mode: the papillary muscle's
+        // ANAT0001-CARD-HERT-LVNT-PAPMUS-<id>, no spatial address. Shares the
+        // tier algebra with the Located bones; only the HHTL reading differs.
+        let classid = Tier {
+            container: 0x0A,
+            member: 0x10,
+        }; // Anatomy : muscle (illustrative)
+        let g = Guid::ontological(
+            classid,
+            guid::ontology_tier(0x01, 0x02), // Cardiovascular : Heart
+            guid::ontology_tier(0x02, 0x03), // Heart : LeftVentricle
+            guid::ontology_tier(0x03, 0x07), // LeftVentricle : PapillaryMuscleFamily
+            LeafTile {
+                family_node: 0x07,
+                identity: 0x1D,
+            },
+        );
+        assert_eq!(g.classid(), 0x0A10);
+        assert_eq!(
+            g.leaf(),
+            LeafTile {
+                family_node: 0x07,
+                identity: 0x1D
+            }
+        );
+        // A sibling papillary muscle: same family, identity attached.
+        let sibling = Guid::ontological(
+            classid,
+            guid::ontology_tier(0x01, 0x02),
+            guid::ontology_tier(0x02, 0x03),
+            guid::ontology_tier(0x03, 0x07),
+            LeafTile {
+                family_node: 0x07,
+                identity: 0x1E,
+            },
+        );
+        assert!(g.same_family(&sibling));
+        assert_ne!(g.identity(), sibling.identity());
     }
 
     #[test]
