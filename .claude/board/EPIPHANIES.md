@@ -4,6 +4,64 @@
 > `**Status:**` line (FINDING / CONJECTURE / FRAMING / SUPERSEDED). Only
 > the Status line is mutable — body and date are immutable. Corrections
 > append as new dated entries citing the original.
+
+---
+
+## 2026-06-23 — E-NINE-DOMAIN-PROMOTION-DEFERRED — the nine Lift-tested NTO domains correctly stay un-Cross-walked; bulk-minting class_ids is the WRONG move, per the catalogue's own rules
+
+**Status:** FINDING (promotion decision, 2026-06-23). Question raised: promote the
+nine Lift-tested NTO domains (Transport, Accounting, SalesDistribution, Credit, Cost,
+ServiceManagement, WorkOrder, Compliance, Audit) from **Lift-tested** to
+**Cross-walked** (mint `class_ids` in `ogar-vocab`)? **Decision: NO bulk promotion.**
+The deliberate "Lift-tested, not Cross-walked" state is correct, not pending. Grounds,
+per `OGIT-DOMAIN-LIFT-CATALOGUE.md`'s own ladder + authorship rules:
+
+1. **Upstream-owned (needs arago/almato coordination, not a unilateral mint):**
+   Transport + Compliance (`chris.boos@almato.com`), Cost + ServiceManagement
+   (`Peter Larem`), Credit (`Ola Irgens Kylling`), SalesDistribution + Audit
+   (`Marek Meyer`). The catalogue states structural changes to upstream domains
+   "need arago/almato coordination." A codebook id is **stable forever** (P0 canon);
+   minting permanent ids for upstream-owned concepts without coordination is exactly
+   the structural change the rule fences.
+2. **Already covered by an existing domain (promotion would duplicate):**
+   Accounting → `0x02XX` commerce/ERP via the Odoo lift; Audit → ADR-013
+   (Audit-as-Lance-version) owns the semantics. A second slot for an already-homed
+   concept dilutes the codebook.
+3. **Ours but speculative (premature mint):** WorkOrder is our extension
+   (`dcterms:creator` = `bus-compiler` + `family-codec-smith`, authored for woa-rs).
+   We MAY mint it — but minting before woa-rs's consumer-collapse needs the classid is
+   speculative permanent allocation. Gate: mint WorkOrder when woa-rs reaches the
+   `authorize(actor, WoaPort::class_id(...))` step (keystone §11 step 5), not before.
+4. **Cross-repo skew hazard (the just-fixed break):** every consumer pulls
+   `ogar-vocab branch=main` AND the lance-graph mirror; a mint must reach OGAR `main`
+   **before** the `lance-graph-contract::ogar_codebook` mirror bumps, or the
+   compile-time `COUNT_FUSE` breaks every consumer (cf. lance-graph ISSUES
+   `ISS-OGAR-AUTH-MIRROR-DRIFT`, E-CODEBOOK-MINT-IS-A-CROSS-REPO-ARC). Nine
+   simultaneous mints multiply that coordination cost for no current consumer need.
+
+**Per-domain promotion gate (the auto-resolve, not a punt):**
+
+| Domain | Owner | Promote when | Default home today |
+|---|---|---|---|
+| Transport | upstream (almato) | arago coordination + a consumer needs it | — |
+| Compliance | upstream (almato) | arago coordination + a consumer needs it | — |
+| Cost | upstream (Larem) | arago coordination + a consumer needs it | — |
+| ServiceManagement | upstream (Larem) | arago coordination + a consumer needs it | — |
+| Credit | upstream (Kylling) | arago coordination + a consumer needs it | — |
+| SalesDistribution | upstream (Meyer) | arago coordination + a consumer needs it | — |
+| Accounting | mixed (11 ours) | only if it diverges from `0x02XX` | `0x02XX` commerce |
+| Audit | upstream (Meyer) | only if it needs a classid beyond versioning | ADR-013 Lance-version |
+| WorkOrder | **ours** (woa-rs) | woa-rs reaches keystone §11 step 5 | Lift-tested form |
+
+**The general rule promoted from this:** Lift-tested → Cross-walked is **demand-driven
+and ownership-gated**, never a completeness sweep. A domain earns a codebook id when (a)
+a consumer needs to `authorize()`/route on it AND (b) we own it or have coordination —
+not because it round-trips. Round-trip (Lift-tested) proves the *shape lands*; it does
+NOT imply the *id should mint*. Cross-ref: `OGIT-DOMAIN-LIFT-CATALOGUE.md` ladder,
+P0 canon "codebook ids stable forever," E-CODEBOOK-MINT-IS-A-CROSS-REPO-ARC.
+
+---
+
 >
 > Convention adopted from `AdaWorldAPI/surrealdb`'s `.claude/board/EPIPHANIES.md`.
 >

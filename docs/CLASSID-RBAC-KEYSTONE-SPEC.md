@@ -180,6 +180,30 @@ reference system's decision **bit-for-bit** on a fixed corpus (Odoo
 OpenFGA model) before consumer-collapse (step 5) lands. Until green, the
 keystone is **CONJECTURE**.
 
+> **STEP-4 STATUS (2026-06-23) — PARTIAL GREEN (positive ∧ op-gate half).**
+> The classid-keyed kernel is built and the gate is green against the
+> **in-repo reference** — the shipped membrane gate
+> `lance_graph_rbac::policy::Policy::evaluate` (the "reconcile the shipped
+> MembraneGate path with the keystone" framing of
+> `ISS-RBAC-AUTHORIZE-BY-CLASSID`). Impl + probe:
+> `lance-graph/crates/lance-graph-rbac/src/authorize.rs` —
+> `ClassRbac` (§4) · `authorize()` (§5 positive ∧ op-gate, deny-reasons
+> mirrored exactly) · `ClassGrants` (`PermissionSpec` re-keyed by `ClassId`,
+> §11). `probe_ogar_rbac_authorize` reproduces `Policy::evaluate`
+> **bit-for-bit** over a 15-tuple corpus (all roles/ops/deny-reasons +
+> depth boundary + unknown actor); `probe_is_falsifiable_under_wrong_keying`
+> proves the gate is not vacuous (a wrong classid flips an Allow).
+>
+> **What this certifies:** the §5 *positive ∧ op-gate* half + the §11 classid
+> re-keying — promoted CONJECTURE→FINDING **for the shipped reference**.
+> **What remains CONJECTURE:** the §5 stage-2 *row-scope* predicate and the
+> projecting `Allow { scope, mask }` return — the shipped reference is
+> positive-only, so the scope-bearing references (Odoo `ir.model.access ∧
+> ir.rule`, OpenFGA) are the follow-on probes that exercise stage 2. The
+> keystone stays CONJECTURE **as a whole** until a scope-bearing reference is
+> green; the positive half is now FINDING. Cross-ref: lance-graph
+> `EPIPHANIES.md` E-RBAC-AUTHORIZE-PROBE-GREEN (2026-06-23).
+
 ## 11. Build / PR order + cross-refs
 
 Order: **(1)** `lance-graph-contract` `ClassRbac` trait → **(2)** OGAR
