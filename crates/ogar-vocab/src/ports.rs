@@ -139,6 +139,15 @@ pub const OPENPROJECT_ALIASES: &[(&str, u16)] = &[
     // class name. Match the actual class so `class_id("IssuePriority")`
     // resolves.
     ("IssuePriority", class_ids::PRIORITY),
+    // OpenProject's actual Rails class for `project_membership` is `Member`
+    // (mirrors Redmine — both forks ship the join row as `Member`). The
+    // engine-walking corpus snapshot in op-canon carries `Member`. The
+    // earlier `Membership` alias was pre-snapshot prose; keep it as a
+    // deprecated synonym so any consumer holding the old name still
+    // resolves, but `Member` is the canonical OP surface for the concept.
+    // Closes the openproject-nexgen-rs#56 pinned
+    // `port_and_snapshot_membership_vocab_mismatch_is_known` test.
+    ("Member", class_ids::PROJECT_MEMBERSHIP),
     ("Membership", class_ids::PROJECT_MEMBERSHIP),
     ("Journal", class_ids::PROJECT_JOURNAL),
     ("Repository", class_ids::PROJECT_REPOSITORY),
@@ -590,7 +599,10 @@ mod tests {
             ("Status", "IssueStatus", class_ids::PROJECT_STATUS),
             ("Type", "Tracker", class_ids::PROJECT_TYPE),
             ("IssuePriority", "IssuePriority", class_ids::PRIORITY),
-            ("Membership", "Member", class_ids::PROJECT_MEMBERSHIP),
+            // Both forks ship the membership join as `Member` (engine-walking
+            // corpus snapshot). The OpenProject port still carries the legacy
+            // `Membership` synonym; the canonical pair is now Member ↔ Member.
+            ("Member", "Member", class_ids::PROJECT_MEMBERSHIP),
             ("Journal", "Journal", class_ids::PROJECT_JOURNAL),
             ("Repository", "Repository", class_ids::PROJECT_REPOSITORY),
             ("Version", "Version", class_ids::PROJECT_VERSION),
@@ -639,6 +651,34 @@ mod tests {
                 "convergence broken: OpenProject `{op_name}` ↔ Redmine `{rm_name}`",
             );
         }
+    }
+
+    /// OpenProject ships the membership join as `Member` (mirrors Redmine —
+    /// both engine-walking corpus snapshots carry that name). The earlier
+    /// `Membership` surface stays as a deprecated synonym so any consumer
+    /// holding the old name still resolves; this test pins both routes to
+    /// the same canonical id so the additive contract can't drift.
+    ///
+    /// Closes the openproject-nexgen-rs#56 pinned
+    /// `port_and_snapshot_membership_vocab_mismatch_is_known` test — once
+    /// this lands and op-canon bumps its `ogar-vocab` git pin,
+    /// `OpenProjectPort::class_id("Member")` flips from `None` to
+    /// `Some(PROJECT_MEMBERSHIP)`, that pin self-fails, and the consumer
+    /// drops it.
+    #[test]
+    fn openproject_member_and_membership_both_resolve_to_project_membership() {
+        let target = Some(class_ids::PROJECT_MEMBERSHIP);
+        // Canonical surface (matches the OpenProject corpus + Redmine):
+        assert_eq!(OpenProjectPort::class_id("Member"), target);
+        // Deprecated synonym kept for backward compatibility:
+        assert_eq!(OpenProjectPort::class_id("Membership"), target);
+        // Both ports converge under the same canonical surface name now:
+        assert_eq!(RedminePort::class_id("Member"), target);
+        assert_eq!(
+            OpenProjectPort::class_id("Member"),
+            RedminePort::class_id("Member"),
+            "OP `Member` and RM `Member` must converge on the same id",
+        );
     }
 
     #[test]
@@ -808,20 +848,23 @@ mod tests {
         // classes its corpus ships, no phantom aliases for concepts
         // the port doesn't expose as a top-level model.
         //
-        // OpenProject (27): 25 distinct concept entries + 2 STI-fold
+        // OpenProject (28): 25 distinct concept entries + 2 STI-fold
         //   rows (Principal, Group fold into PROJECT_ACTOR alongside
-        //   User). No `Comment` entry — OpenProject's Journal carries
-        //   the comment-equivalent state, no standalone Comment model.
+        //   User) + 1 deprecated synonym row (Membership → Member; both
+        //   resolve to PROJECT_MEMBERSHIP, the canonical surface is
+        //   Member per the engine-walking corpus snapshot). No `Comment`
+        //   entry — OpenProject's Journal carries the comment-equivalent
+        //   state, no standalone Comment model.
         // Redmine (28): 26 distinct concept entries + 2 STI-fold rows.
         //   Has a standalone `Comment` model on top of `Journal` (the
-        //   one extra row vs OpenProject).
+        //   one extra row vs OpenProject's canonical concepts).
         //
         // Both gained the same +2 STI-fold rows and +0/+1 IssuePriority
         // entry under codex P2 on PR #87 (Redmine previously had no
         // priority entry; OpenProject's was misnamed `Priority`).
         assert_eq!(
             OpenProjectPort::aliases().len(),
-            27,
+            28,
             "OpenProject alias count drift — re-count the table"
         );
         assert_eq!(
