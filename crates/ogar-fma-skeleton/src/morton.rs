@@ -355,6 +355,56 @@ fn refine(
     }
 }
 
+// ── 3D octree Morton (the Located CRS — true x:y:z, ArcGIS / Cesium-grade) ──
+
+/// Spread an 8-bit value so each bit lands in every 3rd position (`bit k → 3k`),
+/// the building block of a 24-bit 3D Morton (octree) code.
+#[must_use]
+pub const fn spread3(v: u8) -> u32 {
+    let mut out = 0u32;
+    let mut k = 0;
+    while k < 8 {
+        out |= ((v as u32 >> k) & 1) << (3 * k);
+        k += 1;
+    }
+    out
+}
+
+/// Gather every 3rd bit (`code bit 3k → bit k`) back into an 8-bit value —
+/// inverse of [`spread3`].
+#[must_use]
+pub const fn gather3(code: u32) -> u8 {
+    let mut out = 0u8;
+    let mut k = 0;
+    while k < 8 {
+        out |= (((code >> (3 * k)) & 1) as u8) << k;
+        k += 1;
+    }
+    out
+}
+
+/// Encode `(x, y, z)` (8 bits each) into a **24-bit 3D Morton (octree) code**:
+/// `x` in bit positions `0,3,6,…`, `y` in `1,4,7,…`, `z` in `2,5,8,…`. The top
+/// three bits `(23,22,21) = (z7, y7, x7)` are the coarsest octant, so a shared
+/// high-byte prefix is 3D spatial containment.
+///
+/// ```
+/// use ogar_fma_skeleton::morton::{morton3_encode, morton3_decode};
+/// let c = morton3_encode(0xC3, 0x55, 0xA0);
+/// assert_eq!(morton3_decode(c), (0xC3, 0x55, 0xA0));
+/// ```
+#[must_use]
+pub const fn morton3_encode(x: u8, y: u8, z: u8) -> u32 {
+    spread3(x) | (spread3(y) << 1) | (spread3(z) << 2)
+}
+
+/// Decode a 24-bit 3D Morton code back into `(x, y, z)`. Inverse of
+/// [`morton3_encode`].
+#[must_use]
+pub const fn morton3_decode(code: u32) -> (u8, u8, u8) {
+    (gather3(code), gather3(code >> 1), gather3(code >> 2))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
