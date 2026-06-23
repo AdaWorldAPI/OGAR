@@ -164,6 +164,43 @@ public reference (Anatomy); the **patient splat** is PHI (Health / MedCare wire)
 
 ---
 
+## 5b. The GUID tier model — `[container:member]`, located vs cascade (2026-06-23)
+
+The address is a uniform stack of `[256:256]` tiers, each the **same relation
+at every scale**: `[container : member]` (`Galaxy:planet`, `country:city`,
+`school:student`, `bodypart:bone`, `cm²:mm²`, `residue:atom`). The high byte is
+the coarse container (a 256-codebook), the low byte the member attached within
+it. See `src/guid.rs` (`Guid`, `Tier`, `LeafTile`).
+
+```text
+[classid] [HEEL] [HIP] [TWIG] [LEAF=familyNode:identity]   tiers, each [256:256]
+ 0x0A:03   …      …     …      bodypart : bone
+```
+
+**The HEEL has two modes** (`HhtlMode`) — the operator's "heel" distinction:
+
+| mode | HEEL holds | property | who |
+|---|---|---|---|
+| `Located` (Cesium) | the *literal* heel — a real position (`heel:muscle`) | **preserves location**; HHTL = `spatial_tier` Morton | **bones** — they ARE the anchor |
+| `Cascade` (ontology) | a classification rung (`Anatomy…PapMuscle`) | **no spatial address** — pure containment; HHTL = `ontology_tier` | **muscle / soft tissue** — classified, then projected onto |
+
+Both share the LEAF `familyNode:identity` and the 16-byte key; the mode is a
+*reading* of the HHTL block, not a different structure. The self-speaking
+ontology GUID (`ANAT0001-CARD-HERT-LVNT-PAPMUS-7A3F9C1D`) is the Cascade
+reading; the bone's spatial key is the Located reading.
+
+**The `12+4` edge block** (`EdgeBlock`): every family node carries **12
+in-family** local relations (sibling/parent/child family-node codes) + **4
+out-of-family** inherited connector interfaces (e.g. fibrous skeleton, vascular
+supply, innervation, ECM scaffold). An instance inherits the family node's edge
+block as a template and adds its own residue. This is the canonical node edge
+block (12 in-family + 4 out-of-family, one byte per slot).
+
+**The splat projects onto the class.** The 4D ultrasound×Doppler splat is
+*mapped onto* the anatomy class addressed by this GUID — semantic + spatial +
+dynamic unified on one key, no information destroyed, longitudinal tracking via
+the stable identity.
+
 ## 6. Cross-references
 
 - `crates/ogar-fma-skeleton/src/morton.rs` — the 4×4 Morton-tile pyramid.
