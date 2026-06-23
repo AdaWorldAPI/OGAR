@@ -74,6 +74,18 @@ arago/almato coordination."
 4. **Promote** — update this row's status. Mention it in the next PR
    description so reviewers know the lift surface grew.
 
+> **Lift-tested → Cross-walked is demand-driven and ownership-gated, NOT a
+> completeness sweep** (decision 2026-06-23, `.claude/board/EPIPHANIES.md`
+> E-NINE-DOMAIN-PROMOTION-DEFERRED). Round-trip (Lift-tested) proves the
+> *shape lands*; it does NOT imply the *id should mint*. A domain earns a
+> `class_ids` codebook id (stable forever, P0 canon) only when **(a)** a
+> consumer needs to `authorize()`/route on it AND **(b)** we own it or have
+> arago/almato coordination for an upstream-owned domain. The nine
+> Lift-tested domains are correctly parked un-Cross-walked: most are
+> upstream-owned (coordination-gated), Accounting/Audit are already homed
+> (`0x02XX` / ADR-013), and WorkOrder (ours) waits on woa-rs's
+> consumer-collapse. See the per-domain gate table in that epiphany.
+
 ## Per-domain inventory
 
 | Domain | Entities | Attributes | Verbs | Status | Notes |
