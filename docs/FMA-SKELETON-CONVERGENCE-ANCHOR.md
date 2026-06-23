@@ -189,12 +189,13 @@ Both share the LEAF `familyNode:identity` and the 16-byte key; the mode is a
 ontology GUID (`ANAT0001-CARD-HERT-LVNT-PAPMUS-7A3F9C1D`) is the Cascade
 reading; the bone's spatial key is the Located reading.
 
-**The `12+4` edge block** (`EdgeBlock`): every family node carries **12
-in-family** local relations (sibling/parent/child family-node codes) + **4
-out-of-family** inherited connector interfaces (e.g. fibrous skeleton, vascular
-supply, innervation, ECM scaffold). An instance inherits the family node's edge
-block as a template and adds its own residue. This is the canonical node edge
-block (12 in-family + 4 out-of-family, one byte per slot).
+**Relations live in the family-node addressing — not a `12+4` edge block.**
+The fixed `12 in-family + 4 out-of-family` carve is the *pre-family-node*
+taxonomy and is **superseded**. With family nodes, relations ARE the address:
+a **local** relation is a shared family prefix (`Guid::same_family`); a
+**cross** relation is a reference to another node's `Guid` (unbounded), not a
+fixed-4 inherited-interface slot. The node stays a pure `key + value` block
+with no special edge taxonomy.
 
 **The splat projects onto the class.** The 4D ultrasound×Doppler splat is
 *mapped onto* the anatomy class addressed by this GUID — semantic + spatial +

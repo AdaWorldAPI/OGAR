@@ -241,60 +241,21 @@ pub const fn ontology_tier(parent_class: u8, child_class: u8) -> Tier {
     }
 }
 
-/// The **12 + 4 edge block** — the family node's relations, exactly as the
-/// papillary-muscle worked example shows (`12 in-family + 4 out-of-family`).
-/// One byte per slot; the canonical [`KEY_BYTES`]-byte edge block.
-///
-/// - **`in_family`** (12) — *local* relations to sibling family nodes under
-///   the same parent (the papillary muscle's chordae tendineae, leaflet
-///   segments, adjacent myocardium, local vasculature/innervation). Each byte
-///   is the target's leaf `family_node` code.
-/// - **`out_of_family`** (4) — *inherited connector interfaces* to other
-///   systems (fibrous skeleton, coronary supply, conduction/autonomic nerves,
-///   ECM scaffold). Each byte is the target system/interface code.
-///
-/// Canonical, not mandatory: unused slots are zeroed (RESERVE-DON'T-RECLAIM),
-/// never shrunk. An instance inherits its family node's edge block as the
-/// template, then adds its own residue.
-#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, Default)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-pub struct EdgeBlock {
-    /// 12 local in-family relations (target leaf `family_node` codes).
-    pub in_family: [u8; 12],
-    /// 4 inherited out-of-family connector interfaces (system/interface codes).
-    pub out_of_family: [u8; 4],
-}
-
-impl EdgeBlock {
-    /// The all-zero edge block (no relations asserted yet).
-    pub const EMPTY: Self = Self {
-        in_family: [0; 12],
-        out_of_family: [0; 4],
-    };
-
-    /// The 16 raw bytes (`in_family ++ out_of_family`).
-    #[must_use]
-    pub const fn bytes(&self) -> [u8; KEY_BYTES] {
-        let mut b = [0u8; KEY_BYTES];
-        let mut i = 0;
-        while i < 12 {
-            b[i] = self.in_family[i];
-            i += 1;
-        }
-        let mut j = 0;
-        while j < 4 {
-            b[12 + j] = self.out_of_family[j];
-            j += 1;
-        }
-        b
-    }
-
-    /// Count of asserted (non-zero) in-family relations.
-    #[must_use]
-    pub fn in_family_degree(&self) -> usize {
-        self.in_family.iter().filter(|&&b| b != 0).count()
-    }
-}
+// ── Relations live in the family-node addressing, NOT a fixed edge block ──
+//
+// The pre-family-node taxonomy carved relations into a fixed `12 in-family +
+// 4 out-of-family` edge block (the papillary-muscle worked example shows it).
+// That is **superseded by family nodes** (operator, 2026-06-23). With the
+// `[container:member]` tier model, relations ARE the addressing:
+//
+//   - **local relation** ⇔ shared family prefix — `Guid::same_family` (same
+//     tiers up to the leaf `family_node`); no slots needed, the address says it.
+//   - **cross relation** ⇔ a reference to another family node's `Guid` (the
+//     target's address), unbounded — not a fixed-4 inherited-interface carve.
+//
+// So there is no `EdgeBlock` here. A node's neighbourhood is read from the key
+// space (prefix containment + family-node references), keeping the node a pure
+// `key + value` block with no special edge taxonomy.
 
 #[cfg(test)]
 mod tests {
@@ -426,17 +387,45 @@ mod tests {
     }
 
     #[test]
-    fn edge_block_is_twelve_plus_four() {
-        let mut e = EdgeBlock::EMPTY;
-        e.in_family[0] = 0x11; // chorda tendinea-like local relation
-        e.in_family[1] = 0x12;
-        e.out_of_family[0] = 0xF1; // fibrous-skeleton interface
-        assert_eq!(e.in_family.len(), 12);
-        assert_eq!(e.out_of_family.len(), 4);
-        assert_eq!(e.in_family_degree(), 2);
-        let b = e.bytes();
-        assert_eq!(b[0], 0x11);
-        assert_eq!(b[12], 0xF1);
-        assert_eq!(b.len(), KEY_BYTES);
+    fn relations_are_family_prefix_not_an_edge_block() {
+        // Superseding the 12+4 edge taxonomy: a local relation is a shared
+        // family prefix; a cross relation is a reference to another node's Guid.
+        let classid = Tier {
+            container: 0x0A,
+            member: 0x03,
+        };
+        let mut a = Guid::ZERO;
+        a.set_tier(TIER_CLASSID, classid);
+        a.set_tier(
+            TIER_LEAF,
+            Tier {
+                container: 0x42,
+                member: 0x01,
+            },
+        );
+        let mut sibling = a; // same family node, identity attached
+        sibling.set_tier(
+            TIER_LEAF,
+            Tier {
+                container: 0x42,
+                member: 0x02,
+            },
+        );
+        let mut other_family = a;
+        other_family.set_tier(
+            TIER_LEAF,
+            Tier {
+                container: 0x99,
+                member: 0x01,
+            },
+        );
+
+        assert!(
+            a.same_family(&sibling),
+            "local relation = shared family prefix"
+        );
+        assert!(!a.same_family(&other_family));
+        // A cross relation is just the other node's address (a Guid), unbounded.
+        let _cross_ref: Guid = other_family;
     }
 }

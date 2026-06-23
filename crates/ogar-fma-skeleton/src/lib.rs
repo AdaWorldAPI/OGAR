@@ -61,7 +61,7 @@ pub mod morton;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
-pub use guid::{EdgeBlock, Guid, HhtlMode, LeafTile, Tier};
+pub use guid::{Guid, HhtlMode, LeafTile, Tier};
 pub use morton::FamilyAddress;
 
 /// Re-export of the `bone` concept id from the canonical OGAR codebook
