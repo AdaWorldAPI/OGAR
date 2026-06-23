@@ -15,6 +15,58 @@
 
 ## Entries (newest first)
 
+## 2026-06-23 — OGIT's Configuration entity ⊨ the keystone's auth_store; the 0x0B AuthStore family is minted (autoattended resolution)
+**Status:** FINDING
+**Scope:** OGAR keystone §7 ↔ canonical OGIT shape convergence × the 0x0B mint × autoattended decision-making
+
+The operator's insight — *"having our vision and already the canonical
+OGIT shape it's easy"* — is correct and now has a receipt in code. The
+OGAR keystone (`CLASSID-RBAC-KEYSTONE-SPEC.md` §7) and the canonical
+OGIT Auth shape (the 2026-06-23 entry below) converge **1:1**, which
+collapses the "which auth harness" question from a fraught decision into
+plain sequencing.
+
+The convergence, term-for-term:
+
+| OGIT Auth (canonical shape, upstream) | keystone §7 | Zitadel |
+|---|---|---|
+| `Account` (the `sub`) | actor `0x0104` | User |
+| `Application` | class scope | Project/App |
+| `Role` | role `0x0117` | Project-Role |
+| `RoleAssignment` | membership tuple `0x0108/0x0118` | Grant |
+| `Organization`/`OrgDomain` | row-scope (axis 3) | Org |
+| `DataScope`/`scopeId` | row-scope predicate | scope |
+| **`Configuration`** (keyed org/app/account/scope IDs + `configurationData`) | **`auth_store 0x0B01`** | the IdP config record |
+
+The punchline: **arago's January-2026 `Configuration`-bridge entity IS
+the keystone's `auth_store`** — same four external-ID keys, same config
+blob, built upstream independently. Keystone §7 had already written
+"Zitadel maps 1:1"; the OGIT shape is the receipt that it isn't
+speculative.
+
+**Autoattended resolution (this session):** because the vision and the
+canonical shape agree, the tractable part shipped without a steer
+round-trip — the `0x0B` Auth domain is **minted** in `ogar-vocab`:
+`auth_store 0x0B01` + `auth_zitadel 0x0B02` / `auth_zanzibar 0x0B03` /
+`auth_ory_keto 0x0B04` (CODEBOOK + `class_ids` consts + `ALL` +
+`ConceptDomain::Auth` + `all_promoted_classes()` builders +
+`ogar-class-view` registration + tests). 298/0 workspace tests.
+
+What stayed gated (the keystone's OWN gates, not caution): the
+`authorize()` **enforcement** waits on `PROBE-OGAR-RBAC-AUTHORIZE`
+(§10); the woa `WoaMembraneGate` mirror and the `project_role.permissions`
+→ typed-grant Core change land per keystone §11 build order. Minting the
+profiles is "reserving costs nothing"; enforcing them is the gated,
+security-review-class step. Full decision record:
+`.claude/board/ISSUES.md` ISS-RBAC-AUTHORIZE-BY-CLASSID.
+
+Method note (autoattended decision-making): autonomy means honoring the
+PROJECT'S ratified gates (the probe, the 5+3-hardened keystone), not
+bulldozing them. The mint is spec-ratified (keystone §7 is hardened,
+zero BLOCK) and confirmed by the OGIT shape, so it ships; the
+enforcement has an explicit probe gate, so it waits. That distinction
+is what makes "auto-resolve" responsible rather than reckless.
+
 ## 2026-06-23 — Live 2026 receipt for the semantic-compiler thesis: bardioc is actively extending OGIT's Auth symbol table with a linker-phase external-IAM bridge (probably Zitadel)
 **Status:** FINDING (shape-grounded; external system not named in-file → [H], not [G])
 **Scope:** addendum to the 2026-06-22 "OGIT was already a semantic compiler's symbol table" entry below × Auth-domain dating × the AuthStore-mapping pattern × the queued 0x0BXX cross-walk

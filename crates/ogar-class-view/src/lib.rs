@@ -64,14 +64,15 @@ use lance_graph_contract::{
     ontology::{DisplayTemplate, FieldRef, ObjectView},
 };
 use ogar_vocab::{
-    billable_work_entry, billing_party, canonical_concept_id, commercial_document,
-    commercial_line_item, currency_policy, diagnosis, lab_value, medication, patient,
-    payment_record, priority, project, project_actor, project_attachment, project_changeset,
-    project_comment, project_custom_field, project_custom_value, project_enabled_module,
-    project_forum, project_journal, project_member_role, project_membership, project_message,
-    project_news, project_query, project_relation, project_repository, project_role,
-    project_status, project_type, project_version, project_watcher, project_wiki_page,
-    project_work_item, tax_policy, treatment, visit, vital_sign, Class,
+    Class, auth_ory_keto, auth_store, auth_zanzibar, auth_zitadel, billable_work_entry,
+    billing_party, canonical_concept_id, commercial_document, commercial_line_item,
+    currency_policy, diagnosis, lab_value, medication, patient, payment_record, priority, project,
+    project_actor, project_attachment, project_changeset, project_comment, project_custom_field,
+    project_custom_value, project_enabled_module, project_forum, project_journal,
+    project_member_role, project_membership, project_message, project_news, project_query,
+    project_relation, project_repository, project_role, project_status, project_type,
+    project_version, project_watcher, project_wiki_page, project_work_item, tax_policy, treatment,
+    visit, vital_sign,
 };
 
 /// All 32 promoted canonical concepts: `(canonical_concept_name, Class)`.
@@ -124,6 +125,11 @@ fn all_canonical_classes() -> Vec<(&'static str, Class)> {
         ("treatment", treatment()),
         ("visit", visit()),
         ("vital_sign", vital_sign()),
+        // ── 0x0BXX — auth (the AuthStore class family, keystone §7) ──
+        ("auth_store", auth_store()),
+        ("auth_zitadel", auth_zitadel()),
+        ("auth_zanzibar", auth_zanzibar()),
+        ("auth_ory_keto", auth_ory_keto()),
     ]
 }
 
@@ -140,7 +146,8 @@ fn all_canonical_classes() -> Vec<(&'static str, Class)> {
 /// [`DisplayTemplate::Detail`] — per-class template selection is the
 /// renderer's job, not this adapter's.
 fn lift_object_view(class: &Class) -> ObjectView {
-    let mut fields: Vec<FieldRef> = Vec::with_capacity(class.attributes.len() + class.associations.len());
+    let mut fields: Vec<FieldRef> =
+        Vec::with_capacity(class.attributes.len() + class.associations.len());
     for attr in &class.attributes {
         fields.push(FieldRef::new(attr.name.clone(), attr.name.clone()));
     }
@@ -402,13 +409,13 @@ mod tests {
         let v = OgarClassView::new();
         let id = canonical_concept_id("billable_work_entry").unwrap();
         let class = billable_work_entry();
-        let assoc_names: std::collections::HashSet<&str> = class
-            .associations
+        let assoc_names: std::collections::HashSet<&str> =
+            class.associations.iter().map(|a| a.name.as_str()).collect();
+        let field_names: std::collections::HashSet<&str> = v
+            .fields(id)
             .iter()
-            .map(|a| a.name.as_str())
+            .map(|f| f.predicate_iri.as_str())
             .collect();
-        let field_names: std::collections::HashSet<&str> =
-            v.fields(id).iter().map(|f| f.predicate_iri.as_str()).collect();
         for assoc in &assoc_names {
             assert!(
                 field_names.contains(assoc),
@@ -437,10 +444,18 @@ mod tests {
         // green for the 0x09XX block.
         let v = OgarClassView::new();
         for concept in [
-            "patient", "diagnosis", "lab_value", "medication", "treatment", "visit", "vital_sign",
+            "patient",
+            "diagnosis",
+            "lab_value",
+            "medication",
+            "treatment",
+            "visit",
+            "vital_sign",
         ] {
             let id = canonical_concept_id(concept).unwrap();
-            let view = v.object_view(id).unwrap_or_else(|| panic!("{concept} not registered"));
+            let view = v
+                .object_view(id)
+                .unwrap_or_else(|| panic!("{concept} not registered"));
             assert!(!view.fields.is_empty(), "{concept} has no field basis");
         }
     }
@@ -457,5 +472,4 @@ mod tests {
         assert_eq!(fields[10].predicate_iri, "patient");
         assert_eq!(fields[11].predicate_iri, "encounter");
     }
-
 }
