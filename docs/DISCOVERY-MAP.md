@@ -208,7 +208,7 @@ two halves of a cell. ADR‑026 names the cascade that ties them.
 | D‑KNOWABLE | `KnowableFromStore` + `register_class_knowable_from`; `surrealql-hint`; **`vart-backend`** | G | CODED | `ogar-knowable-from/` (#25,#33,#43) | D‑IDENT |
 | D‑HINT | `schema_ddl_hint` loop closed — self‑describing registry via emit | G | CODED | (#33) | D‑SURREALQL, D‑KNOWABLE |
 | D‑ELIXIR | Elixir/HIRO SchemaSource scaffold (`gen_statem`→Rubicon) | G | CODED (scaffold) | `ogar-from-elixir/` | D‑VOCAB |
-| D‑HIRO‑DO | OGIT Automation → DO arm: `into_action_def` lifts `KnowledgeItem`→`ActionDef` (object_class←`relates`, kausal←`contains Trigger`, body **pointed‑to** not inlined — lossless‑DO §1); schema half of `PROBE‑OGAR‑DO‑ARM‑LIFT` green | G | CODED (schema half) | `ogar-from-schema/src/do_arm.rs` | D‑VOCAB, D‑TTL, D‑ELIXIR |
+| D‑HIRO‑DO | OGIT Automation → DO arm: `into_action_def` lifts `KnowledgeItem`→`ActionDef` (object_class←`relates`, kausal←`contains Trigger`, body **pointed‑to** not inlined — lossless‑DO §1); schema half of `PROBE‑OGAR‑DO‑ARM‑LIFT` green; lift→`emit_action_def`→SPO triples proven end‑to‑end (`tests/do_arm_emit.rs`, lossless‑DO holds across emit) | G | CODED (schema half) | `ogar-from-schema/src/do_arm.rs` | D‑VOCAB, D‑TTL, D‑ELIXIR, D‑EMIT |
 | D‑OSM | `ogar-from-osm-pbf` — Node/Way/Relation; quadkey NiblePath from resolved geometry | H | IDEA | (queued) | D‑VOCAB, `[per rt]` D‑OSM‑3 |
 | D‑PATTERN | `ogar-pattern` — recognition library + confidence (FMA‑D/FIBO/SKR/PROV‑O) | H | IDEA | (queued) | D‑TTL |
 | D‑ACTION | `ogar-actionable` — lifecycle → `ActionDef`/`KausalSpec` | H | IDEA | (queued) | D‑PATTERN |

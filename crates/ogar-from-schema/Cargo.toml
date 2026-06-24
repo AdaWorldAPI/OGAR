@@ -29,3 +29,10 @@ roxmltree = { version = "0.20", optional = true }
 # When the TTL surface grows (Wikidata-shaped TTL, full RDF/XML, OWL
 # imports), swap in `oxttl` / `oxrdf` without touching the
 # Class/Attribute target shape this crate produces.
+
+[dev-dependencies]
+# Used only by tests/do_arm_emit.rs to prove the DO-arm lift's output
+# (`ogar_vocab::ActionDef`) flows through the canonical SPO emitter
+# end-to-end. Acyclic: ogar-emitter depends on ogar-vocab/-ontology,
+# never on this crate.
+ogar-emitter = { path = "../ogar-emitter" }
