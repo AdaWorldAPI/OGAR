@@ -54,8 +54,8 @@ classid : u32  =  [ hi u16 : APP / codebook namespace ]  [ lo u16 : in-codebook 
   concept byte `CC`, exactly as the codebook encodes today. Within the
   core codebook (`hi = 0x0000`) the domain bytes are the canonical map
   (`0x01` project, `0x02` commerce, `0x07` osint, `0x08` ocr, `0x09`
-  health). Within an app-private codebook the app owns its own `DD|CC`
-  layout.
+  health, `0x0A` anatomy, `0x0B` auth, `0x0C` automation). Within an
+  app-private codebook the app owns its own `DD|CC` layout.
 
 **This is additive, not a reclaim.** Every classid shipped to date is
 `0x0000_DDCC` — i.e. it was *always* an APP‖class id with `APP = core`.
@@ -130,7 +130,7 @@ materialised until the app mints its first private class).
 
 | `hi u16` | App / namespace | Core domain(s) it consumes | Private codebook today? |
 |---|---|---|---|
-| `0x0000` | **Shared canonical core** | all (`0x01/02/07/08/09` + `0x0B` auth) | n/a (this *is* core) |
+| `0x0000` | **Shared canonical core** | all (`0x01/02/07/08/09` + `0x0A` anatomy + `0x0B` auth + `0x0C` automation) | n/a (this *is* core) |
 | `0x0001` | OpenProject (openproject-nexgen-rs) | `0x01` project-mgmt | **no** — maps onto core |
 | `0x0002` | Odoo | `0x02` commerce | **no** — maps onto core (converge `od-ontology`) |
 | `0x0003` | WoA / woa-rs | `0x02` commerce (work orders) | **no** — maps onto core |

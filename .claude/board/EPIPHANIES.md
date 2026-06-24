@@ -7,6 +7,48 @@
 
 ---
 
+## 2026-06-24 — E-MARS-AUTOMATION-MINT — the MARS/Automation classids are minted: `ConceptDomain::Automation` (0x0C), the deferred 5+3 codebook pass
+
+**Status:** FINDING (grounded `[G]` — shipped + drift-guard-green).
+
+`docs/MARS-TRANSCODING.md` §1 deferred the MARS classid mint ("provisional…
+after the 5+3 codebook pass"). This is that pass. Outcome: **one domain
+`0x0C` = `ConceptDomain::Automation`**, spanning the MARS structural CMDB
+(`mars_application/resource/software/machine`, the A→R→S→M `dependsOn` backbone)
+and the Automation DO-arm actuators (`knowledge_item`, `mars_node_template`,
+`action_handler`, `action_applicability`, `automation_trigger`) — 9 concepts,
+0x0C01–0x0C09.
+
+**Why one domain, not two** (the load-bearing decision): MARS (`ogit.MARS:`) and
+Automation (`ogit.Automation:`) are different OGIT namespaces but the same HIRO
+IT-automation stack. The render prefix (`ogit-mars` / `ogit-automation`) is the
+hi-u16 skin; the **domain byte is the lo-u16 shared-concept half**. The Auth
+family (`0x0B`: `auth_store` + per-IdP profiles) is the precedent — heterogeneous
+shapes, one cross-app concern, one domain. The DO arm (`ActionDef`) and the THINK
+arm (the MARS `Class`es) **meet** at this domain (cf. E-HIRO-IS-OGAR-DO-ARM:
+ActionHandler is where DO meets auth/RBAC). Infrastructure config, **not PHI** —
+same public-reference posture as Anatomy `0x0A`.
+
+**The 5+3 hardening that gated it** (CLAUDE.md): theorem-checker (PASS — 0x0C
+free, ids collision-free/well-formed, the mint is a 4-part atomic edit);
+doctrine-keeper (one domain, satisfies the §1 deferral, RESERVE-DON'T-RECLAIM
+honored, flagged pre-existing doc drift DIV-1/DIV-2 fixed here); integration-lead
+(OGAR-only correct for the string-keyed DO-arm, BUT mirror the `ConceptDomain`
+routing arm into lance-graph `ogar_codebook.rs` to avoid soft-fail wire drift —
+same branch, Anatomy precedent); runtime-archaeologist (the precise 11-site /
+2-file lockstep checklist + every drift-guard test named — the Anatomy-break gate
+is `every_codebook_id_appears_in_class_ids_all` in `ogar-class-view`). The +3
+reviewers = `cargo fmt` + the full drift-guard suite (ogar-vocab 94 / ogar-class-view
+11 green) + clippy-clean on the new code.
+
+**Discipline:** minted only the 9 load-bearing concepts (each grounded by a real
+vendored TTL entity AND used by the shipped structural or DO-arm lift). The rest
+(`action_capability`, `intent`, `automation_issue`, `variable`, `mars_node`,
+`mars_model`) are RESERVED — minted when a lift/consumer references them (the
+anti-premature-commitment rule). Ledger: `DISCOVERY-MAP.md` D-MARS-CLASSID.
+
+---
+
 ## 2026-06-23 — E-HIRO-IS-OGAR-DO-ARM — HIRO's Automation domain is a production, externally-validated instance of OGAR's DO arm; the lossless rule is identity-points-to-body
 
 **Status:** FINDING (shape, grounded `[G]`) + CONJECTURE (executable equivalence,
