@@ -1156,6 +1156,12 @@ const CODEBOOK: &[(&str, u16)] = &[
     // PR description for the queue.
     ("product", 0x0207),
     ("accounting_account", 0x0208),
+    // ProductCatalog cluster — closes 3 more of the 11-gap. All stay in 0x02XX
+    // (no new ConceptDomain needed). HR cluster (hr.*) remains queued; needs
+    // a new 0x0DXX concept domain (keystone-style §7 review).
+    ("pricelist", 0x0209),
+    ("pricelist_rule", 0x020A),
+    ("unit_of_measure", 0x020B),
     // ── 0x09XX — Health domain (clinical / patient / care) ──
     // medcare-rs Healthcare-namespace promotion (Northstar T9). The 7
     // entities the OGIT `NTO/Healthcare/entities/` TTL ships, projected
@@ -1533,6 +1539,16 @@ pub mod class_ids {
     /// SMBAccounting (0x62); this id is the OGAR-side identity that closes
     /// the same axis.
     pub const ACCOUNTING_ACCOUNT: u16 = 0x0208;
+    /// `pricelist` (`0x0209`) — price-specification base. OSB `Pricelist`,
+    /// Odoo `product.pricelist` (`schema:PriceSpecification`). Phase-3
+    /// ProductCatalog cluster.
+    pub const PRICELIST: u16 = 0x0209;
+    /// `pricelist_rule` (`0x020A`) — per-tier unit-price rule. OSB
+    /// `PricelistTier`, Odoo `product.pricelist.item`.
+    pub const PRICELIST_RULE: u16 = 0x020A;
+    /// `unit_of_measure` (`0x020B`) — measurement unit. OSB `UoM`, Odoo
+    /// `uom.uom` (`qudt:Unit`).
+    pub const UNIT_OF_MEASURE: u16 = 0x020B;
 
     // ── 0x09XX — health domain (medcare-rs Healthcare namespace) ──
 
@@ -1670,6 +1686,9 @@ pub mod class_ids {
         ("currency_policy", CURRENCY_POLICY),
         ("product", PRODUCT),
         ("accounting_account", ACCOUNTING_ACCOUNT),
+        ("pricelist", PRICELIST),
+        ("pricelist_rule", PRICELIST_RULE),
+        ("unit_of_measure", UNIT_OF_MEASURE),
         // 0x09XX — health
         ("patient", PATIENT),
         ("diagnosis", DIAGNOSIS),
@@ -2538,6 +2557,9 @@ pub fn all_promoted_classes() -> Vec<Class> {
         currency_policy(),
         product(),
         accounting_account(),
+        pricelist(),
+        pricelist_rule(),
+        unit_of_measure(),
         // 0x09XX — health arm (7 OGIT Healthcare concepts), in
         // class_ids::ALL order.
         patient(),
@@ -3415,6 +3437,58 @@ pub fn accounting_account() -> Class {
     let mut currency = Attribute::new("currency");
     currency.type_name = Some("string".to_string());
     c.attributes = vec![code, name, account_type, currency];
+    c
+}
+
+/// `pricelist` (`0x0209`) — price-specification base.
+pub fn pricelist() -> Class {
+    let mut c = Class::new("Pricelist");
+    c.language = Language::Unknown;
+    c.canonical_concept = Some("pricelist".to_string());
+    c.associations = Vec::new();
+    let mut name = Attribute::new("name");
+    name.type_name = Some("string".to_string());
+    let mut currency = Attribute::new("currency");
+    currency.type_name = Some("string".to_string());
+    let mut active = Attribute::new("active");
+    active.type_name = Some("bool".to_string());
+    c.attributes = vec![name, currency, active];
+    c
+}
+
+/// `pricelist_rule` (`0x020A`) — per-tier unit-price rule.
+pub fn pricelist_rule() -> Class {
+    let mut c = Class::new("PricelistRule");
+    c.language = Language::Unknown;
+    c.canonical_concept = Some("pricelist_rule".to_string());
+    c.associations = Vec::new();
+    let mut price = Attribute::new("price");
+    price.type_name = Some("decimal".to_string());
+    let mut min_quantity = Attribute::new("min_quantity");
+    min_quantity.type_name = Some("decimal".to_string());
+    let mut max_quantity = Attribute::new("max_quantity");
+    max_quantity.type_name = Some("decimal".to_string());
+    let mut pricelist_ref = Attribute::new("pricelist_ref");
+    pricelist_ref.type_name = Some("string".to_string());
+    c.attributes = vec![price, min_quantity, max_quantity, pricelist_ref];
+    c
+}
+
+/// `unit_of_measure` (`0x020B`) — measurement unit.
+pub fn unit_of_measure() -> Class {
+    let mut c = Class::new("UnitOfMeasure");
+    c.language = Language::Unknown;
+    c.canonical_concept = Some("unit_of_measure".to_string());
+    c.associations = Vec::new();
+    let mut name = Attribute::new("name");
+    name.type_name = Some("string".to_string());
+    let mut symbol = Attribute::new("symbol");
+    symbol.type_name = Some("string".to_string());
+    let mut factor = Attribute::new("factor");
+    factor.type_name = Some("decimal".to_string());
+    let mut uom_type = Attribute::new("uom_type");
+    uom_type.type_name = Some("string".to_string());
+    c.attributes = vec![name, symbol, factor, uom_type];
     c
 }
 
@@ -4488,6 +4562,9 @@ mod tests {
             "currency_policy",
             "product",
             "accounting_account",
+            "pricelist",
+            "pricelist_rule",
+            "unit_of_measure",
         ] {
             let id = canonical_concept_id(commerce_concept)
                 .unwrap_or_else(|| panic!("{commerce_concept} missing from codebook"));
@@ -4633,7 +4710,7 @@ mod tests {
         }
         // Counts line up with the codebook blocks.
         assert_eq!(concepts_in_domain(ConceptDomain::Health).count(), 7);
-        assert_eq!(concepts_in_domain(ConceptDomain::Commerce).count(), 8);
+        assert_eq!(concepts_in_domain(ConceptDomain::Commerce).count(), 11);
         assert_eq!(concepts_in_domain(ConceptDomain::ProjectMgmt).count(), 26);
         assert_eq!(concepts_in_domain(ConceptDomain::Anatomy).count(), 4);
         assert_eq!(concepts_in_domain(ConceptDomain::Auth).count(), 4);

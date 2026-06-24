@@ -496,6 +496,11 @@ pub const ODOO_ALIASES: &[(&str, u16)] = &[
     // same `accounting_account` id. Phase-3 mint per odoo-rs PR #14 + #16.
     ("account.account", class_ids::ACCOUNTING_ACCOUNT),
     ("account.account.template", class_ids::ACCOUNTING_ACCOUNT),
+    // ProductCatalog cluster — pricing structure + UoM, Phase-3 per
+    // odoo-rs PR #14.
+    ("product.pricelist", class_ids::PRICELIST),
+    ("product.pricelist.item", class_ids::PRICELIST_RULE),
+    ("uom.uom", class_ids::UNIT_OF_MEASURE),
     // Cross-arm bridge: the timesheet / cost line converges on the
     // project-arm `billable_work_entry` (0x0103) — the SAME id
     // OpenProject `TimeEntry` and Redmine `TimeEntry` resolve to.
@@ -1000,13 +1005,13 @@ mod tests {
         // 9 Odoo model aliases = 8 commerce-arm (account.move,
         // sale.order, account.move.line, sale.order.line, account.tax,
         // res.partner, account.payment, res.currency) + 4 product/accounting
-        // master-record aliases (product.template, product.product,
+        // master-record aliases + 3 ProductCatalog cluster aliases (product.template, product.product,
         // account.account, account.account.template — Phase-3 mints per
         // odoo-rs PR #14 + #16) + 1 cross-arm bridge
         // (account.analytic.line → billable_work_entry). Re-count on drift.
         assert_eq!(
             OdooPort::aliases().len(),
-            13,
+            16,
             "Odoo alias count drift — re-count the ODOO_ALIASES table",
         );
     }
