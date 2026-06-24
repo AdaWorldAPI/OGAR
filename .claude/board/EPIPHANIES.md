@@ -7,6 +7,45 @@
 
 ---
 
+## 2026-06-24 — E-ACTIONHANDLER-UPLINK — the hard gate is wired to the executor without OGAR ever taking a `lance-graph` dep: OGAR owns the executor, rs-graph-llm owns the gate, one seam crate joins them
+
+**Status:** FINDING (`[G]`, 3 tests).
+
+Operator directive: "make the hard actionhandler in OGAR as is but also 'uplink'
+into rs-graph-llm so there's a hard gated contract before it lands." The shape
+that satisfies it without violating either repo's dependency hygiene:
+
+- **OGAR owns the executor.** `CapabilityExecutor` (e.g.
+  `ogar-action-handler::NativeCommandExecutor`) is the only piece that does real
+  I/O — it runs the capability and returns `resultParameters`. It carries no
+  authorization logic and no `lance-graph` dep.
+- **rs-graph-llm owns the hard gate.** `graph-flow-action::dispatch_via` runs the
+  cold floor (`commit_via`: def-match → RBAC `ClassRbac` → `StateGuard` → MUL) and
+  reaches the hot path (`handle`) only on `Committed`. Its dep list is
+  intentionally contract-only (`I-ACTIONHANDLER-IS-KGV-NOT-CHOKEPOINT`).
+- **A third crate is the seam.** New `graph-flow-action-ogar`: `GatedOgarHandler`
+  wraps a `CapabilityExecutor` as a `graph-flow-action::ActionHandler`, so the
+  executor runs **only after the contract lands**. `run_gated` drives the whole
+  thing; `take_result()` is `None` iff the gate refused.
+
+**The load-bearing proof is a negative.** The test
+`unauthorized_action_is_blocked_before_execution` asserts `result.is_none()` — the
+OGAR executor *never ran* because the gate said `Denied`. `mul_block_vetoes_before_execution`
+proves the same for a MUL `Block` (`Escalated`, `None`). Only
+`authorized_action_passes_the_gate_and_runs_the_command` reaches the real
+`echo` → `{"output":"gated",…}`. The hard contract demonstrably lands *before*
+execution, not alongside it.
+
+**Why the coupling lives in the seam, not in `graph-flow-action`:** `ogar-from-schema`
+carries no `lance-graph` dependency, so the two sides meet only at the seam crate's
+API — no second `lance-graph-contract` enters the graph. The seam is the *only*
+place the two repos' types touch. (Toolchain: rs-graph-llm pinned to 1.95.0 to
+match the AdaWorldAPI stack it consumes via path deps.) This is the B1-uplink row
+in the `ARAGO-ACTIONHANDLER-PARITY` scorecard and `D-ACTIONHANDLER-UPLINK` in the
+discovery map.
+
+---
+
 ## 2026-06-24 — E-ARAGO-ACTIONHANDLER-PARITY — OGAR is at full *contract + lifecycle* parity with arago's HIRO ActionHandler; the live daemon reduces to two glue bricks
 
 **Status:** FINDING (contract+lifecycle `[G]`) + CONJECTURE (runtime `[H]`, gated

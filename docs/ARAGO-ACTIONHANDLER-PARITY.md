@@ -192,6 +192,15 @@ downstream. The remaining bricks:
   — proven end-to-end by `full_dispatch_runs_a_real_command` ("OGAR running it
   here," native). SSH / REST / WinRM targets follow the same trait; rs-graph-llm's
   `graph-flow-action` provides the production executors (and runs `commit_via`).
+- **B1-uplink — the hard gate before the executor (SHIPPED).** rs-graph-llm's
+  `graph-flow-action-ogar` crate is the seam: `GatedOgarHandler` wraps an OGAR
+  `CapabilityExecutor` as a `graph-flow-action::ActionHandler`, so the executor's
+  `handle` runs **only after** `dispatch_via`'s cold floor commits
+  (`commit_via`: def-match → RBAC `ClassRbac` → state-guard → MUL). The structural
+  proof: `take_result()` is `None` whenever the gate refused — `run_gated` with an
+  unauthorized actor (`Denied`) or a MUL `Block` (`Escalated`) never reaches the
+  OGAR executor. Three tests pin it; `NativeCommandExecutor` runs the real command
+  only on the authorized path. OGAR owns the executor; rs-graph-llm owns the gate.
 - **B2-transport — the live WebSocket loop.** Wrap `handle_submit` in a
   `tokio-tungstenite` client (connect with the `token-$TOKEN` subprotocol, JSON-
   codec the six `action_ws` message types, drive the dispatch, retry-on-no-ack).
@@ -219,6 +228,7 @@ transport over them.
 | **action-ws protocol core (B2-core)** | ✅ `[G]` SHIPPED | `action_ws`: all 6 message types + `submit_to_invocation` / `bind_parameters` / `invocation_to_result` (socket-free, `full_action_ws_roundtrip` proven) |
 | **Reactive dispatch + B1 seam** | ✅ `[G]` SHIPPED | `action_ws::handle_submit` + the `CapabilityExecutor` trait (validate→ack→bind→execute→result; tested with a mock) |
 | **Executor — native target (B1)** | ✅ `[G]` SHIPPED | `ogar-action-handler::NativeCommandExecutor` runs `ExecuteCommand` for real; `full_dispatch_runs_a_real_command` |
+| **Hard gate before executor (B1-uplink)** | ✅ `[G]` SHIPPED | rs-graph-llm `graph-flow-action-ogar::GatedOgarHandler` — `commit_via` (RBAC ∧ guard ∧ MUL) lands before `handle`; `take_result()` is `None` iff the gate refused (3 tests) |
 | **Executor — SSH/REST/WinRM (B1)** | ⛔ `[H]` | further `CapabilityExecutor` impls (rs-graph-llm `graph-flow-action`) |
 | **Live WebSocket transport (B2-transport)** | ⛔ `[H]` | wrap `handle_submit` in a `tokio-tungstenite` loop + JSON codec (all shapes pinned, §2a) |
 | **Instance config lift (B2-lift)** | ⛔ `[H]` | REST `GET /capabilities`/`/applicabilities` → `ActionDef`/`ActionParam` |
@@ -227,7 +237,11 @@ transport over them.
 reactive-dispatch parity**, and **a working native executor runs real commands
 end-to-end** (`handle_submit` + `NativeCommandExecutor`). Every field of the
 config, ontology, and protocol has an OGAR type; the gate (`commit_via`), the
-binding, the dispatch, and native execution are real and tested. What's left for
+binding, the dispatch, and native execution are real and tested — and the gate is
+now **wired to the executor**: rs-graph-llm's `graph-flow-action-ogar` runs OGAR's
+`CapabilityExecutor` only after `commit_via` commits, so an unauthorized or
+MUL-blocked action never executes (proven structurally — `take_result()` is
+`None`). What's left for
 a **live** drop-in replacement of arago's Python daemon: **B2-transport** (the
 WebSocket loop — all shapes/auth pinned), **B2-lift** (the REST registration
 parse), and the **non-native executor targets** (SSH/REST). Each is
@@ -258,6 +272,9 @@ is replaceable; the parity claim is certified, not argued.
 - `lance-graph-contract::action` — `ActionInvocation` / `commit_via<ClassRbac>`.
 - `lance-graph-ogar::OgarActionProvider` — the `classid → ClassActions` DO surface.
 - `rs-graph-llm/graph-flow-action` — the `ActionHandler` executor trait (B1 home).
+- `rs-graph-llm/graph-flow-action-ogar` — the **uplink**: OGAR's
+  `CapabilityExecutor` behind the hard gate (`GatedOgarHandler` / `run_gated`);
+  `commit_via` lands before any execution.
 - arago: `github.com/arago/ActionHandlers`,
   `arago/python-hiro-stonebranch-actionhandler`, HIRO 7 Action API tutorial.
 - **HIRO 7 Action API machine-readable specs (the authoritative harvest, §2a):**
