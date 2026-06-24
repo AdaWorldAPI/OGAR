@@ -59,6 +59,7 @@ use ogar_vocab::{Attribute, Class, EnumDecl, EnumSource, Language};
 
 pub mod action_ws;
 pub mod do_arm;
+pub mod registration;
 pub mod sgo;
 pub mod ttl;
 pub mod ttl_emit;

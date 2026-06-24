@@ -359,6 +359,123 @@ pub fn invocation_to_result(
     })
 }
 
+// ─────────────────────────────────────────────────────────────────────
+// The handler reactive core — turn one inbound `submitAction` into the
+// ordered outbound messages, with execution behind a trait (the B1 seam).
+// Socket-free and pure given the executor; the live transport (B2-transport)
+// just ships these messages, and the RBAC/guard gate (`commit_via`,
+// lance-graph-contract) wraps the executor downstream.
+// ─────────────────────────────────────────────────────────────────────
+
+/// The executor seam (parity brick **B1**): run a bound capability and return
+/// its `resultParameters`. Implemented per `ExecTarget` (SSH / REST / native) by
+/// rs-graph-llm's `graph-flow-action`; modelled here as a trait so the dispatch
+/// core is testable without real I/O. The impl is also where the
+/// RBAC/guard gate (`commit_via`) runs — it owns the `lance-graph` dependency
+/// OGAR's producer crate deliberately does not.
+pub trait CapabilityExecutor {
+    /// Execute `capability` with the `bound` parameters.
+    ///
+    /// `Ok(result_params)` → the success `resultParameters`; `Err(message)` → a
+    /// failure the handler reports back in the result.
+    fn execute(
+        &self,
+        capability: &str,
+        bound: &[(String, String)],
+    ) -> Result<Vec<(String, String)>, String>;
+}
+
+/// The immediate receipt response to a `submitAction`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Receipt {
+    /// Accepted (code 200) — execution follows, then a [`SendActionResult`].
+    Acknowledged(Acknowledged),
+    /// Rejected before execution (invalid id / unknown capability) — no result.
+    NegativeAcknowledged(NegativeAcknowledged),
+}
+
+/// The ordered outbound reaction to one inbound `submitAction`: the receipt,
+/// then (when accepted) the eventual `sendActionResult`. The live transport
+/// emits `receipt` first, then `result` when present.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HandlerReaction {
+    /// The receipt — `Acknowledged` on accept, `NegativeAcknowledged` on reject.
+    pub receipt: Receipt,
+    /// The result message — present iff the action was accepted (it ran, or it
+    /// failed *after* acceptance and reports the failure in the result).
+    pub result: Option<SendActionResult>,
+}
+
+/// OGAR convention: a post-acceptance failure (bad params, executor error) is
+/// reported in the `sendActionResult` as a one-field `{"error": "<message>"}`
+/// object (the action was already acknowledged, so a result is owed). The exact
+/// HIRO failure-reporting field is confirmed against a live engine in
+/// B2-transport; until then this is the documented OGAR shape.
+fn error_result(id: &str, message: &str) -> SendActionResult {
+    SendActionResult {
+        id: id.to_owned(),
+        result: json_object(&[("error".to_owned(), message.to_owned())]),
+    }
+}
+
+/// Drive one inbound `submitAction` through the handler's reactive flow:
+/// validate → ack-or-nack → bind → execute (via `executor`) → result.
+///
+/// - invalid `id` / capability ≠ `def.predicate` → reject **before** ack
+///   (`NegativeAcknowledged`, no result).
+/// - accepted → `Acknowledged`, then bind the inputs against `signature` and run
+///   `executor`; the outcome (success `resultParameters`, or an `{"error":…}`
+///   on bind/exec failure) rides in the `sendActionResult`.
+///
+/// Pure given `executor`; the same flow arago's Python daemon runs, minus the
+/// socket (B2-transport) and the real command (the `executor` impl, B1).
+#[must_use]
+pub fn handle_submit(
+    msg: &SubmitAction,
+    def: &ActionDef,
+    signature: &[ActionParam],
+    executor: &dyn CapabilityExecutor,
+) -> HandlerReaction {
+    // Reject malformed / mis-routed actions BEFORE acknowledging.
+    if let Err(e) = validate_id(&msg.id) {
+        return HandlerReaction {
+            receipt: Receipt::NegativeAcknowledged(negative_acknowledge(
+                &msg.id,
+                400,
+                e.to_string(),
+            )),
+            result: None,
+        };
+    }
+    if msg.capability != def.predicate {
+        return HandlerReaction {
+            receipt: Receipt::NegativeAcknowledged(negative_acknowledge(
+                &msg.id,
+                400,
+                format!("unknown capability `{}`", msg.capability),
+            )),
+            result: None,
+        };
+    }
+
+    // Accept: acknowledge receipt, then bind + execute.
+    let ack = acknowledge(msg);
+    let result = match bind_parameters(&msg.parameters, signature) {
+        Err(e) => error_result(&msg.id, &e.to_string()),
+        Ok(bound) => match executor.execute(&msg.capability, &bound) {
+            Ok(params) => SendActionResult {
+                id: msg.id.clone(),
+                result: json_object(&params),
+            },
+            Err(e) => error_result(&msg.id, &e),
+        },
+    };
+    HandlerReaction {
+        receipt: Receipt::Acknowledged(ack),
+        result: Some(result),
+    }
+}
+
 // ───────────────────────────────────────────────────────────── tests ──
 //
 // The pure protocol core: the full submitAction → bind → invocation(Pending)
@@ -549,5 +666,110 @@ mod tests {
             invocation_to_result(&inv, &[("exitcode".to_owned(), "0".to_owned())]).expect("result");
         assert_eq!(result.id, msg.id);
         assert_eq!(result.result, r#"{"exitcode":"0"}"#);
+    }
+
+    // ── the handler reactive core (handle_submit + the B1 executor seam) ──
+
+    /// A mock executor: returns a fixed success, or a fixed error.
+    struct MockExecutor(Result<Vec<(String, String)>, String>);
+    impl CapabilityExecutor for MockExecutor {
+        fn execute(
+            &self,
+            _capability: &str,
+            _bound: &[(String, String)],
+        ) -> Result<Vec<(String, String)>, String> {
+            self.0.clone()
+        }
+    }
+
+    /// A spec-valid submit (id ≥ 12 chars) for the dispatch tests.
+    fn valid_submit() -> SubmitAction {
+        let mut s = submit();
+        s.id = "app1:req-000042".to_owned(); // 15 chars
+        s
+    }
+
+    #[test]
+    fn handle_submit_accepts_runs_and_returns_result() {
+        let exec = MockExecutor(Ok(vec![("output".to_owned(), "ok".to_owned())]));
+        let r = handle_submit(
+            &valid_submit(),
+            &execute_command_def(),
+            &execute_command_signature(),
+            &exec,
+        );
+        match r.receipt {
+            Receipt::Acknowledged(a) => assert_eq!(a.code, 200),
+            other => panic!("expected ack, got {other:?}"),
+        }
+        let res = r.result.expect("result present");
+        assert_eq!(res.id, "app1:req-000042");
+        assert_eq!(res.result, r#"{"output":"ok"}"#);
+    }
+
+    #[test]
+    fn handle_submit_rejects_unknown_capability_before_ack() {
+        let exec = MockExecutor(Ok(vec![]));
+        let mut bad = valid_submit();
+        bad.capability = "RunScript".to_owned();
+        let r = handle_submit(
+            &bad,
+            &execute_command_def(),
+            &execute_command_signature(),
+            &exec,
+        );
+        assert!(matches!(r.receipt, Receipt::NegativeAcknowledged(_)));
+        assert!(r.result.is_none(), "rejected actions carry no result");
+    }
+
+    #[test]
+    fn handle_submit_rejects_invalid_id() {
+        let exec = MockExecutor(Ok(vec![]));
+        let short = submit(); // id "app1:req42" is 10 chars (< 12)
+        let r = handle_submit(
+            &short,
+            &execute_command_def(),
+            &execute_command_signature(),
+            &exec,
+        );
+        match r.receipt {
+            Receipt::NegativeAcknowledged(n) => assert_eq!(n.code, 400),
+            other => panic!("expected nack, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn handle_submit_reports_bind_failure_after_ack() {
+        let exec = MockExecutor(Ok(vec![]));
+        let mut no_command = valid_submit();
+        no_command.parameters = vec![("host".to_owned(), "node-9".to_owned())]; // no `command`
+        let r = handle_submit(
+            &no_command,
+            &execute_command_def(),
+            &execute_command_signature(),
+            &exec,
+        );
+        // Accepted (acked), but the result carries the bind error.
+        assert!(matches!(r.receipt, Receipt::Acknowledged(_)));
+        let res = r.result.expect("result present");
+        assert!(
+            res.result.contains("error"),
+            "bind failure reported in result: {}",
+            res.result
+        );
+    }
+
+    #[test]
+    fn handle_submit_reports_executor_failure_in_result() {
+        let exec = MockExecutor(Err("ssh: connection refused".to_owned()));
+        let r = handle_submit(
+            &valid_submit(),
+            &execute_command_def(),
+            &execute_command_signature(),
+            &exec,
+        );
+        assert!(matches!(r.receipt, Receipt::Acknowledged(_)));
+        let res = r.result.expect("result present");
+        assert_eq!(res.result, r#"{"error":"ssh: connection refused"}"#);
     }
 }

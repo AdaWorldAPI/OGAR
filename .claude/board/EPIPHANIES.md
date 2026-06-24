@@ -7,6 +7,81 @@
 
 ---
 
+## 2026-06-24 — E-ACTIONHANDLER-B2LIFT — the producer stays parser-free even when lifting a JSON REST response: it defines the `Deserialize` DTOs + the pure lift, the runtime does the `from_str`
+
+**Status:** FINDING (`[G]` for capabilities; `[H]` for the applicabilities envelope).
+
+B2-lift (the REST registration instance lift) had to read a JSON `GET
+/capabilities` body — but `ogar-from-schema` is deliberately parser-free on its
+default path (a narrow line-oriented TTL walker; a hand-rolled JSON *encoder* in
+`action_ws`, never a decoder). The resolution kept the producer pure by splitting
+along the crate family's existing seam:
+
+- **Producer (`ogar-from-schema::registration`) defines the typed REST DTOs**
+  (`RegisteredCapability` / `RegisteredParam` / `ModelFilter`, `Deserialize` behind
+  the already-present `serde` feature) **and the pure lift mapping**
+  (`lift_registration → ConcreteCapability` with concrete `ActionParam[]`;
+  `model_filter_to_guard`: arago `ModelFilter{Var,Mode,Value}` → `KausalSpec::StateGuard`
+  field-for-field). No `serde_json`, no I/O.
+- **Runtime (`ogar-action-handler::parse_capabilities`) does the `serde_json::from_str`.**
+  The runtime crate already owns I/O (it runs commands); reading a REST response is
+  the same kind of work. `serde_json` lives there, never in the producer.
+
+This is the same producer-defines-types / runtime-does-I/O split the whole crate
+family keeps (schema lift defines `Class`; source-AST producers fill behavior; the
+runtime executes). The payoff is concrete: `ogar-from-schema` gains a REST front-end
+without gaining a parser dependency.
+
+**The lift fills a gap the schema cannot reach.** The OGIT ontology declares only
+*that* a capability has `mandatoryParameters` / `optionalParameters` slots
+(`CapabilitySlot`); the concrete `(name, mandatory, default)` tuples exist only in a
+*deployed* handler's config. B2-lift reads them from the live REST view — so the
+two halves compose: schema lift gives the contract shape, instance lift gives the
+deployed values, and the result drives `bind_parameters` → the executor. Proven by
+`rest_registration_lifts_binds_and_runs` (real JSON → lift → bind → run). The B2-lift
+rows in the parity scorecard + `D-ACTIONHANDLER-B2LIFT` in the discovery map.
+
+---
+
+## 2026-06-24 — E-ACTIONHANDLER-UPLINK — the hard gate is wired to the executor without OGAR ever taking a `lance-graph` dep: OGAR owns the executor, rs-graph-llm owns the gate, one seam crate joins them
+
+**Status:** FINDING (`[G]`, 3 tests).
+
+Operator directive: "make the hard actionhandler in OGAR as is but also 'uplink'
+into rs-graph-llm so there's a hard gated contract before it lands." The shape
+that satisfies it without violating either repo's dependency hygiene:
+
+- **OGAR owns the executor.** `CapabilityExecutor` (e.g.
+  `ogar-action-handler::NativeCommandExecutor`) is the only piece that does real
+  I/O — it runs the capability and returns `resultParameters`. It carries no
+  authorization logic and no `lance-graph` dep.
+- **rs-graph-llm owns the hard gate.** `graph-flow-action::dispatch_via` runs the
+  cold floor (`commit_via`: def-match → RBAC `ClassRbac` → `StateGuard` → MUL) and
+  reaches the hot path (`handle`) only on `Committed`. Its dep list is
+  intentionally contract-only (`I-ACTIONHANDLER-IS-KGV-NOT-CHOKEPOINT`).
+- **A third crate is the seam.** New `graph-flow-action-ogar`: `GatedOgarHandler`
+  wraps a `CapabilityExecutor` as a `graph-flow-action::ActionHandler`, so the
+  executor runs **only after the contract lands**. `run_gated` drives the whole
+  thing; `take_result()` is `None` iff the gate refused.
+
+**The load-bearing proof is a negative.** The test
+`unauthorized_action_is_blocked_before_execution` asserts `result.is_none()` — the
+OGAR executor *never ran* because the gate said `Denied`. `mul_block_vetoes_before_execution`
+proves the same for a MUL `Block` (`Escalated`, `None`). Only
+`authorized_action_passes_the_gate_and_runs_the_command` reaches the real
+`echo` → `{"output":"gated",…}`. The hard contract demonstrably lands *before*
+execution, not alongside it.
+
+**Why the coupling lives in the seam, not in `graph-flow-action`:** `ogar-from-schema`
+carries no `lance-graph` dependency, so the two sides meet only at the seam crate's
+API — no second `lance-graph-contract` enters the graph. The seam is the *only*
+place the two repos' types touch. (Toolchain: rs-graph-llm pinned to 1.95.0 to
+match the AdaWorldAPI stack it consumes via path deps.) This is the B1-uplink row
+in the `ARAGO-ACTIONHANDLER-PARITY` scorecard and `D-ACTIONHANDLER-UPLINK` in the
+discovery map.
+
+---
+
 ## 2026-06-24 — E-ARAGO-ACTIONHANDLER-PARITY — OGAR is at full *contract + lifecycle* parity with arago's HIRO ActionHandler; the live daemon reduces to two glue bricks
 
 **Status:** FINDING (contract+lifecycle `[G]`) + CONJECTURE (runtime `[H]`, gated
