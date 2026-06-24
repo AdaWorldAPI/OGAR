@@ -1235,6 +1235,15 @@ const CODEBOOK: &[(&str, u16)] = &[
     ("action_handler", 0x0C07),
     ("action_applicability", 0x0C08),
     ("automation_trigger", 0x0C09),
+    // ── 0x0DXX — HR domain (employment / org / contracts) ──
+    // Public HR master-data: person + organizational-unit + role + employment-
+    // contract entities. Distinct from Auth (IdP→classid bridge) and Health
+    // (PHI). Closes the final 4-of-11 cross-axis identity gap surfaced by
+    // odoo-rs PR #14: hr.employee / hr.department / hr.job / hr.contract.
+    ("hr_employee", 0x0D01),
+    ("hr_department", 0x0D02),
+    ("hr_job", 0x0D03),
+    ("hr_employment_contract", 0x0D04),
 ];
 
 /// Codebook **domain** — the high byte of a canonical id (see
@@ -1282,6 +1291,13 @@ pub enum ConceptDomain {
     /// public-reference posture as [`Anatomy`](Self::Anatomy). See
     /// `docs/MARS-TRANSCODING.md` + `docs/HIRO-DO-ARM-LIFT.md`.
     Automation,
+    /// `0x0DXX` — HR (employment / org / contracts). Public master-data for
+    /// person + organizational-unit + role + employment-contract entities;
+    /// distinct from `Auth` identity (which is the IdP→classid bridge) and
+    /// from `Health` PHI. Mirrors arago HIRO HR semantics + Odoo `hr.*` +
+    /// `vcard:Individual` / `org:OrganizationalUnit` / `org:Role` /
+    /// `fibo:Contract` alignment.
+    HR,
     /// Any high-byte slot not yet assigned a domain (`0x03XX`–`0x06XX`,
     /// `0x0DXX`+).
     Unassigned,
@@ -1301,6 +1317,7 @@ pub fn canonical_concept_domain(id: u16) -> ConceptDomain {
         0x0A => ConceptDomain::Anatomy,
         0x0B => ConceptDomain::Auth,
         0x0C => ConceptDomain::Automation,
+        0x0D => ConceptDomain::HR,
         _ => ConceptDomain::Unassigned,
     }
 }
@@ -1612,6 +1629,24 @@ pub mod class_ids {
     /// `auth_ory_keto` (`0x0B04`) — Ory Keto provider profile.
     pub const AUTH_ORY_KETO: u16 = 0x0B04;
 
+    // ── 0x0DXX — HR domain (employment / org / contracts) ──
+
+    /// `hr_employee` (`0x0D01`) — person record. OSB `Employee`, Odoo
+    /// `hr.employee` (`vcard:Individual`).
+    pub const HR_EMPLOYEE: u16 = 0x0D01;
+    /// `hr_department` (`0x0D02`) — organizational unit (sub-tree of an
+    /// organization). OSB `Department`, Odoo `hr.department`
+    /// (`org:OrganizationalUnit`).
+    pub const HR_DEPARTMENT: u16 = 0x0D02;
+    /// `hr_job` (`0x0D03`) — role / position. OSB `Job`, Odoo `hr.job`
+    /// (`org:Role`).
+    pub const HR_JOB: u16 = 0x0D03;
+    /// `hr_employment_contract` (`0x0D04`) — base employment contract.
+    /// OSB `Contract`, Odoo `hr.contract` (`fibo:Contract`). Payroll
+    /// computation stays outside the codebook (Odoo Enterprise / OSB
+    /// add-on territory).
+    pub const HR_EMPLOYMENT_CONTRACT: u16 = 0x0D04;
+
     // ── 0x0CXX — Automation domain (HIRO IT-automation stack) ──
 
     /// `mars_application` (`0x0C01`) — a MARS Application CMDB entity; head of
@@ -1707,6 +1742,12 @@ pub mod class_ids {
         ("auth_zitadel", AUTH_ZITADEL),
         ("auth_zanzibar", AUTH_ZANZIBAR),
         ("auth_ory_keto", AUTH_ORY_KETO),
+        // 0x0DXX — HR (employment / org / contracts; closes the final
+        // 4-of-11 cross-axis gap from odoo-rs PR #14)
+        ("hr_employee", HR_EMPLOYEE),
+        ("hr_department", HR_DEPARTMENT),
+        ("hr_job", HR_JOB),
+        ("hr_employment_contract", HR_EMPLOYMENT_CONTRACT),
         // 0x0CXX — automation (HIRO IT-automation: MARS CMDB + actuators)
         ("mars_application", MARS_APPLICATION),
         ("mars_resource", MARS_RESOURCE),
