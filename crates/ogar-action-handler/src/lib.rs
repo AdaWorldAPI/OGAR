@@ -40,10 +40,14 @@
 
 use std::process::Command;
 
+use std::collections::BTreeMap;
+
 use ogar_from_schema::action_ws::CapabilityExecutor;
 use ogar_from_schema::registration::{
-    ConcreteCapability, RegisteredCapabilities, lift_registration,
+    ConcreteCapability, RegisteredApplicabilities, RegisteredCapabilities, lift_applicabilities,
+    lift_registration,
 };
+use ogar_vocab::KausalSpec;
 
 /// Read a deployed handler's `GET /capabilities` REST response (a JSON
 /// `MapOfCapabilities`) and lift it into the concrete OGAR capability signatures
@@ -61,6 +65,22 @@ use ogar_from_schema::registration::{
 pub fn parse_capabilities(json: &str) -> Result<Vec<ConcreteCapability>, String> {
     let caps: RegisteredCapabilities = serde_json::from_str(json).map_err(|e| e.to_string())?;
     Ok(lift_registration(&caps))
+}
+
+/// Read a deployed handler's `GET /applicabilities` REST response (a JSON
+/// `MapOfApplicabilities`) and lift it into the per-handler guard sets — handler
+/// id → its [`KausalSpec::StateGuard`] list (the B2-lift applicabilities half).
+///
+/// Each handler's guards are the OGAR form of arago's node-match `ModelFilter`s:
+/// the action applies where they all match. The same `commit_via` state-guard the
+/// hard gate evaluates before executing.
+///
+/// # Errors
+/// Returns the `serde_json` error message if the body is not a valid
+/// `MapOfApplicabilities`.
+pub fn parse_applicabilities(json: &str) -> Result<BTreeMap<String, Vec<KausalSpec>>, String> {
+    let apps: RegisteredApplicabilities = serde_json::from_str(json).map_err(|e| e.to_string())?;
+    Ok(lift_applicabilities(&apps))
 }
 
 /// Reference executor for the **native** target: runs a capability's command via
@@ -207,6 +227,34 @@ mod tests {
             .execute("ExecuteCommand", &bound)
             .expect("runs");
         assert_eq!(result[0], ("output".to_owned(), "lifted".to_owned()));
+    }
+
+    /// B2-lift applicabilities: a real `GET /applicabilities` REST response
+    /// (JSON `MapOfApplicabilities`) parses → lifts to per-handler guard sets,
+    /// the `ModelFilter`s becoming `StateGuard`s the hard gate evaluates.
+    #[test]
+    fn rest_applicabilities_lift_to_per_handler_guards() {
+        // `modelFilters` is the primary field name; `model` / `filters` are
+        // accepted aliases (the inner field name isn't pinned by the spec).
+        let body = r#"{
+            "ssh-handler": {
+                "modelFilters": [
+                    { "var": "ogit/_type", "mode": "equals", "value": "ogit/Network/Machine" }
+                ]
+            },
+            "any-handler": { "model": [] }
+        }"#;
+
+        let lifted = parse_applicabilities(body).expect("valid MapOfApplicabilities");
+        assert_eq!(lifted.len(), 2);
+        assert!(lifted["any-handler"].is_empty());
+        assert_eq!(
+            lifted["ssh-handler"],
+            vec![KausalSpec::StateGuard {
+                guard_field: "ogit/_type".to_owned(),
+                guard_values: vec!["ogit/Network/Machine".to_owned()],
+            }]
+        );
     }
 
     /// End-to-end: the dispatch core + this executor run a real command and
