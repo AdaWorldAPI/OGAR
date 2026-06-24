@@ -1,0 +1,16 @@
+[package]
+name = "ogar-action-handler"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+description = "OGAR-native HIRO ActionHandler runtime — CapabilityExecutor impls (the B1 executor seam) over the action-ws protocol core in ogar-from-schema. The reference NativeCommandExecutor runs a capability's command via a local process; SSH/REST targets follow the same trait. rs-graph-llm's graph-flow-action provides the production executors."
+
+[features]
+default = []
+
+[dependencies]
+ogar-from-schema = { path = "../ogar-from-schema" }
+ogar-vocab = { path = "../ogar-vocab" }
