@@ -122,7 +122,23 @@ speaks the same WebSocket protocol but routes through OGAR types.
                                   Lance commit (CommitHook) ── server acknowledged
 ```
 
-Steps 1, 3, 4, 6 are OGAR types that **exist today**. The two unbuilt bricks:
+Steps 1–4 and 6 are OGAR types/logic that **exist today** — **the protocol core
+is shipped** in `ogar-from-schema::action_ws` (the testable, socket-free binding):
+
+- `SubmitAction` / `Acknowledged` / `SendActionResult` — the typed `action-ws`
+  messages (serde-gated for the wire).
+- `acknowledge(submit)` — step 3 (the 200 receipt).
+- `bind_parameters(supplied, signature)` — validates the engine's `parameters`
+  against the capability's `ActionParam[]` (mandatory present, defaults filled) —
+  the same check arago's Python handler runs before executing.
+- `submit_to_invocation(submit, def)` — step 1+2: builds the `Pending`
+  `ActionInvocation` (capability→predicate match, `id`→`idempotency_key`,
+  `host`→`object_instance`, `handler`/`scope`→`lokal`).
+- `invocation_to_result(committed_inv, result)` — step 6: only a `Committed`
+  invocation (the Rubicon crossing) yields the `sendActionResult`.
+
+The full loop is proven socket-free by `full_action_ws_roundtrip`. The remaining
+bricks:
 
 - **B1 — the executor (`ExecTarget` runner).** Step 5: actually run the
   capability's Command/script (SSH, REST, native) and capture stdout/exit →
@@ -130,14 +146,17 @@ Steps 1, 3, 4, 6 are OGAR types that **exist today**. The two unbuilt bricks:
   rs-graph-llm; **no `ExecTarget` impl exists yet** (the audit's red row). It is
   the same surface arago's per-handler plugins fill (`StonebranchActionHandler`,
   the SSH handler) — in OGAR it's one trait with per-target impls.
-- **B2 — the action-ws adapter + instance config lift.** The WebSocket glue
-  (steps 1–3, 6) and the deployed-handler-YAML → `ActionDef` + `ActionParam[]`
-  lift (the concrete param/Command values §1 note ¹). Reuses the `do_arm`
-  contract-assembly that shipped here.
+- **B2-transport — the live WebSocket loop.** Wrap the shipped `action_ws`
+  binding in a `tokio-tungstenite` client (connect, decode JSON → `SubmitAction`,
+  drive the binding, encode `Acknowledged`/`SendActionResult` → JSON, retry-on-no-ack).
+- **B2-lift — the instance config lift.** Parse a deployed-handler YAML → the
+  concrete `ActionDef` + `ActionParam[]` (the param/Command values §1 note ¹),
+  reusing the `do_arm` contract-assembly that shipped here.
 
-Both are **glue over existing types**, not new IR. That is the precise sense in
-which OGAR is "at parity": the *contract and lifecycle* are OGAR-native and
-proven; the daemon is a thin adapter that two well-scoped bricks complete.
+All three are **glue over existing types** (transport + a command runner + a YAML
+parser), not new IR. That is the precise sense in which OGAR is "at parity": the
+*contract, the lifecycle, and now the protocol binding* are OGAR-native and
+proven; the live daemon is a thin transport that wraps them.
 
 ---
 
@@ -149,16 +168,22 @@ proven; the daemon is a thin adapter that two well-scoped bricks complete.
 | **ModelFilter → guard** | ✅ `[G]` | `environmentFilter` → `KausalSpec::StateGuard` (test) |
 | **Action lifecycle (protocol)** | ✅ `[G]` (type-level) | `action-ws` ⟷ `ActionInvocation` Pending→Committed; `commit_via` is the gate |
 | **RBAC at execute** | ✅ `[G]` | `commit_via<ClassRbac>` (verb-gate ∧ guard ∧ MUL) — shipped in `lance-graph-contract` |
+| **action-ws protocol core (B2-core)** | ✅ `[G]` SHIPPED | `action_ws`: `SubmitAction`/`Acknowledged`/`SendActionResult` + `submit_to_invocation` / `bind_parameters` / `invocation_to_result` (socket-free, `full_action_ws_roundtrip` proven) |
 | **Executor (run the Command)** | ⛔ `[H]` B1 | `ExecTarget` runner — specced, unbuilt; `PROBE-OGAR-ACTIONHANDLER-RUN` |
-| **action-ws adapter + config lift** | ⛔ `[H]` B2 | WebSocket glue + deployed-YAML → `ActionDef`/`ActionParam` lift |
+| **Live WebSocket transport (B2-transport)** | ⛔ `[H]` | wrap `action_ws` in a `tokio-tungstenite` loop + JSON codec |
+| **Instance config lift (B2-lift)** | ⛔ `[H]` | deployed-handler-YAML → `ActionDef`/`ActionParam` |
 
 **Verdict:** OGAR is at **full contract + lifecycle parity** with arago's
-ActionHandler — every field of the config, ontology, and `action-ws` protocol
-has an OGAR type, and the execution gate (`commit_via`) is shipped. The switch
-to "OGAR running it here" reduces to **two glue bricks (B1 executor, B2
-adapter)** over those types — no missing IR, no missing protocol mapping. That
-is the honest state: parity on *what an ActionHandler is*; a bounded build for
-*running one live*.
+ActionHandler, and the **`action-ws` protocol binding is now shipped + tested**
+(`action_ws`, socket-free). Every field of the config, ontology, and protocol
+has an OGAR type; the execution gate (`commit_via`) and the
+`submitAction→invocation→sendActionResult` binding are real. The switch to "OGAR
+running it here" reduces to **three glue bricks — B1 (the command executor),
+B2-transport (the live WebSocket loop), B2-lift (the handler-YAML lift)** — every
+one of them transport/runner/parser glue over existing types, **no missing IR,
+no missing protocol mapping**. That is the honest state: parity on *what an
+ActionHandler is*, *how an action flows*, and *the protocol that carries it*; a
+bounded, well-scoped build for *running one live*.
 
 ---
 
