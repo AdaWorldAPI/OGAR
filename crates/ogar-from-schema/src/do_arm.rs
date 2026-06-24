@@ -257,6 +257,158 @@ pub fn lift_action_defs(entities: &[EntityDecl]) -> Vec<ActionDef> {
     entities.iter().filter_map(into_action_def).collect()
 }
 
+// ─────────────────────────────────────────────────────────────────────
+// The arago ActionHandler contract — parity with arago's HIRO ActionHandler
+// (`github.com/arago/ActionHandlers`, `arago/python-hiro-*-actionhandler`).
+//
+// An arago ActionHandler is a daemon that registers a **Configuration** + one
+// or more **Capabilities** + **Applicabilities** with the HIRO engine, receives
+// actions over the action-ws API, executes them, and returns a result. The OGIT
+// `NTO/Automation` ontology IS that contract's schema:
+//
+//     ActionHandler  ──provides──►  ActionApplicability  ──provides──►  ActionCapability
+//        (the daemon)                  (node-match guard)                  (named op + I/O)
+//
+// arago's deployed-handler config (the SSH/Stonebranch YAML) maps field-for-field:
+//   Capability   { Name, Description, Command/Interpreter, Parameter[]{Name,Mandatory,Default} }
+//   Applicability{ Priority, ModelFilter{Var,Mode,Value}, Capability, Parameter[] }
+//
+// The parity points (see `docs/ARAGO-ACTIONHANDLER-PARITY.md`):
+//   Applicability.ModelFilter{Var,Mode,Value} → KausalSpec::StateGuard{field,[value]}
+//   Capability.Name                           → ActionDef.predicate
+//   Capability.Parameter[] / resultParameters → the typed I/O signature (below)
+//   Capability.Command/Interpreter            → ActionDef.body_source (pointed-to, lossless-DO)
+// ─────────────────────────────────────────────────────────────────────
+
+/// One typed parameter of a capability/applicability — an element of the
+/// action's I/O signature. Mirrors arago's deployed-handler `Parameter
+/// { Name, Mandatory, Default }` (the SSH / Stonebranch handler config shape).
+///
+/// At the *schema* level the OGIT ontology declares only that the param *slots*
+/// exist (the `mandatoryParameters` / `optionalParameters` / `resultParameters`
+/// attributes); the concrete `(name, mandatory, default)` tuples come from a
+/// *deployed* handler config (the instance lift — see the parity doc).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ActionParam {
+    /// Parameter name (arago `Parameter.Name`).
+    pub name: String,
+    /// Whether the parameter is required (arago `Parameter.Mandatory`).
+    pub mandatory: bool,
+    /// Default value when not supplied (arago `Parameter.Default`).
+    pub default: Option<String>,
+}
+
+/// An **ActionCapability** — a named operation plus its typed I/O signature.
+/// Mirrors arago's `Capability { Name, Description, Command/Interpreter,
+/// Parameter[], resultParameters }`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CapabilitySlot {
+    /// Canonical identity (`ogit-automation/action_capability`).
+    pub identity: String,
+    /// Declares a `mandatoryParameters` slot (the required-input signature).
+    pub declares_mandatory_params: bool,
+    /// Declares an `optionalParameters` slot (the optional-input signature).
+    pub declares_optional_params: bool,
+    /// Declares a `resultParameters` slot — **the output signature**. This is
+    /// the half that makes an action *runnable*: a caller knows what the
+    /// capability returns (arago `resultParameters` → the action result).
+    pub declares_result_params: bool,
+}
+
+/// An **ActionApplicability** — the node-match guard selecting *when/where* a
+/// handler applies. arago's `ModelFilter { Var, Mode, Value }` is OGAR's
+/// [`KausalSpec::StateGuard`] (`Var` → `guard_field`, `Value` → `guard_values`);
+/// the schema-level `environmentFilter` attribute is its carrier.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ApplicabilitySlot {
+    /// Canonical identity (`ogit-automation/action_applicability`).
+    pub identity: String,
+    /// The node-match guard (the `environmentFilter` → `StateGuard`).
+    pub kausal: Option<KausalSpec>,
+    /// The capabilities this applicability `provides`.
+    pub capabilities: Vec<CapabilitySlot>,
+}
+
+/// The full **ActionHandler** contract — arago's ActionHandler assembled from
+/// the OGIT `provides` graph (`ActionHandler → ActionApplicability →
+/// ActionCapability`). The OGAR-native parity surface for an arago HIRO
+/// ActionHandler.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ActionHandlerSpec {
+    /// Canonical identity (`ogit-automation/action_handler`).
+    pub identity: String,
+    /// The applicabilities this handler `provides` (each gating its capabilities).
+    pub applicabilities: Vec<ApplicabilitySlot>,
+}
+
+/// Find an entity by its local name (`ActionApplicability`) in a set.
+fn find_by_local<'a>(entities: &'a [EntityDecl], local_name: &str) -> Option<&'a EntityDecl> {
+    entities.iter().find(|e| e.name == local_name)
+}
+
+/// Does the entity declare the given parameter slot (in either its mandatory or
+/// optional attribute list)? — e.g. `"resultParameters"`.
+fn declares_param_slot(entity: &EntityDecl, slot: &str) -> bool {
+    entity
+        .mandatory_attributes
+        .iter()
+        .chain(entity.optional_attributes.iter())
+        .any(|curie| local(curie) == slot)
+}
+
+/// The local names an entity `provides` (the `ogit:provides` allowed-edges).
+fn provides_targets(entity: &EntityDecl) -> impl Iterator<Item = &str> {
+    entity
+        .allowed
+        .iter()
+        .filter(|(verb, _)| local(verb) == "provides")
+        .map(|(_, target)| local(target))
+}
+
+/// Lift an `ActionCapability` entity into a [`CapabilitySlot`].
+fn capability_slot(entity: &EntityDecl) -> CapabilitySlot {
+    CapabilitySlot {
+        identity: canonical_object_class(&entity.curie),
+        declares_mandatory_params: declares_param_slot(entity, "mandatoryParameters"),
+        declares_optional_params: declares_param_slot(entity, "optionalParameters"),
+        declares_result_params: declares_param_slot(entity, "resultParameters"),
+    }
+}
+
+/// Lift an `ActionApplicability` entity into an [`ApplicabilitySlot`], resolving
+/// the capabilities it `provides` against `entities`.
+fn applicability_slot(entity: &EntityDecl, entities: &[EntityDecl]) -> ApplicabilitySlot {
+    let capabilities = provides_targets(entity)
+        .filter_map(|target| find_by_local(entities, target))
+        .map(capability_slot)
+        .collect();
+    ApplicabilitySlot {
+        identity: canonical_object_class(&entity.curie),
+        kausal: kausal_from_entity(entity),
+        capabilities,
+    }
+}
+
+/// Assemble the full arago ActionHandler contract from a set of OGIT Automation
+/// entities — walk `ActionHandler → provides → ActionApplicability → provides →
+/// ActionCapability`. Returns `None` if the set carries no `ActionHandler`.
+///
+/// This is the OGAR-native, ontology-grounded parity surface for an arago HIRO
+/// ActionHandler: the SAME `(handler, applicabilities[guard], capabilities[I/O])`
+/// shape arago registers with the HIRO engine, expressed in OGAR types.
+#[must_use]
+pub fn assemble_action_handler(entities: &[EntityDecl]) -> Option<ActionHandlerSpec> {
+    let handler = find_by_local(entities, "ActionHandler")?;
+    let applicabilities = provides_targets(handler)
+        .filter_map(|target| find_by_local(entities, target))
+        .map(|app| applicability_slot(app, entities))
+        .collect();
+    Some(ActionHandlerSpec {
+        identity: canonical_object_class(&handler.curie),
+        applicabilities,
+    })
+}
+
 // ───────────────────────────────────────────────────────────── tests ──
 //
 // The schema-level half of PROBE-OGAR-DO-ARM-LIFT: prove the §4 field mapping
@@ -421,5 +573,68 @@ mod tests {
             "only KnowledgeItem is a standalone ActionDef"
         );
         assert_eq!(defs[0].predicate, "execute");
+    }
+
+    // ── arago ActionHandler contract parity (the `provides` graph) ──
+
+    const ACTION_CAPABILITY_TTL: &str =
+        include_str!("../../../vocab/imports/ogit/NTO/Automation/entities/ActionCapability.ttl");
+
+    /// The full arago ActionHandler contract assembles from the vendored OGIT
+    /// `provides` graph: ActionHandler → ActionApplicability → ActionCapability.
+    #[test]
+    fn assembles_the_full_action_handler_contract() {
+        let entities = [
+            entity(ACTION_HANDLER_TTL),
+            entity(ACTION_APPLICABILITY_TTL),
+            entity(ACTION_CAPABILITY_TTL),
+        ];
+        let spec = assemble_action_handler(&entities).expect("ActionHandler present");
+
+        assert_eq!(spec.identity, "ogit-automation/action_handler");
+        // ActionHandler provides one ActionApplicability.
+        assert_eq!(spec.applicabilities.len(), 1);
+        let app = &spec.applicabilities[0];
+        assert_eq!(app.identity, "ogit-automation/action_applicability");
+        // arago ModelFilter{Var,Mode,Value} ⟷ OGAR StateGuard (environmentFilter).
+        assert_eq!(
+            app.kausal,
+            Some(KausalSpec::StateGuard {
+                guard_field: "environment_filter".to_owned(),
+                guard_values: Vec::new(),
+            })
+        );
+        // The applicability provides one ActionCapability with its I/O signature.
+        assert_eq!(app.capabilities.len(), 1);
+        let cap = &app.capabilities[0];
+        assert_eq!(cap.identity, "ogit-automation/action_capability");
+        assert!(cap.declares_mandatory_params, "capability declares inputs");
+        assert!(cap.declares_optional_params);
+        // The OUTPUT signature — what makes the action runnable.
+        assert!(
+            cap.declares_result_params,
+            "capability must declare resultParameters (the output signature)"
+        );
+    }
+
+    /// No ActionHandler in the set ⇒ no contract to assemble.
+    #[test]
+    fn assemble_returns_none_without_a_handler() {
+        let entities = [entity(KNOWLEDGE_ITEM_TTL), entity(TRIGGER_TTL)];
+        assert!(assemble_action_handler(&entities).is_none());
+    }
+
+    /// An `ActionParam` carries the arago `Parameter{Name,Mandatory,Default}`
+    /// I/O-signature tuple (the instance-level shape the executor binds).
+    #[test]
+    fn action_param_models_the_arago_parameter_tuple() {
+        let p = ActionParam {
+            name: "command".to_owned(),
+            mandatory: true,
+            default: None,
+        };
+        assert_eq!(p.name, "command");
+        assert!(p.mandatory);
+        assert!(p.default.is_none());
     }
 }
