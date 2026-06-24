@@ -501,6 +501,12 @@ pub const ODOO_ALIASES: &[(&str, u16)] = &[
     ("product.pricelist", class_ids::PRICELIST),
     ("product.pricelist.item", class_ids::PRICELIST_RULE),
     ("uom.uom", class_ids::UNIT_OF_MEASURE),
+    // HR cluster — closes the final 4-of-11 cross-axis identity gap surfaced
+    // by odoo-rs PR #14. New 0x0DXX concept domain (HR).
+    ("hr.employee", class_ids::HR_EMPLOYEE),
+    ("hr.department", class_ids::HR_DEPARTMENT),
+    ("hr.job", class_ids::HR_JOB),
+    ("hr.contract", class_ids::HR_EMPLOYMENT_CONTRACT),
     // Cross-arm bridge: the timesheet / cost line converges on the
     // project-arm `billable_work_entry` (0x0103) — the SAME id
     // OpenProject `TimeEntry` and Redmine `TimeEntry` resolve to.
@@ -958,10 +964,13 @@ mod tests {
     fn odoo_commerce_models_resolve_into_the_commerce_domain() {
         use crate::{ConceptDomain, canonical_concept_domain};
         // Every commerce-arm alias lands in the Commerce (0x02XX) domain.
-        // `account.analytic.line` is the deliberate exception — it's the
-        // cross-arm bridge into the project domain (asserted separately).
+        // Two deliberate exceptions: `account.analytic.line` is the cross-arm
+        // bridge into the project domain, and the `hr.*` cluster lives in
+        // the HR domain (0x0DXX) — both are asserted in their own tests
+        // (`account_analytic_line_resolves_into_the_project_domain` /
+        // `odoo_hr_models_resolve_into_the_hr_domain`).
         for &(name, _) in OdooPort::aliases() {
-            if name == "account.analytic.line" {
+            if name == "account.analytic.line" || name.starts_with("hr.") {
                 continue;
             }
             let id = OdooPort::class_id(name).unwrap_or_else(|| panic!("`{name}` must resolve"));
@@ -969,6 +978,22 @@ mod tests {
                 canonical_concept_domain(id),
                 ConceptDomain::Commerce,
                 "`{name}` -> 0x{id:04X} must live in the Commerce (0x02XX) domain",
+            );
+        }
+    }
+
+    #[test]
+    fn odoo_hr_models_resolve_into_the_hr_domain() {
+        use crate::{ConceptDomain, canonical_concept_domain};
+        // The hr.* cluster (HR_EMPLOYEE / HR_DEPARTMENT / HR_JOB /
+        // HR_EMPLOYMENT_CONTRACT) lands in the HR (0x0DXX) domain — closes
+        // the final 4-of-11 cross-axis identity gap from odoo-rs PR #14.
+        for name in ["hr.employee", "hr.department", "hr.job", "hr.contract"] {
+            let id = OdooPort::class_id(name).unwrap_or_else(|| panic!("`{name}` must resolve"));
+            assert_eq!(
+                canonical_concept_domain(id),
+                ConceptDomain::HR,
+                "`{name}` -> 0x{id:04X} must live in the HR (0x0DXX) domain",
             );
         }
     }
@@ -1005,13 +1030,13 @@ mod tests {
         // 9 Odoo model aliases = 8 commerce-arm (account.move,
         // sale.order, account.move.line, sale.order.line, account.tax,
         // res.partner, account.payment, res.currency) + 4 product/accounting
-        // master-record aliases + 3 ProductCatalog cluster aliases (product.template, product.product,
+        // master-record aliases + 3 ProductCatalog cluster aliases + 4 HR cluster aliases (product.template, product.product,
         // account.account, account.account.template — Phase-3 mints per
         // odoo-rs PR #14 + #16) + 1 cross-arm bridge
         // (account.analytic.line → billable_work_entry). Re-count on drift.
         assert_eq!(
             OdooPort::aliases().len(),
-            16,
+            20,
             "Odoo alias count drift — re-count the ODOO_ALIASES table",
         );
     }
