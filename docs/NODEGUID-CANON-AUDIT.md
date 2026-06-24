@@ -16,8 +16,9 @@
 | HEEL | `4..6` — u16 | tier 1 `2..4` | align (offset, width) |
 | HIP | `6..8` — u16 | tier 2 `4..6` | align |
 | TWIG | `8..10` — u16 | tier 3 `6..8` | align |
-| family | `10..13` — **u24**, 3 bytes | tier 4 hi `8..9` — **1 byte** (`familyNode`) | **DIVERGE (width)** |
-| identity | `13..16` — **u24**, 3 bytes | tier 4 lo `9..10` — **1 byte** (`identity`) | **DIVERGE (width)** |
+| family | `10..13` — **u24**, 3 bytes (v1) / `12..14` u16 (v2) | tier 4 hi `8..9` — **1 byte** (`familyNode`) | **DIVERGE (width)** |
+| identity | `13..16` — **u24**, 3 bytes (v1) / `14..16` u16 (v2) | tier 4 lo `9..10` — **1 byte** (`identity`) | **DIVERGE (width)** |
+| (v2 LEAF) | `10..12` u16 — the **4th HHTL tier** (`guid-v2-tail`) | tier 4 `8..10` — the LEAF | **ALIGN (v2)** |
 | (reserved) | — | `10..16` — 6 bytes reserved | FMA-only headroom |
 | byte order | **little-endian throughout** | **container-first per tier (big-endian)** | **DIVERGE (endianness)** |
 | edge block | separate `edges(16)` = **12 + 4** | **none** — relations via family addressing | **DIVERGE (superseded)** |
@@ -63,7 +64,12 @@ The FMA leaf is the **brutal `[256:256]`** the operator landed this session
 (≤206 bones, a handful per cell). **This is the open economy decision** (the
 `64K⁵ = 256¹⁰` discussion): the FMA `Guid` is the *byte-direct* projection;
 high-cardinality domains (per-instance patient rows, per-Gaussian splat ids) need
-the canon's 24-bit tail. **Reconciliation:** make the family:identity split a
+the canon's 24-bit tail. **Update (2026-06-23):** the canon already has a closer
+shape — `NodeGuid::new_v2` (feature `guid-v2-tail`) repartitions the tail to
+`leaf(u16) · family(u16) · identity(u16)`, where **`leaf` (bytes 10..12) is an
+explicit 4th HHTL tier** — i.e. the canon's *own* v2 carries the LEAF tier the
+FMA `Guid` uses. The remaining gap is only the per-field *width* (u16 vs the FMA
+byte), not the *shape*. **Reconciliation:** make the family:identity split a
 **per-classid property** (canon already scopes codebooks by prefix) — bones run
 `8:8`, a patient class runs `4:20` — same key width, class-local carve. Until
 ratified, the FMA `Guid` is a constrained projection of the canon, not a
@@ -94,6 +100,21 @@ another node's `Guid` = cross). **The FMA crate carries no `EdgeBlock`.**
 level**, not something to change unilaterally here. Recorded so the next
 lance-graph session reconciles `canonical_node.rs`'s `EdgeBlock` against the
 family-node supersession.
+
+### F-6 — `[G]` **Independent convergence: q2 #50 builds the same tier model from the heart side.**
+
+q2 PR #50 (`osint-bake/fma`, merged 2026-06-24, a sibling session) hydrates an
+FMA heart fixture into `NodeGuid::new_v2` with each tier an **`[mixin:instance]`
+8:8** pair — structurally identical to the FMA `Guid`'s `[container:member]`
+`[256:256]`. It is the **Cascade/ontology** reading (HHTL = partonomy
+organ→chamber→wall), the soft-tissue counterpart to the skeleton's **Located**
+reading — exactly the `HhtlMode` split this crate encodes. Two independent
+sessions (bones / heart) landed the same LEAF-tier `[kind:instance]` model on
+`new_v2`. Consequence: q2 #50 also inherits **F-1** — it keys FMA nodes under
+`CLASSID_FMA = 0x0901`, so the `0x0901 → 0x0A01` retarget fixes both at the root
+(q2 uses the constant, so it auto-inherits the fix). The vocabulary divergence
+(`mixin:instance` vs `container:member` vs `familyNode:identity`) is worth
+unifying across the three sites (lance-graph `new_v2`, q2 #50, OGAR `Guid`).
 
 ## 3. What aligns (no action)
 
