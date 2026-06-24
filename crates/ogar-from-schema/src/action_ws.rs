@@ -33,6 +33,23 @@ use ogar_vocab::{
 
 use crate::do_arm::ActionParam;
 
+/// The `action-ws` WebSocket connect path (HIRO Action API 1.0). The full URL is
+/// `wss://<host>/api/action-ws/1.0/connect`.
+pub const ACTION_WS_PATH: &str = "/api/action-ws/1.0/connect";
+
+/// The WebSocket subprotocol header value carrying the auth token — HIRO passes
+/// the token as `sec-websocket-protocol: token-$TOKEN`.
+#[must_use]
+pub fn auth_subprotocol(token: &str) -> String {
+    format!("token-{token}")
+}
+
+/// Spec bounds on a `submitAction` / `sendActionResult` correlation `id`
+/// (12–256 chars). [`validate_id`] enforces it.
+pub const ID_MIN_LEN: usize = 12;
+/// Upper bound on the correlation `id` length (spec).
+pub const ID_MAX_LEN: usize = 256;
+
 /// A `submitAction` message (engine → handler). The engine asks the handler to
 /// run `capability` on a target with the supplied `parameters`.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -65,15 +82,55 @@ pub struct Acknowledged {
     pub message: String,
 }
 
-/// A `sendActionResult` message (handler → engine): the outcome payload — the
-/// capability's `resultParameters` as `(key, value)` pairs.
+/// A `sendActionResult` message (handler → engine): the outcome payload.
+///
+/// Per the `action-ws` spec the `result` is a **single string** (max
+/// `1048576` chars) — the capability's `resultParameters` JSON-encoded into one
+/// field (build it with [`json_object`]). The engine replies `acknowledged` /
+/// `negativeAcknowledged`.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct SendActionResult {
     /// The same correlation id as the originating [`SubmitAction`].
     pub id: String,
-    /// The result fields (the `resultParameters` output signature, bound).
-    pub result: Vec<(String, String)>,
+    /// The result value — a JSON object string of the bound `resultParameters`
+    /// (spec: `string`, max 1 MiB).
+    pub result: String,
+}
+
+/// Max length of the [`SendActionResult::result`] string (spec: `1048576`).
+pub const MAX_RESULT_LEN: usize = 1_048_576;
+
+/// A `negativeAcknowledged` message (engine ↔ handler): receipt *rejection*
+/// (e.g. `code = 400`). The negative twin of [`Acknowledged`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+pub struct NegativeAcknowledged {
+    /// The id of the message being rejected.
+    pub id: String,
+    /// Error code (e.g. `400`).
+    pub code: u16,
+    /// Error description.
+    pub message: String,
+}
+
+/// A `configChanged` notification (engine → handler): the handler's
+/// capabilities / applicabilities changed; the handler must re-fetch them from
+/// the REST Action API (`GET /capabilities`, `GET /applicabilities`). Carries
+/// no payload beyond `type`; the handler replies `acknowledged`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+pub struct ConfigChanged;
+
+/// An asynchronous `error` message (engine → handler) — not tied to a specific
+/// request id.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+pub struct InboundError {
+    /// Error code.
+    pub code: u16,
+    /// Error details.
+    pub message: String,
 }
 
 /// Errors in the protocol binding (the pure core — no I/O errors here).
@@ -93,6 +150,12 @@ pub enum ActionWsError {
     /// A result was requested from an invocation that has not reached
     /// [`ActionState::Committed`] (the Rubicon crossing).
     NotCommitted(ActionState),
+    /// A correlation `id` outside the spec bounds (12–256 chars); carries the
+    /// offending length.
+    InvalidId(usize),
+    /// The encoded `result` exceeds [`MAX_RESULT_LEN`] (spec: 1 MiB); carries the
+    /// offending length.
+    ResultTooLarge(usize),
 }
 
 impl core::fmt::Display for ActionWsError {
@@ -106,6 +169,8 @@ impl core::fmt::Display for ActionWsError {
             }
             Self::MissingMandatoryParam(p) => write!(f, "missing mandatory parameter `{p}`"),
             Self::NotCommitted(s) => write!(f, "invocation not committed (state = {s:?})"),
+            Self::InvalidId(n) => write!(f, "correlation id length {n} out of bounds (12..=256)"),
+            Self::ResultTooLarge(n) => write!(f, "result length {n} exceeds 1 MiB"),
         }
     }
 }
@@ -122,6 +187,70 @@ pub fn acknowledge(msg: &SubmitAction) -> Acknowledged {
         code: 200,
         message: "Received the action".to_owned(),
     }
+}
+
+/// Reject a message by id (the `negativeAcknowledged` twin of [`acknowledge`]).
+#[must_use]
+pub fn negative_acknowledge(
+    id: &str,
+    code: u16,
+    message: impl Into<String>,
+) -> NegativeAcknowledged {
+    NegativeAcknowledged {
+        id: id.to_owned(),
+        code,
+        message: message.into(),
+    }
+}
+
+/// Validate a correlation `id` against the spec bounds (12–256 chars).
+///
+/// # Errors
+///
+/// [`ActionWsError::InvalidId`] when the length is out of range.
+pub fn validate_id(id: &str) -> Result<(), ActionWsError> {
+    if (ID_MIN_LEN..=ID_MAX_LEN).contains(&id.len()) {
+        Ok(())
+    } else {
+        Err(ActionWsError::InvalidId(id.len()))
+    }
+}
+
+/// Encode `(key, value)` pairs as a JSON object string — the wire form of the
+/// [`SendActionResult::result`] field (the bound `resultParameters`). A minimal,
+/// correctly-escaping encoder; the live transport may use `serde_json` instead.
+#[must_use]
+pub fn json_object(pairs: &[(String, String)]) -> String {
+    let mut s = String::from("{");
+    for (i, (k, v)) in pairs.iter().enumerate() {
+        if i > 0 {
+            s.push(',');
+        }
+        json_string(k, &mut s);
+        s.push(':');
+        json_string(v, &mut s);
+    }
+    s.push('}');
+    s
+}
+
+/// Append `raw` as a JSON string literal (RFC 8259 escaping) to `out`.
+fn json_string(raw: &str, out: &mut String) {
+    out.push('"');
+    for c in raw.chars() {
+        match c {
+            '"' => out.push_str("\\\""),
+            '\\' => out.push_str("\\\\"),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            c if (c as u32) < 0x20 => {
+                out.push_str(&format!("\\u{:04x}", c as u32));
+            }
+            c => out.push(c),
+        }
+    }
+    out.push('"');
 }
 
 /// Bind the engine-supplied `parameters` to the capability's [`ActionParam`]
@@ -213,10 +342,16 @@ pub fn submit_to_invocation(
 /// [`ActionState::Committed`].
 pub fn invocation_to_result(
     inv: &ActionInvocation,
-    result: Vec<(String, String)>,
+    result_params: &[(String, String)],
 ) -> Result<SendActionResult, ActionWsError> {
     if inv.state != ActionState::Committed {
         return Err(ActionWsError::NotCommitted(inv.state));
+    }
+    // The spec's `result` is a single string (max 1 MiB) — JSON-encode the bound
+    // resultParameters into it.
+    let result = json_object(result_params);
+    if result.len() > MAX_RESULT_LEN {
+        return Err(ActionWsError::ResultTooLarge(result.len()));
     }
     Ok(SendActionResult {
         id: inv.idempotency_key.clone().unwrap_or_default(),
@@ -334,24 +469,62 @@ mod tests {
         let mut inv = submit_to_invocation(&submit(), &execute_command_def()).expect("builds");
 
         // Pending → no result on the success path.
-        let pending = invocation_to_result(&inv, vec![]);
+        let pending = invocation_to_result(&inv, &[]);
         assert_eq!(
             pending.unwrap_err(),
             ActionWsError::NotCommitted(ActionState::Pending)
         );
 
-        // The Rubicon crossing (the gate would set this) → result emitted.
+        // The Rubicon crossing (the gate would set this) → result emitted as a
+        // JSON object string (the spec's single `result` field).
         inv.state = ActionState::Committed;
-        let result = invocation_to_result(
-            &inv,
-            vec![("output".to_owned(), "12:00 up 3 days".to_owned())],
-        )
-        .expect("committed → result");
+        let result =
+            invocation_to_result(&inv, &[("output".to_owned(), "12:00 up 3 days".to_owned())])
+                .expect("committed → result");
         assert_eq!(result.id, "app1:req42"); // correlation id round-trips
+        assert_eq!(result.result, r#"{"output":"12:00 up 3 days"}"#);
+    }
+
+    #[test]
+    fn negative_acknowledge_carries_code_and_message() {
+        let nack = negative_acknowledge("app1:req42", 400, "bad capability");
+        assert_eq!(nack.id, "app1:req42");
+        assert_eq!(nack.code, 400);
+        assert_eq!(nack.message, "bad capability");
+    }
+
+    #[test]
+    fn validate_id_enforces_spec_bounds() {
+        assert!(validate_id("123456789012").is_ok()); // 12 chars (min)
         assert_eq!(
-            result.result,
-            vec![("output".to_owned(), "12:00 up 3 days".to_owned())]
+            validate_id("short").unwrap_err(),
+            ActionWsError::InvalidId(5)
         );
+        let too_long = "x".repeat(257);
+        assert_eq!(
+            validate_id(&too_long).unwrap_err(),
+            ActionWsError::InvalidId(257)
+        );
+    }
+
+    #[test]
+    fn json_object_escapes_correctly() {
+        // Empty, simple, and escape-needing values.
+        assert_eq!(json_object(&[]), "{}");
+        assert_eq!(
+            json_object(&[("k".to_owned(), "v".to_owned())]),
+            r#"{"k":"v"}"#
+        );
+        assert_eq!(
+            json_object(&[("out".to_owned(), "a\"b\\c\nd".to_owned())]),
+            r#"{"out":"a\"b\\c\nd"}"#
+        );
+    }
+
+    #[test]
+    fn auth_subprotocol_prefixes_the_token() {
+        assert_eq!(auth_subprotocol("abc123"), "token-abc123");
+        assert_eq!(ACTION_WS_PATH, "/api/action-ws/1.0/connect");
     }
 
     /// The whole loop, end-to-end (socket-free): submit → ack → bind → invoke
@@ -372,8 +545,9 @@ mod tests {
         // (the executor + commit_via gate run here; we simulate the crossing)
         inv.state = ActionState::Committed;
 
-        let result = invocation_to_result(&inv, vec![("exitcode".to_owned(), "0".to_owned())])
-            .expect("result");
+        let result =
+            invocation_to_result(&inv, &[("exitcode".to_owned(), "0".to_owned())]).expect("result");
         assert_eq!(result.id, msg.id);
+        assert_eq!(result.result, r#"{"exitcode":"0"}"#);
     }
 }

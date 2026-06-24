@@ -104,6 +104,47 @@ needs a type OGAR lacks — only the *glue* (§3) is unbuilt.
 
 ---
 
+## 2a. The harvested authoritative contract (`action-ws.yaml` + `action.yaml`)
+
+Harvested from the HIRO 7.0 dev-portal machine-readable specs
+(`core.engine.datagroup.de/help/specs/definitions/{action-ws,action}.yaml`).
+This is the **complete** message set + connection + registration model the OGAR
+`action_ws` module is built to (corrections folded in — the earlier `result{…}`
+object framing from the tutorial is superseded by the spec's `result: string`).
+
+**Connection.** `wss://<host>/api/action-ws/1.0/connect` — token passed as the
+WebSocket subprotocol `sec-websocket-protocol: token-$TOKEN`. (`action_ws::{ACTION_WS_PATH,
+auth_subprotocol}`.)
+
+**The six message types** (✓ = modelled in `action_ws`):
+
+| type | dir | fields | OGAR type |
+|---|---|---|---|
+| `submitAction` | engine → handler | `id` (12–256), `handler`, `capability`, `parameters` (obj), `timeout` (ms) | `SubmitAction` ✓ |
+| `sendActionResult` | handler → engine | `id`, `result` (**string**, ≤ `1048576`) | `SendActionResult` ✓ (`result` = `json_object(resultParams)`) |
+| `acknowledged` | both | `id`, `code` (200), `message` | `Acknowledged` ✓ (`acknowledge`) |
+| `negativeAcknowledged` | both | `id`, `code` (e.g. 400), `message` | `NegativeAcknowledged` ✓ (`negative_acknowledge`) |
+| `configChanged` | engine → handler | `type` only → re-fetch capabilities | `ConfigChanged` ✓ |
+| `error` | engine → handler | `code`, `message` (no `id`) | `InboundError` ✓ |
+
+**Corrections the spec forced** (vs the tutorial-only first pass): `result` is a
+**single string** (≤ 1 MiB), not an object — `invocation_to_result` JSON-encodes
+the bound `resultParameters` into it (`MAX_RESULT_LEN`, `ResultTooLarge`); `id`
+is **12–256 chars** (`validate_id`, `InvalidId`); the nack / configChanged /
+error message types now exist.
+
+**Registration is REST, not a WS handshake.** A handler's capabilities and
+applicabilities live in the graph and are read via the REST **Action API**
+(`/api/action/1.0/`, Bearer token): `GET /capabilities` →
+`MapOfCapabilities` (each `{description, mandatoryParameters, optionalParameters}`),
+`GET /applicabilities` → `MapOfApplicabilities` (keyed by handler id). The
+`action-ws` socket has **no registration message** — `configChanged` just tells
+the handler to re-`GET` them. This is exactly the `do_arm::assemble_action_handler`
+shape (handler → applicabilities → capabilities), so the REST registration view
+lifts straight into `ActionHandlerSpec` (the B2-lift brick).
+
+---
+
 ## 3. The switch path — replacing the Python daemon with OGAR
 
 To "switch from Python to OGAR running it here," one OGAR-side component
@@ -210,3 +251,8 @@ is replaceable; the parity claim is certified, not argued.
 - `rs-graph-llm/graph-flow-action` — the `ActionHandler` executor trait (B1 home).
 - arago: `github.com/arago/ActionHandlers`,
   `arago/python-hiro-stonebranch-actionhandler`, HIRO 7 Action API tutorial.
+- **HIRO 7.0 dev-portal specs (the authoritative harvest, §2a):**
+  `core.engine.datagroup.de/help/specs/definitions/action-ws.yaml` (the
+  WebSocket message contract), `…/action.yaml` (the REST registration API),
+  `…/auth.yaml` (the token endpoint). Indexed at
+  `dev-portal.engine.datagroup.de/7.0/api/`.
