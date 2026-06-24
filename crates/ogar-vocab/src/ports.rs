@@ -964,10 +964,13 @@ mod tests {
     fn odoo_commerce_models_resolve_into_the_commerce_domain() {
         use crate::{ConceptDomain, canonical_concept_domain};
         // Every commerce-arm alias lands in the Commerce (0x02XX) domain.
-        // `account.analytic.line` is the deliberate exception — it's the
-        // cross-arm bridge into the project domain (asserted separately).
+        // Two deliberate exceptions: `account.analytic.line` is the cross-arm
+        // bridge into the project domain, and the `hr.*` cluster lives in
+        // the HR domain (0x0DXX) — both are asserted in their own tests
+        // (`account_analytic_line_resolves_into_the_project_domain` /
+        // `odoo_hr_models_resolve_into_the_hr_domain`).
         for &(name, _) in OdooPort::aliases() {
-            if name == "account.analytic.line" {
+            if name == "account.analytic.line" || name.starts_with("hr.") {
                 continue;
             }
             let id = OdooPort::class_id(name).unwrap_or_else(|| panic!("`{name}` must resolve"));
@@ -975,6 +978,22 @@ mod tests {
                 canonical_concept_domain(id),
                 ConceptDomain::Commerce,
                 "`{name}` -> 0x{id:04X} must live in the Commerce (0x02XX) domain",
+            );
+        }
+    }
+
+    #[test]
+    fn odoo_hr_models_resolve_into_the_hr_domain() {
+        use crate::{ConceptDomain, canonical_concept_domain};
+        // The hr.* cluster (HR_EMPLOYEE / HR_DEPARTMENT / HR_JOB /
+        // HR_EMPLOYMENT_CONTRACT) lands in the HR (0x0DXX) domain — closes
+        // the final 4-of-11 cross-axis identity gap from odoo-rs PR #14.
+        for name in ["hr.employee", "hr.department", "hr.job", "hr.contract"] {
+            let id = OdooPort::class_id(name).unwrap_or_else(|| panic!("`{name}` must resolve"));
+            assert_eq!(
+                canonical_concept_domain(id),
+                ConceptDomain::HR,
+                "`{name}` -> 0x{id:04X} must live in the HR (0x0DXX) domain",
             );
         }
     }
