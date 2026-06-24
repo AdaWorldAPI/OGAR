@@ -12,5 +12,10 @@ description = "OGAR-native HIRO ActionHandler runtime — CapabilityExecutor imp
 default = []
 
 [dependencies]
-ogar-from-schema = { path = "../ogar-from-schema" }
+ogar-from-schema = { path = "../ogar-from-schema", features = ["serde"] }
 ogar-vocab = { path = "../ogar-vocab" }
+# The runtime owns I/O: it reads the REST Action API registration response
+# (`GET /capabilities`), so it carries the JSON reader. The producer crate
+# (`ogar-from-schema`) stays parser-free — it defines the `Deserialize` DTOs +
+# the pure lift; this crate does the `from_str`. (B2-lift.)
+serde_json = "1.0"

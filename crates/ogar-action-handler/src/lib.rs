@@ -41,6 +41,27 @@
 use std::process::Command;
 
 use ogar_from_schema::action_ws::CapabilityExecutor;
+use ogar_from_schema::registration::{
+    ConcreteCapability, RegisteredCapabilities, lift_registration,
+};
+
+/// Read a deployed handler's `GET /capabilities` REST response (a JSON
+/// `MapOfCapabilities`) and lift it into the concrete OGAR capability signatures
+/// — the **B2-lift** brick's I/O half (`ogar-from-schema::registration` owns the
+/// pure lift; this crate owns the JSON read, per the producer/runtime split).
+///
+/// Each [`ConcreteCapability`] carries the concrete `ActionParam[]` the schema
+/// half cannot supply — feed it to
+/// [`ogar_from_schema::action_ws::bind_parameters`] to validate an engine
+/// `submitAction`'s `parameters` before executing.
+///
+/// # Errors
+/// Returns the `serde_json` error message if the body is not a valid
+/// `MapOfCapabilities`.
+pub fn parse_capabilities(json: &str) -> Result<Vec<ConcreteCapability>, String> {
+    let caps: RegisteredCapabilities = serde_json::from_str(json).map_err(|e| e.to_string())?;
+    Ok(lift_registration(&caps))
+}
 
 /// Reference executor for the **native** target: runs a capability's command via
 /// the local POSIX shell (`sh -c`). The concrete B1 impl that makes "OGAR
@@ -138,6 +159,54 @@ mod tests {
             .execute("RunScript", &[("command".to_owned(), "x".to_owned())])
             .unwrap_err();
         assert!(err.contains("ExecuteCommand"), "got: {err}");
+    }
+
+    /// B2-lift end-to-end: a real `GET /capabilities` REST response (JSON)
+    /// parses → lifts to a concrete signature → the signature binds engine
+    /// parameters → the native executor runs the command. The deployed config
+    /// (not the schema) supplied the concrete `(name, mandatory, default)`.
+    #[test]
+    fn rest_registration_lifts_binds_and_runs() {
+        use ogar_from_schema::action_ws::bind_parameters;
+
+        // A deployed handler's GET /capabilities body (MapOfCapabilities).
+        let body = r#"{
+            "ExecuteCommand": {
+                "description": "run a command",
+                "mandatoryParameters": {
+                    "command": { "description": "the command" }
+                },
+                "optionalParameters": {
+                    "shell": { "description": "the shell", "default": "sh" }
+                }
+            }
+        }"#;
+
+        let lifted = parse_capabilities(body).expect("valid MapOfCapabilities");
+        assert_eq!(lifted.len(), 1);
+        let cap = &lifted[0];
+        assert_eq!(cap.name, "ExecuteCommand");
+        // The concrete signature the schema half could not produce:
+        assert_eq!(cap.params.len(), 2);
+        assert!(
+            cap.params
+                .iter()
+                .any(|p| p.name == "command" && p.mandatory)
+        );
+        assert!(
+            cap.params
+                .iter()
+                .any(|p| p.name == "shell" && !p.mandatory && p.default.as_deref() == Some("sh"))
+        );
+
+        // The lifted signature drives bind (optional `shell` default filled),
+        // and the bound command runs on the native executor.
+        let supplied = vec![("command".to_owned(), "echo lifted".to_owned())];
+        let bound = bind_parameters(&supplied, &cap.params).expect("binds");
+        let result = NativeCommandExecutor
+            .execute("ExecuteCommand", &bound)
+            .expect("runs");
+        assert_eq!(result[0], ("output".to_owned(), "lifted".to_owned()));
     }
 
     /// End-to-end: the dispatch core + this executor run a real command and

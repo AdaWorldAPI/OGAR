@@ -7,6 +7,42 @@
 
 ---
 
+## 2026-06-24 — E-ACTIONHANDLER-B2LIFT — the producer stays parser-free even when lifting a JSON REST response: it defines the `Deserialize` DTOs + the pure lift, the runtime does the `from_str`
+
+**Status:** FINDING (`[G]` for capabilities; `[H]` for the applicabilities envelope).
+
+B2-lift (the REST registration instance lift) had to read a JSON `GET
+/capabilities` body — but `ogar-from-schema` is deliberately parser-free on its
+default path (a narrow line-oriented TTL walker; a hand-rolled JSON *encoder* in
+`action_ws`, never a decoder). The resolution kept the producer pure by splitting
+along the crate family's existing seam:
+
+- **Producer (`ogar-from-schema::registration`) defines the typed REST DTOs**
+  (`RegisteredCapability` / `RegisteredParam` / `ModelFilter`, `Deserialize` behind
+  the already-present `serde` feature) **and the pure lift mapping**
+  (`lift_registration → ConcreteCapability` with concrete `ActionParam[]`;
+  `model_filter_to_guard`: arago `ModelFilter{Var,Mode,Value}` → `KausalSpec::StateGuard`
+  field-for-field). No `serde_json`, no I/O.
+- **Runtime (`ogar-action-handler::parse_capabilities`) does the `serde_json::from_str`.**
+  The runtime crate already owns I/O (it runs commands); reading a REST response is
+  the same kind of work. `serde_json` lives there, never in the producer.
+
+This is the same producer-defines-types / runtime-does-I/O split the whole crate
+family keeps (schema lift defines `Class`; source-AST producers fill behavior; the
+runtime executes). The payoff is concrete: `ogar-from-schema` gains a REST front-end
+without gaining a parser dependency.
+
+**The lift fills a gap the schema cannot reach.** The OGIT ontology declares only
+*that* a capability has `mandatoryParameters` / `optionalParameters` slots
+(`CapabilitySlot`); the concrete `(name, mandatory, default)` tuples exist only in a
+*deployed* handler's config. B2-lift reads them from the live REST view — so the
+two halves compose: schema lift gives the contract shape, instance lift gives the
+deployed values, and the result drives `bind_parameters` → the executor. Proven by
+`rest_registration_lifts_binds_and_runs` (real JSON → lift → bind → run). The B2-lift
+rows in the parity scorecard + `D-ACTIONHANDLER-B2LIFT` in the discovery map.
+
+---
+
 ## 2026-06-24 — E-ACTIONHANDLER-UPLINK — the hard gate is wired to the executor without OGAR ever taking a `lance-graph` dep: OGAR owns the executor, rs-graph-llm owns the gate, one seam crate joins them
 
 **Status:** FINDING (`[G]`, 3 tests).

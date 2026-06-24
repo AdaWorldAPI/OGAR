@@ -205,9 +205,20 @@ downstream. The remaining bricks:
   `tokio-tungstenite` client (connect with the `token-$TOKEN` subprotocol, JSON-
   codec the six `action_ws` message types, drive the dispatch, retry-on-no-ack).
   All the message types, connection path, and auth are now pinned (§2a).
-- **B2-lift — the instance config lift.** Parse a deployed handler's REST
-  registration (`GET /capabilities`, `/applicabilities`) → the concrete
-  `ActionDef` + `ActionParam[]`, reusing `assemble_action_handler`'s shape.
+- **B2-lift — the instance config lift (SHIPPED for capabilities).** Parse a
+  deployed handler's REST registration → the concrete signatures the *schema*
+  half cannot supply. `GET /capabilities` is **shipped**: `registration::{RegisteredCapability,
+  lift_registration}` (the pure lift, in the parser-free producer) +
+  `ogar-action-handler::parse_capabilities` (the `serde_json` read, in the runtime)
+  turn a real `MapOfCapabilities` JSON body into `ConcreteCapability` —
+  `ActionParam[]` with concrete `(name, mandatory, default)` — proven end-to-end by
+  `rest_registration_lifts_binds_and_runs` (JSON → lift → `bind_parameters` →
+  `NativeCommandExecutor` runs the command). The applicability side is the
+  documented field-for-field lift: `ModelFilter{Var,Mode,Value}` →
+  `KausalSpec::StateGuard` (`model_filter_to_guard` / `lift_applicability`, shipped);
+  what remains is wiring the `GET /applicabilities` JSON envelope read (the
+  `MapOfApplicabilities` outer shape) the same way `parse_capabilities` reads
+  capabilities.
 
 What remains is **glue over existing types** (a socket loop + a JSON codec + a
 registration parser) plus the non-native executor targets — not new IR. The
@@ -231,7 +242,8 @@ transport over them.
 | **Hard gate before executor (B1-uplink)** | ✅ `[G]` SHIPPED | rs-graph-llm `graph-flow-action-ogar::GatedOgarHandler` — `commit_via` (RBAC ∧ guard ∧ MUL) lands before `handle`; `take_result()` is `None` iff the gate refused (3 tests) |
 | **Executor — SSH/REST/WinRM (B1)** | ⛔ `[H]` | further `CapabilityExecutor` impls (rs-graph-llm `graph-flow-action`) |
 | **Live WebSocket transport (B2-transport)** | ⛔ `[H]` | wrap `handle_submit` in a `tokio-tungstenite` loop + JSON codec (all shapes pinned, §2a) |
-| **Instance config lift (B2-lift)** | ⛔ `[H]` | REST `GET /capabilities`/`/applicabilities` → `ActionDef`/`ActionParam` |
+| **Instance config lift — capabilities (B2-lift)** | ✅ `[G]` SHIPPED | `registration::lift_registration` + `ogar-action-handler::parse_capabilities`: real `GET /capabilities` JSON → `ConcreteCapability` (`ActionParam[]`); `rest_registration_lifts_binds_and_runs` (JSON → lift → bind → run) |
+| **Instance config lift — applicabilities (B2-lift)** | 🟡 `[G]` lift / `[H]` envelope | `ModelFilter{Var,Mode,Value}` → `StateGuard` shipped (`model_filter_to_guard`/`lift_applicability`); remaining: the `GET /applicabilities` `MapOfApplicabilities` JSON envelope read |
 
 **Verdict:** OGAR is at **full contract + lifecycle + protocol-binding +
 reactive-dispatch parity**, and **a working native executor runs real commands
@@ -241,10 +253,13 @@ binding, the dispatch, and native execution are real and tested — and the gate
 now **wired to the executor**: rs-graph-llm's `graph-flow-action-ogar` runs OGAR's
 `CapabilityExecutor` only after `commit_via` commits, so an unauthorized or
 MUL-blocked action never executes (proven structurally — `take_result()` is
-`None`). What's left for
+`None`). The **capabilities instance lift is shipped too** — a real `GET
+/capabilities` JSON body lifts to concrete `ActionParam[]` and runs end-to-end
+(`rest_registration_lifts_binds_and_runs`). What's left for
 a **live** drop-in replacement of arago's Python daemon: **B2-transport** (the
-WebSocket loop — all shapes/auth pinned), **B2-lift** (the REST registration
-parse), and the **non-native executor targets** (SSH/REST). Each is
+WebSocket loop — all shapes/auth pinned), the **B2-lift applicabilities envelope**
+(`GET /applicabilities` JSON read; the `ModelFilter→StateGuard` lift is done), and
+the **non-native executor targets** (SSH/REST). Each is
 transport/parser/runner glue over existing types — **no missing IR, no missing
 protocol mapping**. That is the honest state: OGAR *is* an ActionHandler that
 runs commands here; a thin transport away from connecting to a live HIRO engine.
@@ -267,6 +282,11 @@ is replaceable; the parity claim is certified, not argued.
 
 - `crates/ogar-from-schema/src/do_arm.rs` — `assemble_action_handler`,
   `ActionHandlerSpec` / `CapabilitySlot` / `ApplicabilitySlot` / `ActionParam`.
+- `crates/ogar-from-schema/src/registration.rs` — B2-lift: the REST registration
+  DTOs (`RegisteredCapability` / `ModelFilter`) + the pure lift
+  (`lift_registration` → `ConcreteCapability`; `model_filter_to_guard`).
+- `crates/ogar-action-handler/src/lib.rs` — `parse_capabilities` (the `serde_json`
+  read of a `GET /capabilities` body; the B2-lift I/O half).
 - `docs/HIRO-DO-ARM-LIFT.md` — the lossless-DO rule (the body is pointed-to).
 - `docs/ACTIONHANDLER-TURSTEHER.md` — RBAC-as-`const`, the cold-path gate, Rung.
 - `lance-graph-contract::action` — `ActionInvocation` / `commit_via<ClassRbac>`.
