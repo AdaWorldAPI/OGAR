@@ -161,6 +161,41 @@ pub fn lift_applicability(filters: &[ModelFilter]) -> Vec<KausalSpec> {
     filters.iter().map(model_filter_to_guard).collect()
 }
 
+/// One applicability as `GET /applicabilities` reports it — its node-match
+/// `ModelFilter`s.
+///
+/// The harvested spec (`docs/ARAGO-ACTIONHANDLER-PARITY.md` §2a) pins the
+/// *outer* shape (a `MapOfApplicabilities` keyed by handler id) and the
+/// `ModelFilter{Var,Mode,Value}` element, but not the exact name of the field
+/// that carries the filter list. This DTO accepts the plausible names
+/// (`modelFilters`, `model`, `filters`) via serde aliases and defaults to an
+/// empty list, so a real response binds without a code change once the field
+/// name is confirmed. The element mapping itself (`ModelFilter → StateGuard`) is
+/// the documented, `[G]` part.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[cfg_attr(feature = "serde", derive(Deserialize))]
+#[cfg_attr(feature = "serde", serde(rename_all = "camelCase"))]
+pub struct RegisteredApplicability {
+    /// The node-match filters (an applicability applies where they all match).
+    #[cfg_attr(feature = "serde", serde(default, alias = "model", alias = "filters"))]
+    pub model_filters: Vec<ModelFilter>,
+}
+
+/// The `GET /applicabilities` response — a `MapOfApplicabilities` keyed by
+/// handler id.
+pub type RegisteredApplicabilities = BTreeMap<String, RegisteredApplicability>;
+
+/// Lift a whole `GET /applicabilities` response into the per-handler guard sets:
+/// handler id → its [`KausalSpec::StateGuard`] list (each handler applies where
+/// **all** of its guards match). Deterministic order (the source is a
+/// [`BTreeMap`], sorted by handler id).
+#[must_use]
+pub fn lift_applicabilities(apps: &RegisteredApplicabilities) -> BTreeMap<String, Vec<KausalSpec>> {
+    apps.iter()
+        .map(|(handler, app)| (handler.clone(), lift_applicability(&app.model_filters)))
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -292,6 +327,36 @@ mod tests {
                 guard_field: "env".to_owned(),
                 guard_values: vec!["prod".to_owned()],
             }
+        );
+    }
+
+    #[test]
+    fn applicabilities_map_lifts_per_handler_guard_sets() {
+        let mut apps: RegisteredApplicabilities = BTreeMap::new();
+        apps.insert(
+            "ssh-handler".to_owned(),
+            RegisteredApplicability {
+                model_filters: vec![ModelFilter {
+                    var: "ogit/_type".to_owned(),
+                    mode: Some("equals".to_owned()),
+                    value: "ogit/Network/Machine".to_owned(),
+                }],
+            },
+        );
+        apps.insert(
+            "noop-handler".to_owned(),
+            RegisteredApplicability::default(),
+        );
+        let lifted = lift_applicabilities(&apps);
+        // Keyed by handler id (BTreeMap → sorted): noop-handler, ssh-handler.
+        assert_eq!(lifted.len(), 2);
+        assert!(lifted["noop-handler"].is_empty());
+        assert_eq!(
+            lifted["ssh-handler"],
+            vec![KausalSpec::StateGuard {
+                guard_field: "ogit/_type".to_owned(),
+                guard_values: vec!["ogit/Network/Machine".to_owned()],
+            }]
         );
     }
 }
