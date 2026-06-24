@@ -1069,21 +1069,8 @@ impl Class {
 ///   0x07XX  reserved: OSINT
 ///   0x08XX  reserved: OCR
 ///   0x09XX  reserved: Health
-///   0x0AXX  Anatomy           (FMA reference ontology; bones/skeleton)
-///   0x0BXX  Auth              (IAM; the AuthStore class family)
-///   0x0CXX  Automation        (HIRO IT-automation: MARS CMDB + actuators)
-///   0x0DXX+ unassigned
+///   0x0AXX+ unassigned
 /// ```
-///
-/// **Anatomy vs Health (the firewall split).** `0x0AXX` Anatomy is the
-/// **public reference structure** (the femur exists; it is `part_of` the
-/// lower limb) — the FMA atlas frame every imaging modality registers
-/// against. It is deliberately NOT in `0x09XX` Health: a clinical *finding
-/// about* anatomy (a fracture diagnosis on a named patient) is Health PHI,
-/// but the anatomical *structure itself* is public and must not be pulled
-/// into medcare-rs's fail-closed Health RBAC coverage set. This is why the
-/// earlier "FMA / SNOMED converges into Health" forward-note (below) lands
-/// in its own domain instead: reference ≠ PHI.
 ///
 /// Reserved blocks have a placeholder [`ConceptDomain`] variant so a
 /// consumer routing on `id >> 8` returns a stable domain tag even before
@@ -1156,6 +1143,14 @@ const CODEBOOK: &[(&str, u16)] = &[
     // PR description for the queue.
     ("product", 0x0207),
     ("accounting_account", 0x0208),
+    // ProductCatalog cluster — closes 3 more of the 11-gap surfaced by
+    // odoo-rs PR #14. All three stay in the 0x02XX commerce arm (no new
+    // ConceptDomain needed). The HR cluster (hr.employee, hr.department,
+    // hr.job, hr.contract) remains queued — needs a new 0x0CXX concept
+    // domain (keystone-style §7 review like AuthStore #110).
+    ("pricelist", 0x0209),
+    ("pricelist_rule", 0x020A),
+    ("unit_of_measure", 0x020B),
     // ── 0x09XX — Health domain (clinical / patient / care) ──
     // medcare-rs Healthcare-namespace promotion (Northstar T9). The 7
     // entities the OGIT `NTO/Healthcare/entities/` TTL ships, projected
@@ -1172,20 +1167,6 @@ const CODEBOOK: &[(&str, u16)] = &[
     ("treatment", 0x0905),
     ("visit", 0x0906),
     ("vital_sign", 0x0907),
-    // ── 0x0AXX — Anatomy domain (FMA reference ontology) ──
-    // The public anatomical reference frame consumed by the splat-native
-    // ultrasound arc (`docs/SPLAT-NATIVE-CUSTOMER.md` §6 litmus) and the FMA
-    // skeletal spine (`crates/ogar-fma-skeleton`). These are the *kinds*
-    // (Bone, Skeleton, …); the ~206 individual bones are NOT concept slots —
-    // they live as cascade-path nodes (FMA partonomy → HEEL/HIP/TWIG prefix
-    // tree), the same way Wikidata-HHTL lives in the path, not the codebook.
-    // `bone` is the clamped convergence-anchor class: bones are the rigid,
-    // non-negotiable frame every imaging modality (ViT / X-ray / ultrasound
-    // × Doppler) registers against. See `docs/FMA-SKELETON-CONVERGENCE-ANCHOR.md`.
-    ("anatomical_structure", 0x0A01),
-    ("skeleton", 0x0A02),
-    ("bone", 0x0A03),
-    ("joint", 0x0A04),
     // ── 0x0BXX — Auth domain (IAM; provider-agnostic — the AuthStore class family) ──
     // Per `docs/CLASSID-RBAC-KEYSTONE-SPEC.md` §7 + `APP-CLASS-CODEBOOK-LAYOUT.md`
     // §2: auth is a CORE domain of its own (`0x0B`), cross-app and
@@ -1204,31 +1185,6 @@ const CODEBOOK: &[(&str, u16)] = &[
     ("auth_zitadel", 0x0B02),
     ("auth_zanzibar", 0x0B03),
     ("auth_ory_keto", 0x0B04),
-    // ── 0x0CXX — Automation domain (the HIRO IT-automation stack) ──
-    // One domain spanning the MARS structural CMDB (`ogit.MARS:` —
-    // Application/Resource/Software/Machine, the A→R→S→M dependsOn backbone)
-    // AND the Automation actuators (`ogit.Automation:` — KnowledgeItem /
-    // ActionHandler / Trigger, HIRO's behavioral vocabulary). Two OGIT
-    // sub-namespaces, ONE concept domain — the same justification the Auth
-    // family uses (heterogeneous shapes, one cross-app concern): the render
-    // prefix (`ogit-mars` / `ogit-automation`) is the hi-u16 skin; the domain
-    // byte is the lo-u16 shared-concept half. The DO arm (`ActionDef`) and the
-    // THINK arm (the MARS `Class`es) meet here. This IS the codebook pass that
-    // `docs/MARS-TRANSCODING.md` §1 deferred ("provisional… after the codebook
-    // pass"); minted via the 5+3 hardening (theorem-checker / doctrine-keeper /
-    // integration-lead / runtime-archaeologist + cargo gates). The set is the
-    // load-bearing concepts the structural + DO-arm lifts stand on; further
-    // Automation entities (action_capability / intent / automation_issue /
-    // variable / mars_node) are RESERVED, minted when a lift/consumer uses them.
-    ("mars_application", 0x0C01),
-    ("mars_resource", 0x0C02),
-    ("mars_software", 0x0C03),
-    ("mars_machine", 0x0C04),
-    ("knowledge_item", 0x0C05),
-    ("mars_node_template", 0x0C06),
-    ("action_handler", 0x0C07),
-    ("action_applicability", 0x0C08),
-    ("automation_trigger", 0x0C09),
 ];
 
 /// Codebook **domain** — the high byte of a canonical id (see
@@ -1255,29 +1211,13 @@ pub enum ConceptDomain {
     Ocr,
     /// `0x09XX` — Health (clinical / patient / care).
     Health,
-    /// `0x0AXX` — Anatomy (FMA reference ontology; the public anatomical
-    /// structure frame — bones / skeleton / joints). Distinct from
-    /// [`Health`](Self::Health): reference structure is public, a clinical
-    /// finding *about* it is PHI. The clamped convergence-anchor frame for
-    /// the splat-native imaging arc.
-    Anatomy,
     /// `0x0BXX` — Auth (IAM; provider-agnostic — the AuthStore class
     /// family: `auth_store` + per-IdP profiles `auth_zitadel` /
     /// `auth_zanzibar` / `auth_ory_keto`). See
     /// `docs/CLASSID-RBAC-KEYSTONE-SPEC.md` §7.
     Auth,
-    /// `0x0CXX` — Automation (the HIRO IT-automation stack). One domain
-    /// spanning the MARS structural CMDB (`mars_application` / `mars_resource`
-    /// / `mars_software` / `mars_machine` — the A→R→S→M dependsOn backbone)
-    /// and the Automation actuators (`knowledge_item` / `mars_node_template` /
-    /// `action_handler` / `action_applicability` / `automation_trigger` —
-    /// HIRO's DO-arm vocabulary). The DO arm (`ActionDef`) and the THINK arm
-    /// (the MARS `Class`es) meet here. Infrastructure config, NOT PHI — same
-    /// public-reference posture as [`Anatomy`](Self::Anatomy). See
-    /// `docs/MARS-TRANSCODING.md` + `docs/HIRO-DO-ARM-LIFT.md`.
-    Automation,
     /// Any high-byte slot not yet assigned a domain (`0x03XX`–`0x06XX`,
-    /// `0x0DXX`+).
+    /// `0x0AXX`, `0x0CXX`+).
     Unassigned,
 }
 
@@ -1292,9 +1232,7 @@ pub fn canonical_concept_domain(id: u16) -> ConceptDomain {
         0x07 => ConceptDomain::Osint,
         0x08 => ConceptDomain::Ocr,
         0x09 => ConceptDomain::Health,
-        0x0A => ConceptDomain::Anatomy,
         0x0B => ConceptDomain::Auth,
-        0x0C => ConceptDomain::Automation,
         _ => ConceptDomain::Unassigned,
     }
 }
@@ -1533,6 +1471,23 @@ pub mod class_ids {
     /// SMBAccounting (0x62); this id is the OGAR-side identity that closes
     /// the same axis.
     pub const ACCOUNTING_ACCOUNT: u16 = 0x0208;
+    /// `pricelist` (`0x0209`) — price-specification base. OSB `Pricelist`,
+    /// Odoo `product.pricelist`. Carries a name + currency; per-tier rules
+    /// land on [`PRICELIST_RULE`].
+    ///
+    /// Promoted Phase-3 (ProductCatalog cluster) from odoo-rs PR #14's
+    /// cross-axis identity gap. Stays in the 0x02XX commerce arm — pricing
+    /// is a billing concept, not a separate domain.
+    pub const PRICELIST: u16 = 0x0209;
+    /// `pricelist_rule` (`0x020A`) — per-tier unit-price rule under a
+    /// pricelist. OSB `PricelistTier`, Odoo `product.pricelist.item`
+    /// (`schema:UnitPriceSpecification`).
+    pub const PRICELIST_RULE: u16 = 0x020A;
+    /// `unit_of_measure` (`0x020B`) — measurement unit (catalogue + line-item
+    /// quantity unit). OSB `UoM`, Odoo `uom.uom` (`qudt:Unit`). Carries a
+    /// name + symbol + conversion factor; the ratio relation to base UoM
+    /// stays outside the codebook.
+    pub const UNIT_OF_MEASURE: u16 = 0x020B;
 
     // ── 0x09XX — health domain (medcare-rs Healthcare namespace) ──
 
@@ -1558,25 +1513,6 @@ pub mod class_ids {
     /// `Healthcare:VitalSign`.
     pub const VITAL_SIGN: u16 = 0x0907;
 
-    // ── 0x0AXX — Anatomy domain (FMA reference ontology) ──
-
-    /// `anatomical_structure` (`0x0A01`) — FMA's universal root kind
-    /// (everything in the atlas `is-a` this). The abstract anchor of the
-    /// anatomy partonomy.
-    pub const ANATOMICAL_STRUCTURE: u16 = 0x0A01;
-    /// `skeleton` (`0x0A02`) — the whole-body skeletal system; the root of
-    /// the bone partonomy (`crates/ogar-fma-skeleton`).
-    pub const SKELETON: u16 = 0x0A02;
-    /// `bone` (`0x0A03`) — a skeletal element. **The clamped convergence
-    /// anchor**: bones are the rigid, non-negotiable reference frame the
-    /// splat-fit registers against (`docs/FMA-SKELETON-CONVERGENCE-ANCHOR.md`).
-    /// The ~206 individual bones are cascade-path nodes under this concept,
-    /// not separate codebook slots.
-    pub const BONE: u16 = 0x0A03;
-    /// `joint` (`0x0A04`) — an articulation between bones (the skeletal
-    /// graph's edges, when materialized).
-    pub const JOINT: u16 = 0x0A04;
-
     // ── 0x0BXX — Auth domain (IAM; the AuthStore class family) ──
 
     /// `auth_store` (`0x0B01`) — the IdP→classid mapping base class. Does
@@ -1595,41 +1531,6 @@ pub mod class_ids {
     pub const AUTH_ZANZIBAR: u16 = 0x0B03;
     /// `auth_ory_keto` (`0x0B04`) — Ory Keto provider profile.
     pub const AUTH_ORY_KETO: u16 = 0x0B04;
-
-    // ── 0x0CXX — Automation domain (HIRO IT-automation stack) ──
-
-    /// `mars_application` (`0x0C01`) — a MARS Application CMDB entity; head of
-    /// the A→R→S→M `dependsOn` backbone (`ogit.MARS:Application`).
-    pub const MARS_APPLICATION: u16 = 0x0C01;
-    /// `mars_resource` (`0x0C02`) — a MARS Resource (`ogit.MARS:Resource`).
-    pub const MARS_RESOURCE: u16 = 0x0C02;
-    /// `mars_software` (`0x0C03`) — a MARS Software component
-    /// (`ogit.MARS:Software`).
-    pub const MARS_SOFTWARE: u16 = 0x0C03;
-    /// `mars_machine` (`0x0C04`) — a MARS Machine; tail of the A→R→S→M chain
-    /// (`ogit.MARS:Machine`).
-    pub const MARS_MACHINE: u16 = 0x0C04;
-    /// `knowledge_item` (`0x0C05`) — the Automation KnowledgeItem; the DO-arm
-    /// `ActionDef` carrier (`ogit.Automation:KnowledgeItem`). Its opaque body
-    /// rides in `knowledgeItemFormalRepresentation` — pointed-to, never inlined
-    /// (lossless-DO; `docs/HIRO-DO-ARM-LIFT.md` §1).
-    pub const KNOWLEDGE_ITEM: u16 = 0x0C05;
-    /// `mars_node_template` (`0x0C06`) — the template a KnowledgeItem
-    /// `relates` to; the DO-arm `ActionDef.object_class`
-    /// (`ogit.Automation:MARSNodeTemplate`).
-    pub const MARS_NODE_TEMPLATE: u16 = 0x0C06;
-    /// `action_handler` (`0x0C07`) — the ActionHandler adapter/membrane that
-    /// `provides` Applicability + Capability (`ogit.Automation:ActionHandler`).
-    /// Where the DO arm and the auth/RBAC arm meet (`HIRO-DO-ARM-LIFT.md` §3).
-    pub const ACTION_HANDLER: u16 = 0x0C07;
-    /// `action_applicability` (`0x0C08`) — the ActionApplicability; its
-    /// `environmentFilter` is the DO-arm `KausalSpec::StateGuard`
-    /// (`ogit.Automation:ActionApplicability`).
-    pub const ACTION_APPLICABILITY: u16 = 0x0C08;
-    /// `automation_trigger` (`0x0C09`) — the Trigger a KnowledgeItem
-    /// `contains`; the DO-arm `KausalSpec::LifecycleTrigger`
-    /// (`ogit.Automation:Trigger`).
-    pub const AUTOMATION_TRIGGER: u16 = 0x0C09;
 
     /// Every `(canonical_concept_name, id)` pair the constants vouch for.
     /// Drift-guarded against [`super::CODEBOOK`] by tests in this module.
@@ -1670,6 +1571,9 @@ pub mod class_ids {
         ("currency_policy", CURRENCY_POLICY),
         ("product", PRODUCT),
         ("accounting_account", ACCOUNTING_ACCOUNT),
+        ("pricelist", PRICELIST),
+        ("pricelist_rule", PRICELIST_RULE),
+        ("unit_of_measure", UNIT_OF_MEASURE),
         // 0x09XX — health
         ("patient", PATIENT),
         ("diagnosis", DIAGNOSIS),
@@ -1678,32 +1582,17 @@ pub mod class_ids {
         ("treatment", TREATMENT),
         ("visit", VISIT),
         ("vital_sign", VITAL_SIGN),
-        // 0x0AXX — anatomy (FMA reference ontology)
-        ("anatomical_structure", ANATOMICAL_STRUCTURE),
-        ("skeleton", SKELETON),
-        ("bone", BONE),
-        ("joint", JOINT),
         // 0x0BXX — auth (AuthStore class family)
         ("auth_store", AUTH_STORE),
         ("auth_zitadel", AUTH_ZITADEL),
         ("auth_zanzibar", AUTH_ZANZIBAR),
         ("auth_ory_keto", AUTH_ORY_KETO),
-        // 0x0CXX — automation (HIRO IT-automation: MARS CMDB + actuators)
-        ("mars_application", MARS_APPLICATION),
-        ("mars_resource", MARS_RESOURCE),
-        ("mars_software", MARS_SOFTWARE),
-        ("mars_machine", MARS_MACHINE),
-        ("knowledge_item", KNOWLEDGE_ITEM),
-        ("mars_node_template", MARS_NODE_TEMPLATE),
-        ("action_handler", ACTION_HANDLER),
-        ("action_applicability", ACTION_APPLICABILITY),
-        ("automation_trigger", AUTOMATION_TRIGGER),
     ];
 
     #[cfg(test)]
     mod tests {
         use super::*;
-        use crate::{CODEBOOK, canonical_concept_id};
+        use crate::{canonical_concept_id, CODEBOOK};
 
         #[test]
         fn constants_match_codebook() {
@@ -2538,6 +2427,9 @@ pub fn all_promoted_classes() -> Vec<Class> {
         currency_policy(),
         product(),
         accounting_account(),
+        pricelist(),
+        pricelist_rule(),
+        unit_of_measure(),
         // 0x09XX — health arm (7 OGIT Healthcare concepts), in
         // class_ids::ALL order.
         patient(),
@@ -2547,28 +2439,12 @@ pub fn all_promoted_classes() -> Vec<Class> {
         treatment(),
         visit(),
         vital_sign(),
-        // 0x0AXX — anatomy arm (FMA reference kinds), in class_ids::ALL order.
-        anatomical_structure(),
-        skeleton(),
-        bone(),
-        joint(),
         // 0x0BXX — auth arm (the AuthStore class family, keystone §7),
         // in class_ids::ALL order.
         auth_store(),
         auth_zitadel(),
         auth_zanzibar(),
         auth_ory_keto(),
-        // 0x0CXX — automation arm (HIRO MARS CMDB + DO-arm actuators),
-        // in class_ids::ALL order.
-        mars_application(),
-        mars_resource(),
-        mars_software(),
-        mars_machine(),
-        knowledge_item(),
-        mars_node_template(),
-        action_handler(),
-        action_applicability(),
-        automation_trigger(),
     ]
 }
 
@@ -3418,6 +3294,74 @@ pub fn accounting_account() -> Class {
     c
 }
 
+/// `pricelist` (`0x0209`) — price-specification base. OSB `Pricelist`,
+/// Odoo `product.pricelist` (`schema:PriceSpecification`).
+///
+/// Promoted Phase-3 (ProductCatalog cluster) from odoo-rs PR #14's
+/// cross-axis identity gap. Attributes: `name`, `currency` (ISO 4217),
+/// `active` (bool). Per-tier rules land on [`pricelist_rule`].
+pub fn pricelist() -> Class {
+    let mut c = Class::new("Pricelist");
+    c.language = Language::Unknown;
+    c.canonical_concept = Some("pricelist".to_string());
+    c.associations = Vec::new();
+    let mut name = Attribute::new("name");
+    name.type_name = Some("string".to_string());
+    let mut currency = Attribute::new("currency");
+    currency.type_name = Some("string".to_string());
+    let mut active = Attribute::new("active");
+    active.type_name = Some("bool".to_string());
+    c.attributes = vec![name, currency, active];
+    c
+}
+
+/// `pricelist_rule` (`0x020A`) — per-tier unit-price rule under a pricelist.
+/// OSB `PricelistTier`, Odoo `product.pricelist.item`
+/// (`schema:UnitPriceSpecification`).
+///
+/// Attributes: `price` (decimal), `min_quantity` (decimal), `max_quantity`
+/// (decimal — `0` = unbounded by convention), `pricelist_ref` (parent
+/// pricelist reference; resolution stays outside the codebook).
+pub fn pricelist_rule() -> Class {
+    let mut c = Class::new("PricelistRule");
+    c.language = Language::Unknown;
+    c.canonical_concept = Some("pricelist_rule".to_string());
+    c.associations = Vec::new();
+    let mut price = Attribute::new("price");
+    price.type_name = Some("decimal".to_string());
+    let mut min_quantity = Attribute::new("min_quantity");
+    min_quantity.type_name = Some("decimal".to_string());
+    let mut max_quantity = Attribute::new("max_quantity");
+    max_quantity.type_name = Some("decimal".to_string());
+    let mut pricelist_ref = Attribute::new("pricelist_ref");
+    pricelist_ref.type_name = Some("string".to_string());
+    c.attributes = vec![price, min_quantity, max_quantity, pricelist_ref];
+    c
+}
+
+/// `unit_of_measure` (`0x020B`) — measurement unit (catalogue + line-item
+/// quantity unit). OSB `UoM`, Odoo `uom.uom` (`qudt:Unit`).
+///
+/// Attributes: `name`, `symbol` (e.g. `"kg"`, `"m"`, `"h"`), `factor`
+/// (decimal conversion factor to base unit), `uom_type` (`'reference'` /
+/// `'bigger'` / `'smaller'` — Odoo's three measure-category modes).
+pub fn unit_of_measure() -> Class {
+    let mut c = Class::new("UnitOfMeasure");
+    c.language = Language::Unknown;
+    c.canonical_concept = Some("unit_of_measure".to_string());
+    c.associations = Vec::new();
+    let mut name = Attribute::new("name");
+    name.type_name = Some("string".to_string());
+    let mut symbol = Attribute::new("symbol");
+    symbol.type_name = Some("string".to_string());
+    let mut factor = Attribute::new("factor");
+    factor.type_name = Some("decimal".to_string());
+    let mut uom_type = Attribute::new("uom_type");
+    uom_type.type_name = Some("string".to_string());
+    c.attributes = vec![name, symbol, factor, uom_type];
+    c
+}
+
 // ─────────────────────────────────────────────────────────────────────
 // 0x09XX — Health domain (OGIT Healthcare). The reusable Active-Record
 // shape for the clinical concepts. `diagnosis` (0x0902) is the worked
@@ -3704,215 +3648,6 @@ pub fn auth_ory_keto() -> Class {
     auth_provider("AuthOryKeto", "auth_ory_keto")
 }
 
-// ── 0x0AXX — Anatomy domain builders (FMA reference kinds) ──
-//
-// The public anatomical reference frame consumed by the splat-native arc
-// (`docs/SPLAT-NATIVE-CUSTOMER.md`) and the FMA skeletal spine
-// (`crates/ogar-fma-skeleton`). These are the *kinds* (the FMA universal
-// root, the skeletal system, the bone, the joint) — the ~206 individual
-// bones are NOT concept slots; they are cascade-path nodes whose 16×8-bit
-// Morton-tile address places them in the partonomy + body volume. See
-// `docs/FMA-SKELETON-CONVERGENCE-ANCHOR.md`.
-
-/// The `anatomical_structure` (`0x0A01`) — FMA's universal root kind
-/// (everything in the atlas `is-a` this). The abstract anchor of the
-/// anatomy partonomy.
-#[must_use]
-pub fn anatomical_structure() -> Class {
-    let mut c = Class::new("AnatomicalStructure");
-    c.language = Language::Unknown;
-    c.canonical_concept = Some("anatomical_structure".to_string());
-    let mut fma_id = Attribute::new("fma_id");
-    fma_id.type_name = Some("string".to_string());
-    let mut name_la = Attribute::new("name_la"); // Terminologia Anatomica
-    name_la.type_name = Some("string".to_string());
-    c.attributes = vec![fma_id, name_la];
-    c
-}
-
-/// The `skeleton` (`0x0A02`) — the whole-body skeletal system; the root of
-/// the bone partonomy (`crates/ogar-fma-skeleton`).
-#[must_use]
-pub fn skeleton() -> Class {
-    let mut c = Class::new("Skeleton");
-    c.language = Language::Unknown;
-    c.canonical_concept = Some("skeleton".to_string());
-    c.parent = Some("AnatomicalStructure".to_string());
-    c.associations = vec![family_edge("bones", "Bone")];
-    c
-}
-
-/// The `bone` (`0x0A03`) — a skeletal element. **The clamped convergence
-/// anchor**: the rigid, non-negotiable frame the splat-fit registers
-/// against. The ~206 individual bones are cascade-path nodes under this
-/// concept (FMA partonomy → 16×8-bit Morton-tile address), not codebook
-/// slots. See `docs/FMA-SKELETON-CONVERGENCE-ANCHOR.md`.
-#[must_use]
-pub fn bone() -> Class {
-    let mut c = Class::new("Bone");
-    c.language = Language::Unknown;
-    c.canonical_concept = Some("bone".to_string());
-    c.parent = Some("AnatomicalStructure".to_string());
-    c.associations = vec![
-        family_edge("part_of", "Skeleton"),
-        family_edge("articulates", "Joint"),
-    ];
-    let mut rest_pose = Attribute::new("rest_pose"); // rigid transform (T-pose)
-    rest_pose.type_name = Some("string".to_string());
-    let mut clamped = Attribute::new("clamped"); // bones are always anchors
-    clamped.type_name = Some("boolean".to_string());
-    c.attributes = vec![rest_pose, clamped];
-    c
-}
-
-/// The `joint` (`0x0A04`) — an articulation between bones (the skeletal
-/// graph's edges, when materialized).
-#[must_use]
-pub fn joint() -> Class {
-    let mut c = Class::new("Joint");
-    c.language = Language::Unknown;
-    c.canonical_concept = Some("joint".to_string());
-    c.parent = Some("AnatomicalStructure".to_string());
-    c.associations = vec![family_edge("connects", "Bone")];
-    c
-}
-
-// ── 0x0CXX — Automation domain builders (HIRO IT-automation stack) ──
-// The MARS structural CMDB (A→R→S→M `dependsOn` backbone) + the Automation
-// DO-arm actuators. Shapes grounded in the vendored OGIT TTL attributes
-// (`vocab/imports/ogit/NTO/{MARS,Automation}/`). See `docs/MARS-TRANSCODING.md`
-// + `docs/HIRO-DO-ARM-LIFT.md`.
-
-/// The `mars_application` (`0x0C01`) — head of the MARS A→R→S→M `dependsOn`
-/// backbone (`ogit.MARS:Application`).
-#[must_use]
-pub fn mars_application() -> Class {
-    let mut c = Class::new("MarsApplication");
-    c.language = Language::Unknown;
-    c.canonical_concept = Some("mars_application".to_string());
-    let mut class = Attribute::new("class");
-    class.type_name = Some("string".to_string());
-    c.attributes = vec![class];
-    c.associations = vec![family_edge("depends_on", "MarsResource")];
-    c
-}
-
-/// The `mars_resource` (`0x0C02`) — `ogit.MARS:Resource`.
-#[must_use]
-pub fn mars_resource() -> Class {
-    let mut c = Class::new("MarsResource");
-    c.language = Language::Unknown;
-    c.canonical_concept = Some("mars_resource".to_string());
-    let mut class = Attribute::new("class");
-    class.type_name = Some("string".to_string());
-    c.attributes = vec![class];
-    c.associations = vec![family_edge("depends_on", "MarsSoftware")];
-    c
-}
-
-/// The `mars_software` (`0x0C03`) — `ogit.MARS:Software`.
-#[must_use]
-pub fn mars_software() -> Class {
-    let mut c = Class::new("MarsSoftware");
-    c.language = Language::Unknown;
-    c.canonical_concept = Some("mars_software".to_string());
-    let mut service_name = Attribute::new("service_name");
-    service_name.type_name = Some("string".to_string());
-    c.attributes = vec![service_name];
-    c.associations = vec![family_edge("depends_on", "MarsMachine")];
-    c
-}
-
-/// The `mars_machine` (`0x0C04`) — tail of the A→R→S→M chain
-/// (`ogit.MARS:Machine`).
-#[must_use]
-pub fn mars_machine() -> Class {
-    let mut c = Class::new("MarsMachine");
-    c.language = Language::Unknown;
-    c.canonical_concept = Some("mars_machine".to_string());
-    let mut cpu_arch = Attribute::new("cpu_arch");
-    cpu_arch.type_name = Some("string".to_string());
-    let mut cpu_cores = Attribute::new("cpu_cores");
-    cpu_cores.type_name = Some("integer".to_string());
-    c.attributes = vec![cpu_arch, cpu_cores];
-    c
-}
-
-/// The `knowledge_item` (`0x0C05`) — the Automation KnowledgeItem; the DO-arm
-/// `ActionDef` carrier (`ogit.Automation:KnowledgeItem`). The opaque body
-/// (`knowledge_item_formal_representation`) is pointed-to, never inlined.
-#[must_use]
-pub fn knowledge_item() -> Class {
-    let mut c = Class::new("KnowledgeItem");
-    c.language = Language::Unknown;
-    c.canonical_concept = Some("knowledge_item".to_string());
-    // The opaque body slot — the lossless-DO pointer (the attribute exists;
-    // the bytes are never inlined into the IR).
-    let mut body = Attribute::new("knowledge_item_formal_representation");
-    body.type_name = Some("string".to_string());
-    c.attributes = vec![body];
-    c.associations = vec![
-        family_edge("relates", "MarsNodeTemplate"),
-        family_edge("contains", "AutomationTrigger"),
-    ];
-    c
-}
-
-/// The `mars_node_template` (`0x0C06`) — the template a KnowledgeItem
-/// `relates` to; the DO-arm `ActionDef.object_class`
-/// (`ogit.Automation:MARSNodeTemplate`).
-#[must_use]
-pub fn mars_node_template() -> Class {
-    let mut c = Class::new("MarsNodeTemplate");
-    c.language = Language::Unknown;
-    c.canonical_concept = Some("mars_node_template".to_string());
-    let mut repr = Attribute::new("mars_node_formal_representation");
-    repr.type_name = Some("string".to_string());
-    c.attributes = vec![repr];
-    c
-}
-
-/// The `action_handler` (`0x0C07`) — the ActionHandler adapter/membrane
-/// (`ogit.Automation:ActionHandler`); where the DO arm meets the auth/RBAC arm.
-#[must_use]
-pub fn action_handler() -> Class {
-    let mut c = Class::new("ActionHandler");
-    c.language = Language::Unknown;
-    c.canonical_concept = Some("action_handler".to_string());
-    let mut name = Attribute::new("name");
-    name.type_name = Some("string".to_string());
-    c.attributes = vec![name];
-    c.associations = vec![family_edge("provides", "ActionApplicability")];
-    c
-}
-
-/// The `action_applicability` (`0x0C08`) — its `environment_filter` is the
-/// DO-arm `KausalSpec::StateGuard` (`ogit.Automation:ActionApplicability`).
-#[must_use]
-pub fn action_applicability() -> Class {
-    let mut c = Class::new("ActionApplicability");
-    c.language = Language::Unknown;
-    c.canonical_concept = Some("action_applicability".to_string());
-    let mut env = Attribute::new("environment_filter");
-    env.type_name = Some("string".to_string());
-    c.attributes = vec![env];
-    c
-}
-
-/// The `automation_trigger` (`0x0C09`) — the Trigger a KnowledgeItem
-/// `contains`; the DO-arm `KausalSpec::LifecycleTrigger`
-/// (`ogit.Automation:Trigger`).
-#[must_use]
-pub fn automation_trigger() -> Class {
-    let mut c = Class::new("AutomationTrigger");
-    c.language = Language::Unknown;
-    c.canonical_concept = Some("automation_trigger".to_string());
-    let mut description = Attribute::new("description");
-    description.type_name = Some("string".to_string());
-    c.attributes = vec![description];
-    c
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -4066,11 +3801,10 @@ mod tests {
     fn tax_policy_is_an_erp_boundary_edge_not_in_project_evidence() {
         // TaxPolicy is a family edge on the canonical shape ...
         let bwe = billable_work_entry();
-        assert!(
-            bwe.associations
-                .iter()
-                .any(|e| e.class_name.as_deref() == Some("TaxPolicy"))
-        );
+        assert!(bwe
+            .associations
+            .iter()
+            .any(|e| e.class_name.as_deref() == Some("TaxPolicy")));
         // ... but the project curator records work evidence with no tax.
         let mut op = Class::new("TimeEntry");
         op.source_domain = Some("project".to_string());
@@ -4488,6 +4222,9 @@ mod tests {
             "currency_policy",
             "product",
             "accounting_account",
+            "pricelist",
+            "pricelist_rule",
+            "unit_of_measure",
         ] {
             let id = canonical_concept_id(commerce_concept)
                 .unwrap_or_else(|| panic!("{commerce_concept} missing from codebook"));
@@ -4525,16 +4262,11 @@ mod tests {
         assert_eq!(canonical_concept_domain(0x0900), ConceptDomain::Health);
         assert_eq!(canonical_concept_domain(0x0B00), ConceptDomain::Auth);
         assert_eq!(canonical_concept_domain(0x0B04), ConceptDomain::Auth);
-        // Anatomy block (0x0A) — FMA reference kinds.
-        assert_eq!(canonical_concept_domain(0x0A00), ConceptDomain::Anatomy);
-        assert_eq!(canonical_concept_domain(0x0A03), ConceptDomain::Anatomy);
-        // Automation block (0x0C) — HIRO IT-automation stack.
-        assert_eq!(canonical_concept_domain(0x0C00), ConceptDomain::Automation);
-        assert_eq!(canonical_concept_domain(0x0C09), ConceptDomain::Automation);
-        // Unassigned blocks (3-6, D+).
+        // Unassigned blocks (3-6, A, C+).
         assert_eq!(canonical_concept_domain(0x0300), ConceptDomain::Unassigned);
         assert_eq!(canonical_concept_domain(0x0600), ConceptDomain::Unassigned);
-        assert_eq!(canonical_concept_domain(0x0D00), ConceptDomain::Unassigned);
+        assert_eq!(canonical_concept_domain(0x0A00), ConceptDomain::Unassigned);
+        assert_eq!(canonical_concept_domain(0x0C00), ConceptDomain::Unassigned);
         assert_eq!(canonical_concept_domain(0xFFFF), ConceptDomain::Unassigned);
     }
 
@@ -4633,30 +4365,8 @@ mod tests {
         }
         // Counts line up with the codebook blocks.
         assert_eq!(concepts_in_domain(ConceptDomain::Health).count(), 7);
-        assert_eq!(concepts_in_domain(ConceptDomain::Commerce).count(), 8);
+        assert_eq!(concepts_in_domain(ConceptDomain::Commerce).count(), 11);
         assert_eq!(concepts_in_domain(ConceptDomain::ProjectMgmt).count(), 26);
-        assert_eq!(concepts_in_domain(ConceptDomain::Anatomy).count(), 4);
-        assert_eq!(concepts_in_domain(ConceptDomain::Auth).count(), 4);
-        assert_eq!(concepts_in_domain(ConceptDomain::Automation).count(), 9);
-        // Every yielded Automation id really is in-domain (0x0CXX).
-        let automation: Vec<&str> = concepts_in_domain(ConceptDomain::Automation)
-            .map(|(name, _)| name)
-            .collect();
-        assert_eq!(
-            automation,
-            [
-                "mars_application",
-                "mars_resource",
-                "mars_software",
-                "mars_machine",
-                "knowledge_item",
-                "mars_node_template",
-                "action_handler",
-                "action_applicability",
-                "automation_trigger",
-            ],
-            "Automation domain set drift — re-sync the consumer coverage gate",
-        );
         // An empty (reserved-but-unpopulated) domain yields nothing.
         assert_eq!(concepts_in_domain(ConceptDomain::Osint).count(), 0);
     }
@@ -5037,7 +4747,7 @@ mod tests {
         assert!(!is_cross_domain_concept("project_role"));
         let id = canonical_concept_id("billable_work_entry").unwrap();
         assert_eq!(canonical_concept_domain(id), ProjectMgmt); // home domain
-        // Project curator (home domain) — kept.
+                                                               // Project curator (home domain) — kept.
         assert_eq!(
             canonical_concept_in_domain("TimeEntry", Some(ProjectMgmt)),
             "billable_work_entry"
@@ -5080,11 +4790,10 @@ mod tests {
                 .any(|a| a.name == "document"
                     && a.class_name.as_deref() == Some("CommercialDocument"))
         );
-        assert!(
-            line.associations
-                .iter()
-                .any(|a| a.name == "tax" && a.class_name.as_deref() == Some("TaxPolicy"))
-        );
+        assert!(line
+            .associations
+            .iter()
+            .any(|a| a.name == "tax" && a.class_name.as_deref() == Some("TaxPolicy")));
 
         let doc = commercial_document();
         let line_items = doc
@@ -5094,23 +4803,20 @@ mod tests {
             .unwrap();
         assert_eq!(line_items.kind, AssociationKind::HasMany);
         assert_eq!(line_items.class_name.as_deref(), Some("CommercialLineItem"));
-        assert!(
-            doc.associations
-                .iter()
-                .any(|a| a.name == "party" && a.class_name.as_deref() == Some("BillingParty"))
-        );
-        assert!(
-            doc.associations
-                .iter()
-                .any(|a| a.name == "currency" && a.class_name.as_deref() == Some("CurrencyPolicy"))
-        );
+        assert!(doc
+            .associations
+            .iter()
+            .any(|a| a.name == "party" && a.class_name.as_deref() == Some("BillingParty")));
+        assert!(doc
+            .associations
+            .iter()
+            .any(|a| a.name == "currency" && a.class_name.as_deref() == Some("CurrencyPolicy")));
 
         let pay = payment_record();
-        assert!(
-            pay.associations
-                .iter()
-                .any(|a| a.name == "party" && a.class_name.as_deref() == Some("BillingParty"))
-        );
+        assert!(pay
+            .associations
+            .iter()
+            .any(|a| a.name == "party" && a.class_name.as_deref() == Some("BillingParty")));
         assert!(
             pay.associations
                 .iter()
