@@ -7,6 +7,50 @@
 
 ---
 
+## 2026-06-24 — E-ACTIONHANDLER-RESOLVER — the action daemon IS a renderer over the classid keyspace: transport, class, executor, guard, RBAC all fall out of the GUID, late
+
+**Status:** FINDING (`[G]`, 19 tests).
+
+The action arm reached its holy grail — and it turned out to be a restatement of
+OGAR's most basic canon (*"the key prerenders the node; classid → ClassView"*),
+not a new mechanism. Three axes of agnosticism, all keyed by the GUID:
+
+1. **Transport-agnostic** — `Transport` trait (WebSocket today, Kafka reserved).
+2. **Class-agnostic** — `ClassResolver` resolves the action class from the **target
+   node's classid** *at dispatch time*, not wired at build time. The production
+   `OgarResolver` is backed by the canonical `actions_for(&[ClassActions], classid)`
+   DO manifest — the exact `classid → ClassActions` surface OGAR already generates.
+3. **Executor-agnostic** — the executor is chosen from what the class resolves to
+   (`RunnerKind` → `ExecutorRegistry`); `RegistryExecutor` adapts it so the gate
+   runs first and the concrete runner is picked **post-commit**.
+
+`ResolvingDaemon` holds NO wired classes and NO wired executor. The same
+`submitAction` (`ExecuteCommand`) dispatches to native (`mars_machine`) or REST
+(`mars_resource`) purely by what the target's classid resolves to — **zero daemon
+change**. A new capability / class / runner is a registry entry, never code:
+exactly *"scale = the next cascade level, never field-widening."*
+
+**Why this is the same canon, not a new one.** The CLAUDE.md P0 says a
+renderer/router *"can lay out, group, route, and skeleton-render nodes from keys
+alone, before (or without ever) fetching a value."* The action daemon is precisely
+such a router: the `classid` in the GUID simultaneously selects the transport edge
+it arrived on, the class's `ActionDef`, the state-guard, the executor (`RunnerKind`),
+and the RBAC concept (`lo16`) — all before any value decode. The hi-u16 chooses the
+render skin per app, the lo-u16 the shared concept (consumer doctrine). The action
+arm didn't need a new abstraction; it needed to *be* the key-is-the-key-of-key-value
+store applied to behavior. The hard gate (`commit_via`) is untouched — late binding
+selects WHICH action, never whether it's authorized.
+
+**Fence:** the resolver needs a populated `ClassActions` manifest to resolve
+against — which is exactly what B2-lift produces (`parse_capabilities` →
+signatures; the deployed `GET /capabilities` IS the registry content). Empty
+registry ⇒ resolves nothing (zero-fallback, never a panic); B2-lifted registration
+⇒ resolves everything. Cross-ref: `D-ACTIONHANDLER-RESOLVER`,
+`D-ACTIONHANDLER-TRANSPORT` (transport axis), `D-ACTIONHANDLER-B2LIFT` (the
+registry content).
+
+---
+
 ## 2026-06-24 — E-ACTIONHANDLER-TRANSPORT — the daemon is transport-agnostic because HIRO is multi-wire; and the OGIT Auth type unifies "who connects" with "who the gate authorizes"
 
 **Status:** FINDING (`[G]` for the core + WebSocket edge; `[H]` for the Kafka edge).
