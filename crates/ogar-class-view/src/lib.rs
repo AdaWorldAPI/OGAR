@@ -69,14 +69,15 @@ use ogar_vocab::{
     accounting_account, action_handler, anatomical_structure, auth_ory_keto, auth_store,
     auth_zanzibar, auth_zitadel, automation_trigger, billable_work_entry, billing_party, bone,
     canonical_concept_id, commercial_document, commercial_line_item, currency_policy, diagnosis,
-    joint, knowledge_item, lab_value, mars_application, mars_machine, mars_node_template,
-    mars_resource, mars_software, medication, patient, payment_record, pricelist, pricelist_rule,
-    priority, product, project, project_actor, project_attachment, project_changeset,
-    project_comment, project_custom_field, project_custom_value, project_enabled_module,
-    project_forum, project_journal, project_member_role, project_membership, project_message,
-    project_news, project_query, project_relation, project_repository, project_role,
-    project_status, project_type, project_version, project_watcher, project_wiki_page,
-    project_work_item, skeleton, tax_policy, treatment, unit_of_measure, visit, vital_sign,
+    hr_department, hr_employee, hr_employment_contract, hr_job, joint, knowledge_item, lab_value,
+    mars_application, mars_machine, mars_node_template, mars_resource, mars_software, medication,
+    patient, payment_record, pricelist, pricelist_rule, priority, product, project, project_actor,
+    project_attachment, project_changeset, project_comment, project_custom_field,
+    project_custom_value, project_enabled_module, project_forum, project_journal,
+    project_member_role, project_membership, project_message, project_news, project_query,
+    project_relation, project_repository, project_role, project_status, project_type,
+    project_version, project_watcher, project_wiki_page, project_work_item, skeleton, tax_policy,
+    treatment, unit_of_measure, visit, vital_sign,
 };
 
 /// All promoted canonical concepts: `(canonical_concept_name, Class)`.
@@ -144,6 +145,11 @@ fn all_canonical_classes() -> Vec<(&'static str, Class)> {
         ("auth_zitadel", auth_zitadel()),
         ("auth_zanzibar", auth_zanzibar()),
         ("auth_ory_keto", auth_ory_keto()),
+        // ── 0x0DXX — HR cluster (closes the final 4-of-11 odoo-rs #14 gap) ──
+        ("hr_employee", hr_employee()),
+        ("hr_department", hr_department()),
+        ("hr_job", hr_job()),
+        ("hr_employment_contract", hr_employment_contract()),
         // ── 0x0CXX — automation (HIRO MARS CMDB + DO-arm actuators) ──
         ("mars_application", mars_application()),
         ("mars_resource", mars_resource()),
