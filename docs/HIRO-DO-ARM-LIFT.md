@@ -128,24 +128,42 @@ this would keep "on ServiceDown, run X" and **lose** `guard_failure_policy`,
 
 ---
 
-## 6. The producer (proposed) — `[H]`, gated on a probe
+## 6. The producer — schema half `[G]` SHIPPED; behavioral half `[H]` gated
 
-Parallel to `ogar-from-schema` (structural arm), an Automation-domain DO lift
-(extend `ogar-from-schema` with a `do_arm` module, reusing its TTL parser):
+Parallel to `ogar-from-schema` (structural arm), the Automation-domain DO lift
+is the `do_arm` module in `ogar-from-schema`, reusing its TTL parser:
 
 ```text
-Automation/entities/*.ttl  →  ActionDef{ predicate, object_class, kausal,
-                                          defaults, results_in, payload_ref }
-                              + payload table (formalRepresentation blobs)
+Automation/entities/*.ttl  →  into_action_def(&EntityDecl) -> Option<ActionDef>
+                              { predicate, object_class, kausal, decorators }
+                              + payload_attribute(&EntityDecl)   (the body pointer)
 ```
 
-- **`payload_ref` only** — the lift NEVER inlines or reparses
-  `knowledgeItemFormalRepresentation`; it hashes it into the payload table.
-- **CONJECTURE until `PROBE-OGAR-DO-ARM-LIFT` is green:** an `ActionDef` →
-  adapter → execute → result must reproduce the KI's recorded behavior
-  bit-for-bit on a fixed corpus (the same falsification discipline as
-  `PROBE-OGAR-RBAC-AUTHORIZE`). Until then the mapping in §4 is a FINDING about
-  *shape*, not a certified executable equivalence.
+**The schema half is now CODED and green** (`crates/ogar-from-schema/src/do_arm.rs`,
+D‑HIRO‑DO). Against the real vendored OGIT TTL bytes (no fixtures — same
+calibration discipline as the MARS structural arm):
+
+- `KnowledgeItem` → `ActionDef` with `object_class` ← `relates MARSNodeTemplate`
+  (`ogit-automation/mars_node_template`), `kausal` ← `contains Trigger`
+  (`LifecycleTrigger`), `predicate` = `execute` (from the entity's own
+  `dcterms:description`), `decorators` = the §4 actuator verbs present.
+- `ActionHandler` / `ActionApplicability` / `Trigger` are recognized as
+  contract **parts**, not standalone defs — `into_action_def` returns `None`;
+  `ActionApplicability`'s `environmentFilter` lifts to a `StateGuard` via
+  `kausal_from_entity`.
+- **Lossless‑DO is test‑enforced:** `payload_attribute` records the
+  `knowledgeItemFormalRepresentation` slot **by name**; `ActionDef.body_source`
+  stays `None` — the test `knowledge_item_payload_is_pointed_to_never_inlined`
+  fails if any bytes are inlined. (The live `ActionDef` carries `body_source`
+  rather than the §5 sketch's `payload_ref`; at the schema level neither is
+  populated — the *instance* lift fills the pointer behind a content hash.)
+
+- **Behavioral half — CONJECTURE until `PROBE-OGAR-DO-ARM-LIFT` (full) is
+  green:** an `ActionDef` → adapter → execute → result must reproduce the KI's
+  recorded behavior bit-for-bit on a fixed *instance* corpus (the same
+  falsification discipline as `PROBE-OGAR-RBAC-AUTHORIZE`). The shipped schema
+  half certifies the **shape**; executable equivalence needs KI instances
+  (with bodies), which the vendored vocab does not carry.
 
 ---
 

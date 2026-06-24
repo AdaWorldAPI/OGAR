@@ -162,6 +162,10 @@ domains are paperwork.
 - `vocab/imports/ogit/NTO/MARS/PROVENANCE.md` — SHA + license + re-vendor recipe
 - `vocab/imports/ogit/NTO/MARS/_oracle/` — the XSD + `extract_classes.py` oracle
 - `crates/ogar-from-schema/` — the producer (TTL + reverse-emit + SGO verbs)
+- `crates/ogar-from-schema/src/do_arm.rs` — the **DO-arm** sibling: lifts the
+  OGIT Automation entities (`KnowledgeItem`→`ActionDef`) the structural MARS
+  import left on the table (the behavioral arm, schema-shape half; D‑HIRO‑DO)
+- `docs/HIRO-DO-ARM-LIFT.md` — the DO-arm mapping + the lossless-DO rule
 - `docs/HIRO-IN-CLASSES.md` — the bardioc-efficiency story
 - `docs/FOUNDRY-ODOO-MARS-LENS.md` — the cross-domain lens
 - `docs/ELIXIR-HIRO-PREFETCH.md` — the behavioural-arm prefetch (sibling)
