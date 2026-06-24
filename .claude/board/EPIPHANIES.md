@@ -7,6 +7,56 @@
 
 ---
 
+## 2026-06-24 — E-ARAGO-ACTIONHANDLER-PARITY — OGAR is at full *contract + lifecycle* parity with arago's HIRO ActionHandler; the live daemon reduces to two glue bricks
+
+**Status:** FINDING (contract+lifecycle `[G]`) + CONJECTURE (runtime `[H]`, gated
+on `PROBE-OGAR-ACTIONHANDLER-RUN`).
+
+Operator goal: parity with arago's HIRO ActionHandler such that one "could
+basically switch from [arago's] Python to OGAR running it here." Researched the
+real arago sources (`github.com/arago/ActionHandlers` config format,
+`arago/python-hiro-stonebranch-actionhandler` daemon, HIRO 7 Action API
+`action-ws` protocol) and scored OGAR against all three layers.
+
+**The three parity findings:**
+
+1. **Config + ontology = one contract, and OGAR lifts it.** arago's handler YAML
+   (`Capability{Name,Description,Command,Parameter[]}` + `Applicability{ModelFilter,…}`)
+   and the OGIT `NTO/Automation` ontology (`ActionHandler→provides→ActionApplicability
+   →provides→ActionCapability`) are two encodings of one shape.
+   `do_arm::assemble_action_handler` walks the vendored `provides` graph into
+   `ActionHandlerSpec`/`CapabilitySlot`/`ApplicabilitySlot`/`ActionParam` — proven
+   by `assembles_the_full_action_handler_contract`.
+
+2. **`ModelFilter` IS `StateGuard`.** arago's node-match `ModelFilter{Var,Mode,Value}`
+   maps field-for-field to OGAR `KausalSpec::StateGuard{guard_field,guard_values}`
+   (carried by the `environmentFilter` attribute). The applicability guard was
+   already an OGAR type.
+
+3. **The `action-ws` lifecycle IS the `ActionInvocation` Rubicon.** `submitAction →
+   handler acknowledged → execute → sendActionResult → server acknowledged` maps
+   onto `Pending → (commit_via: RBAC ∧ guard ∧ MUL) → Committed → Lance-append`.
+   `submitAction.timeout`→`state_timeout_millis`; `submitAction.id`→`idempotency_key`;
+   `sendActionResult.result`→the `resultParameters` output; the server ack→the
+   `CommitHook` Lance commit ("state history IS the version log"). Nothing in the
+   protocol needs a type OGAR lacks.
+
+**The honest verdict:** OGAR is at parity on *what an ActionHandler is* (contract)
+and *how an action flows* (lifecycle) — every config/ontology/protocol field has
+an OGAR type, and the execution gate (`commit_via<ClassRbac>`) is shipped. The
+switch to "OGAR running it here" reduces to **two glue bricks over existing
+types**: **B1** the `ExecTarget` executor (run the Command → result;
+`graph-flow-action`'s trait, still no impl) and **B2** the action-ws adapter +
+deployed-handler-YAML→`ActionDef`/`ActionParam` instance lift. Both are glue, not
+new IR. Certified by `PROBE-OGAR-ACTIONHANDLER-RUN` (replay a real arago
+`submitAction` corpus; assert `sendActionResult` matches bit-for-bit).
+
+`action_capability` / `intent` / `automation_issue` stay RESERVED in the codebook
+— the assembly is string-keyed; they mint when B1 resolves them by classid.
+Full treatment: `docs/ARAGO-ACTIONHANDLER-PARITY.md`; ledger D-ACTIONHANDLER-PARITY.
+
+---
+
 ## 2026-06-24 — E-MARS-AUTOMATION-MINT — the MARS/Automation classids are minted: `ConceptDomain::Automation` (0x0C), the deferred 5+3 codebook pass
 
 **Status:** FINDING (grounded `[G]` — shipped + drift-guard-green).

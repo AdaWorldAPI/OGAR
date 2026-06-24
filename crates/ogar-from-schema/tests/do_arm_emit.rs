@@ -15,9 +15,9 @@
 //! level). This is the lift→triples seam the RBAC / query layers consume.
 
 use ogar_emitter::TripleEmitter;
+use ogar_from_schema::TtlDeclaration;
 use ogar_from_schema::do_arm::into_action_def;
 use ogar_from_schema::ttl::parse_file;
-use ogar_from_schema::TtlDeclaration;
 
 const KNOWLEDGE_ITEM_TTL: &str =
     include_str!("../../../vocab/imports/ogit/NTO/Automation/entities/KnowledgeItem.ttl");
@@ -43,7 +43,10 @@ fn knowledge_item_lifts_and_emits_as_action_def_triples() {
     let triples = TripleEmitter::emit_action_def(&def);
 
     // Type triple — the def IS an ogar:ActionDef on the SPO surface.
-    assert_eq!(obj(&triples, &id, "rdf:type").as_deref(), Some("ogar:ActionDef"));
+    assert_eq!(
+        obj(&triples, &id, "rdf:type").as_deref(),
+        Some("ogar:ActionDef")
+    );
 
     // The §4 field mapping survives the lift→emit path verbatim.
     assert_eq!(
@@ -66,11 +69,9 @@ fn knowledge_item_lifts_and_emits_as_action_def_triples() {
     // The §4 actuator verbs ride as ogar:actionDecorator provenance.
     for verb in ["relates", "contains", "uses"] {
         assert!(
-            triples
-                .iter()
-                .any(|t| t.subject == id
-                    && t.predicate == "ogar:actionDecorator"
-                    && t.object == verb),
+            triples.iter().any(|t| t.subject == id
+                && t.predicate == "ogar:actionDecorator"
+                && t.object == verb),
             "decorator `{verb}` missing from emitted triples"
         );
     }
