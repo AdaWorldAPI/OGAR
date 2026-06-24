@@ -190,8 +190,13 @@ downstream. The remaining bricks:
   **native target is SHIPPED**: `ogar-action-handler::NativeCommandExecutor` runs
   `ExecuteCommand` via a local POSIX shell and returns `output`/`stderr`/`exitcode`
   — proven end-to-end by `full_dispatch_runs_a_real_command` ("OGAR running it
-  here," native). SSH / REST / WinRM targets follow the same trait; rs-graph-llm's
-  `graph-flow-action` provides the production executors (and runs `commit_via`).
+  here," native). The **REST target is SHIPPED too**: rs-graph-llm
+  `graph-flow-action-ogar::rest::RestExecutor` (`feature = "rest"`, pure-Rust
+  `ureq`) POSTs the bound params to an HTTP endpoint and returns the response as
+  `resultParameters` — the arago HTTP-callout shape — and runs only behind the
+  gate (`rest_executor_runs_only_behind_the_gate`). SSH / WinRM follow the same
+  `CapabilityExecutor` trait (SSH = arago's canonical `ExecuteCommand`-over-SSH);
+  rs-graph-llm hosts the production executors (the gate runs `commit_via`).
 - **B1-uplink — the hard gate before the executor (SHIPPED).** rs-graph-llm's
   `graph-flow-action-ogar` crate is the seam: `GatedOgarHandler` wraps an OGAR
   `CapabilityExecutor` as a `graph-flow-action::ActionHandler`, so the executor's
@@ -254,7 +259,8 @@ transport over them.
 | **Reactive dispatch + B1 seam** | ✅ `[G]` SHIPPED | `action_ws::handle_submit` + the `CapabilityExecutor` trait (validate→ack→bind→execute→result; tested with a mock) |
 | **Executor — native target (B1)** | ✅ `[G]` SHIPPED | `ogar-action-handler::NativeCommandExecutor` runs `ExecuteCommand` for real; `full_dispatch_runs_a_real_command` |
 | **Hard gate before executor (B1-uplink)** | ✅ `[G]` SHIPPED | rs-graph-llm `graph-flow-action-ogar::GatedOgarHandler` — `commit_via` (RBAC ∧ guard ∧ MUL) lands before `handle`; `take_result()` is `None` iff the gate refused (3 tests) |
-| **Executor — SSH/REST/WinRM (B1)** | ⛔ `[H]` | further `CapabilityExecutor` impls (rs-graph-llm `graph-flow-action`) |
+| **Executor — REST target (B1)** | ✅ `[G]` SHIPPED | rs-graph-llm `graph-flow-action-ogar::rest::RestExecutor` (`feature = "rest"`, ureq) POSTs bound params → resultParameters; runs only behind the gate (`rest_executor_runs_only_behind_the_gate`) |
+| **Executor — SSH/WinRM (B1)** | ⛔ `[H]` | further `CapabilityExecutor` impls (SSH = arago's canonical `ExecuteCommand`-over-SSH; needs an SSH client + a live host to test) |
 | **Live transport — daemon core + WebSocket (B2-transport)** | ✅ `[G]` SHIPPED | rs-graph-llm `graph-flow-action-ogar::daemon`: transport-agnostic `Daemon::react`/`serve` + `Transport` trait + `WsTransport` (action-ws), gate-driving; mock-server roundtrip. `Auth` ← OGIT `NTO/Auth/Configuration` |
 | **Live transport — Kafka edge (B2-transport)** | ⛔ `[H]` | `rdkafka` over the same `Transport` trait (action topic → result topic); core ready, needs the topic/record shape pinned |
 | **Instance config lift — capabilities (B2-lift)** | ✅ `[G]` SHIPPED | `registration::lift_registration` + `ogar-action-handler::parse_capabilities`: real `GET /capabilities` JSON → `ConcreteCapability` (`ActionParam[]`); `rest_registration_lifts_binds_and_runs` (JSON → lift → bind → run) |
@@ -274,14 +280,17 @@ end-to-end, `rest_registration_lifts_binds_and_runs`) and per-handler `StateGuar
 sets (`rest_applicabilities_lift_to_per_handler_guards`). And the **live daemon
 runs over a real socket** — `graph-flow-action-ogar::daemon` drives the gated
 dispatch through a `Transport` trait, with the `action-ws` WebSocket edge proven
-by a mock-server roundtrip. What's left for a **live** drop-in replacement of
-arago's Python daemon: the **Kafka transport edge** (HIRO's internal bus —
-`rdkafka` over the same `Transport` trait, needs the topic/record shape pinned)
-and the **non-native executor targets** (SSH/REST). Each is a single edge/runner
-impl over existing types — **no missing IR, no missing protocol mapping**. That is
-the honest state: OGAR *is* an ActionHandler that reads its own registration,
-gates every action, runs commands, and speaks `action-ws` over a live socket;
-a Kafka consumer away from HIRO's internal bus.
+by a mock-server roundtrip. Two executor targets run gated — **native** (local
+command) and **REST** (HTTP callout). What's left for a **live** drop-in
+replacement of arago's Python daemon: the **Kafka transport edge** (HIRO's
+internal bus — `rdkafka` over the same `Transport` trait, needs the topic/record
+shape pinned) and the **SSH executor** (arago's canonical `ExecuteCommand`-over-SSH
+— an SSH client over the same `CapabilityExecutor` trait, needs a live host to
+test). Each is a single edge/runner impl over existing types — **no missing IR,
+no missing protocol mapping**. That is the honest state: OGAR *is* an ActionHandler
+that reads its own registration, gates every action, runs commands and HTTP
+callouts, and speaks `action-ws` over a live socket; a Kafka consumer + an SSH
+runner away from being arago's Python daemon, on any HIRO deployment.
 
 ---
 
@@ -318,6 +327,8 @@ is replaceable; the parity claim is certified, not argued.
 - `rs-graph-llm/graph-flow-action-ogar/src/daemon.rs` — **B2-transport**: the
   transport-agnostic `Daemon` (`react`/`serve`) + the `Transport` trait +
   `WsTransport` (action-ws WebSocket edge) + the OGIT-`Auth`-derived identity.
+- `rs-graph-llm/graph-flow-action-ogar/src/rest.rs` — the **REST executor**
+  (`RestExecutor`, `feature = "rest"`): the arago HTTP-callout target, gated.
 - arago: `github.com/arago/ActionHandlers`,
   `arago/python-hiro-stonebranch-actionhandler`, HIRO 7 Action API tutorial.
 - **HIRO 7 Action API machine-readable specs (the authoritative harvest, §2a):**
