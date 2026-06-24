@@ -2621,6 +2621,11 @@ pub fn all_promoted_classes() -> Vec<Class> {
         auth_zitadel(),
         auth_zanzibar(),
         auth_ory_keto(),
+        // 0x0DXX — HR arm
+        hr_employee(),
+        hr_department(),
+        hr_job(),
+        hr_employment_contract(),
         // 0x0CXX — automation arm (HIRO MARS CMDB + DO-arm actuators),
         // in class_ids::ALL order.
         mars_application(),
@@ -3845,6 +3850,80 @@ pub fn anatomical_structure() -> Class {
     c
 }
 
+// ─────────────────────────────────────────────────────────────────────
+// 0x0DXX — HR domain (employment / org / contracts). The reusable
+// Active-Record shape for HR master-data per arago HIRO + Odoo `hr.*` +
+// vcard/org/fibo alignment. Field names are English schema labels.
+
+/// `hr_employee` (`0x0D01`) — person record (vcard:Individual).
+pub fn hr_employee() -> Class {
+    let mut c = Class::new("HrEmployee");
+    c.language = Language::Unknown;
+    c.canonical_concept = Some("hr_employee".to_string());
+    c.associations = Vec::new();
+    let mut full_name = Attribute::new("full_name");
+    full_name.type_name = Some("string".to_string());
+    let mut email = Attribute::new("email");
+    email.type_name = Some("string".to_string());
+    let mut phone = Attribute::new("phone");
+    phone.type_name = Some("string".to_string());
+    let mut employee_id = Attribute::new("employee_id");
+    employee_id.type_name = Some("string".to_string());
+    c.attributes = vec![full_name, email, phone, employee_id];
+    c
+}
+
+/// `hr_department` (`0x0D02`) — organizational unit (org:OrganizationalUnit).
+pub fn hr_department() -> Class {
+    let mut c = Class::new("HrDepartment");
+    c.language = Language::Unknown;
+    c.canonical_concept = Some("hr_department".to_string());
+    c.associations = Vec::new();
+    let mut name = Attribute::new("name");
+    name.type_name = Some("string".to_string());
+    let mut manager_ref = Attribute::new("manager_ref");
+    manager_ref.type_name = Some("string".to_string());
+    let mut parent_ref = Attribute::new("parent_ref");
+    parent_ref.type_name = Some("string".to_string());
+    c.attributes = vec![name, manager_ref, parent_ref];
+    c
+}
+
+/// `hr_job` (`0x0D03`) — role / position (org:Role).
+pub fn hr_job() -> Class {
+    let mut c = Class::new("HrJob");
+    c.language = Language::Unknown;
+    c.canonical_concept = Some("hr_job".to_string());
+    c.associations = Vec::new();
+    let mut title = Attribute::new("title");
+    title.type_name = Some("string".to_string());
+    let mut description = Attribute::new("description");
+    description.type_name = Some("string".to_string());
+    let mut department_ref = Attribute::new("department_ref");
+    department_ref.type_name = Some("string".to_string());
+    c.attributes = vec![title, description, department_ref];
+    c
+}
+
+/// `hr_employment_contract` (`0x0D04`) — base employment contract
+/// (fibo:Contract). Payroll computation stays out of the codebook.
+pub fn hr_employment_contract() -> Class {
+    let mut c = Class::new("HrEmploymentContract");
+    c.language = Language::Unknown;
+    c.canonical_concept = Some("hr_employment_contract".to_string());
+    c.associations = Vec::new();
+    let mut start_date = Attribute::new("start_date");
+    start_date.type_name = Some("date".to_string());
+    let mut end_date = Attribute::new("end_date");
+    end_date.type_name = Some("date".to_string());
+    let mut contract_type = Attribute::new("contract_type");
+    contract_type.type_name = Some("string".to_string());
+    let mut salary = Attribute::new("salary");
+    salary.type_name = Some("decimal".to_string());
+    c.attributes = vec![start_date, end_date, contract_type, salary];
+    c
+}
+
 /// The `skeleton` (`0x0A02`) — the whole-body skeletal system; the root of
 /// the bone partonomy (`crates/ogar-fma-skeleton`).
 #[must_use]
@@ -4652,7 +4731,7 @@ mod tests {
         // Unassigned blocks (3-6, D+).
         assert_eq!(canonical_concept_domain(0x0300), ConceptDomain::Unassigned);
         assert_eq!(canonical_concept_domain(0x0600), ConceptDomain::Unassigned);
-        assert_eq!(canonical_concept_domain(0x0D00), ConceptDomain::Unassigned);
+        assert_eq!(canonical_concept_domain(0x0D00), ConceptDomain::HR);
         assert_eq!(canonical_concept_domain(0xFFFF), ConceptDomain::Unassigned);
     }
 
@@ -4751,6 +4830,7 @@ mod tests {
         }
         // Counts line up with the codebook blocks.
         assert_eq!(concepts_in_domain(ConceptDomain::Health).count(), 7);
+        assert_eq!(concepts_in_domain(ConceptDomain::HR).count(), 4);
         assert_eq!(concepts_in_domain(ConceptDomain::Commerce).count(), 11);
         assert_eq!(concepts_in_domain(ConceptDomain::ProjectMgmt).count(), 26);
         assert_eq!(concepts_in_domain(ConceptDomain::Anatomy).count(), 4);
