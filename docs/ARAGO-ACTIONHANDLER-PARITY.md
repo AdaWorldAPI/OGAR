@@ -269,6 +269,7 @@ transport over them.
 | **Executor — WinRM (B1)** | ⛔ `[H]` | a further `CapabilityExecutor` impl (Windows remote exec) |
 | **Live transport — daemon core + WebSocket (B2-transport)** | ✅ `[G]` SHIPPED | rs-graph-llm `graph-flow-action-ogar::daemon`: transport-agnostic `Daemon::react`/`serve` + `Transport` trait + `WsTransport` (action-ws), gate-driving; mock-server roundtrip. `Auth` ← OGIT `NTO/Auth/Configuration` |
 | **Live transport — Kafka edge (B2-transport)** | ⛔ `[H]` | `rdkafka` over the same `Transport` trait (action topic → result topic); core ready, needs the topic/record shape pinned |
+| **Class-late-bound dispatch (the grail)** | ✅ `[G]` SHIPPED | rs-graph-llm `graph-flow-action-ogar::daemon::ResolvingDaemon` — class resolved from the target's **classid** per action (`ClassResolver`), executor from the resolved `RunnerKind` (`ExecutorRegistry`). `OgarResolver` is the production resolver over the canonical `actions_for(&[ClassActions], classid)` manifest. Proven: one `ExecuteCommand`, `mars_machine` → native / `mars_resource` → REST, zero daemon change; gate still rules |
 | **Instance config lift — capabilities (B2-lift)** | ✅ `[G]` SHIPPED | `registration::lift_registration` + `ogar-action-handler::parse_capabilities`: real `GET /capabilities` JSON → `ConcreteCapability` (`ActionParam[]`); `rest_registration_lifts_binds_and_runs` (JSON → lift → bind → run) |
 | **Instance config lift — applicabilities (B2-lift)** | ✅ `[G]` SHIPPED | `registration::lift_applicabilities` + `ogar-action-handler::parse_applicabilities`: real `GET /applicabilities` JSON → per-handler `StateGuard` sets; `rest_applicabilities_lift_to_per_handler_guards`. Residual: inner filter-list field name is alias-flexible pending a live response |
 
@@ -298,6 +299,19 @@ OGAR *is* an ActionHandler that reads its own registration, gates every action,
 runs commands locally / over SSH / as HTTP callouts, and speaks `action-ws` over a
 live socket; a Kafka consumer away from being arago's Python daemon, on a HIRO
 deployment that distributes over Kafka.
+
+**The grail — class chosen late from the classid.** Beyond the static daemon, the
+`ResolvingDaemon` (`graph-flow-action-ogar::daemon`) holds **no** wired classes and
+**no** wired executor: it resolves the action class from the target node's
+**classid** per action (`ClassResolver`), and the executor from what that class
+resolves to (`RunnerKind` → `ExecutorRegistry`). The production resolver
+(`OgarResolver`) is backed by the canonical `actions_for(&[ClassActions], classid)`
+DO manifest — OGAR's *"the key prerenders the node; classid → ClassView"* applied
+to the action arm. One `ExecuteCommand` dispatches to native (`mars_machine`) or
+REST (`mars_resource`) purely by what the classid resolves to, with zero daemon
+change — and every action still passes the same hard gate. A new capability /
+class / runner is a registry entry, never code (*"scale = the next cascade level,
+never field-widening"*).
 
 ---
 
@@ -331,9 +345,11 @@ is replaceable; the parity claim is certified, not argued.
 - `rs-graph-llm/graph-flow-action-ogar` — the **uplink**: OGAR's
   `CapabilityExecutor` behind the hard gate (`GatedOgarHandler` / `run_gated`);
   `commit_via` lands before any execution.
-- `rs-graph-llm/graph-flow-action-ogar/src/daemon.rs` — **B2-transport**: the
-  transport-agnostic `Daemon` (`react`/`serve`) + the `Transport` trait +
-  `WsTransport` (action-ws WebSocket edge) + the OGIT-`Auth`-derived identity.
+- `rs-graph-llm/graph-flow-action-ogar/src/daemon.rs` — **B2-transport** + **the
+  grail**: the transport-agnostic `Daemon` (`react`/`serve`) + the `Transport`
+  trait + `WsTransport` (action-ws WebSocket edge) + the OGIT-`Auth`-derived
+  identity; **plus** `ResolvingDaemon` + `ClassResolver` / `ExecutorRegistry` /
+  `OgarResolver` (class chosen late from the classid via `actions_for`).
 - `rs-graph-llm/graph-flow-action-ogar/src/rest.rs` — the **REST executor**
   (`RestExecutor`, `feature = "rest"`): the arago HTTP-callout target, gated.
 - `crates/ogar-action-handler/src/lib.rs` — the **native** (`NativeCommandExecutor`)
