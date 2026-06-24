@@ -1070,7 +1070,9 @@ impl Class {
 ///   0x08XX  reserved: OCR
 ///   0x09XX  reserved: Health
 ///   0x0AXX  Anatomy           (FMA reference ontology; bones/skeleton)
-///   0x0CXX+ unassigned
+///   0x0BXX  Auth              (IAM; the AuthStore class family)
+///   0x0CXX  Automation        (HIRO IT-automation: MARS CMDB + actuators)
+///   0x0DXX+ unassigned
 /// ```
 ///
 /// **Anatomy vs Health (the firewall split).** `0x0AXX` Anatomy is the
@@ -1202,6 +1204,31 @@ const CODEBOOK: &[(&str, u16)] = &[
     ("auth_zitadel", 0x0B02),
     ("auth_zanzibar", 0x0B03),
     ("auth_ory_keto", 0x0B04),
+    // ── 0x0CXX — Automation domain (the HIRO IT-automation stack) ──
+    // One domain spanning the MARS structural CMDB (`ogit.MARS:` —
+    // Application/Resource/Software/Machine, the A→R→S→M dependsOn backbone)
+    // AND the Automation actuators (`ogit.Automation:` — KnowledgeItem /
+    // ActionHandler / Trigger, HIRO's behavioral vocabulary). Two OGIT
+    // sub-namespaces, ONE concept domain — the same justification the Auth
+    // family uses (heterogeneous shapes, one cross-app concern): the render
+    // prefix (`ogit-mars` / `ogit-automation`) is the hi-u16 skin; the domain
+    // byte is the lo-u16 shared-concept half. The DO arm (`ActionDef`) and the
+    // THINK arm (the MARS `Class`es) meet here. This IS the codebook pass that
+    // `docs/MARS-TRANSCODING.md` §1 deferred ("provisional… after the codebook
+    // pass"); minted via the 5+3 hardening (theorem-checker / doctrine-keeper /
+    // integration-lead / runtime-archaeologist + cargo gates). The set is the
+    // load-bearing concepts the structural + DO-arm lifts stand on; further
+    // Automation entities (action_capability / intent / automation_issue /
+    // variable / mars_node) are RESERVED, minted when a lift/consumer uses them.
+    ("mars_application", 0x0C01),
+    ("mars_resource", 0x0C02),
+    ("mars_software", 0x0C03),
+    ("mars_machine", 0x0C04),
+    ("knowledge_item", 0x0C05),
+    ("mars_node_template", 0x0C06),
+    ("action_handler", 0x0C07),
+    ("action_applicability", 0x0C08),
+    ("automation_trigger", 0x0C09),
 ];
 
 /// Codebook **domain** — the high byte of a canonical id (see
@@ -1239,8 +1266,18 @@ pub enum ConceptDomain {
     /// `auth_zanzibar` / `auth_ory_keto`). See
     /// `docs/CLASSID-RBAC-KEYSTONE-SPEC.md` §7.
     Auth,
+    /// `0x0CXX` — Automation (the HIRO IT-automation stack). One domain
+    /// spanning the MARS structural CMDB (`mars_application` / `mars_resource`
+    /// / `mars_software` / `mars_machine` — the A→R→S→M dependsOn backbone)
+    /// and the Automation actuators (`knowledge_item` / `mars_node_template` /
+    /// `action_handler` / `action_applicability` / `automation_trigger` —
+    /// HIRO's DO-arm vocabulary). The DO arm (`ActionDef`) and the THINK arm
+    /// (the MARS `Class`es) meet here. Infrastructure config, NOT PHI — same
+    /// public-reference posture as [`Anatomy`](Self::Anatomy). See
+    /// `docs/MARS-TRANSCODING.md` + `docs/HIRO-DO-ARM-LIFT.md`.
+    Automation,
     /// Any high-byte slot not yet assigned a domain (`0x03XX`–`0x06XX`,
-    /// `0x0AXX`, `0x0CXX`+).
+    /// `0x0DXX`+).
     Unassigned,
 }
 
@@ -1257,6 +1294,7 @@ pub fn canonical_concept_domain(id: u16) -> ConceptDomain {
         0x09 => ConceptDomain::Health,
         0x0A => ConceptDomain::Anatomy,
         0x0B => ConceptDomain::Auth,
+        0x0C => ConceptDomain::Automation,
         _ => ConceptDomain::Unassigned,
     }
 }
@@ -1558,6 +1596,41 @@ pub mod class_ids {
     /// `auth_ory_keto` (`0x0B04`) — Ory Keto provider profile.
     pub const AUTH_ORY_KETO: u16 = 0x0B04;
 
+    // ── 0x0CXX — Automation domain (HIRO IT-automation stack) ──
+
+    /// `mars_application` (`0x0C01`) — a MARS Application CMDB entity; head of
+    /// the A→R→S→M `dependsOn` backbone (`ogit.MARS:Application`).
+    pub const MARS_APPLICATION: u16 = 0x0C01;
+    /// `mars_resource` (`0x0C02`) — a MARS Resource (`ogit.MARS:Resource`).
+    pub const MARS_RESOURCE: u16 = 0x0C02;
+    /// `mars_software` (`0x0C03`) — a MARS Software component
+    /// (`ogit.MARS:Software`).
+    pub const MARS_SOFTWARE: u16 = 0x0C03;
+    /// `mars_machine` (`0x0C04`) — a MARS Machine; tail of the A→R→S→M chain
+    /// (`ogit.MARS:Machine`).
+    pub const MARS_MACHINE: u16 = 0x0C04;
+    /// `knowledge_item` (`0x0C05`) — the Automation KnowledgeItem; the DO-arm
+    /// `ActionDef` carrier (`ogit.Automation:KnowledgeItem`). Its opaque body
+    /// rides in `knowledgeItemFormalRepresentation` — pointed-to, never inlined
+    /// (lossless-DO; `docs/HIRO-DO-ARM-LIFT.md` §1).
+    pub const KNOWLEDGE_ITEM: u16 = 0x0C05;
+    /// `mars_node_template` (`0x0C06`) — the template a KnowledgeItem
+    /// `relates` to; the DO-arm `ActionDef.object_class`
+    /// (`ogit.Automation:MARSNodeTemplate`).
+    pub const MARS_NODE_TEMPLATE: u16 = 0x0C06;
+    /// `action_handler` (`0x0C07`) — the ActionHandler adapter/membrane that
+    /// `provides` Applicability + Capability (`ogit.Automation:ActionHandler`).
+    /// Where the DO arm and the auth/RBAC arm meet (`HIRO-DO-ARM-LIFT.md` §3).
+    pub const ACTION_HANDLER: u16 = 0x0C07;
+    /// `action_applicability` (`0x0C08`) — the ActionApplicability; its
+    /// `environmentFilter` is the DO-arm `KausalSpec::StateGuard`
+    /// (`ogit.Automation:ActionApplicability`).
+    pub const ACTION_APPLICABILITY: u16 = 0x0C08;
+    /// `automation_trigger` (`0x0C09`) — the Trigger a KnowledgeItem
+    /// `contains`; the DO-arm `KausalSpec::LifecycleTrigger`
+    /// (`ogit.Automation:Trigger`).
+    pub const AUTOMATION_TRIGGER: u16 = 0x0C09;
+
     /// Every `(canonical_concept_name, id)` pair the constants vouch for.
     /// Drift-guarded against [`super::CODEBOOK`] by tests in this module.
     pub const ALL: &[(&str, u16)] = &[
@@ -1615,6 +1688,16 @@ pub mod class_ids {
         ("auth_zitadel", AUTH_ZITADEL),
         ("auth_zanzibar", AUTH_ZANZIBAR),
         ("auth_ory_keto", AUTH_ORY_KETO),
+        // 0x0CXX — automation (HIRO IT-automation: MARS CMDB + actuators)
+        ("mars_application", MARS_APPLICATION),
+        ("mars_resource", MARS_RESOURCE),
+        ("mars_software", MARS_SOFTWARE),
+        ("mars_machine", MARS_MACHINE),
+        ("knowledge_item", KNOWLEDGE_ITEM),
+        ("mars_node_template", MARS_NODE_TEMPLATE),
+        ("action_handler", ACTION_HANDLER),
+        ("action_applicability", ACTION_APPLICABILITY),
+        ("automation_trigger", AUTOMATION_TRIGGER),
     ];
 
     #[cfg(test)]
@@ -2475,6 +2558,17 @@ pub fn all_promoted_classes() -> Vec<Class> {
         auth_zitadel(),
         auth_zanzibar(),
         auth_ory_keto(),
+        // 0x0CXX — automation arm (HIRO MARS CMDB + DO-arm actuators),
+        // in class_ids::ALL order.
+        mars_application(),
+        mars_resource(),
+        mars_software(),
+        mars_machine(),
+        knowledge_item(),
+        mars_node_template(),
+        action_handler(),
+        action_applicability(),
+        automation_trigger(),
     ]
 }
 
@@ -3683,6 +3777,142 @@ pub fn joint() -> Class {
     c
 }
 
+// ── 0x0CXX — Automation domain builders (HIRO IT-automation stack) ──
+// The MARS structural CMDB (A→R→S→M `dependsOn` backbone) + the Automation
+// DO-arm actuators. Shapes grounded in the vendored OGIT TTL attributes
+// (`vocab/imports/ogit/NTO/{MARS,Automation}/`). See `docs/MARS-TRANSCODING.md`
+// + `docs/HIRO-DO-ARM-LIFT.md`.
+
+/// The `mars_application` (`0x0C01`) — head of the MARS A→R→S→M `dependsOn`
+/// backbone (`ogit.MARS:Application`).
+#[must_use]
+pub fn mars_application() -> Class {
+    let mut c = Class::new("MarsApplication");
+    c.language = Language::Unknown;
+    c.canonical_concept = Some("mars_application".to_string());
+    let mut class = Attribute::new("class");
+    class.type_name = Some("string".to_string());
+    c.attributes = vec![class];
+    c.associations = vec![family_edge("depends_on", "MarsResource")];
+    c
+}
+
+/// The `mars_resource` (`0x0C02`) — `ogit.MARS:Resource`.
+#[must_use]
+pub fn mars_resource() -> Class {
+    let mut c = Class::new("MarsResource");
+    c.language = Language::Unknown;
+    c.canonical_concept = Some("mars_resource".to_string());
+    let mut class = Attribute::new("class");
+    class.type_name = Some("string".to_string());
+    c.attributes = vec![class];
+    c.associations = vec![family_edge("depends_on", "MarsSoftware")];
+    c
+}
+
+/// The `mars_software` (`0x0C03`) — `ogit.MARS:Software`.
+#[must_use]
+pub fn mars_software() -> Class {
+    let mut c = Class::new("MarsSoftware");
+    c.language = Language::Unknown;
+    c.canonical_concept = Some("mars_software".to_string());
+    let mut service_name = Attribute::new("service_name");
+    service_name.type_name = Some("string".to_string());
+    c.attributes = vec![service_name];
+    c.associations = vec![family_edge("depends_on", "MarsMachine")];
+    c
+}
+
+/// The `mars_machine` (`0x0C04`) — tail of the A→R→S→M chain
+/// (`ogit.MARS:Machine`).
+#[must_use]
+pub fn mars_machine() -> Class {
+    let mut c = Class::new("MarsMachine");
+    c.language = Language::Unknown;
+    c.canonical_concept = Some("mars_machine".to_string());
+    let mut cpu_arch = Attribute::new("cpu_arch");
+    cpu_arch.type_name = Some("string".to_string());
+    let mut cpu_cores = Attribute::new("cpu_cores");
+    cpu_cores.type_name = Some("integer".to_string());
+    c.attributes = vec![cpu_arch, cpu_cores];
+    c
+}
+
+/// The `knowledge_item` (`0x0C05`) — the Automation KnowledgeItem; the DO-arm
+/// `ActionDef` carrier (`ogit.Automation:KnowledgeItem`). The opaque body
+/// (`knowledge_item_formal_representation`) is pointed-to, never inlined.
+#[must_use]
+pub fn knowledge_item() -> Class {
+    let mut c = Class::new("KnowledgeItem");
+    c.language = Language::Unknown;
+    c.canonical_concept = Some("knowledge_item".to_string());
+    // The opaque body slot — the lossless-DO pointer (the attribute exists;
+    // the bytes are never inlined into the IR).
+    let mut body = Attribute::new("knowledge_item_formal_representation");
+    body.type_name = Some("string".to_string());
+    c.attributes = vec![body];
+    c.associations = vec![
+        family_edge("relates", "MarsNodeTemplate"),
+        family_edge("contains", "AutomationTrigger"),
+    ];
+    c
+}
+
+/// The `mars_node_template` (`0x0C06`) — the template a KnowledgeItem
+/// `relates` to; the DO-arm `ActionDef.object_class`
+/// (`ogit.Automation:MARSNodeTemplate`).
+#[must_use]
+pub fn mars_node_template() -> Class {
+    let mut c = Class::new("MarsNodeTemplate");
+    c.language = Language::Unknown;
+    c.canonical_concept = Some("mars_node_template".to_string());
+    let mut repr = Attribute::new("mars_node_formal_representation");
+    repr.type_name = Some("string".to_string());
+    c.attributes = vec![repr];
+    c
+}
+
+/// The `action_handler` (`0x0C07`) — the ActionHandler adapter/membrane
+/// (`ogit.Automation:ActionHandler`); where the DO arm meets the auth/RBAC arm.
+#[must_use]
+pub fn action_handler() -> Class {
+    let mut c = Class::new("ActionHandler");
+    c.language = Language::Unknown;
+    c.canonical_concept = Some("action_handler".to_string());
+    let mut name = Attribute::new("name");
+    name.type_name = Some("string".to_string());
+    c.attributes = vec![name];
+    c.associations = vec![family_edge("provides", "ActionApplicability")];
+    c
+}
+
+/// The `action_applicability` (`0x0C08`) — its `environment_filter` is the
+/// DO-arm `KausalSpec::StateGuard` (`ogit.Automation:ActionApplicability`).
+#[must_use]
+pub fn action_applicability() -> Class {
+    let mut c = Class::new("ActionApplicability");
+    c.language = Language::Unknown;
+    c.canonical_concept = Some("action_applicability".to_string());
+    let mut env = Attribute::new("environment_filter");
+    env.type_name = Some("string".to_string());
+    c.attributes = vec![env];
+    c
+}
+
+/// The `automation_trigger` (`0x0C09`) — the Trigger a KnowledgeItem
+/// `contains`; the DO-arm `KausalSpec::LifecycleTrigger`
+/// (`ogit.Automation:Trigger`).
+#[must_use]
+pub fn automation_trigger() -> Class {
+    let mut c = Class::new("AutomationTrigger");
+    c.language = Language::Unknown;
+    c.canonical_concept = Some("automation_trigger".to_string());
+    let mut description = Attribute::new("description");
+    description.type_name = Some("string".to_string());
+    c.attributes = vec![description];
+    c
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -4298,10 +4528,13 @@ mod tests {
         // Anatomy block (0x0A) — FMA reference kinds.
         assert_eq!(canonical_concept_domain(0x0A00), ConceptDomain::Anatomy);
         assert_eq!(canonical_concept_domain(0x0A03), ConceptDomain::Anatomy);
-        // Unassigned blocks (3-6, C+).
+        // Automation block (0x0C) — HIRO IT-automation stack.
+        assert_eq!(canonical_concept_domain(0x0C00), ConceptDomain::Automation);
+        assert_eq!(canonical_concept_domain(0x0C09), ConceptDomain::Automation);
+        // Unassigned blocks (3-6, D+).
         assert_eq!(canonical_concept_domain(0x0300), ConceptDomain::Unassigned);
         assert_eq!(canonical_concept_domain(0x0600), ConceptDomain::Unassigned);
-        assert_eq!(canonical_concept_domain(0x0C00), ConceptDomain::Unassigned);
+        assert_eq!(canonical_concept_domain(0x0D00), ConceptDomain::Unassigned);
         assert_eq!(canonical_concept_domain(0xFFFF), ConceptDomain::Unassigned);
     }
 
@@ -4402,6 +4635,28 @@ mod tests {
         assert_eq!(concepts_in_domain(ConceptDomain::Health).count(), 7);
         assert_eq!(concepts_in_domain(ConceptDomain::Commerce).count(), 8);
         assert_eq!(concepts_in_domain(ConceptDomain::ProjectMgmt).count(), 26);
+        assert_eq!(concepts_in_domain(ConceptDomain::Anatomy).count(), 4);
+        assert_eq!(concepts_in_domain(ConceptDomain::Auth).count(), 4);
+        assert_eq!(concepts_in_domain(ConceptDomain::Automation).count(), 9);
+        // Every yielded Automation id really is in-domain (0x0CXX).
+        let automation: Vec<&str> = concepts_in_domain(ConceptDomain::Automation)
+            .map(|(name, _)| name)
+            .collect();
+        assert_eq!(
+            automation,
+            [
+                "mars_application",
+                "mars_resource",
+                "mars_software",
+                "mars_machine",
+                "knowledge_item",
+                "mars_node_template",
+                "action_handler",
+                "action_applicability",
+                "automation_trigger",
+            ],
+            "Automation domain set drift — re-sync the consumer coverage gate",
+        );
         // An empty (reserved-but-unpopulated) domain yields nothing.
         assert_eq!(concepts_in_domain(ConceptDomain::Osint).count(), 0);
     }

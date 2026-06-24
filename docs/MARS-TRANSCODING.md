@@ -72,14 +72,21 @@ The dependency backbone — **A→R→S→M**:
 
 ```
 Application  ──dependsOn──►  Resource  ──dependsOn──►  Software  ──dependsOn──►  Machine
-   0x??01                       0x??02                     0x??03                   0x??04
+   0x0C01                       0x0C02                     0x0C03                   0x0C04
 ```
 
-(Classid byte allocation is **provisional**; mint requires the 5+3
-codebook pass per `CLAUDE.md`. See `docs/APP-CLASS-CODEBOOK-LAYOUT.md`
-for the §4 mint protocol. The 0x??XX domain byte is reserved for MARS-
-infrastructure; concrete `class_ids::MARS_*` constants land in a
-follow-up after the codebook pass.)
+**MINTED (2026-06-24).** The provisional `0x??XX` resolved to **domain `0x0C`
+Automation** — one domain spanning the MARS structural CMDB *and* the Automation
+DO-arm actuators (the Auth-precedent: heterogeneous shapes, one cross-app
+concern). Shipped constants: `class_ids::{MARS_APPLICATION 0x0C01, MARS_RESOURCE
+0x0C02, MARS_SOFTWARE 0x0C03, MARS_MACHINE 0x0C04, KNOWLEDGE_ITEM 0x0C05,
+MARS_NODE_TEMPLATE 0x0C06, ACTION_HANDLER 0x0C07, ACTION_APPLICABILITY 0x0C08,
+AUTOMATION_TRIGGER 0x0C09}` (`ogar-vocab`). This **was** the deferred 5+3 codebook
+pass (theorem-checker / doctrine-keeper / integration-lead / runtime-archaeologist
++ cargo drift-guards); see `.claude/board/EPIPHANIES.md` E-MARS-AUTOMATION-MINT and
+`docs/APP-CLASS-CODEBOOK-LAYOUT.md`. Further Automation entities
+(action_capability / intent / automation_issue / variable / mars_node) are
+RESERVED — minted when a lift or consumer references them.
 
 ---
 
