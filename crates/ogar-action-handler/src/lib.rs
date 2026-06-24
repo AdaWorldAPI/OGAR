@@ -141,6 +141,118 @@ impl CapabilityExecutor for NativeCommandExecutor {
     }
 }
 
+/// Reference executor for the **SSH** target: runs an `ExecuteCommand`
+/// capability's `command` on a remote host via the system `ssh` binary. This is
+/// arago's canonical ActionHandler shape (`ExecuteCommand`-over-SSH) — the
+/// [`NativeCommandExecutor`], remote.
+///
+/// Dependency-free by design: it shells out to `ssh` (like the native one shells
+/// out to `sh`), so it carries no SSH-library / C dependency and fits the same
+/// sync [`CapabilityExecutor`] seam. Non-interactive by construction
+/// (`BatchMode=yes` — never prompt for a password/passphrase; a connection that
+/// would prompt fails fast). Returns the same `output` / `stderr` / `exitcode`
+/// shape as the native executor — an `ssh` connection failure surfaces as a
+/// non-zero `exitcode` (255), the same way the native one reports a failed
+/// command, *not* an executor error.
+///
+/// **Trust model:** identical to the native executor — the gate
+/// (`commit_via<ClassRbac>`) runs upstream; this executor assumes its caller
+/// already authorized the action and runs the command verbatim on the target.
+#[derive(Debug, Clone)]
+pub struct SshExecutor {
+    target: String,
+    identity: Option<String>,
+    port: Option<u16>,
+}
+
+impl SshExecutor {
+    /// The single capability this executor implements (same verb as native —
+    /// it is remote execution of the same `ExecuteCommand`).
+    pub const CAPABILITY: &'static str = "ExecuteCommand";
+
+    /// An SSH executor for `target` (`user@host` or `host`).
+    pub fn new(target: impl Into<String>) -> Self {
+        Self {
+            target: target.into(),
+            identity: None,
+            port: None,
+        }
+    }
+
+    /// Use a specific identity file (`ssh -i`).
+    #[must_use]
+    pub fn with_identity(mut self, identity: impl Into<String>) -> Self {
+        self.identity = Some(identity.into());
+        self
+    }
+
+    /// Connect on a non-default port (`ssh -p`).
+    #[must_use]
+    pub fn with_port(mut self, port: u16) -> Self {
+        self.port = Some(port);
+        self
+    }
+
+    /// Build the `ssh` argument vector for `command` — the pure, testable half
+    /// (no spawn). Always non-interactive (`BatchMode=yes`); `--` terminates ssh
+    /// options so the remote command is never re-parsed as a flag.
+    fn build_args(&self, command: &str) -> Vec<String> {
+        let mut args = vec![
+            "-o".to_owned(),
+            "BatchMode=yes".to_owned(),
+            "-o".to_owned(),
+            "StrictHostKeyChecking=accept-new".to_owned(),
+        ];
+        if let Some(port) = self.port {
+            args.push("-p".to_owned());
+            args.push(port.to_string());
+        }
+        if let Some(identity) = &self.identity {
+            args.push("-i".to_owned());
+            args.push(identity.clone());
+        }
+        args.push(self.target.clone());
+        args.push("--".to_owned());
+        args.push(command.to_owned());
+        args
+    }
+}
+
+impl CapabilityExecutor for SshExecutor {
+    fn execute(
+        &self,
+        capability: &str,
+        bound: &[(String, String)],
+    ) -> Result<Vec<(String, String)>, String> {
+        if capability != Self::CAPABILITY {
+            return Err(format!(
+                "ssh executor implements only `{}`, not `{capability}`",
+                Self::CAPABILITY
+            ));
+        }
+        let command = bound
+            .iter()
+            .find(|(k, _)| k == "command")
+            .map(|(_, v)| v.as_str())
+            .ok_or_else(|| "missing `command` parameter".to_owned())?;
+
+        let output = Command::new("ssh")
+            .args(self.build_args(command))
+            .output()
+            .map_err(|e| format!("failed to spawn ssh to `{}`: {e}", self.target))?;
+
+        let trim = |b: &[u8]| String::from_utf8_lossy(b).trim_end().to_owned();
+        Ok(vec![
+            ("output".to_owned(), trim(&output.stdout)),
+            ("stderr".to_owned(), trim(&output.stderr)),
+            (
+                "exitcode".to_owned(),
+                output.status.code().unwrap_or(-1).to_string(),
+            ),
+        ])
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -293,5 +405,44 @@ mod tests {
             "got: {}",
             result.result
         );
+    }
+
+    #[test]
+    fn ssh_builds_a_non_interactive_argv() {
+        // The pure half: the ssh argv is well-formed and non-interactive.
+        let args = SshExecutor::new("ops@node-1").build_args("uptime");
+        // BatchMode=yes is mandatory (never prompt).
+        assert!(args.windows(2).any(|w| w == ["-o", "BatchMode=yes"]));
+        // target, then `--`, then the remote command (never re-parsed as a flag).
+        let dashdash = args.iter().position(|a| a == "--").unwrap();
+        assert_eq!(args[dashdash - 1], "ops@node-1");
+        assert_eq!(args[dashdash + 1], "uptime");
+    }
+
+    #[test]
+    fn ssh_identity_and_port_are_threaded() {
+        let args = SshExecutor::new("host")
+            .with_identity("/keys/id_ed25519")
+            .with_port(2222)
+            .build_args("ls");
+        assert!(args.windows(2).any(|w| w == ["-p", "2222"]));
+        assert!(args.windows(2).any(|w| w == ["-i", "/keys/id_ed25519"]));
+    }
+
+    #[test]
+    fn ssh_missing_command_is_an_error_before_spawn() {
+        // No `command` → error without ever invoking ssh (no host needed).
+        let err = SshExecutor::new("host")
+            .execute("ExecuteCommand", &[])
+            .unwrap_err();
+        assert!(err.contains("command"), "got: {err}");
+    }
+
+    #[test]
+    fn ssh_unknown_capability_is_rejected() {
+        let err = SshExecutor::new("host")
+            .execute("RunScript", &[("command".to_owned(), "x".to_owned())])
+            .unwrap_err();
+        assert!(err.contains("ExecuteCommand"), "got: {err}");
     }
 }

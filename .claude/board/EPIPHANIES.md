@@ -7,6 +7,46 @@
 
 ---
 
+## 2026-06-24 — E-ACTIONHANDLER-TRANSPORT — the daemon is transport-agnostic because HIRO is multi-wire; and the OGIT Auth type unifies "who connects" with "who the gate authorizes"
+
+**Status:** FINDING (`[G]` for the core + WebSocket edge; `[H]` for the Kafka edge).
+
+Two design facts surfaced building B2-transport (the live action daemon, in
+rs-graph-llm `graph-flow-action-ogar::daemon`):
+
+1. **HIRO distributes actions over more than one wire** — a handler-facing
+   WebSocket (`action-ws`) AND an internal Kafka bus that legacy handlers consume
+   directly (operator note, 2026-06-24). The wire differs; the dispatch doesn't.
+   So the daemon is factored as: `Daemon::react` (the transport-agnostic core —
+   one inbound `action-ws` frame → outbound frames, running the gate + executor,
+   pure/no-I/O) + a `Transport` trait (`recv`/`send`, the swappable edge) +
+   `Daemon::serve` (the loop, generic over `Transport`). The WebSocket edge
+   (`WsTransport`) and a future Kafka edge (`rdkafka`) share `serve` verbatim —
+   the gated dispatch is written once, the wire is a thin shell. This is the
+   action-arm analogue of the codec stack's "one algebra, many carriers": one
+   dispatch, many transports.
+
+2. **The OGIT Auth type unifies the two identities that must be the same.** A
+   handler's connection presents a credential; the gate authorizes an actor.
+   These MUST be the same principal — and OGIT's `NTO/Auth/Configuration` (the
+   `auth_store` class, OGAR `0x0B01`) already unifies them: it is keyed by
+   `accountId` and maps `sub` → actor (`0x0104`), org/tenant → scope. So the
+   daemon's `Auth` type is shaped after it: one value carries the `token` the
+   transport presents (the `token-$TOKEN` subprotocol) AND the `account` the gate
+   authorizes as (`accountId` → actor). `Daemon::new` takes `&Auth` and derives
+   the gate actor from `auth.account`; `WsTransport::connect` takes `&Auth` and
+   presents `auth.token`. The identity that connects IS the identity the RBAC
+   grant is checked against — structurally, not by convention. (A future
+   producer-side `auth_from_ogit(entity)` lift would populate `Auth` from a real
+   `NTO/Auth/Configuration` node, the same way `assemble_action_handler` lifts the
+   handler contract.)
+
+Proven by `ws_roundtrip_against_a_mock_server` (engine `submitAction` → ack → real
+command → result over a live socket) + 10 pure-core tests. Scorecard: B2-transport
+WebSocket edge SHIPPED; Kafka edge reserved (`D-ACTIONHANDLER-TRANSPORT`).
+
+---
+
 ## 2026-06-24 — E-ACTIONHANDLER-B2LIFT — the producer stays parser-free even when lifting a JSON REST response: it defines the `Deserialize` DTOs + the pure lift, the runtime does the `from_str`
 
 **Status:** FINDING (`[G]` for capabilities; `[H]` for the applicabilities envelope).
