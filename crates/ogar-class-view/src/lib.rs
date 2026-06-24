@@ -64,16 +64,19 @@ use lance_graph_contract::{
     ontology::{DisplayTemplate, FieldRef, ObjectView},
 };
 use ogar_vocab::{
-    accounting_account, auth_ory_keto, auth_store, auth_zanzibar, auth_zitadel,
-    billable_work_entry, billing_party, canonical_concept_id, commercial_document,
-    commercial_line_item, currency_policy, diagnosis, lab_value, medication, patient,
-    payment_record, pricelist, pricelist_rule, priority, product, project, project_actor,
-    project_attachment, project_changeset, project_comment, project_custom_field,
-    project_custom_value, project_enabled_module, project_forum, project_journal,
-    project_member_role, project_membership, project_message, project_news, project_query,
-    project_relation, project_repository, project_role, project_status, project_type,
-    project_version, project_watcher, project_wiki_page, project_work_item, tax_policy, treatment,
-    unit_of_measure, visit, vital_sign, Class,
+    // 0x0CXX — automation (HIRO MARS CMDB + DO-arm actuators)
+    action_applicability, Class,
+    accounting_account, action_handler, anatomical_structure, auth_ory_keto, auth_store,
+    auth_zanzibar, auth_zitadel, automation_trigger, billable_work_entry, billing_party, bone,
+    canonical_concept_id, commercial_document, commercial_line_item, currency_policy, diagnosis,
+    joint, knowledge_item, lab_value, mars_application, mars_machine, mars_node_template,
+    mars_resource, mars_software, medication, patient, payment_record, pricelist, pricelist_rule,
+    priority, product, project, project_actor, project_attachment, project_changeset,
+    project_comment, project_custom_field, project_custom_value, project_enabled_module,
+    project_forum, project_journal, project_member_role, project_membership, project_message,
+    project_news, project_query, project_relation, project_repository, project_role,
+    project_status, project_type, project_version, project_watcher, project_wiki_page,
+    project_work_item, skeleton, tax_policy, treatment, unit_of_measure, visit, vital_sign,
 };
 
 /// All promoted canonical concepts: `(canonical_concept_name, Class)`.
@@ -131,11 +134,26 @@ fn all_canonical_classes() -> Vec<(&'static str, Class)> {
         ("treatment", treatment()),
         ("visit", visit()),
         ("vital_sign", vital_sign()),
+        // ── 0x0AXX — anatomy (FMA reference kinds) ──
+        ("anatomical_structure", anatomical_structure()),
+        ("skeleton", skeleton()),
+        ("bone", bone()),
+        ("joint", joint()),
         // ── 0x0BXX — auth (the AuthStore class family, keystone §7) ──
         ("auth_store", auth_store()),
         ("auth_zitadel", auth_zitadel()),
         ("auth_zanzibar", auth_zanzibar()),
         ("auth_ory_keto", auth_ory_keto()),
+        // ── 0x0CXX — automation (HIRO MARS CMDB + DO-arm actuators) ──
+        ("mars_application", mars_application()),
+        ("mars_resource", mars_resource()),
+        ("mars_software", mars_software()),
+        ("mars_machine", mars_machine()),
+        ("knowledge_item", knowledge_item()),
+        ("mars_node_template", mars_node_template()),
+        ("action_handler", action_handler()),
+        ("action_applicability", action_applicability()),
+        ("automation_trigger", automation_trigger()),
     ]
 }
 
