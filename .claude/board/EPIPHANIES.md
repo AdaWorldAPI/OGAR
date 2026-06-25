@@ -11,6 +11,8 @@
 
 **Status:** CONJECTURE (`[H]` — the composed parser is operator-proposed, "to be wired"; the pieces are `[G]`/CODED). Operator-directed 2026-06-25.
 
+**Scope:** the classid-driven reusable envelope parser + the OGAR class registry — V2/V3 `tail_variant` · value-schema/facet · edge-codec, all classid-resolved; the cross-consumer read path.
+
 **The directive (operator example `0x1007`):** the **classid defines V2 vs V3 per file and per consumer** — the GUID-tail variant (V2 = `NodeGuid::new_v2` `leaf·family·identity` 3×u16, the `guid-v2-tail` feature; V3 = the `cascade_key` `(part_of:is_a)` 8:8 tile), AND the value-schema/facet (`Full`/`Compressed`/the E-VALUE-SLAB-FACET contained facet), AND the edge-codec flavor are ALL **resolved from the classid through the OGAR class registry**, never from a per-file format constant. This is OGAR P0 ("native/foreign discrimination lives in the `classid`, not a format constant") applied to the *envelope*.
 
 **Generation marker (operator, 2026-06-25): a leading `1` before the domain → `0x1007`.** Because the change is *extreme* (a whole new classid-resolved read path), the new-generation classids carry a **leading `1` ahead of the domain byte** (`0x07` OSINT → `0x1007`) so they self-identify at sight and the reusable parser routes legacy vs new-generation envelopes from the prefix alone — a higher cascade level on the classid (P0 "scale = the next cascade level, never field-widening"; RESERVE-DON'T-RECLAIM keeps the legacy zero-prefix space untouched, never reclaimed). It lives in the **classid** (the schema pointer, where versioning belongs) — NOT a version nibble in the GUID tail (the canon forbids that). The exact u32 placement (a high-bits marker vs a domain-field prefix) is the registry/canon's to pin.
@@ -19,13 +21,17 @@
 
 **The pieces exist (`[G]`/CODED); the composition is the `[H]` to-wire:** `classid_read_mode()` + `BUILTIN_READ_MODES` (the registry — with a minted class's mode layered in by **OGAR one level up**), `ClassView::value_schema`/`edge_codec_flavor` (the resolver), `NodeGuid::new_v2` (V2 tail, gated `guid-v2-tail`), `cascade_key` V3 (the part_of:is_a tile), `node_rows_from_le_bytes` (the zero-copy reader). The registry entry must gain the **`tail_variant` (V2/V3)** axis beside `ReadMode {value_schema, edge_codec}`; the reusable parser dispatches on the full set. Same pattern as `E-ACTIONHANDLER-RESOLVER` (the action daemon is a renderer over the classid keyspace) — now the envelope **parser** is one too.
 
-**Gate / next:** wiring the reusable parser + the registry's `tail_variant` axis is the build follow-up (probe-first per OGAR discipline); the lance-graph §6 panels arbitrate the value-schema/facet half. Cross-ref: E-VALUE-SLAB-FACET, E-ACTIONHANDLER-RESOLVER, D-VALFACET, D-ENVPARSE, D-IDENTITY-PIN (the new_v2/V2 LEAF audit, OGAR #118); lance-graph `soa-value-tenant-migration-v1-harvest.md` §5 + `canonical_node.rs` (`new_v2` gated, `classid_read_mode`).
+**Gate / next:** wiring the reusable parser + the registry's `tail_variant` axis is the build follow-up (probe-first per OGAR discipline); the lance-graph §6 panels arbitrate the value-schema/facet half.
+
+**Cross-ref:** E-VALUE-SLAB-FACET, E-ACTIONHANDLER-RESOLVER, D-VALFACET, D-ENVPARSE, D-IDENTITY-PIN (the new_v2/V2 LEAF audit, OGAR #118); lance-graph `soa-value-tenant-migration-v1-harvest.md` §5 + `canonical_node.rs` (`new_v2` gated, `classid_read_mode`).
 
 ---
 
 ## 2026-06-25 — E-VALUE-SLAB-FACET — the value-slab's homogeneous closure IS OGAR keyspace canon: the contained 16-byte `classid|helix|CAM-PQ` facet (lance-graph value-tenant harvest confirms)
 
 **Status:** FINDING (`[G]` — the lance-graph value-tenant facts, code-confirmed) + CONJECTURE (`[H]` — the facet-as-closure, operator-proposed 2026-06-25, gated F-1 + F-code; pending the lance-graph §6 sign-off panels).
+
+**Scope:** lance-graph's 480-byte `NodeRow.value` slab + its OGAR keyspace-canon mirror (the contained `classid|helix|CAM-PQ` facet); the consumer-side answer to the value-slab homogeneity question.
 
 **Units pinned first (theorem-checker rule 0):** 48 bit = 6 byte. The facet = `facet_classid(4 byte) + helix-place(6 byte) + CAM-PQ(6 byte) = 16 byte = 128 bit` — the SAME width as the canonical key (32 hex = 128 bit = 16 byte).
 
@@ -35,7 +41,7 @@ The lance-graph Phase-1 value-tenant harvest (`soa-value-tenant-migration-v1-har
 
 **Second finding — the two-world seam (`[G]`):** lance-graph carries the value tenants in TWO disjoint SoAs — the canonical `NodeRow.value` slab and a parallel `MailboxSoA` of separate columns; only `entity_type ≡ class_id` is shared, and 6/10 slab tenants have no live producer. Reconciling them is the consumer-side near-term work; OGAR's producer side (`ogar-vocab` codebook / `classid → ReadMode` mint) stays the single source either world resolves through.
 
-Cross-ref: lance-graph `soa-value-tenant-migration-v1-harvest.md`; DISCOVERY-MAP `D-VALFACET`; canon D-TILE256 / D-PHASE / D-KEYKV.
+**Cross-ref:** lance-graph `soa-value-tenant-migration-v1-harvest.md`; DISCOVERY-MAP `D-VALFACET`; canon D-TILE256 / D-PHASE / D-KEYKV.
 
 ---
 
