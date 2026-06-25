@@ -7,6 +7,22 @@
 
 ---
 
+## 2026-06-25 — E-CLASSID-ENVELOPE-PARSER — V2/V3 (and value-schema/edge-codec) are classid-defined per file+consumer; ONE reusable envelope parser reads classid → registry → parse
+
+**Status:** CONJECTURE (`[H]` — the composed parser is operator-proposed, "to be wired"; the pieces are `[G]`/CODED). Operator-directed 2026-06-25.
+
+**The directive (operator example `0x1007`):** the **classid defines V2 vs V3 per file and per consumer** — the GUID-tail variant (V2 = `NodeGuid::new_v2` `leaf·family·identity` 3×u16, the `guid-v2-tail` feature; V3 = the `cascade_key` `(part_of:is_a)` 8:8 tile), AND the value-schema/facet (`Full`/`Compressed`/the E-VALUE-SLAB-FACET contained facet), AND the edge-codec flavor are ALL **resolved from the classid through the OGAR class registry**, never from a per-file format constant. This is OGAR P0 ("native/foreign discrimination lives in the `classid`, not a format constant") applied to the *envelope*.
+
+**Generation marker (operator, 2026-06-25): a leading `1` before the domain → `0x1007`.** Because the change is *extreme* (a whole new classid-resolved read path), the new-generation classids carry a **leading `1` ahead of the domain byte** (`0x07` OSINT → `0x1007`) so they self-identify at sight and the reusable parser routes legacy vs new-generation envelopes from the prefix alone — a higher cascade level on the classid (P0 "scale = the next cascade level, never field-widening"; RESERVE-DON'T-RECLAIM keeps the legacy zero-prefix space untouched, never reclaimed). It lives in the **classid** (the schema pointer, where versioning belongs) — NOT a version nibble in the GUID tail (the canon forbids that). The exact u32 placement (a high-bits marker vs a domain-field prefix) is the registry/canon's to pin.
+
+**The mechanism — one reusable, classid-driven envelope parser:** a single parser reads `classid → registry → {tail_variant, value_schema, edge_codec}` then parses the 512-byte envelope accordingly. One parser serves every consumer (q2 / woa-rs / medcare-rs / odoo-rs / openproject-nexgen-rs / …); no bespoke per-consumer parsing, no per-file version byte. It is the consumer-side realization of "classid is a schema pointer" (E-VALUE-SLAB-FACET) AND the single classid-late-bound read path that reconciles the slab↔parallel-`MailboxSoA` two-world seam — the one place the value is read.
+
+**The pieces exist (`[G]`/CODED); the composition is the `[H]` to-wire:** `classid_read_mode()` + `BUILTIN_READ_MODES` (the registry — with a minted class's mode layered in by **OGAR one level up**), `ClassView::value_schema`/`edge_codec_flavor` (the resolver), `NodeGuid::new_v2` (V2 tail, gated `guid-v2-tail`), `cascade_key` V3 (the part_of:is_a tile), `node_rows_from_le_bytes` (the zero-copy reader). The registry entry must gain the **`tail_variant` (V2/V3)** axis beside `ReadMode {value_schema, edge_codec}`; the reusable parser dispatches on the full set. Same pattern as `E-ACTIONHANDLER-RESOLVER` (the action daemon is a renderer over the classid keyspace) — now the envelope **parser** is one too.
+
+**Gate / next:** wiring the reusable parser + the registry's `tail_variant` axis is the build follow-up (probe-first per OGAR discipline); the lance-graph §6 panels arbitrate the value-schema/facet half. Cross-ref: E-VALUE-SLAB-FACET, E-ACTIONHANDLER-RESOLVER, D-VALFACET, D-ENVPARSE, D-IDENTITY-PIN (the new_v2/V2 LEAF audit, OGAR #118); lance-graph `soa-value-tenant-migration-v1-harvest.md` §5 + `canonical_node.rs` (`new_v2` gated, `classid_read_mode`).
+
+---
+
 ## 2026-06-25 — E-VALUE-SLAB-FACET — the value-slab's homogeneous closure IS OGAR keyspace canon: the contained 16-byte `classid|helix|CAM-PQ` facet (lance-graph value-tenant harvest confirms)
 
 **Status:** FINDING (`[G]` — the lance-graph value-tenant facts, code-confirmed) + CONJECTURE (`[H]` — the facet-as-closure, operator-proposed 2026-06-25, gated F-1 + F-code; pending the lance-graph §6 sign-off panels).
