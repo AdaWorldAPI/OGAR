@@ -7,6 +7,22 @@
 
 ---
 
+## 2026-06-25 — E-VALUE-SLAB-FACET — the value-slab's homogeneous closure IS OGAR keyspace canon: the contained 16-byte `classid|helix|CAM-PQ` facet (lance-graph value-tenant harvest confirms)
+
+**Status:** FINDING (`[G]` — the lance-graph value-tenant facts, code-confirmed) + CONJECTURE (`[H]` — the facet-as-closure, operator-proposed 2026-06-25, gated F-1 + F-code; pending the lance-graph §6 sign-off panels).
+
+**Units pinned first (theorem-checker rule 0):** 48 bit = 6 byte. The facet = `facet_classid(4 byte) + helix-place(6 byte) + CAM-PQ(6 byte) = 16 byte = 128 bit` — the SAME width as the canonical key (32 hex = 128 bit = 16 byte).
+
+The lance-graph Phase-1 value-tenant harvest (`soa-value-tenant-migration-v1-harvest.md`) asked whether the 480-byte value slab homogenizes. **It does not** — 9 of the 10 `ValueTenant`s are irreducibly heterogeneous (identity / scalars / bitfield / cursor) → KEEP, with Qualia i4-16D + the future thinking-style i4-32D DEFERRED for substrate validation. So §8 homogeneity reduces to "classid is a schema pointer" — OGAR's own P0. **The closure exists as ONE contained facet** the operator named: `facet_classid(4) | helix-place(6) | CAM-PQ(6)` — identity (helix place/residue, the frozen ruler) ⊥ search (CAM-PQ) ⊥ schema (facet_classid). This is **OGAR keyspace canon restated in the value**: the same recurring **6×256 CAM-PQ** shape as the key path (D-TILE256) and the same place/residue split as D-PHASE — now confirmed from the consumer side.
+
+**Precision point (so it does not dilute):** the KEY's path (HEEL/HIP/TWIG) is a 6-byte CAM-PQ centroid-tile **address** (D-TILE256); the contained VALUE facet's 6-byte CAM-PQ is the **content/search** code, its 6-byte helix the place/residue. Same 6×256 shape, different role — address in the key, content in the value. The facet wants the **6-byte canonical CAM-PQ**, NOT lance-graph's 16-byte `TurbovecResidue` (turbovec 32×4-bit) — a width decision for the §6 panels. I-VSA-IDENTITIES-clean: helix ∥ CAM-PQ in disjoint byte ranges, concatenated, never bundled. Layout-preserving — a `classid → ClassView` reading, no new value-schema variant; it does not touch the GUID canon.
+
+**Second finding — the two-world seam (`[G]`):** lance-graph carries the value tenants in TWO disjoint SoAs — the canonical `NodeRow.value` slab and a parallel `MailboxSoA` of separate columns; only `entity_type ≡ class_id` is shared, and 6/10 slab tenants have no live producer. Reconciling them is the consumer-side near-term work; OGAR's producer side (`ogar-vocab` codebook / `classid → ReadMode` mint) stays the single source either world resolves through.
+
+Cross-ref: lance-graph `soa-value-tenant-migration-v1-harvest.md`; DISCOVERY-MAP `D-VALFACET`; canon D-TILE256 / D-PHASE / D-KEYKV.
+
+---
+
 ## 2026-06-24 — E-ACTIONHANDLER-RESOLVER — the action daemon IS a renderer over the classid keyspace: transport, class, executor, guard, RBAC all fall out of the GUID, late
 
 **Status:** FINDING (`[G]`, 19 tests).
