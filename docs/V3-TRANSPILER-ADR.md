@@ -36,35 +36,54 @@ FacetCascade { facet_classid: u32, payload: [u8; 12] }   // 16 B, content addres
   (today they are unjoined substrates).
 - The tag rides in the classid (zero extra bytes; precedent: `TailVariant`).
 
-### 1.2 The 512-byte record = 32 tenants
+### 1.2 The 512-byte record — canon is `key(16) + value(496)`
 ```
-NodeRow 512 B ≡ [Facet; 32]              (AoS row)
-             ≡ 32 tenants × [GUID; N]    (SoA — "tenant" = a GUID member column)
-   tenant 0      Self GUID
-   tenant 1      Edges (EdgeBlock 12+4)
-   tenants 2..31 30 composition slots → GUID references to other classes
+NodeRow 512 B  =  key(16) | value(496)            // OGAR canon (CLAUDE.md:51-52)
+             ≡  32 × 16-byte slots ≡ 32 tenants × [GUID; N]   ("tenant" = a GUID member column)
+   slot 0        Self GUID — the 16-byte key; never compressed, addressable with zero value decode
+   slots 1..31   31 value tenants → GUID references / facets
 ```
-`ClassView::tenant_schema(classid) -> [TenantRole; 32]`, **static per classid**
-(keeps each tenant a homogeneous, SIMD-scannable GUID column). Roles:
-`{ Self, Edges, Structural, Do, Think, Adapter }` (+ `nested`). The
-`Do` (ActionDef / do-arm) · `Think` (cognitive plane) · `Adapter` (projection)
-tenants are the three arms reached *through* the classid. Nesting = a
-content-addressed FK column → a columnar composition DAG.
+**No separate `EdgeBlock`.** The `12+4` EdgeBlock is **superseded** canon
+(`NODEGUID-CANON-AUDIT.md` F-5; operator 2026-06-23: "don't use 12-4, that's
+the old taxonomy before family nodes"). **Relations ARE the addressing** — a
+shared family prefix is a local edge; a GUID reference to another node is a
+cross edge. So "edges" are simply GUID-reference tenants, not a dedicated block.
 
-> Reconciliation with current code: today `NodeRow` = `key(16) | edges(16) |
-> value(480)` with `value` **opaque**. The `[Facet; 32]` / `tenant_schema` is
-> the typed schema this ADR imposes on those same bytes — `ClassView` is the
-> missing brick that turns the 480-byte slab into 30 typed tenant slots.
+**Type info lives on `Class`, never on `ClassView`** (`CLASSVIEW-MATERIALIZATION-
+PLAN.md` §3 + anti-pattern #2: `Class` carries types, `ClassView` is label-only;
+"the right tool for codegen is `Class` directly"). So the tenant typing is an
+**expansion of the existing `lance_graph_contract::Class`** — not a new type,
+not on `ClassView`:
+```rust
+// lance-graph-contract — expand the existing Class; keep ClassView label-only
+impl Class {
+    fn tenant_schema(&self) -> [TenantRole; 31];   // static per classid; SIMD-scannable columns
+}
+enum TenantRole { Structural, Edge, Do, Think, Adapter }   // + nested: bool
+```
+The `Do` (ActionDef / do-arm) · `Think` (cognitive plane) · `Adapter`
+(projection) tenants are the three arms reached *through* the classid; nesting =
+a content-addressed FK column → a columnar composition DAG.
+
+> Cross-repo divergence to reconcile (not here): lance-graph's
+> `canonical_node.rs` still ships the superseded `key(16) | edges(16) |
+> value(480)` with a `12+4` EdgeBlock. Per `NODEGUID-CANON-AUDIT.md` F-5 this is
+> "a genuine canon-vs-operator divergence to resolve at the lance-graph level."
+> This ADR follows the OGAR canon (`16 + 496`); the lance-graph-contract
+> expansion reconciles `canonical_node.rs` against the family-node supersession
+> in the same change.
 
 ### 1.3 Capacity is the SoC lint, not a limit
-`>64 fields` · `>256/tier` · `>6 deep` · `>4 edges` · `>30 slots` → the class
-lacks separation of concerns. **The encoding makes good SoC the only
+`>64 fields` · `>256/tier` · `>6 deep` · `>4 edges` · `>31 value tenants` → the
+class lacks separation of concerns. **The encoding makes good SoC the only
 representable shape**: overflow in any dimension is the signal; "reference
-another class" (grow a limb) is always the fix. We own OGAR, so minting the
-new limb is free and convergence keeps it shared. Detector and refactor are
-the same mechanism. (The law is already written as a falsifier in
-`ruff_spo_address/examples/medcare_probe.rs` §[G]; promote it to a `ruff`
-diagnostic.)
+another class" (grow a limb) is always the fix. This is **already canon** —
+`CLASSVIEW-MATERIALIZATION-PLAN.md` §5: "No promoted class may have more than 64
+slots… if a future class crosses, **paginate via class hierarchy**" (enforced by
+`field_basis_fits_in_one_u64_mask`). "Paginate via class hierarchy" *is* "grow a
+limb via another class." Detector and refactor are the same mechanism. The law
+is also written as a falsifier in `ruff_spo_address/examples/medcare_probe.rs`
+§[G]; promote it to a registered `ruff` diagnostic (`OGAR-SOC`).
 
 ---
 
