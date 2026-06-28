@@ -70,9 +70,11 @@ diagnostic.)
 
 ## 2 · The transpiler (the superpower)
 
-The IR (`ruff_spo_triplet::ModelGraph`) is already bidirectional
-(`expand` ⇄ `reassemble`), and `ruff_cpp_codegen` already proves
-`ModelGraph → Rust source`. Generalize that one backend into an adapter family:
+The IR (`ruff_spo_triplet::ModelGraph`) is bidirectional *by intent* — `expand`
+is general, but **`reassemble` today recovers only the C++ projection** (a
+general reassembler is a prerequisite; see the ruff RFC) — and
+`ruff_cpp_codegen` already proves `ModelGraph → Rust source`. Generalize that
+one backend into an adapter family:
 
 ```
 SOURCE (py/cpp/cs) ─ruff_*_spo─▶ ModelGraph ─mint─▶ Facet (content address, dedup across langs)
@@ -114,9 +116,11 @@ transpilation (method bodies → executable logic) is a later arm via
   lever that scales it.
 
 ## 4 · Status of the pieces (verified `main`)
-Real: `ModelGraph` interlingua (bidirectional), `ruff_cpp_spo` / `ruff_ruby_spo`
-frontends, `ruff_csharp_spo` loader, the 16-byte mint (`ruff_spo_address`), one
-backend (`ruff_cpp_codegen` → Rust), `bridge_codebook_convergence` (identity).
+Real: `ModelGraph` interlingua (`expand` general; `reassemble` C++-projection-
+only today), `ruff_cpp_spo` (`extract_dir`/`extract_tree`; `extract()` is a
+`todo!()`) / `ruff_ruby_spo` frontends, `ruff_csharp_spo` loader, the 16-byte
+mint (`ruff_spo_address`), one backend (`ruff_cpp_codegen` → Rust),
+`bridge_codebook_convergence` (identity).
 To build: Python→ModelGraph normalization, C# harvester generalization, the
 `LangBackend` trait + Python/C# backends, the dual-mode `FacetMode`, the
 `tenant_schema`, the round-trip + convergence CI, the `OGAR-SOC` lint.
