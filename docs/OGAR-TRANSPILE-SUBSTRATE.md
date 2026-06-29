@@ -85,23 +85,40 @@ This is the heart of the power. A `ClassView` is not a parser and not a fixed
 record format — it is a **compiled, flexible, composable reader** over the
 facet, baked into the binary. Three properties:
 
-### a. One ClassView *recombines* the facet layout — no "versions"
+### a. One ClassView *rotates* the facet layout — no "versions"
 
-The 16-byte facet's tier payload is not locked to a single carving. The
-ClassView reads it as whichever hierarchical cascade fits the class, by
-recombination:
+The 16-byte facet's tier payload is not locked to a single carving. A ClassView
+can **always rotate** — read the SAME 12 cascade bytes under a different
+grouping — to fit the class. The carvings (pinned as
+`lance_graph_contract::facet::CascadeShape`, `CascadeShape::ROTATIONS`):
 
 ```
-6× (1:2)        6 tiers, each a 1:2 hierarchy
-4× (1:2:3)      4 tiers, each a 1:2:3 hierarchy
-3× (1:2:3:4)    3 tiers, each a 1:2:3:4 hierarchy
+6× (1:2)        ALIGNED default — 6 tiers, each a 1:2 hierarchy   (group_of = i >> 1, a shift)
+3× (1:2:3:4)    ALIGNED default — 3 tier-pairs, each 1:2:3:4      (group_of = i >> 2, a shift)
+4× (1:2:3)      WORST CASE      — straddles tier boundaries        (group_of = i / 3, a DIVIDE)
 ```
 
-(the same `3×4`-vs-`4×3` family the GUID canon debates, generalised to the
-ClassView's reading). So there is **no need for hardcoded facet "versions"
-(V1/V2/V3)** — one compiled ClassView subsumes all the carvings. Hardcoding a
-format per version is the thing to *delete*; the ClassView is the flexible
-reader that makes versions unnecessary.
+**Only the byte-aligned carvings are defaults.** `6×(1:2)` and `3×(1:2:3:4)`
+keep `group_of` a pure shift (the canon's "tier-of-level is a shift, never a
+branch"). **`4×(1:2:3)` is the worst case, not a co-equal carving** — it
+straddles tier boundaries so `group_of` must DIVIDE (`CascadeShape::is_byte_aligned()`
+is `false`, `shift()` is `None`). It is *prevented on the common path* and kept
+only as the **rare rotation / escape hatch**: a ClassView may rotate to it
+deliberately when a rare class (some Odoo models) needs to relieve
+**classid-stacking entropy** — rotate the reading rather than mint another
+classid. So there is **no need for hardcoded facet "versions" (V1/V2/V3)** — one
+compiled ClassView subsumes the rotation set; the straddle stays legal only as a
+deliberate, rare rotation. Hardcoding a format per version is the thing to
+*delete*.
+
+> **Carvings address the VIEW, never the functions.** A rotation re-reads the
+> data layout; it does NOT reach behaviour. Functions are encoded by the
+> **classid acting as an additional switch** — `lance_graph_contract::facet::ClassArm`
+> `{ View, Functions }`, the OGAR THINK/DO split (`OGAR-AST-CONTRACT.md`).
+> Reaching a function = switch the classid to the `Functions` arm (the
+> `ActionDef`/`KausalSpec` on the resolved Core node), *never* slice the
+> tier-bytes. A straddling carve to "get to" a function is exactly the worst
+> case the `4×(1:2:3)` example warns against.
 
 ### b. Sub-range mapping + nested ClassViews stacked into constructors
 
@@ -122,6 +139,20 @@ key prerenders nodes with zero value-decode (canon: "THE GUID IS THE KEY OF
 KEY-VALUE"); the compiled ClassView lays them out from keys alone, and the
 heavier value-SoA is only built when actually needed, then cached.
 
+**The `32×GUID` is literal capacity, and it sets the layout doctrine: clean /
+SoC over packed** (operator, 2026-06-29). A 512-byte node is exactly
+`512 / 16 = 32` sixteen-byte GUID-sized slots (`key` + `edges` take 2; the
+480-byte value slab is the remaining 30) — pinned as
+`lance_graph_contract::canonical_node::GUIDS_PER_NODE = 32` (compile-time
+asserted). So in the worst case you **Tetris whatever you need across the
+slots** — give each concern its own clean slot — rather than bit-pack two
+concerns into one. Packing into a single facet via a straddle (`CascadeShape::G4D3`,
+§1.5a) is the dispreferred last resort precisely *because* there are 32 slots:
+the capacity is what makes separation-of-concerns the default and the straddle
+unnecessary. (It is also the headroom behind §1.5a's "rotate / spread to a fresh
+slot instead of minting another classid" for the rare classid-stacking-entropy
+case.)
+
 ### Why this is the power (and where SurrealQL sits)
 
 - **Compiled beats parsed.** The business logic is a `ClassView` compiled into
@@ -135,11 +166,87 @@ heavier value-SoA is only built when actually needed, then cached.
   investment is the compiled, nested, lazy `ClassView` over the GUID SoA. When
   the two compete for attention, the compiled ClassView wins.
 
-> **Status:** the recombination *principle* + the nested-constructor + lazy-SoA
+> **Status:** the rotation *principle* + the nested-constructor + lazy-SoA
 > architecture are operator-specified here as the durable design. The exact
-> tier-byte arithmetic of each carving (`6×(1:2)` / `4×(1:2:3)` / `3×(1:2:3:4)`
-> over the facet's 12 tier-bytes) is the implementation detail to pin against
-> `lance_graph_contract::facet::FacetCascade` before coding — not guessed.
+> tier-byte arithmetic is **now pinned + implemented** as
+> `lance_graph_contract::facet::CascadeShape` (`G6D2` / `G4D3` / `G3D4`,
+> `G·D = CASCADE_UNITS = 12`) over `FacetCascade::tier_bytes()` — `index(g,l) =
+> g·D + l`, `group_of`/`level_of` inverses, `cascade_byte`, per-group LCP
+> `cascade_group_shared`. `CascadeShape::ALIGNED = [G3D4, G6D2]` are the
+> shift-`group_of` **defaults** (`shift()` is `Some`); `CascadeShape::ROTATIONS`
+> is the full rotation set a ClassView may rotate through. **`G4D3` is the worst
+> case** — `is_byte_aligned()` is `false`, `shift()` is `None`, `group_of`
+> divides — excluded from `ALIGNED`, kept in `ROTATIONS` only as the rare
+> escape-hatch rotation (classid-stacking-entropy relief). **Functions are NOT a
+> carving** — `facet::ClassArm { View, Functions }` is the classid's additional
+> THINK/DO switch; carvings address `View` only. Zero-dep, `const fn`,
+> probe-verified (lance-graph #621). One algebra for both the facet bytes and a
+> 12-field class — the shared substrate the three language SDKs (§1.6) all read.
+
+---
+
+## 1.6 Three SDKs, one compiled spine (Rust · C# · Python)
+
+> **Operator, 2026-06-29.** *"For Rust via lance-graph; for Python and C# we
+> need sort of an 'SDK' that does that for the others."*
+
+Rust's wrapper contract is `lance-graph-contract` — the consumer `import`s it
+and pulls a `CompiledClass` by `classid`. Python and C# need the **same
+capability**, packaged as a thin per-language **SDK**. The crucial constraint
+(§1.5): the spine is the **compiled `ClassView`, never a SurrealQL parse**. So
+an SDK is *not* a query client — it is a thin reader over the already-compiled
+rail, plus a host for that language's 15 % adapter.
+
+### What every SDK is (three thin layers, nothing more)
+
+| layer | what it is | Rust (`lance-graph-contract`) | C# SDK | Python SDK |
+|---|---|---|---|---|
+| **1. address algebra** | the 16-byte facet + the cascade carving math — *byte-identical across languages* | `FacetCascade` + `CascadeShape` (`const fn`, zero-dep) | `readonly struct FacetCascade` (`[StructLayout(Sequential, Size=16)]`) + `enum CascadeShape` | `Facet` (a 16-byte `bytes` view) + `CascadeShape` (`IntEnum`) |
+| **2. ClassView reader** | present a pulled `CompiledClass` as native schema objects (fields / relations / computed), grouped by the chosen carving | `ClassView` traits | `IClassView` / records | `@dataclass` ClassView |
+| **3. adapter host** | the per-language hook where the 15 % hand-written logic registers, + the late `classid → ClassView → OGIT` grounding resolve | `ActionDef`/`KausalSpec` impls | interface + DI | ABC + registry |
+
+Layer 1 is the whole reason an SDK can be *thin*: the cascade algebra is **~80
+lines of `core`-only `const fn`** (`CascadeShape::{groups,levels,index,
+group_of,level_of}` + `FacetCascade::{tier_bytes,cascade_byte,
+cascade_group_shared}`). Nothing in it is Rust-specific — it is integer
+shifts/divides over a 16-byte array. Porting it to C# or Python is a
+**mechanical transliteration**, and the bytes it reads are produced once by the
+OGAR mint, so all three SDKs agree by construction (the same cross-crate
+round-trip probe that pins `ruff_spo_address::Facet ≡ FacetCascade` extends to
+"≡ the C#/Python `FacetCascade`").
+
+### How a class reaches each language (mirrors §1's two pull-back modes)
+
+- **(b) codegen emit — the strongest "compiled" form per host.** OGAR emits
+  native source on the **same `&CompiledClass -> String` seam** as `emit_rust`:
+  - `emit_csharp` → a C# `record`/class compiled by the host into an assembly
+    (truly compiled, like the Rust struct).
+  - `emit_python` → a `@dataclass` imported as a module (compiled to bytecode by
+    CPython; the "cost of an import" literally).
+  There is **no OGAR-runtime parse** in this mode — the class IS native source
+  the host toolchain compiles. This is the preferred mode and the direct analog
+  of "sinks into OGAR and gets compiled into the binary."
+- **(a) runtime reader — the thin SDK over the rail artifact.** When codegen is
+  undesirable (dynamic discovery, late binding), the SDK loads the **compiled
+  rail artifact** (the facet SoA — the 16-byte-per-class bytes themselves, which
+  ARE the format) and reads it zero-parse via layer 1. It never loads SurrealQL;
+  the artifact is the facet bytes, not DDL.
+
+Either way the 85 % logic stays in OGAR; the SDK carries layer-1 (tiny,
+portable) + layer-3 (the language's own 15 %). That is what makes "one
+canonical class, N languages, at the cost of an import" concrete for C# and
+Python and not just Rust.
+
+### Why this respects every iron rule
+
+- **Compiled, not parsed** (§1.5): codegen emits host-native source; the runtime
+  reader is zero-parse over the facet bytes. SurrealQL is never on an SDK path.
+- **Pull, never re-mint** (§7): an SDK *reads* a `CompiledClass`; it never owns a
+  codebook copy or constructs a bridge — the classid resolution is the mint's.
+- **Resolve, don't store** (§4): grounding is layer-3's late `classid → OGIT`
+  resolve, identical in all three languages; no SDK copies FIBO/DOLCE onto rows.
+- **One algebra** (§1.5): layer 1 is the *same* `CascadeShape` carving in every
+  language — the SDKs cannot drift on layout because they share the byte format.
 
 ---
 
@@ -303,12 +410,26 @@ correct because of the `relation_kind` predicate (ruff#35): `target` +
 - `lift_model_graph_python` + the `project_odoo_fields` schema projection (OGAR #131/#132).
 - **`ogar-from-ruff::mint`** — per-class minting: `mint_graph<P>`,
   `CompiledClass`, `compile_graph_python<P>` (OGAR #132).
-- **`ogar-from-ruff::emit`** — the pull-back **codegen** leg, reference
-  target Rust: `emit_rust(&CompiledClass) -> String` renders a rail struct
-  whose fields use the consumer's wrapper-contract types (`OgScalar` /
-  `ToOne<T>` / `ToMany<T>`) + a `*_CLASSID` const (OGAR #132).
-  `account.move → struct AccountMove { name: OgScalar, partner_id:
-  ToOne<ResPartner>, line_ids: ToMany<AccountMoveLine> }`.
+- **`ogar-from-ruff::emit`** — the pull-back **codegen** leg, now **three
+  emitters on one `&CompiledClass -> String` seam** — the codegen mode of the
+  per-language SDKs (§1.6):
+  - `emit_rust` (reference, OGAR #132) → `pub struct AccountMove { name:
+    OgScalar, partner_id: ToOne<ResPartner>, line_ids: ToMany<AccountMoveLine> }`
+    + `ACCOUNT_MOVE_CLASSID`.
+  - `emit_csharp` → `public sealed record AccountMove { public const uint
+    ClassId = 0x00020202; public OgScalar name {get;init;} public
+    ToOne<ResPartner> partner_id {…} public ToMany<AccountMoveLine> line_ids {…} }`.
+  - `emit_python` → `@dataclass class AccountMove: CLASSID: ClassVar[int] =
+    0x00020202; name: OgScalar; partner_id: ToOne["ResPartner"]; line_ids:
+    ToMany["AccountMoveLine"]`.
+
+  All three use the **same wrapper-contract type names** (`OgScalar` / `ToOne` /
+  `ToMany`); only the bracket syntax differs (`<T>` Rust/C#, `[T]` Python) — a
+  shared `assoc_target` relation classifier drives all three (the mechanical
+  transliteration §1.6 promises). The `classid` travels with the class. The
+  compute behaviour stays a trailing comment (the 15% adapter). 6 emit tests
+  (incl. `all_three_emitters_share_the_same_type_vocabulary`), clippy clean
+  (probe-verified offline). (C#/Python: this PR.)
 
 - **`ogar-adapter-surrealql` `array<record>`** — to-many associations
   (`HasMany`/`HasAndBelongsToMany`) emit as `array<record<comodel>>` (OGAR #136,
@@ -323,10 +444,14 @@ correct because of the `relation_kind` predicate (ruff#35): `target` +
    `32×GUID` SoA. Pin the per-carving tier-byte arithmetic against
    `FacetCascade` first (don't guess). This subsumes hardcoded facet
    "versions". The `emit_rust` codegen leg is the start; this is the depth.
-2. **Pull-back breadth** — `emit_csharp` / `emit_python` on the same
-   `&CompiledClass -> String` seam; refine `OgScalar` once the `field_type`
-   capture lands (ruff follow-up). Runtime wrapper-contract is the C#/Python
-   sibling of `lance-graph-contract`.
+2. **Pull-back breadth — the C# / Python SDKs (§1.6).** Codegen mode is
+   **shipped** (`emit_csharp` / `emit_python`). Remaining: (a) the **thin
+   runtime SDKs** — layer-1 `FacetCascade` + `CascadeShape` transliterated to
+   C#/Python (mechanical now that `CascadeShape` is pinned in
+   `lance-graph-contract`), layer-2 ClassView reader, layer-3 adapter host; and
+   (b) the wrapper-contract *packages* themselves (the `OgScalar`/`ToOne`/`ToMany`
+   aliases each language ships, the analog of `lance-graph-contract`). Refine
+   `OgScalar` once the `field_type` capture lands (ruff follow-up).
 3. **Thin the consumer (membrane)** — `odoo-rs` → `compile_graph::<OdooPort>`
    caller + `od-posting` GoBD adapter; delete the native SurrealQL emit fork
    (W3.3, **CI-gated** — od-ontology pulls surrealdb). Recommended path: keep
@@ -343,7 +468,7 @@ correct because of the `relation_kind` predicate (ruff#35): `target` +
 | To add… | Do this | Convergence is… |
 |---|---|---|
 | a **source language** | a `ruff_<lang>_spo` frontend → `ModelGraph`; reuse `lift` + `mint` | automatic (shared IR) |
-| a **target language** | an `ogar-emit-<lang>` adapter (`CompiledClass → String`) **or** a thin runtime wrapper contract (traits mirroring `lance-graph-contract`) | the consumer reimplements nothing |
+| a **target language** | an SDK (§1.6): `ogar-emit-<lang>` codegen **or** a thin runtime SDK = layer-1 `FacetCascade`+`CascadeShape` transliteration + layer-2 ClassView reader + layer-3 adapter host (mirrors `lance-graph-contract`) | the consumer reimplements nothing |
 | a **concept** | a `class_ids` codebook entry + a `PortSpec` alias | automatic across all ports that map it |
 | a **port (app)** | one `impl PortSpec for FooPort` block (NAMESPACE, BRIDGE_ID, APP_PREFIX, aliases) | the app's classes get a render skin for free |
 
