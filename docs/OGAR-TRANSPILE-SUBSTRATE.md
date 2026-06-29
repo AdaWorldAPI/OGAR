@@ -324,6 +324,21 @@ A node is `key(128/GUID) + value`. Lance may compress the value arbitrarily
 (columnar, dictionary, PQ); the key is never compressed and never needs the
 value decoded to route. (Canon: "THE GUID IS THE KEY OF KEY-VALUE.")
 
+**Two doctrines for the consumer model (operator 2026-06-29), neither a blocker:**
+
+- **Clean ⇒ expansion is `classid`-inherited.** A clean class can grow its field
+  set / capacity; the `classid` selects the expanded shape — no global change.
+  Expansion is never a transpile blocker (cf. the class-conditioned `CascadeShape`
+  / "don't lock the shape").
+- **Bulk raw data → a *separate* table, not the SoA value.** The 480-byte value
+  is for structured/compressible columns; a raw payload that won't fit even
+  compressed (a ~3.2 Gbp genome; the FMA / BodyParts3D anatomy mesh at **4M
+  vertices / 6M triangles**) lives in its own Lance table, referenced by
+  `key`/`classid` — out-of-line, addressed not inlined, and still not a blocker
+  (the anatomy mesh **baked cleanly as a SoA release**). Transpile mints the
+  *structured* class; the bulk payload is a table reference, not a transpile
+  dependency.
+
 ---
 
 ## 3. The 85 / 15 split (the consumer model)
