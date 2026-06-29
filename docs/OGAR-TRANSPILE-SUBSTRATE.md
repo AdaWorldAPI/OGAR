@@ -139,6 +139,20 @@ key prerenders nodes with zero value-decode (canon: "THE GUID IS THE KEY OF
 KEY-VALUE"); the compiled ClassView lays them out from keys alone, and the
 heavier value-SoA is only built when actually needed, then cached.
 
+**The `32×GUID` is literal capacity, and it sets the layout doctrine: clean /
+SoC over packed** (operator, 2026-06-29). A 512-byte node is exactly
+`512 / 16 = 32` sixteen-byte GUID-sized slots (`key` + `edges` take 2; the
+480-byte value slab is the remaining 30) — pinned as
+`lance_graph_contract::canonical_node::GUIDS_PER_NODE = 32` (compile-time
+asserted). So in the worst case you **Tetris whatever you need across the
+slots** — give each concern its own clean slot — rather than bit-pack two
+concerns into one. Packing into a single facet via a straddle (`CascadeShape::G4D3`,
+§1.5a) is the dispreferred last resort precisely *because* there are 32 slots:
+the capacity is what makes separation-of-concerns the default and the straddle
+unnecessary. (It is also the headroom behind §1.5a's "rotate / spread to a fresh
+slot instead of minting another classid" for the rare classid-stacking-entropy
+case.)
+
 ### Why this is the power (and where SurrealQL sits)
 
 - **Compiled beats parsed.** The business logic is a `ClassView` compiled into
