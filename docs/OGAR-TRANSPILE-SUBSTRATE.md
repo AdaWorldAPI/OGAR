@@ -85,23 +85,40 @@ This is the heart of the power. A `ClassView` is not a parser and not a fixed
 record format — it is a **compiled, flexible, composable reader** over the
 facet, baked into the binary. Three properties:
 
-### a. One ClassView *recombines* the facet layout — no "versions"
+### a. One ClassView *rotates* the facet layout — no "versions"
 
-The 16-byte facet's tier payload is not locked to a single carving. The
-ClassView reads it as whichever hierarchical cascade fits the class, by
-recombination:
+The 16-byte facet's tier payload is not locked to a single carving. A ClassView
+can **always rotate** — read the SAME 12 cascade bytes under a different
+grouping — to fit the class. The carvings (pinned as
+`lance_graph_contract::facet::CascadeShape`, `CascadeShape::ROTATIONS`):
 
 ```
-6× (1:2)        6 tiers, each a 1:2 hierarchy
-4× (1:2:3)      4 tiers, each a 1:2:3 hierarchy
-3× (1:2:3:4)    3 tiers, each a 1:2:3:4 hierarchy
+6× (1:2)        ALIGNED default — 6 tiers, each a 1:2 hierarchy   (group_of = i >> 1, a shift)
+3× (1:2:3:4)    ALIGNED default — 3 tier-pairs, each 1:2:3:4      (group_of = i >> 2, a shift)
+4× (1:2:3)      WORST CASE      — straddles tier boundaries        (group_of = i / 3, a DIVIDE)
 ```
 
-(the same `3×4`-vs-`4×3` family the GUID canon debates, generalised to the
-ClassView's reading). So there is **no need for hardcoded facet "versions"
-(V1/V2/V3)** — one compiled ClassView subsumes all the carvings. Hardcoding a
-format per version is the thing to *delete*; the ClassView is the flexible
-reader that makes versions unnecessary.
+**Only the byte-aligned carvings are defaults.** `6×(1:2)` and `3×(1:2:3:4)`
+keep `group_of` a pure shift (the canon's "tier-of-level is a shift, never a
+branch"). **`4×(1:2:3)` is the worst case, not a co-equal carving** — it
+straddles tier boundaries so `group_of` must DIVIDE (`CascadeShape::is_byte_aligned()`
+is `false`, `shift()` is `None`). It is *prevented on the common path* and kept
+only as the **rare rotation / escape hatch**: a ClassView may rotate to it
+deliberately when a rare class (some Odoo models) needs to relieve
+**classid-stacking entropy** — rotate the reading rather than mint another
+classid. So there is **no need for hardcoded facet "versions" (V1/V2/V3)** — one
+compiled ClassView subsumes the rotation set; the straddle stays legal only as a
+deliberate, rare rotation. Hardcoding a format per version is the thing to
+*delete*.
+
+> **Carvings address the VIEW, never the functions.** A rotation re-reads the
+> data layout; it does NOT reach behaviour. Functions are encoded by the
+> **classid acting as an additional switch** — `lance_graph_contract::facet::ClassArm`
+> `{ View, Functions }`, the OGAR THINK/DO split (`OGAR-AST-CONTRACT.md`).
+> Reaching a function = switch the classid to the `Functions` arm (the
+> `ActionDef`/`KausalSpec` on the resolved Core node), *never* slice the
+> tier-bytes. A straddling carve to "get to" a function is exactly the worst
+> case the `4×(1:2:3)` example warns against.
 
 ### b. Sub-range mapping + nested ClassViews stacked into constructors
 
@@ -135,17 +152,22 @@ heavier value-SoA is only built when actually needed, then cached.
   investment is the compiled, nested, lazy `ClassView` over the GUID SoA. When
   the two compete for attention, the compiled ClassView wins.
 
-> **Status:** the recombination *principle* + the nested-constructor + lazy-SoA
+> **Status:** the rotation *principle* + the nested-constructor + lazy-SoA
 > architecture are operator-specified here as the durable design. The exact
-> tier-byte arithmetic of each carving is **now pinned + implemented** as
-> `lance_graph_contract::facet::CascadeShape` (`G6D2` / `G4D3` / `G3D4`, with
+> tier-byte arithmetic is **now pinned + implemented** as
+> `lance_graph_contract::facet::CascadeShape` (`G6D2` / `G4D3` / `G3D4`,
 > `G·D = CASCADE_UNITS = 12`) over `FacetCascade::tier_bytes()` — `index(g,l) =
-> g·D + l`, `group_of`/`level_of` the inverses, plus `cascade_byte` and the
-> per-group LCP `cascade_group_shared`. The `G3D4`/`G6D2` `group_of` is a shift
-> (the canon's "tier-of-level is a shift, never a branch"); `G4D3` is the
-> straddle that needs a divide. Zero-dep, `const fn`, probe-verified. This is
-> **one algebra for both the facet bytes and a 12-field class** — the shared
-> substrate the three language SDKs (§1.6) all read.
+> g·D + l`, `group_of`/`level_of` inverses, `cascade_byte`, per-group LCP
+> `cascade_group_shared`. `CascadeShape::ALIGNED = [G3D4, G6D2]` are the
+> shift-`group_of` **defaults** (`shift()` is `Some`); `CascadeShape::ROTATIONS`
+> is the full rotation set a ClassView may rotate through. **`G4D3` is the worst
+> case** — `is_byte_aligned()` is `false`, `shift()` is `None`, `group_of`
+> divides — excluded from `ALIGNED`, kept in `ROTATIONS` only as the rare
+> escape-hatch rotation (classid-stacking-entropy relief). **Functions are NOT a
+> carving** — `facet::ClassArm { View, Functions }` is the classid's additional
+> THINK/DO switch; carvings address `View` only. Zero-dep, `const fn`,
+> probe-verified (lance-graph #621). One algebra for both the facet bytes and a
+> 12-field class — the shared substrate the three language SDKs (§1.6) all read.
 
 ---
 
