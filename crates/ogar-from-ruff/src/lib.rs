@@ -205,8 +205,10 @@ fn lift_model_with_language(model: &Model, language: Language) -> Class {
 /// - relational field (`target` set) → [`Association`]; the kind comes from
 ///   the field's cardinality (`relation_kind`), `class_name` is the raw
 ///   comodel, `inverse_of` the One2many inverse.
-/// - non-relational field → [`Attribute`] (name only — the Odoo field type
-///   is not yet carried on the SPO `Field`; a follow-up).
+/// - non-relational field → [`Attribute`] with `type_name` set from the SPO
+///   `Field`'s `field_type` (the lowercased Odoo constructor — `char` /
+///   `integer` / `monetary` / …), so the emitters pick a concrete wrapper type
+///   instead of the untyped `OgScalar` fallback.
 /// - compute field (`emitted_by` set) → [`ComputedField`] (method +
 ///   `@api.depends`), in addition to its Attribute / Association above.
 fn project_odoo_fields(class: &mut Class, model: &Model) {
@@ -218,7 +220,13 @@ fn project_odoo_fields(class: &mut Class, model: &Model) {
             assoc.inverse_of = field.inverse_name.clone();
             class.associations.push(assoc);
         } else {
-            class.attributes.push(Attribute::new(&field.name));
+            let mut attr = Attribute::new(&field.name);
+            // Carry the Odoo constructor (field_type) so the emitters can pick a
+            // concrete wrapper type (OgStr/OgInt/OgMoney/…) instead of the
+            // untyped OgScalar fallback. None for a field whose type ruff did
+            // not capture → OgScalar (the safe default).
+            attr.type_name = field.field_type.clone();
+            class.attributes.push(attr);
         }
         if let Some(compute_method) = &field.emitted_by {
             let mut computed = ComputedField::new(&field.name, compute_method);

@@ -14,6 +14,11 @@ serde = ["dep:serde", "ogar-vocab/serde"]
 
 [dependencies]
 ogar-vocab = { path = "../ogar-vocab" }
-ruff_spo_triplet = { git = "https://github.com/AdaWorldAPI/ruff", branch = "main" }
-ruff_spo_address = { git = "https://github.com/AdaWorldAPI/ruff", branch = "main" }
+# Temporarily pinned to the ruff `field_type` commit (rev) — `Field.field_type`
+# is consumed by `project_odoo_fields` but is not yet on ruff `main`; it lands
+# via the ruff PR-to-main on branch `claude/odoo-rs-transcode-lf8ya5` (this arc,
+# rev 4860e79 also carries the soc operator-veto fix 101928a). Flip both back to
+# `branch = "main"` once that ruff PR merges.
+ruff_spo_triplet = { git = "https://github.com/AdaWorldAPI/ruff", rev = "4860e7987aa0c9453f812bb0178962d1cba66df0" }
+ruff_spo_address = { git = "https://github.com/AdaWorldAPI/ruff", rev = "4860e7987aa0c9453f812bb0178962d1cba66df0" }
 serde = { workspace = true, optional = true }
