@@ -73,11 +73,25 @@ use ruff_spo_triplet::{
     ModelGraph, ScopeDecl, ScopeKind, StiInfo, Validation as RuffValidation, ValidationKind,
 };
 
-/// Lift every model in a [`ModelGraph`] to an OGAR [`Class`]. Output
-/// preserves declaration order so downstream consumers can rely on
-/// deterministic ordering for snapshot tests.
+/// Lift every model in a [`ModelGraph`] to an OGAR [`Class`] (Rails /
+/// `ruff_ruby_spo` producer — [`Language::Ruby`]). Output preserves
+/// declaration order so downstream consumers can rely on deterministic
+/// ordering for snapshot tests.
 #[must_use]
 pub fn lift_model_graph(graph: &ModelGraph) -> Vec<Class> {
+    lift_model_graph_with_language(graph, Language::Ruby)
+}
+
+/// Lift a whole [`ModelGraph`] for a Python / Odoo producer
+/// (`ruff_python_spo`) — like [`lift_model_graph`] but stamps each class as
+/// [`Language::Python`]. The `odoo` namespace already routes to the `erp`
+/// source domain via the same `classify_domain` path.
+#[must_use]
+pub fn lift_model_graph_python(graph: &ModelGraph) -> Vec<Class> {
+    lift_model_graph_with_language(graph, Language::Python)
+}
+
+fn lift_model_graph_with_language(graph: &ModelGraph, language: Language) -> Vec<Class> {
     let domain = classify_domain(&graph.namespace);
     let concept_domain = domain.as_deref().and_then(ogar_vocab::source_domain_concept);
     // The harvest namespace IS the curator id (`"openproject"`,
@@ -94,7 +108,7 @@ pub fn lift_model_graph(graph: &ModelGraph) -> Vec<Class> {
         .models
         .iter()
         .map(|m| {
-            let mut class = lift_model(m);
+            let mut class = lift_model_with_language(m, language);
             class.source_domain = domain.clone();
             class.source_curator = curator.clone();
             // Domain-gate the canonical concept. `lift_model` resolves
@@ -130,18 +144,31 @@ fn classify_domain(namespace: &str) -> Option<String> {
     }
 }
 
-/// Lift one [`Model`] to an OGAR [`Class`]. Pure projection — no I/O.
+/// Lift one [`Model`] to an OGAR [`Class`] stamped as [`Language::Ruby`]
+/// (the Rails / `ruff_ruby_spo` producer). Pure projection — no I/O.
 ///
-/// **Language is always [`Language::Ruby`]** at this layer. Other
-/// frontends (Python/Elixir/etc.) using `ruff_spo_triplet::Model` will
-/// likely want their own wrapper that sets the discriminant. We don't
-/// guess it from `ModelGraph::namespace` because the namespace
+/// For the Python / Odoo producer (`ruff_python_spo`) use
+/// [`lift_model_python`]. Both delegate to the same projection and differ
+/// only in the language discriminant. Language is set explicitly rather
+/// than guessed from `ModelGraph::namespace`, because the namespace
 /// (`openproject`, `odoo`, …) doesn't bind to the producer language
 /// one-to-one.
 #[must_use]
 pub fn lift_model(model: &Model) -> Class {
+    lift_model_with_language(model, Language::Ruby)
+}
+
+/// Lift one [`Model`] to an OGAR [`Class`] stamped as [`Language::Python`]
+/// — the Odoo / Django producer path (`ruff_python_spo`). Identical
+/// projection to [`lift_model`]; only the language discriminant differs.
+#[must_use]
+pub fn lift_model_python(model: &Model) -> Class {
+    lift_model_with_language(model, Language::Python)
+}
+
+fn lift_model_with_language(model: &Model, language: Language) -> Class {
     let mut class = Class::new(&model.name);
-    class.language = Language::Ruby;
+    class.language = language;
     class.parent = model.sti.as_ref().and_then(sti_parent);
     class.inheritance = lift_inheritance(model);
     class.canonical_concept = Some(canonical_concept(&model.name));
@@ -665,6 +692,28 @@ mod tests {
         assert_eq!(class.name, "WorkPackage");
         assert_eq!(class.parent.as_deref(), Some("Issue"));
         assert!(matches!(class.language, Language::Ruby));
+    }
+
+    #[test]
+    fn lift_model_python_stamps_python_language() {
+        // The Python/Odoo producer path: same projection, Python discriminant.
+        let class = lift_model_python(&mk_model());
+        assert!(matches!(class.language, Language::Python));
+        assert_eq!(class.name, "WorkPackage");
+        assert_eq!(class.parent.as_deref(), Some("Issue"));
+    }
+
+    #[test]
+    fn lift_model_graph_python_stamps_python_and_keeps_erp_domain() {
+        // An Odoo ModelGraph (namespace "odoo") lifts as Python and routes to
+        // the `erp` source domain / `odoo` curator via classify_domain.
+        let mut graph = ModelGraph::new("odoo");
+        graph.models.push(Model::new("account_move"));
+        let classes = lift_model_graph_python(&graph);
+        assert_eq!(classes.len(), 1);
+        assert!(matches!(classes[0].language, Language::Python));
+        assert_eq!(classes[0].source_domain.as_deref(), Some("erp"));
+        assert_eq!(classes[0].source_curator.as_deref(), Some("odoo"));
     }
 
     #[test]
