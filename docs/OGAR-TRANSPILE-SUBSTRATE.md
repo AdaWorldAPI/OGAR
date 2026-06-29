@@ -374,12 +374,26 @@ correct because of the `relation_kind` predicate (ruff#35): `target` +
 - `lift_model_graph_python` + the `project_odoo_fields` schema projection (OGAR #131/#132).
 - **`ogar-from-ruff::mint`** — per-class minting: `mint_graph<P>`,
   `CompiledClass`, `compile_graph_python<P>` (OGAR #132).
-- **`ogar-from-ruff::emit`** — the pull-back **codegen** leg, reference
-  target Rust: `emit_rust(&CompiledClass) -> String` renders a rail struct
-  whose fields use the consumer's wrapper-contract types (`OgScalar` /
-  `ToOne<T>` / `ToMany<T>`) + a `*_CLASSID` const (OGAR #132).
-  `account.move → struct AccountMove { name: OgScalar, partner_id:
-  ToOne<ResPartner>, line_ids: ToMany<AccountMoveLine> }`.
+- **`ogar-from-ruff::emit`** — the pull-back **codegen** leg, now **three
+  emitters on one `&CompiledClass -> String` seam** — the codegen mode of the
+  per-language SDKs (§1.6):
+  - `emit_rust` (reference, OGAR #132) → `pub struct AccountMove { name:
+    OgScalar, partner_id: ToOne<ResPartner>, line_ids: ToMany<AccountMoveLine> }`
+    + `ACCOUNT_MOVE_CLASSID`.
+  - `emit_csharp` → `public sealed record AccountMove { public const uint
+    ClassId = 0x00020202; public OgScalar name {get;init;} public
+    ToOne<ResPartner> partner_id {…} public ToMany<AccountMoveLine> line_ids {…} }`.
+  - `emit_python` → `@dataclass class AccountMove: CLASSID: ClassVar[int] =
+    0x00020202; name: OgScalar; partner_id: ToOne["ResPartner"]; line_ids:
+    ToMany["AccountMoveLine"]`.
+
+  All three use the **same wrapper-contract type names** (`OgScalar` / `ToOne` /
+  `ToMany`); only the bracket syntax differs (`<T>` Rust/C#, `[T]` Python) — a
+  shared `assoc_target` relation classifier drives all three (the mechanical
+  transliteration §1.6 promises). The `classid` travels with the class. The
+  compute behaviour stays a trailing comment (the 15% adapter). 6 emit tests
+  (incl. `all_three_emitters_share_the_same_type_vocabulary`), clippy clean
+  (probe-verified offline). (C#/Python: this PR.)
 
 - **`ogar-adapter-surrealql` `array<record>`** — to-many associations
   (`HasMany`/`HasAndBelongsToMany`) emit as `array<record<comodel>>` (OGAR #136,
@@ -394,12 +408,14 @@ correct because of the `relation_kind` predicate (ruff#35): `target` +
    `32×GUID` SoA. Pin the per-carving tier-byte arithmetic against
    `FacetCascade` first (don't guess). This subsumes hardcoded facet
    "versions". The `emit_rust` codegen leg is the start; this is the depth.
-2. **Pull-back breadth — the C# / Python SDKs (§1.6).** `emit_csharp` /
-   `emit_python` on the same `&CompiledClass -> String` seam (codegen mode), and
-   the thin runtime SDKs (layer-1 `FacetCascade` + `CascadeShape` transliterated,
-   layer-2 ClassView reader, layer-3 adapter host). Layer 1 is mechanical now
-   that `CascadeShape` is pinned in `lance-graph-contract`. Refine `OgScalar`
-   once the `field_type` capture lands (ruff follow-up).
+2. **Pull-back breadth — the C# / Python SDKs (§1.6).** Codegen mode is
+   **shipped** (`emit_csharp` / `emit_python`). Remaining: (a) the **thin
+   runtime SDKs** — layer-1 `FacetCascade` + `CascadeShape` transliterated to
+   C#/Python (mechanical now that `CascadeShape` is pinned in
+   `lance-graph-contract`), layer-2 ClassView reader, layer-3 adapter host; and
+   (b) the wrapper-contract *packages* themselves (the `OgScalar`/`ToOne`/`ToMany`
+   aliases each language ships, the analog of `lance-graph-contract`). Refine
+   `OgScalar` once the `field_type` capture lands (ruff follow-up).
 3. **Thin the consumer (membrane)** — `odoo-rs` → `compile_graph::<OdooPort>`
    caller + `od-posting` GoBD adapter; delete the native SurrealQL emit fork
    (W3.3, **CI-gated** — od-ontology pulls surrealdb). Recommended path: keep
