@@ -1,11 +1,13 @@
-# Handover — Landing Odoo + Redmine/OpenProject into OGAR (the ERP/planning Foundry shape)
+# Odoo + Redmine/OpenProject — ERP/planning landing plan (OGAR)
 
-> **For:** the next session that lands Odoo (ERP) and Redmine/OpenProject (planning)
-> into OGAR.
-> **Date:** 2026-06-28.
-> **One line:** land each source in the *best native-yet-agnostic-yet-truthful*
-> shape — "Odoo"/"Redmine" are **labels**; the **ontology** is the canonical
-> ERP/planning form, and lance-graph is the Foundry it executes on.
+> **Companion to `docs/OGAR-TRANSPILE-SUBSTRATE.md`** (the per-class transpile
+> machine — lift + mint + emit — landed in OGAR #132). This is the durable
+> ERP/planning *landing plan*: how Odoo (ERP) + Redmine/OpenProject (planning)
+> land in OGAR in the *best native-yet-agnostic-yet-truthful* shape — "Odoo"/
+> "Redmine" are **labels**; the **ontology** is the canonical ERP/planning
+> form, and lance-graph is the Foundry it executes on. (Relocated from
+> `.claude/handovers/` per `.claude/AGENTS.md` §Forbidden — durable docs live
+> in `docs/`.)
 
 ---
 
