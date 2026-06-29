@@ -86,7 +86,7 @@ shipped, single-bit-space selector. Be exact about which jobs it does:
 | **read** (facet decode) | N3 presence `FieldMask` | compiled reader | **CODED** (`class_view.rs`) |
 | **render** (field view) | same N3 `FieldMask`, bit-gated loop | compiled template | **CODED** (`render_rows`) |
 | **auth field-projection** | same N3 `FieldMask`, OR-folded | role × lo-u16 grant lattice | **[H] — cross-repo lag**: coded in sibling `lance-graph-rbac` (`authorize_scoped`/`field_mask`), but OGAR canon still grades the projecting `Allow{scope,mask}` **CONJECTURE** (`CLASSID-RBAC-KEYSTONE-SPEC` I-K8, `README` `[H]`) |
-| **action authorization (verb × class)** | `lance-graph-rbac` verb-gate (I-K8 axis-1) | role × classid | **the easy link** — the DO action handler rides the existing RBAC gate before firing a node; reuse, don't rebuild |
+| **action authorization (verb × class)** | `required_role` **`const` on the `ActionDef`** (OGAR DO surface) + runtime grant map | OGAR class (the required role) × `lance-graph-rbac` (who holds it) | **CODED in OGAR `[G]`** — `required_role` is a compile-time literal on every mutating action (`lance-graph-ogar/src/actions.rs`, test `…hardcoded_rbac_on_every_mutating_action`); rbac supplies only the runtime *grant map* |
 | **query** (column pruning) | a **second** `FieldMask` on the **physical value-tenant** basis | the value-slab layout | **CODED but a DIFFERENT basis** (`canonical_node.rs::ValueSchema::field_mask`) |
 | **version** (V1/V2/V3) | a `classid → ReadMode/ValueSchema` **radix lookup** (not a mask op) | `ENVELOPE_LAYOUT_VERSION` registry | **CODED as a lookup** |
 | **auth verdict + row-scope** | boolean gate + **AND**-folded scope | RBAC keystone **I-K8** (four orthogonal axes) | **CODED, not the mask** |
@@ -97,10 +97,13 @@ shipped, single-bit-space selector. Be exact about which jobs it does:
 OGAR* yet). `query` rides a *second* mask on the physical basis; `version` is a
 radix lookup; auth's verdict/scope are ordered folds with a different algebra
 (AND-scope vs OR-projection — one mask cannot be both). **Action authorization
-(verb × class) is the easiest real integration today** — the DO handler calls the
-existing `lance-graph-rbac` gate (I-K8 axis-1) before firing a node; field-
-projection (axis-4) is the separate, still-pending leg. Collapse the genuinely-
-shared jobs; keep the rest named-distinct.
+(verb × class) is the *most* shipped of these — the required role is a hardcoded
+`const` on the `ActionDef` in OGAR's own DO surface** (`lance-graph-ogar/src/actions.rs`,
+`[G]`-tested: every mutating action carries `Some(role)`), so the grant surface is
+`grep required_role`, not a policy table; `lance-graph-rbac` supplies only the
+runtime grant *map* (which actor holds the role). Field-projection (axis-4) is the
+separate, still-pending leg. Collapse the genuinely-shared jobs; keep the rest
+named-distinct.
 
 **Two disciplines (both load-bearing, neither a blocker):**
 
@@ -177,11 +180,15 @@ layers + one cognition layer, each one job, none carrying another's:
   lossless**: a source action's control-flow maps **node-for-node** into the
   graph. Gate **F1** (behavioural parity ≡ Odoo `_inherit`) is therefore a
   **graph-equivalence check**, not a re-implementation.
-- **Authorization — ride the existing `lance-graph-rbac` (the easiest link).**
-  Before a node fires, the handler authorizes the action through
-  `lance-graph-rbac`'s **verb × class** gate (RBAC keystone **I-K8 axis-1**) —
-  reuse, don't build a parallel auth path. (Field-projection masking, axis-4, is
-  the separate still-pending leg; see §3.)
+- **Authorization — RBAC is hardcoded on the class (`[G]`); the Türsteher floor.**
+  Each mutating `ActionDef` carries its `required_role` as a compile-time `const`
+  (`lance-graph-ogar/src/actions.rs`) — the grant surface is `grep required_role`,
+  legible to a compliance reviewer who never reads the semantics. The handler
+  adjudicates `def-match → RBAC → state-guard (Libet) → MUL` inside `commit`;
+  cognition decides *above* that floor and can never lower it. `lance-graph-rbac`
+  supplies the runtime grant *map* (who holds the role); field-projection (axis-4)
+  is the separate still-pending leg (see §3). Full doctrine:
+  `ACTIONHANDLER-TURSTEHER.md`.
 - **ractor** — owns each node's execution partition **at compile time** (the
   safety floor; §5).
 - **Lance `BatchWriter`** — persists one batch while the next node already thinks
@@ -212,6 +219,21 @@ layers + one cognition layer, each one job, none carrying another's:
   reproduces LLM reasoning well enough to drop the wheels is the open
   "thinking-is-a-struct" bet. The architecture (LLM optional, replay as bridge) is
   the direction; the fidelity is unproven.
+
+**The Türsteher payoff — the smaller story that sells without the rest.** The
+cognition above can upgrade all the way to AGI; OGAR still contains it
+*structurally, not by trust*. The bound is **capability-bounding, not alignment-
+bounding**: an arbitrarily-clever agent acts only through `const ActionDef`s that
+exist, with `required_role`s it cannot edit, through a `commit` gate it cannot
+bypass — the DO surface is **closed at the Core** (no runtime "register a new
+action" path; the manifest is harvested and reviewed), and move/ownership
+semantics make the gate unforgeable (the Firewall, ADR-022/023). So the whole
+stack carries a second, smaller pitch that needs *none* of the substrate vision to
+land: **the thinking can become anything; OGAR is the gatekeeper that gets
+everything which tries to act.** That is the legible artifact for the compliance
+buyer who does not (yet) care about transpilation, anatomy, or genomes —
+`ACTIONHANDLER-TURSTEHER.md` §5, *"OGAR kriegt sie alle"*, `[H]` (the falsifier:
+any path reaching an external mutation without transiting `commit`).
 
 ## 7. The dots, connected
 
@@ -253,6 +275,10 @@ rest is a named set of landing zones, not hand-waving.
 - `CLASSVIEW-FIELDVIEW-ASKAMA-BITMASK.md` (this PR) + `integration/CLASSVIEW-MATERIALIZATION-PLAN.md` — the render-side face.
 - §1.5 compiled-ClassView spine; `OGAR-AST-CONTRACT.md` (arms); `OGAR-AS-IR.md`.
 - `CLASSID-RBAC-KEYSTONE-SPEC.md` **I-K8** (four orthogonal auth axes).
+- `ACTIONHANDLER-TURSTEHER.md` — RBAC-as-class-`const` doctrine, the Rung
+  Flughöhe, and the structural-containment (`OGAR kriegt sie alle`) claim;
+  `lance-graph-ogar/src/actions.rs` (`OgarActionProvider`, the hardcoded
+  `required_role` surface + its `[G]` test).
 - `THE-FIREWALL.md` §5 + `D-KV-RENDER` (egress is an outer crossing); ADR-022/023/024.
 - `D-KEYKV`, `D-3X4`, `D-BOTHCASC`, `FMA-SKELETON` §2.1 (address = zoom, coded);
   `I-LEGACY-API-FEATURE-GATED`; `core-first-transcode-doctrine` (leaf-adapter scope).
