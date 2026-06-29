@@ -66,6 +66,52 @@ The bitmask **is** the selected / unselected partition:
 Versions, roles, and projections are simply **different masks over the same
 template**. There is no template per version — one compiled artifact, any subset.
 
+## Wide classes — the quadruplet and bucket chaining
+
+The `u64` mask above is **one bucket** of 64 field positions. A wide class — an
+Odoo `account.move` carries ~100+ fields — overflows one bucket, but **not the
+pattern**: the mask is a *chain of buckets*, each a `u64`, and the `selected()`
+loop is bucket-agnostic (it filters `FieldDesc[]` by `idx`; the bucket is
+`idx / 64`, the bit `idx % 64`). A clean `ClassView` chains up to **4 buckets —
+the `[u64; 4]` quadruplet = 256 positions** (operator 2026-06-29: expand the
+single-`u64` cap 64 → 256):
+
+```
+fields  buckets  fits one ClassView?
+≤ 64       1      yes (the original u64)
+65–128     2      yes  — an Odoo ~109-field model is clean here (2 buckets)
+129–192    3      yes
+193–256    4      yes  — the full quadruplet
+> 256      5+     NO — god object: the SoC signal to SPLIT (see below)
+```
+
+This is **clean separation overflow automation**: each run of 64 chains the next
+bucket automatically; at most 4 buckets is one ClassView; beyond 256 the class
+is a god object and the overflow chains into a *second* ClassView (sub-views),
+never a wider single mask. Pinned + tested in `ruff_spo_address::soc`:
+`FIELD_MASK_BUCKET_BITS = 64`, `FIELD_MASK_MAX_BUCKETS = 4`,
+`FIELD_MASK_CAP = 256`, `field_mask_buckets(n) = n.div_ceil(64)`; the
+`Duplication` verdict now collapses to `≤ 256` distinct `field_type`s (a
+109-field class is `Duplication`/maskable, not a `Counterexample`). The matching
+`lance_graph_contract::class_view::FieldMask` (today `u64` / `MAX_FIELDS = 64`)
+is the *eventual* expansion to the same quadruplet, validated by the ruff test.
+
+## Simple rules (operator 2026-06-29)
+
+- **If it's a template, it's probably a ClassView.** A Redmine ERB partial, an
+  Odoo view, an Askama field partial — each is a render over a class's field set,
+  i.e. a `ClassView` + a mask. Don't reach for a per-template type; reach for a
+  mask over the generated `FieldDesc[]`.
+- **Deduplicate routes.** N routes that are "the same record, different visible
+  fields" (a card, a full view, an RBAC view, a tenant projection) are **one**
+  templated ClassView render with N masks — not N handlers. Route proliferation
+  is usually an un-applied mask.
+- **`< 256` is clean; `≥ 256` is the god-object signal.** A field/sibling set
+  under the quadruplet is maskable by one ClassView. At/over 256 the design (not
+  the storage) is the problem — split concerns (chain a second ClassView /
+  sub-view), the same SoC the `ruff_spo_address::soc` lint flags. Never widen the
+  mask past the quadruplet to dodge the split.
+
 ## Why this is right (not just convenient)
 
 1. **§1.5 alignment — render-mask = read-mask.** "One compiled reader subsumes
@@ -119,12 +165,14 @@ user-authored, per-tenant templates — never as the default.
 
 ## Summary
 
-One generic Askama field partial + a generated `FieldDesc[]` table + a `u64`
-mask = the whole dynamic ClassView field view: Redmine-shaped, JSON-free, no
-conditionals in the template, type-checked structure, dynamic across
-versions/roles/projections. **The mask carves; the loop renders.** Askama's
-compile-time nature is not a cage — the mask is the runtime knob, and it is the
-same selector the data layer already uses to prune columns.
+One generic Askama field partial + a generated `FieldDesc[]` table + a
+chained-bucket mask (`u64` → up to the `[u64; 4]` quadruplet, 256 fields) = the
+whole dynamic ClassView field view: Redmine-shaped, JSON-free, no conditionals
+in the template, type-checked structure, dynamic across versions/roles/
+projections, and wide-class-clean by bucket chaining (a god object at `> 256` is
+a split signal, not a wider mask). **The mask carves; the loop renders.**
+Askama's compile-time nature is not a cage — the mask is the runtime knob, and it
+is the same selector the data layer already uses to prune columns.
 
 ## Cross-references
 
@@ -135,3 +183,9 @@ same selector the data layer already uses to prune columns.
   pattern slots into.
 - `I-LEGACY-API-FEATURE-GATED` — why the mask bits must be generated, never
   hand-numbered alongside a layout.
+- `ruff_spo_address::soc` — the `FIELD_MASK_CAP = 256` quadruplet,
+  `field_mask_buckets()` chaining, and the `≥ 256` god-object SoC lint (where
+  the "wide classes / split, don't widen" rule is tested).
+- `lance_graph_contract::canonical_node::GUIDS_PER_NODE` (= 32) — the node-level
+  twin: clean/SoC over packed, Tetris concerns across the 32 GUID slots; the
+  field-level quadruplet here is the same doctrine one level down.
