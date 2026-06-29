@@ -1978,6 +1978,20 @@ impl Attribute {
     }
 }
 
+impl ComputedField {
+    /// Build a new computed-field declaration with the field name and its
+    /// compute method set. Remaining metadata (`depends`, `stored`,
+    /// `inverse_method`, …) is filled in by the caller.
+    #[must_use]
+    pub fn new(field: impl Into<String>, compute_method: impl Into<String>) -> Self {
+        Self {
+            field: field.into(),
+            compute_method: compute_method.into(),
+            ..Default::default()
+        }
+    }
+}
+
 impl Scope {
     /// Build a new scope with name and body source.
     #[must_use]
