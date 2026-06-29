@@ -56,15 +56,17 @@ Per `OGAR-AST-CONTRACT.md`:
   partial → Askama bitmask partial; OpenProject WP schema → `Class` facets.
   **CODED-today** (`lance-graph-contract/src/class_view.rs`: `ClassView`,
   `render_rows`, `project`; impl `ogar-class-view`).
-- **DO arm — `ActionDef` / `ActionInvocation` → a generated ractor `StateMachine`
-  (with `KausalSpec` state-guards).** This is the catch that makes "ERP at the
-  cost of an import" real: Odoo's action methods are **carried into actual state
-  machines**, not stubbed as stateless adapters. (The "classid-keyed adapter" of
-  the Core-First doctrine is the *data-shaped leaf-method* lowering only — its
-  scope boundary; behaviour-bearing actions are the `StateMachine` path.) Foundry
-  rebuilds these workflows by hand; OGAR transpiles them. **LANDING-ZONE** (the
-  `Class`→`StateMachine` codegen is specced; gate **F1** — delegation ≡ Odoo
-  `_inherit` — proves behavioural parity and **has not run yet**; the God-object→
+- **DO arm — `ActionDef` / `ActionInvocation` → a `StateMachine` *realized as an
+  rs-graph-llm workflow graph*** (with `KausalSpec` state-guards), ractor-owned at
+  execution and Lance-overlapped (see §6). This is the catch that makes "ERP at
+  the cost of an import" real **and lossless**: a source action's control-flow
+  maps **node-for-node** into the graph — carried, not stubbed as a stateless
+  adapter, not hand-re-implemented. (The "classid-keyed adapter" of the Core-First
+  doctrine is the *data-shaped leaf-method* lowering only — its scope boundary;
+  behaviour-bearing actions are the graph/`StateMachine` path.) Foundry rebuilds
+  these workflows by hand; OGAR transpiles them. **LANDING-ZONE** (the
+  `Class`→graph codegen is specced; gate **F1** — delegation ≡ Odoo `_inherit` —
+  is now a **graph-equivalence check** and **has not run yet**; the God-object→
   three-way-split "refactor dividend" is **CONJECTURE** until F1 is green).
 - **DO-arm guard — `KausalSpec`:** the state-guard *field on* `ActionDef` that
   gates a transition (not a separate co-equal "arm").
@@ -153,7 +155,52 @@ claim.
   hot path). The JS engine (JSC/V8) is in-process via op/FFI, so the runtime↔Rust
   handoff is memory, not a wire. No JSON reconstitution on the core path.
 
-## 6. The dots, connected
+## 6. Orchestration & cognition — what makes it *runnable*, not just representable
+
+The substrate above *represents* the ERP; this layer *runs* it. Four execution
+layers + one cognition layer, each one job, none carrying another's:
+
+**Execution (the DO arm, top to bottom):**
+
+- **`ActionDef`** — the source IR of the behaviour.
+- **rs-graph-llm — the action handler + kanban orchestration.** The
+  `OGAR-AST-CONTRACT` `StateMachine` is *realized as an rs-graph-llm workflow
+  graph* (nodes = steps/states, edges = transitions/guards). This is why **DO is
+  lossless**: a source action's control-flow maps **node-for-node** into the
+  graph. Gate **F1** (behavioural parity ≡ Odoo `_inherit`) is therefore a
+  **graph-equivalence check**, not a re-implementation.
+- **ractor** — owns each node's execution partition **at compile time** (the
+  safety floor; §5).
+- **Lance `BatchWriter`** — persists one batch while the next node already thinks
+  (the throughput overlap; §5).
+
+**Cognition (rig + removable training wheels):**
+
+- **rig** sits behind rs-graph-llm as **RAG + the LLM boundary + thinking-replay**
+  (LangGraph-style checkpoint / time-travel over graph state).
+- **The replay does double duty:** (a) debug-time time-travel over the thought
+  graph, and (b) the **capture** for offline cognition — replay the
+  LLM-bootstrapped thought-graphs, distill them into the substrate's own offline
+  thinking (DeepNSM / the cognitive shader), then **remove the LLM**.
+- **The LLM API is training wheels** (optional, offline-first): it generates the
+  first traces; the replay records them; the substrate learns to regenerate them
+  offline (DeepNSM's transformer-inference → struct-math, reached by *distillation
+  through replay*, not from scratch).
+
+**Honest edges for this layer:**
+
+- **Pin the lifecycle owner:** the rs-graph-llm graph *is* the `StateMachine`;
+  ractor owns node *execution*; `ActionDef` is the source IR. Don't let two layers
+  claim the lifecycle, or the God object reappears.
+- **Use the real `rs-graph-llm`, not the `crates/stubs/graph-flow` placeholder**
+  (architectural-compliance: the lance-graph-stub incident — wire the real crate,
+  never let the stub become the architecture).
+- **Offline-replay *fidelity* is LANDING-ZONE:** whether DeepNSM/VSA replay
+  reproduces LLM reasoning well enough to drop the wheels is the open
+  "thinking-is-a-struct" bet. The architecture (LLM optional, replay as bridge) is
+  the direction; the fidelity is unproven.
+
+## 7. The dots, connected
 
 Parse once per source → sink into classid-keyed SoA → and the jobs that *share
 the N3 basis* (read, render, auth-field-projection) come from the same mask, while
@@ -166,7 +213,7 @@ in the same substrate as the anatomy and the genome** — that is the destinatio
 and the spine of it (sink, N3 selector ×3, address-as-zoom) is shipped today; the
 rest is a named set of landing zones, not hand-waving.
 
-## 7. Honest edges (sharp, not subjunctive)
+## 8. Honest edges (sharp, not subjunctive)
 
 1. **Two `FieldMask` bases must be type-separated** (logical N3 vs physical
    value-tenant) — a live aliasing defect; `FieldMask<Logical/Physical>`.
@@ -193,3 +240,8 @@ rest is a named set of landing zones, not hand-waving.
 - `THE-FIREWALL.md` §5 + `D-KV-RENDER` (egress is an outer crossing); ADR-022/023/024.
 - `D-KEYKV`, `D-3X4`, `D-BOTHCASC`, `FMA-SKELETON` §2.1 (address = zoom, coded);
   `I-LEGACY-API-FEATURE-GATED`; `core-first-transcode-doctrine` (leaf-adapter scope).
+- **Orchestration & cognition (§6):** `rs-graph-llm` (the real crate — the DO action
+  handler / kanban orchestration graph; **not** `crates/stubs/graph-flow`); `rig`
+  (RAG + LLM boundary + thinking-replay); DeepNSM / cognitive-shader (the offline
+  thinking the replay distils into); `OGAR-AST-CONTRACT` `StateMachine` (realized as
+  the graph). Architectural-compliance: wire the real `rs-graph-llm`, never the stub.
