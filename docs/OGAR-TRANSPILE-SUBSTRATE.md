@@ -120,6 +120,17 @@ the thing to *delete*.
 > tier-bytes — that is the genuine mistake (a straddle used to "get to" a
 > function), distinct from a class whose *data layout* legitimately needs `4×3`.
 
+**Out of transpile scope — the `G2×48bit` encoding lane.** The byte-shaped
+shapes above (`6×2`/`4×3`/`3×4`, 8-bit tiers) are the *transpile / ClassView
+field-grouping* lane. A **separate** lane reads the same facet bytes at
+`G2×48bit` granularity — the two 48-bit chains (`FacetCascade::hi_chain` /
+`lo_chain`, cf. the CAM-PQ `6×256` path code) — for **helix** (location encoding;
+q2 / helix) and **CAM-PQ** (centroid encoding; lance-graph / DeepNSM). These are
+**not required by transpile** and must not be dragged into ClassView shape
+selection (operator 2026-06-29). The DeepNSM **COCA** 4096-word English-vocabulary
+CAM index codebook is a likely future `G2×48bit` consumer — it may *earn its
+keep* there, but it is not a transpile dependency.
+
 ### b. Sub-range mapping + nested ClassViews stacked into constructors
 
 The carving need not be uniform. With `6×(1:2)` over 12 fields it is sometimes
