@@ -1,4 +1,13 @@
-# Handover — Landing Odoo + Redmine/OpenProject into OGAR (the ERP/planning Foundry shape)
+# ERP/Planning Foundry Landing — Odoo + Redmine/OpenProject into OGAR
+
+> **Status (2026-06-29): DURABLE architecture doc.** Relocated from
+> `.claude/handovers/` to `docs/` per `.claude/AGENTS.md` Forbidden ("no
+> sprint-local planning docs in `.claude/`"; OGAR #133 Codex P1). The ordered
+> **"First moves"** below are now **executed**: the OGAR per-class transpile
+> substrate landed (OGAR #132 — `ogar-from-ruff::{lift, mint, emit}` +
+> `docs/OGAR-TRANSPILE-SUBSTRATE.md`), and the odoo-rs Phase-2 thinning plan is
+> filed (odoo-rs #19). Read this for the ERP/planning landing **frame**; the
+> live substrate reference is **`docs/OGAR-TRANSPILE-SUBSTRATE.md`**.
 
 > **For:** the next session that lands Odoo (ERP) and Redmine/OpenProject (planning)
 > into OGAR.
