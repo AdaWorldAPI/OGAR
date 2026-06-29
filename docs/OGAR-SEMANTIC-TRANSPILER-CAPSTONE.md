@@ -85,27 +85,35 @@ shipped, single-bit-space selector. Be exact about which jobs it does:
 |---|---|---|---|
 | **read** (facet decode) | N3 presence `FieldMask` | compiled reader | **CODED** (`class_view.rs`) |
 | **render** (field view) | same N3 `FieldMask`, bit-gated loop | compiled template | **CODED** (`render_rows`) |
-| **auth field-projection** | same N3 `FieldMask`, OR-folded | role × lo-u16 grant lattice | **CODED** (`lance-graph-rbac::authorize_scoped`, `permission.rs::projection`) |
+| **auth field-projection** | same N3 `FieldMask`, OR-folded | role × lo-u16 grant lattice | **[H] — cross-repo lag**: coded in sibling `lance-graph-rbac` (`authorize_scoped`/`field_mask`), but OGAR canon still grades the projecting `Allow{scope,mask}` **CONJECTURE** (`CLASSID-RBAC-KEYSTONE-SPEC` I-K8, `README` `[H]`) |
+| **action authorization (verb × class)** | `lance-graph-rbac` verb-gate (I-K8 axis-1) | role × classid | **the easy link** — the DO action handler rides the existing RBAC gate before firing a node; reuse, don't rebuild |
 | **query** (column pruning) | a **second** `FieldMask` on the **physical value-tenant** basis | the value-slab layout | **CODED but a DIFFERENT basis** (`canonical_node.rs::ValueSchema::field_mask`) |
 | **version** (V1/V2/V3) | a `classid → ReadMode/ValueSchema` **radix lookup** (not a mask op) | `ENVELOPE_LAYOUT_VERSION` registry | **CODED as a lookup** |
 | **auth verdict + row-scope** | boolean gate + **AND**-folded scope | RBAC keystone **I-K8** (four orthogonal axes) | **CODED, not the mask** |
 
-**The honest collapse is THREE jobs over the N3 basis — read + render + auth-
-field-projection — shipped and tested** (`distinct_roles_carry_disjoint_projections_of_one_class`).
-That is the real universal selector, and it is real today. `query` rides a
-*second* mask on the physical basis; `version` is a radix lookup; auth's
-verdict/scope are ordered folds with a different algebra (AND-scope vs OR-
-projection — one mask cannot be both). Collapse the three; keep the others
-named-distinct.
+**The honest collapse is read + render over the N3 basis — shipped and tested**;
+**auth-field-projection is the *same mask* but cross-repo-pending** (coded in
+`lance-graph-rbac`, ungraded in OGAR canon — do not depend on it as shipped *from
+OGAR* yet). `query` rides a *second* mask on the physical basis; `version` is a
+radix lookup; auth's verdict/scope are ordered folds with a different algebra
+(AND-scope vs OR-projection — one mask cannot be both). **Action authorization
+(verb × class) is the easiest real integration today** — the DO handler calls the
+existing `lance-graph-rbac` gate (I-K8 axis-1) before firing a node; field-
+projection (axis-4) is the separate, still-pending leg. Collapse the genuinely-
+shared jobs; keep the rest named-distinct.
 
 **Two disciplines (both load-bearing, neither a blocker):**
 
-1. **Field count is a representation parameter, not a ceiling.** A presence mask
-   is `[u64; N]` — `[u64; 4]` = 256 fields, wider as needed; Odoo's 109-field
-   `account.move` is a `[u64; 2]`, not a wall. Widen the basis; the algebra is
-   unchanged. *(`I-LEGACY-API-FEATURE-GATED` still applies: `field ↔ idx ↔ bit`
-   must be generated from one source, never hand-numbered, or a version bump
-   re-aliases bits.)*
+1. **Field count is a representation parameter, not an architectural ceiling — but
+   it is NOT widened in shipped code yet.** Widening the presence mask to `[u64; N]`
+   (`[u64; 4]` = 256; Odoo's 109-field `account.move` = `[u64; 2]`) is a cheap
+   **ClassView-index** change — the algebra is unchanged, nothing structural costs.
+   **Today, however, the implementation is a single `u64`** (`ogar-class-view`
+   guard `field_basis_fits_in_one_u64_mask`; `INTEGRATION-MAP` X7/F14 track the
+   109-field case as a live blocker), so until the widening lands, **fields beyond
+   64 silently drop in the current render path**. Cheap to fix, not yet fixed — a
+   tracked limitation (X7/F14), not a wall. *(`I-LEGACY-API-FEATURE-GATED` still
+   applies: `field ↔ idx ↔ bit` generated from one source, never hand-numbered.)*
 2. **The two bases must be type-separated (a live fix).** The N3 *logical* mask
    and the value-tenant *physical* mask are both `FieldMask(u64)` today — nothing
    stops a caller intersecting them and getting a silently-wrong result. Make
@@ -169,6 +177,11 @@ layers + one cognition layer, each one job, none carrying another's:
   lossless**: a source action's control-flow maps **node-for-node** into the
   graph. Gate **F1** (behavioural parity ≡ Odoo `_inherit`) is therefore a
   **graph-equivalence check**, not a re-implementation.
+- **Authorization — ride the existing `lance-graph-rbac` (the easiest link).**
+  Before a node fires, the handler authorizes the action through
+  `lance-graph-rbac`'s **verb × class** gate (RBAC keystone **I-K8 axis-1**) —
+  reuse, don't build a parallel auth path. (Field-projection masking, axis-4, is
+  the separate still-pending leg; see §3.)
 - **ractor** — owns each node's execution partition **at compile time** (the
   safety floor; §5).
 - **Lance `BatchWriter`** — persists one batch while the next node already thinks
@@ -217,8 +230,11 @@ rest is a named set of landing zones, not hand-waving.
 
 1. **Two `FieldMask` bases must be type-separated** (logical N3 vs physical
    value-tenant) — a live aliasing defect; `FieldMask<Logical/Physical>`.
-2. **Field count widens, it does not block** — `[u64; N]`; the only discipline is
-   single-source bit generation (`I-LEGACY-API-FEATURE-GATED`).
+2. **Field count widens *cheaply* (`[u64; N]`) but is *not widened yet*** — shipped
+   code is single-`u64` (`field_basis_fits_in_one_u64_mask` guard; X7/F14), so
+   fields >64 drop today until the (cheap, ClassView-index) widening lands. Not a
+   ceiling, a tracked limitation. Discipline: single-source bit generation
+   (`I-LEGACY-API-FEATURE-GATED`).
 3. **DO-arm parity is unproven** — gate **F1** (delegation ≡ `_inherit`) must run
    before the God-object→adapter "dividend" is more than CONJECTURE.
 4. **Cross-domain renderer-by-signature is a landing zone** — needs a coded
