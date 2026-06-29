@@ -124,6 +124,7 @@ pub fn emit_surrealql_ddl(classes: &[Class]) -> String {
 /// |---|---|
 /// | `DefineTable { name, .. }` | `Class { identity: name, .. }` |
 /// | `DefineField TYPE record<x>` | `Association { kind: BelongsTo, class_name: Some(x) }` |
+/// | `DefineField TYPE array<record<x>>` (emit) | `Association { kind: HasMany \| HasAndBelongsToMany, class_name: Some(x) }` |
 /// | `DefineField TYPE string + ASSERT $value IN [...]` | `EnumDecl { variants: [...] }` |
 /// | `DefineField TYPE option<X>` | `Attribute { type_name: Some(X), optional: true }` |
 /// | `DefineField TYPE <scalar>` | `Attribute { type_name: Some(scalar) }` |
@@ -549,19 +550,14 @@ fn emit_field_attr(table: &str, attr: &Attribute, out: &mut String) {
 }
 
 fn emit_field_assoc(table: &str, assoc: &Association, out: &mut String) {
-    // Only owning side gets a field on this table (BelongsTo).
-    // HasMany/HasOne are the non-owning side — FK lives on the other table;
-    // we emit a comment marker so a roundtrip via unmap can reconstruct
-    // the inverse, but no DEFINE FIELD here.
+    // The record/array target is a SurrealQL identifier — quote if non-bare
+    // (Odoo `res.partner` → `` `res.partner` ``). Same handling as the
+    // owning-side record<X> below, used by every relational arm.
+    let target = assoc.class_name.as_deref().unwrap_or(&assoc.name);
+    let target_ident = surrealql_ident(target);
     match assoc.kind {
         AssociationKind::BelongsTo => {
-            let target = assoc
-                .class_name
-                .as_deref()
-                .unwrap_or(&assoc.name); // fallback: relation name as target
-            // The record target is a SurrealQL identifier — quote if
-            // non-bare (Odoo `res.partner` → `` `res.partner` ``).
-            let target_ident = surrealql_ident(target);
+            // Owning side (Odoo Many2one): the FK record lives on this table.
             let ty = if assoc.optional.unwrap_or(false) {
                 format!("option<record<{target_ident}>>")
             } else {
@@ -574,21 +570,39 @@ fn emit_field_assoc(table: &str, assoc: &Association, out: &mut String) {
                 ty
             ));
         }
-        AssociationKind::HasOne | AssociationKind::HasMany | AssociationKind::HasAndBelongsToMany => {
-            // Non-owning / join-table sides: no field on this table.
-            // Roundtrip note for unmap: the inverse side reconstructs from
-            // the owning side's `record<X>` field on the target table.
-            // The comment body isn't parsed; leave names un-quoted for
-            // readability.
+        AssociationKind::HasMany | AssociationKind::HasAndBelongsToMany => {
+            // To-many relations land as a SurrealQL `array<record<comodel>>`
+            // — Odoo `One2many` (the reverse set; the FK/inverse lives on the
+            // comodel) and `Many2many` (the stored join set) both. This closes
+            // the W3.3 "One2many/Many2many array<record>" emitter gap now that
+            // the lift carries the association (#132 `relation_kind`).
+            //
+            // The One2many *computed* `VALUE <-comodel.<inverse> READONLY`
+            // reverse-link (the reactive recompute) is the separate W3.3
+            // "computed VALUE" gap and is deferred; the array TYPE is the
+            // structural relation. Parse-back of `array<record<…>>` is the
+            // companion `surrealdb-parser` follow-up (today's `walk` recovers
+            // the owning-side `record<X>` only — same emit-richer-than-parse
+            // asymmetry the prior comment-marker had).
             out.push_str(&format!(
-                "-- {} {:?} {} (no DEFINE FIELD — non-owning / join side)\n",
+                "DEFINE FIELD {} ON {} TYPE array<record<{target_ident}>>;\n",
+                surrealql_ident(&assoc.name),
+                table
+            ));
+        }
+        AssociationKind::HasOne => {
+            // Non-owning single (Rails `has_one`; Odoo has no analogue —
+            // it models to-one as Many2one). FK lives on the other table:
+            // a comment marker, no DEFINE FIELD here.
+            out.push_str(&format!(
+                "-- {} {:?} {} (no DEFINE FIELD — non-owning side)\n",
                 table, assoc.kind, assoc.name
             ));
         }
-        // `AssociationKind` is `#[non_exhaustive]` in `ogar-vocab`; the four
-        // arms above cover every variant defined today. The wildcard exists
-        // only so adding a variant in `ogar-vocab` produces a clean
-        // panic-on-first-emit instead of a silent miscompile elsewhere.
+        // `AssociationKind` is `#[non_exhaustive]` in `ogar-vocab`; the arms
+        // above cover every variant defined today. The wildcard exists only so
+        // adding a variant in `ogar-vocab` produces a clean panic-on-first-emit
+        // instead of a silent miscompile elsewhere.
         _ => unreachable!("vocab variant added without adapter update: AssociationKind"),
     }
 }
@@ -755,14 +769,44 @@ mod tests {
     }
 
     #[test]
-    fn emit_class_with_has_many_does_not_define_field_on_this_table() {
+    fn emit_class_with_has_many_renders_array_of_record() {
+        // One2many → array<record<comodel>> (the W3.3 array<record> gap, closed).
         let mut c = Class::new("project");
-        let assoc = Association::new(AssociationKind::HasMany, "work_packages");
+        let mut assoc = Association::new(AssociationKind::HasMany, "work_packages");
+        assoc.class_name = Some("work_package".to_string());
         c.associations.push(assoc);
         let ddl = emit_surrealql_ddl(&[c]);
-        // No DEFINE FIELD; only a comment marker (FK is on the other table)
-        assert!(!ddl.contains("DEFINE FIELD work_packages"), "got: {ddl}");
-        assert!(ddl.contains("(no DEFINE FIELD"), "expected non-owning-side comment, got: {ddl}");
+        assert!(
+            ddl.contains("DEFINE FIELD work_packages ON project TYPE array<record<work_package>>;"),
+            "got: {ddl}"
+        );
+    }
+
+    #[test]
+    fn emit_class_with_has_and_belongs_to_many_renders_array_of_record() {
+        // Many2many → array<record<comodel>> (stored join set). Dotted Odoo
+        // comodels are quoted, like the owning-side record<X>.
+        let mut c = Class::new("account_move");
+        let mut assoc = Association::new(AssociationKind::HasAndBelongsToMany, "tag_ids");
+        assoc.class_name = Some("account.analytic.tag".to_string());
+        c.associations.push(assoc);
+        let ddl = emit_surrealql_ddl(&[c]);
+        assert!(
+            ddl.contains(
+                "DEFINE FIELD tag_ids ON account_move TYPE array<record<`account.analytic.tag`>>;"
+            ),
+            "got: {ddl}"
+        );
+    }
+
+    #[test]
+    fn emit_class_with_has_one_keeps_non_owning_comment() {
+        let mut c = Class::new("project");
+        c.associations
+            .push(Association::new(AssociationKind::HasOne, "lead"));
+        let ddl = emit_surrealql_ddl(&[c]);
+        assert!(!ddl.contains("DEFINE FIELD lead"), "got: {ddl}");
+        assert!(ddl.contains("(no DEFINE FIELD"), "expected non-owning comment, got: {ddl}");
     }
 
     #[test]
