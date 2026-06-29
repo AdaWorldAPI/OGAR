@@ -64,6 +64,8 @@
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
 
+pub mod mint;
+
 use ogar_vocab::{
     canonical_concept, ActionDef, Association, AssociationKind, Attribute, Callback, Class,
     ComputedField, EnumDecl, EnumSource, Inheritance, Language, Scope, Validation,
