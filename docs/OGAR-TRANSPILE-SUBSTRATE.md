@@ -230,11 +230,20 @@ correct because of the `relation_kind` predicate (ruff#35): `target` +
 - `lift_model_graph_python` + the `project_odoo_fields` schema projection (OGAR #131/#132).
 - **`ogar-from-ruff::mint`** — per-class minting: `mint_graph<P>`,
   `CompiledClass`, `compile_graph_python<P>` (OGAR #132).
+- **`ogar-from-ruff::emit`** — the pull-back **codegen** leg, reference
+  target Rust: `emit_rust(&CompiledClass) -> String` renders a rail struct
+  whose fields use the consumer's wrapper-contract types (`OgScalar` /
+  `ToOne<T>` / `ToMany<T>`) + a `*_CLASSID` const (OGAR #132).
+  `account.move → struct AccountMove { name: OgScalar, partner_id:
+  ToOne<ResPartner>, line_ids: ToMany<AccountMoveLine> }`.
 
 **Next (the transpiler direction):**
-1. **Pull-back emit** — `ogar-emit-<lang>` adapters (`CompiledClass → <lang>`),
-   mirroring `ogar-adapter-surrealql`. Plus the thin runtime wrapper-contract
-   pattern for C#/Python (lance-graph-contract is the Rust reference).
+1. **Pull-back emit, breadth + depth** — `emit_csharp` / `emit_python`
+   targets on the same `&CompiledClass -> String` seam; refine `OgScalar`
+   to mapped concrete types once the `field_type` capture lands (ruff
+   follow-up); extract the family into dedicated `ogar-emit-<lang>` crates
+   mirroring `ogar-adapter-surrealql`. The runtime wrapper-contract mode
+   (lance-graph-contract for Rust) is the C#/Python sibling.
 2. **Thin the consumer** — `odoo-rs` collapses to a `compile_graph::<OdooPort>`
    caller + the `od-posting` GoBD adapter (the 15%).
 3. **Scale** — run the `odoo_blueprint` 404 entities through `compile_graph`;
@@ -267,6 +276,8 @@ correct because of the `relation_kind` predicate (ruff#35): `target` +
 
 ---
 
-*Authored alongside the `ogar-from-ruff::mint` per-class minting (OGAR #132).
-The pull-in + mint legs are shipped and probe-verified; the pull-back emit and
-consumer-thinning legs (§6.1, §6.2) are the next deliverables.*
+*Authored alongside the `ogar-from-ruff::mint` per-class minting + the
+`ogar-from-ruff::emit` Rust pull-back reference (OGAR #132). Both transpile
+legs — pull-in (lift + mint) and pull-back (emit) — are shipped and
+probe-verified; breadth (more target languages, type-capture refinement) and
+the consumer-thinning leg (§6.2) are the next deliverables.*

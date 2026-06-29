@@ -64,6 +64,7 @@
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
 
+pub mod emit;
 pub mod mint;
 
 use ogar_vocab::{
