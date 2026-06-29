@@ -131,13 +131,19 @@ claim.
 
 ## 5. Living substrate; the Firewall-correct egress
 
-- **Living, not a dump.** ractor gives a **runtime ownership guarantee**: each
-  actor owns its SoA partition and its mailbox serializes access to that partition
-  at runtime, so the fleet runs **n actors × up-to-64k partitions concurrently** —
-  parallel across actors, race-free because each partition has exactly one owner.
-  This is a *runtime* actor-ownership guarantee (the mailbox is the runtime
-  serializer), **not** a compile-time borrow proof (`MailboxSoA`, `kanban_actor`).
-  The graph is live (kanban updates streaming in), not a batch snapshot.
+- **Living, not a dump — and the thinking hides behind the write.** Two
+  mechanisms, kept distinct (ractor is the *safety*, not the throughput story):
+  - **Safety — ractor's compile-time ownership guarantee.** The mailbox owns its
+    SoA partition; Rust move/ownership semantics prove no aliasing / no data race
+    / no use-after-free **at compile time** — UB becomes a compile *error*
+    (`MailboxSoA`, `kanban_actor`, E-CE64-MB-4). n compile-time-owned partitions
+    update in parallel, race-free by construction.
+  - **Throughput — the Lance `BatchWriter` overlap (where cognition hides).** On
+    initiation, while one SoA batch **lowers** (its columns persist to Lance), the
+    next batch is **already thinking** (computing). Compute and persist overlap on
+    a double-buffered SoA, so the thinking is hidden behind the batch-write
+    latency — cost ≈ `max(compute, write)`, not `compute + write`. The graph is
+    live (kanban updates streaming in), not a batch snapshot.
 - **JSON-free, Firewall-correct.** **LANDING-ZONE / [H]** (`D-KV-RENDER`, pending
   the no-serde probe). The inner path moves **keys** (a tree of keys), content
   materializes **only at the egress membrane, exactly once**. The Rust→browser
