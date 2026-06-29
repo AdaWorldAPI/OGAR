@@ -137,9 +137,80 @@ heavier value-SoA is only built when actually needed, then cached.
 
 > **Status:** the recombination *principle* + the nested-constructor + lazy-SoA
 > architecture are operator-specified here as the durable design. The exact
-> tier-byte arithmetic of each carving (`6×(1:2)` / `4×(1:2:3)` / `3×(1:2:3:4)`
-> over the facet's 12 tier-bytes) is the implementation detail to pin against
-> `lance_graph_contract::facet::FacetCascade` before coding — not guessed.
+> tier-byte arithmetic of each carving is **now pinned + implemented** as
+> `lance_graph_contract::facet::CascadeShape` (`G6D2` / `G4D3` / `G3D4`, with
+> `G·D = CASCADE_UNITS = 12`) over `FacetCascade::tier_bytes()` — `index(g,l) =
+> g·D + l`, `group_of`/`level_of` the inverses, plus `cascade_byte` and the
+> per-group LCP `cascade_group_shared`. The `G3D4`/`G6D2` `group_of` is a shift
+> (the canon's "tier-of-level is a shift, never a branch"); `G4D3` is the
+> straddle that needs a divide. Zero-dep, `const fn`, probe-verified. This is
+> **one algebra for both the facet bytes and a 12-field class** — the shared
+> substrate the three language SDKs (§1.6) all read.
+
+---
+
+## 1.6 Three SDKs, one compiled spine (Rust · C# · Python)
+
+> **Operator, 2026-06-29.** *"For Rust via lance-graph; for Python and C# we
+> need sort of an 'SDK' that does that for the others."*
+
+Rust's wrapper contract is `lance-graph-contract` — the consumer `import`s it
+and pulls a `CompiledClass` by `classid`. Python and C# need the **same
+capability**, packaged as a thin per-language **SDK**. The crucial constraint
+(§1.5): the spine is the **compiled `ClassView`, never a SurrealQL parse**. So
+an SDK is *not* a query client — it is a thin reader over the already-compiled
+rail, plus a host for that language's 15 % adapter.
+
+### What every SDK is (three thin layers, nothing more)
+
+| layer | what it is | Rust (`lance-graph-contract`) | C# SDK | Python SDK |
+|---|---|---|---|---|
+| **1. address algebra** | the 16-byte facet + the cascade carving math — *byte-identical across languages* | `FacetCascade` + `CascadeShape` (`const fn`, zero-dep) | `readonly struct FacetCascade` (`[StructLayout(Sequential, Size=16)]`) + `enum CascadeShape` | `Facet` (a 16-byte `bytes` view) + `CascadeShape` (`IntEnum`) |
+| **2. ClassView reader** | present a pulled `CompiledClass` as native schema objects (fields / relations / computed), grouped by the chosen carving | `ClassView` traits | `IClassView` / records | `@dataclass` ClassView |
+| **3. adapter host** | the per-language hook where the 15 % hand-written logic registers, + the late `classid → ClassView → OGIT` grounding resolve | `ActionDef`/`KausalSpec` impls | interface + DI | ABC + registry |
+
+Layer 1 is the whole reason an SDK can be *thin*: the cascade algebra is **~80
+lines of `core`-only `const fn`** (`CascadeShape::{groups,levels,index,
+group_of,level_of}` + `FacetCascade::{tier_bytes,cascade_byte,
+cascade_group_shared}`). Nothing in it is Rust-specific — it is integer
+shifts/divides over a 16-byte array. Porting it to C# or Python is a
+**mechanical transliteration**, and the bytes it reads are produced once by the
+OGAR mint, so all three SDKs agree by construction (the same cross-crate
+round-trip probe that pins `ruff_spo_address::Facet ≡ FacetCascade` extends to
+"≡ the C#/Python `FacetCascade`").
+
+### How a class reaches each language (mirrors §1's two pull-back modes)
+
+- **(b) codegen emit — the strongest "compiled" form per host.** OGAR emits
+  native source on the **same `&CompiledClass -> String` seam** as `emit_rust`:
+  - `emit_csharp` → a C# `record`/class compiled by the host into an assembly
+    (truly compiled, like the Rust struct).
+  - `emit_python` → a `@dataclass` imported as a module (compiled to bytecode by
+    CPython; the "cost of an import" literally).
+  There is **no OGAR-runtime parse** in this mode — the class IS native source
+  the host toolchain compiles. This is the preferred mode and the direct analog
+  of "sinks into OGAR and gets compiled into the binary."
+- **(a) runtime reader — the thin SDK over the rail artifact.** When codegen is
+  undesirable (dynamic discovery, late binding), the SDK loads the **compiled
+  rail artifact** (the facet SoA — the 16-byte-per-class bytes themselves, which
+  ARE the format) and reads it zero-parse via layer 1. It never loads SurrealQL;
+  the artifact is the facet bytes, not DDL.
+
+Either way the 85 % logic stays in OGAR; the SDK carries layer-1 (tiny,
+portable) + layer-3 (the language's own 15 %). That is what makes "one
+canonical class, N languages, at the cost of an import" concrete for C# and
+Python and not just Rust.
+
+### Why this respects every iron rule
+
+- **Compiled, not parsed** (§1.5): codegen emits host-native source; the runtime
+  reader is zero-parse over the facet bytes. SurrealQL is never on an SDK path.
+- **Pull, never re-mint** (§7): an SDK *reads* a `CompiledClass`; it never owns a
+  codebook copy or constructs a bridge — the classid resolution is the mint's.
+- **Resolve, don't store** (§4): grounding is layer-3's late `classid → OGIT`
+  resolve, identical in all three languages; no SDK copies FIBO/DOLCE onto rows.
+- **One algebra** (§1.5): layer 1 is the *same* `CascadeShape` carving in every
+  language — the SDKs cannot drift on layout because they share the byte format.
 
 ---
 
@@ -323,10 +394,12 @@ correct because of the `relation_kind` predicate (ruff#35): `target` +
    `32×GUID` SoA. Pin the per-carving tier-byte arithmetic against
    `FacetCascade` first (don't guess). This subsumes hardcoded facet
    "versions". The `emit_rust` codegen leg is the start; this is the depth.
-2. **Pull-back breadth** — `emit_csharp` / `emit_python` on the same
-   `&CompiledClass -> String` seam; refine `OgScalar` once the `field_type`
-   capture lands (ruff follow-up). Runtime wrapper-contract is the C#/Python
-   sibling of `lance-graph-contract`.
+2. **Pull-back breadth — the C# / Python SDKs (§1.6).** `emit_csharp` /
+   `emit_python` on the same `&CompiledClass -> String` seam (codegen mode), and
+   the thin runtime SDKs (layer-1 `FacetCascade` + `CascadeShape` transliterated,
+   layer-2 ClassView reader, layer-3 adapter host). Layer 1 is mechanical now
+   that `CascadeShape` is pinned in `lance-graph-contract`. Refine `OgScalar`
+   once the `field_type` capture lands (ruff follow-up).
 3. **Thin the consumer (membrane)** — `odoo-rs` → `compile_graph::<OdooPort>`
    caller + `od-posting` GoBD adapter; delete the native SurrealQL emit fork
    (W3.3, **CI-gated** — od-ontology pulls surrealdb). Recommended path: keep
@@ -343,7 +416,7 @@ correct because of the `relation_kind` predicate (ruff#35): `target` +
 | To add… | Do this | Convergence is… |
 |---|---|---|
 | a **source language** | a `ruff_<lang>_spo` frontend → `ModelGraph`; reuse `lift` + `mint` | automatic (shared IR) |
-| a **target language** | an `ogar-emit-<lang>` adapter (`CompiledClass → String`) **or** a thin runtime wrapper contract (traits mirroring `lance-graph-contract`) | the consumer reimplements nothing |
+| a **target language** | an SDK (§1.6): `ogar-emit-<lang>` codegen **or** a thin runtime SDK = layer-1 `FacetCascade`+`CascadeShape` transliteration + layer-2 ClassView reader + layer-3 adapter host (mirrors `lance-graph-contract`) | the consumer reimplements nothing |
 | a **concept** | a `class_ids` codebook entry + a `PortSpec` alias | automatic across all ports that map it |
 | a **port (app)** | one `impl PortSpec for FooPort` block (NAMESPACE, BRIDGE_ID, APP_PREFIX, aliases) | the app's classes get a render skin for free |
 
