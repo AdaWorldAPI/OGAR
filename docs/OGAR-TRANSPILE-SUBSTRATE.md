@@ -64,9 +64,82 @@ for everything" falls out of the codebook, not out of per-app reimplementation.
   reference emitter; per-language emitters (`ogar-emit-rust`, …) follow the
   same `CompiledClass → String` seam.
 
-The two modes are not rivals: (a) is the live "pull a class and render it"
-path; (b) is the "materialise the class as source for a build target" path.
-Both consume the same `CompiledClass`.
+These two modes are **not co-equal** (a correction to an earlier framing).
+Mode (a), the **compiled `ClassView`**, is the **spine / hot path**: it sinks
+into OGAR and is **compiled into the binary** — no parse, no serialization in
+the hot path (ADR-022/023). Mode (b), SurrealQL emit, is a **storage-membrane
+adapter** (DDL for the SurrealDB boundary); **parsing SurrealQL back is slow —
+even JIT'd it loses to compiled code**, so it is never the hot path. See
+§1.5 — it is the load-bearing idea of the whole substrate.
+
+---
+
+## 1.5 The spine is the COMPILED `ClassView` (not SurrealQL)
+
+> **Operator, 2026-06-29.** *"The [facet] versions are useless because the
+> ClassView can do recombinations of all of them while sinking into OGAR and
+> getting COMPILED into binary, and NOT parsed from SurrealQL — which even with
+> JIT will be slow."*
+
+This is the heart of the power. A `ClassView` is not a parser and not a fixed
+record format — it is a **compiled, flexible, composable reader** over the
+facet, baked into the binary. Three properties:
+
+### a. One ClassView *recombines* the facet layout — no "versions"
+
+The 16-byte facet's tier payload is not locked to a single carving. The
+ClassView reads it as whichever hierarchical cascade fits the class, by
+recombination:
+
+```
+6× (1:2)        6 tiers, each a 1:2 hierarchy
+4× (1:2:3)      4 tiers, each a 1:2:3 hierarchy
+3× (1:2:3:4)    3 tiers, each a 1:2:3:4 hierarchy
+```
+
+(the same `3×4`-vs-`4×3` family the GUID canon debates, generalised to the
+ClassView's reading). So there is **no need for hardcoded facet "versions"
+(V1/V2/V3)** — one compiled ClassView subsumes all the carvings. Hardcoding a
+format per version is the thing to *delete*; the ClassView is the flexible
+reader that makes versions unnecessary.
+
+### b. Sub-range mapping + nested ClassViews stacked into constructors
+
+The carving need not be uniform. With `6×(1:2)` over 12 fields it is sometimes
+more efficient to **map a sub-range — e.g. `1..3` of the 12 — as its own
+hierarchy**, and to **stack *nested* ClassViews into constructors** rather than
+read one flat layout. A ClassView composes sub-ClassViews; the composition is
+built by **constructors compiled into the binary** (the `emit_rust` direction),
+never re-derived by parsing a DDL string. Nesting = composition of compiled
+readers, not a runtime interpreter.
+
+### c. Lazy, reused materialization of the `32×GUID` SoA
+
+The nested ClassView constructors run **before materializing the `32×`(hex)
+GUID struct-of-arrays**, and the SoA is materialized **lazily and lazy-lock
+reused** (`LazyLock`-style: build once on first touch, share thereafter). The
+key prerenders nodes with zero value-decode (canon: "THE GUID IS THE KEY OF
+KEY-VALUE"); the compiled ClassView lays them out from keys alone, and the
+heavier value-SoA is only built when actually needed, then cached.
+
+### Why this is the power (and where SurrealQL sits)
+
+- **Compiled beats parsed.** The business logic is a `ClassView` compiled into
+  the consumer's binary — branch-predictable, inlinable, zero-parse. A
+  SurrealQL DDL round-trip (`ogar-adapter-surrealql`) is a *storage-membrane*
+  adapter for the SurrealDB boundary; **even a JIT over SurrealQL loses to
+  compiled code**, so it is never on the hot path.
+- **Consequence for this repo's roadmap:** the SurrealQL emit/parse work
+  (#136 Stage A, and the od-ontology Stage B/C fork-deletion) is *membrane*
+  work — correct for the storage boundary, but **not the spine**. The spine
+  investment is the compiled, nested, lazy `ClassView` over the GUID SoA. When
+  the two compete for attention, the compiled ClassView wins.
+
+> **Status:** the recombination *principle* + the nested-constructor + lazy-SoA
+> architecture are operator-specified here as the durable design. The exact
+> tier-byte arithmetic of each carving (`6×(1:2)` / `4×(1:2:3)` / `3×(1:2:3:4)`
+> over the facet's 12 tier-bytes) is the implementation detail to pin against
+> `lance_graph_contract::facet::FacetCascade` before coding — not guessed.
 
 ---
 
@@ -237,16 +310,29 @@ correct because of the `relation_kind` predicate (ruff#35): `target` +
   `account.move → struct AccountMove { name: OgScalar, partner_id:
   ToOne<ResPartner>, line_ids: ToMany<AccountMoveLine> }`.
 
-**Next (the transpiler direction):**
-1. **Pull-back emit, breadth + depth** — `emit_csharp` / `emit_python`
-   targets on the same `&CompiledClass -> String` seam; refine `OgScalar`
-   to mapped concrete types once the `field_type` capture lands (ruff
-   follow-up); extract the family into dedicated `ogar-emit-<lang>` crates
-   mirroring `ogar-adapter-surrealql`. The runtime wrapper-contract mode
-   (lance-graph-contract for Rust) is the C#/Python sibling.
-2. **Thin the consumer** — `odoo-rs` collapses to a `compile_graph::<OdooPort>`
-   caller + the `od-posting` GoBD adapter (the 15%).
-3. **Scale** — run the `odoo_blueprint` 404 entities through `compile_graph`;
+- **`ogar-adapter-surrealql` `array<record>`** — to-many associations
+  (`HasMany`/`HasAndBelongsToMany`) emit as `array<record<comodel>>` (OGAR #136,
+  #2 Stage A). **Membrane work** (the SurrealDB storage boundary) — *not* the
+  spine (§1.5).
+
+**Next (priority order — spine first, per §1.5):**
+1. **The compiled `ClassView` spine (THE priority)** — the flexible,
+   *nested*, lazy reader: facet-layout recombination (`6×(1:2)` / `4×(1:2:3)` /
+   `3×(1:2:3:4)`), sub-range hierarchy mapping, nested ClassViews stacked into
+   compiled constructors, and lazy + lazy-lock-reused materialization of the
+   `32×GUID` SoA. Pin the per-carving tier-byte arithmetic against
+   `FacetCascade` first (don't guess). This subsumes hardcoded facet
+   "versions". The `emit_rust` codegen leg is the start; this is the depth.
+2. **Pull-back breadth** — `emit_csharp` / `emit_python` on the same
+   `&CompiledClass -> String` seam; refine `OgScalar` once the `field_type`
+   capture lands (ruff follow-up). Runtime wrapper-contract is the C#/Python
+   sibling of `lance-graph-contract`.
+3. **Thin the consumer (membrane)** — `odoo-rs` → `compile_graph::<OdooPort>`
+   caller + `od-posting` GoBD adapter; delete the native SurrealQL emit fork
+   (W3.3, **CI-gated** — od-ontology pulls surrealdb). Recommended path: keep
+   the corpus input, delete only the native emit, route emit through the shared
+   `ogar-adapter-surrealql`. This is *membrane* — secondary to (1).
+4. **Scale** — `odoo_blueprint`'s 404 entities through `compile_graph`;
    over-cap god-models (`≥ 256` members) branch via the SoC lint
    (`ruff_spo_address::soc`), never widen.
 
