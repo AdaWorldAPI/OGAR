@@ -87,38 +87,49 @@ facet, baked into the binary. Three properties:
 
 ### a. One ClassView *rotates* the facet layout — no "versions"
 
-The 16-byte facet's tier payload is not locked to a single carving. A ClassView
-can **always rotate** — read the SAME 12 cascade bytes under a different
-grouping — to fit the class. The carvings (pinned as
-`lance_graph_contract::facet::CascadeShape`, `CascadeShape::ROTATIONS`):
+The 16-byte facet's tier payload is not locked to a single carving. The shape is
+**class-conditioned** — *mapped from the class's inherited format and selected by
+`classid`* (the filter), never restated or locked (operator veto 2026-06-29). A
+ClassView can also **rotate** — read the SAME 12 cascade bytes under a different
+grouping. The shapes (pinned as `lance_graph_contract::facet::CascadeShape`,
+`CascadeShape::from_levels(d)`):
 
 ```
-6× (1:2)        ALIGNED default — 6 tiers, each a 1:2 hierarchy   (group_of = i >> 1, a shift)
-3× (1:2:3:4)    ALIGNED default — 3 tier-pairs, each 1:2:3:4      (group_of = i >> 2, a shift)
-4× (1:2:3)      WORST CASE      — straddles tier boundaries        (group_of = i / 3, a DIVIDE)
+6× (1:2)        Rails             — 6 tiers, each a 1:2 hierarchy   (group_of = i >> 1, a shift)
+4× (1:2:3)      other frameworks  — 4 tier-groups, each 1:2:3       (group_of = i / 3, a divide)
+3× (1:2:3:4)    canonical GUID    — 3 tier-pairs, each 1:2:3:4      (group_of = i >> 2, a shift)
 ```
 
-**Only the byte-aligned carvings are defaults.** `6×(1:2)` and `3×(1:2:3:4)`
-keep `group_of` a pure shift (the canon's "tier-of-level is a shift, never a
-branch"). **`4×(1:2:3)` is the worst case, not a co-equal carving** — it
-straddles tier boundaries so `group_of` must DIVIDE (`CascadeShape::is_byte_aligned()`
-is `false`, `shift()` is `None`). It is *prevented on the common path* and kept
-only as the **rare rotation / escape hatch**: a ClassView may rotate to it
-deliberately when a rare class (some Odoo models) needs to relieve
-**classid-stacking entropy** — rotate the reading rather than mint another
-classid. So there is **no need for hardcoded facet "versions" (V1/V2/V3)** — one
-compiled ClassView subsumes the rotation set; the straddle stays legal only as a
-deliberate, rare rotation. Hardcoding a format per version is the thing to
-*delete*.
+**The shape follows the class, not a global lock** (operator: "Rails might need
+6x2x8bit, others 4x3x8bit"). The depth `D ∈ {2,3,4}` is a per-class constant the
+`classid` resolves (`CascadeShape::from_levels`). `6×2`/`3×4` carve on tier
+boundaries so `group_of` is a pure shift (the canon's "tier-of-level is a shift,
+never a branch"); **`4×3` is legitimate for the frameworks that need it** — its
+`group_of` divides (`is_byte_aligned()` is `false`), the per-class *cost* a class
+opts into, **not a prohibition**. So there is **no need for hardcoded facet
+"versions" (V1/V2/V3)** — one compiled ClassView reads whichever shape the
+classid selects. Hardcoding a format per version (or locking a single shape) is
+the thing to *delete*.
 
-> **Carvings address the VIEW, never the functions.** A rotation re-reads the
-> data layout; it does NOT reach behaviour. Functions are encoded by the
+> **Carvings address the VIEW, never the functions.** A shape/rotation re-reads
+> the data layout; it does NOT reach behaviour. Functions are encoded by the
 > **classid acting as an additional switch** — `lance_graph_contract::facet::ClassArm`
 > `{ View, Functions }`, the OGAR THINK/DO split (`OGAR-AST-CONTRACT.md`).
 > Reaching a function = switch the classid to the `Functions` arm (the
 > `ActionDef`/`KausalSpec` on the resolved Core node), *never* slice the
-> tier-bytes. A straddling carve to "get to" a function is exactly the worst
-> case the `4×(1:2:3)` example warns against.
+> tier-bytes — that is the genuine mistake (a straddle used to "get to" a
+> function), distinct from a class whose *data layout* legitimately needs `4×3`.
+
+**Out of transpile scope — the `G2×48bit` encoding lane.** The byte-shaped
+shapes above (`6×2`/`4×3`/`3×4`, 8-bit tiers) are the *transpile / ClassView
+field-grouping* lane. A **separate** lane reads the same facet bytes at
+`G2×48bit` granularity — the two 48-bit chains (`FacetCascade::hi_chain` /
+`lo_chain`, cf. the CAM-PQ `6×256` path code) — for **helix** (location encoding;
+q2 / helix) and **CAM-PQ** (centroid encoding; lance-graph / DeepNSM). These are
+**not required by transpile** and must not be dragged into ClassView shape
+selection (operator 2026-06-29). The DeepNSM **COCA** 4096-word English-vocabulary
+CAM index codebook is a likely future `G2×48bit` consumer — it may *earn its
+keep* there, but it is not a transpile dependency.
 
 ### b. Sub-range mapping + nested ClassViews stacked into constructors
 
@@ -172,16 +183,19 @@ case.)
 > `lance_graph_contract::facet::CascadeShape` (`G6D2` / `G4D3` / `G3D4`,
 > `G·D = CASCADE_UNITS = 12`) over `FacetCascade::tier_bytes()` — `index(g,l) =
 > g·D + l`, `group_of`/`level_of` inverses, `cascade_byte`, per-group LCP
-> `cascade_group_shared`. `CascadeShape::ALIGNED = [G3D4, G6D2]` are the
-> shift-`group_of` **defaults** (`shift()` is `Some`); `CascadeShape::ROTATIONS`
-> is the full rotation set a ClassView may rotate through. **`G4D3` is the worst
-> case** — `is_byte_aligned()` is `false`, `shift()` is `None`, `group_of`
-> divides — excluded from `ALIGNED`, kept in `ROTATIONS` only as the rare
-> escape-hatch rotation (classid-stacking-entropy relief). **Functions are NOT a
-> carving** — `facet::ClassArm { View, Functions }` is the classid's additional
-> THINK/DO switch; carvings address `View` only. Zero-dep, `const fn`,
-> probe-verified (lance-graph #621). One algebra for both the facet bytes and a
-> 12-field class — the shared substrate the three language SDKs (§1.6) all read.
+> `cascade_group_shared`. The shape is **class-conditioned**, selected by the
+> `classid` from the inherited format via `CascadeShape::from_levels(d)` —
+> `2 → G6D2` (Rails), `3 → G4D3` (other frameworks), `4 → G3D4` (the GUID
+> default); `CascadeShape::ALIGNED = [G3D4, G6D2]` are the shift-`group_of` shapes
+> and `ROTATIONS` the full set. **`G4D3` (`4×3`) is legitimate per-class, not a
+> "worst case to prevent"** (operator veto 2026-06-29): its `group_of` divides
+> (`is_byte_aligned()` is `false`) — a per-class *cost*, not a prohibition;
+> `is_byte_aligned`/`shift`/`ALIGNED` distinguish the shift fast-path from the
+> divide shape, never a reject gate. **Functions are NOT a carving** —
+> `facet::ClassArm { View, Functions }` is the classid's additional THINK/DO
+> switch; carvings address `View` only. Zero-dep, `const fn`, probe-verified
+> (lance-graph #621). One algebra for both the facet bytes and a 12-field class —
+> the shared substrate the three language SDKs (§1.6) all read.
 
 ---
 
@@ -309,6 +323,21 @@ tiers[0..6]   : FacetTier    rows 1-3   ← 6× (lo:hi) = (is_a : part_of) byte 
 A node is `key(128/GUID) + value`. Lance may compress the value arbitrarily
 (columnar, dictionary, PQ); the key is never compressed and never needs the
 value decoded to route. (Canon: "THE GUID IS THE KEY OF KEY-VALUE.")
+
+**Two doctrines for the consumer model (operator 2026-06-29), neither a blocker:**
+
+- **Clean ⇒ expansion is `classid`-inherited.** A clean class can grow its field
+  set / capacity; the `classid` selects the expanded shape — no global change.
+  Expansion is never a transpile blocker (cf. the class-conditioned `CascadeShape`
+  / "don't lock the shape").
+- **Bulk raw data → a *separate* table, not the SoA value.** The 480-byte value
+  is for structured/compressible columns; a raw payload that won't fit even
+  compressed (a ~3.2 Gbp genome; the FMA / BodyParts3D anatomy mesh at **4M
+  vertices / 6M triangles**) lives in its own Lance table, referenced by
+  `key`/`classid` — out-of-line, addressed not inlined, and still not a blocker
+  (the anatomy mesh **baked cleanly as a SoA release**). Transpile mints the
+  *structured* class; the bulk payload is a table reference, not a transpile
+  dependency.
 
 ---
 
