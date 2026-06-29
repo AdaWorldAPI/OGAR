@@ -208,6 +208,17 @@ alignment costs. Until measured: 3×4 stands.
    slot to `KausalSpec`, a new lowering pass, or any other IR-surface
    change. The framing changes no existing decision; it changes every
    future one.
+10. `docs/OGAR-TRANSPILE-SUBSTRATE.md` — **the power, in one doc.** OGAR
+    as the bidirectional per-class transpiler: pull-in (`source →
+    ogar-from-<lang> → ModelGraph → lift + mint → CompiledClass`),
+    rail-facet addressing (`classid = (APP_PREFIX<<16)|concept`, the 16-byte
+    `FacetCascade`, cross-app convergence), pull-back (runtime wrapper
+    contract like `lance-graph-contract`, or codegen emit like
+    `ogar-adapter-surrealql`), and the **85/15 split** (mechanical logic
+    minted into OGAR; the "impossible" 15% = a per-language adapter +
+    ClassView + ontological grounding). READ to understand why a consumer
+    collapses to "a compiler-store caller + adapters, at the cost of an
+    import." Worked example: `account.move → 0x0002_0202`.
 8. `docs/ARCHITECTURAL-DECISIONS-2026-06-04.md` — ADR-001..025
    (ADR-026 pending).
 9. `.claude/agents/` — the 5+3 hardening pattern (5 research savants +

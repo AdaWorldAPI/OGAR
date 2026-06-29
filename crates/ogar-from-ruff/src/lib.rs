@@ -64,9 +64,12 @@
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
 
+pub mod emit;
+pub mod mint;
+
 use ogar_vocab::{
     canonical_concept, ActionDef, Association, AssociationKind, Attribute, Callback, Class,
-    EnumDecl, EnumSource, Inheritance, Language, Scope, Validation,
+    ComputedField, EnumDecl, EnumSource, Inheritance, Language, Scope, Validation,
 };
 use ruff_spo_triplet::{
     AssocDecl, AssocKind, AttrDecl, AttrKind, Callback as RuffCallback, ConcernKind, Model,
@@ -181,7 +184,67 @@ fn lift_model_with_language(model: &Model, language: Language) -> Class {
     class.callbacks = model.callbacks.iter().map(lift_callback).collect();
     class.validations = model.validations.iter().filter_map(lift_validation).collect();
     class.default_scope = lift_default_scope(model);
+    // Rails carries its schema in the AR-DSL vectors lifted above; an Odoo
+    // model instead declares everything as `fields.X(...)`, which lands in
+    // the core-7 `Model::fields` vector (empty for Rails). Project it so the
+    // Python lift doesn't drop the schema (Codex P1, PR #131).
+    if matches!(language, Language::Python) {
+        project_odoo_fields(&mut class, model);
+    }
     class
+}
+
+/// Project an Odoo model's core-7 [`Model::fields`] onto the
+/// schema-carrying [`Class`] columns. Python-only: Rails models keep their
+/// schema in `model.attributes` / `model.associations` (lifted separately),
+/// and ALSO populate `model.fields` (DB columns), so projecting fields for
+/// Rails would double-count. Odoo leaves the AR vectors empty and puts
+/// everything in `fields`.
+///
+/// Per-field mapping:
+/// - relational field (`target` set) → [`Association`]; the kind comes from
+///   the field's cardinality (`relation_kind`), `class_name` is the raw
+///   comodel, `inverse_of` the One2many inverse.
+/// - non-relational field → [`Attribute`] (name only — the Odoo field type
+///   is not yet carried on the SPO `Field`; a follow-up).
+/// - compute field (`emitted_by` set) → [`ComputedField`] (method +
+///   `@api.depends`), in addition to its Attribute / Association above.
+fn project_odoo_fields(class: &mut Class, model: &Model) {
+    for field in &model.fields {
+        if let Some(comodel) = &field.target {
+            let kind = odoo_relation_kind(field.relation_kind.as_deref(), field.inverse_name.is_some());
+            let mut assoc = Association::new(kind, &field.name);
+            assoc.class_name = Some(comodel.clone());
+            assoc.inverse_of = field.inverse_name.clone();
+            class.associations.push(assoc);
+        } else {
+            class.attributes.push(Attribute::new(&field.name));
+        }
+        if let Some(compute_method) = &field.emitted_by {
+            let mut computed = ComputedField::new(&field.name, compute_method);
+            computed.depends = field.depends_on.clone();
+            class.computed_fields.push(computed);
+        }
+    }
+}
+
+/// Map an Odoo relation cardinality to the canonical [`AssociationKind`].
+///
+/// `relation_kind` (`many2one` / `one2many` / `many2many`, from ruff's
+/// `relation_kind` predicate) is the authoritative signal. The
+/// `has_inverse` fallback covers the theoretical case of a relational field
+/// with no recorded cardinality: an inverse implies a One2many, otherwise
+/// the to-one default `BelongsTo`. `target` + `inverse_name` alone cannot
+/// separate a Many2one from a Many2many — both are comodel-only with no
+/// inverse — which is exactly why `relation_kind` exists.
+fn odoo_relation_kind(relation_kind: Option<&str>, has_inverse: bool) -> AssociationKind {
+    match relation_kind {
+        Some("many2one") => AssociationKind::BelongsTo,
+        Some("one2many") => AssociationKind::HasMany,
+        Some("many2many") => AssociationKind::HasAndBelongsToMany,
+        _ if has_inverse => AssociationKind::HasMany,
+        _ => AssociationKind::BelongsTo,
+    }
 }
 
 // ───────────────────────── ProjectWorkItem role projection ─────────────
@@ -604,8 +667,8 @@ fn parse_bool(s: &str) -> Option<bool> {
 mod tests {
     use super::*;
     use ruff_spo_triplet::{
-        ActsAs, AssocDecl, AttrDecl, Callback as RuffCallback, ConcernRef, Function, ScopeDecl,
-        Validation as RuffValidation,
+        ActsAs, AssocDecl, AttrDecl, Callback as RuffCallback, ConcernRef, Field, Function,
+        ScopeDecl, Validation as RuffValidation,
     };
 
     fn mk_model() -> Model {
@@ -714,6 +777,104 @@ mod tests {
         assert!(matches!(classes[0].language, Language::Python));
         assert_eq!(classes[0].source_domain.as_deref(), Some("erp"));
         assert_eq!(classes[0].source_curator.as_deref(), Some("odoo"));
+    }
+
+    /// An Odoo-shape model: schema lives entirely in `Model::fields`
+    /// (the AR-DSL vectors are empty, as `ruff_python_spo` produces).
+    fn mk_odoo_model() -> Model {
+        let mut m = Model::new("account_move");
+        m.fields.push(Field {
+            name: "name".to_string(),
+            ..Default::default()
+        });
+        m.fields.push(Field {
+            name: "partner_id".to_string(),
+            target: Some("res.partner".to_string()),
+            relation_kind: Some("many2one".to_string()),
+            ..Default::default()
+        });
+        m.fields.push(Field {
+            name: "line_ids".to_string(),
+            target: Some("account.move.line".to_string()),
+            inverse_name: Some("move_id".to_string()),
+            relation_kind: Some("one2many".to_string()),
+            ..Default::default()
+        });
+        m.fields.push(Field {
+            name: "tag_ids".to_string(),
+            target: Some("account.analytic.tag".to_string()),
+            relation_kind: Some("many2many".to_string()),
+            ..Default::default()
+        });
+        m.fields.push(Field {
+            name: "amount_total".to_string(),
+            emitted_by: Some("_compute_amount".to_string()),
+            depends_on: vec!["line_ids.balance".to_string()],
+            ..Default::default()
+        });
+        m
+    }
+
+    #[test]
+    fn lift_model_python_projects_odoo_fields() {
+        // Codex P1 (#131): the Python lift must project `Model::fields` or the
+        // class loses its whole schema. Scalar → attribute, relational →
+        // association (kind from relation_kind), compute → computed_field.
+        let class = lift_model_python(&mk_odoo_model());
+
+        // Scalar + computed fields surface as attributes (named columns).
+        let attr_names: Vec<&str> = class.attributes.iter().map(|a| a.name.as_str()).collect();
+        assert!(attr_names.contains(&"name"));
+        assert!(attr_names.contains(&"amount_total"));
+        // Relational fields are associations, not attributes.
+        assert!(!attr_names.contains(&"partner_id"));
+        assert!(!attr_names.contains(&"line_ids"));
+
+        // relation_kind drives the AssociationKind; comodel → class_name.
+        let partner = class
+            .associations
+            .iter()
+            .find(|a| a.name == "partner_id")
+            .expect("partner_id association");
+        assert_eq!(partner.kind, AssociationKind::BelongsTo);
+        assert_eq!(partner.class_name.as_deref(), Some("res.partner"));
+
+        let lines = class
+            .associations
+            .iter()
+            .find(|a| a.name == "line_ids")
+            .expect("line_ids association");
+        assert_eq!(lines.kind, AssociationKind::HasMany);
+        assert_eq!(lines.class_name.as_deref(), Some("account.move.line"));
+        assert_eq!(lines.inverse_of.as_deref(), Some("move_id"));
+
+        // The case relation_kind exists to disambiguate: a comodel-only,
+        // inverse-less field is a Many2many, NOT a Many2one.
+        let tags = class
+            .associations
+            .iter()
+            .find(|a| a.name == "tag_ids")
+            .expect("tag_ids association");
+        assert_eq!(tags.kind, AssociationKind::HasAndBelongsToMany);
+        assert_eq!(tags.class_name.as_deref(), Some("account.analytic.tag"));
+
+        // Compute field → computed_field carrying method + @api.depends.
+        assert_eq!(class.computed_fields.len(), 1);
+        let computed = &class.computed_fields[0];
+        assert_eq!(computed.field, "amount_total");
+        assert_eq!(computed.compute_method, "_compute_amount");
+        assert_eq!(computed.depends, vec!["line_ids.balance".to_string()]);
+    }
+
+    #[test]
+    fn lift_model_ruby_does_not_project_fields() {
+        // The Rails lift reads the AR-DSL vectors, never `Model::fields`
+        // (Rails also populates `fields`, so projecting them would
+        // double-count). An Odoo-shape model lifted as Ruby stays empty.
+        let class = lift_model(&mk_odoo_model());
+        assert!(class.attributes.is_empty());
+        assert!(class.associations.is_empty());
+        assert!(class.computed_fields.is_empty());
     }
 
     #[test]
