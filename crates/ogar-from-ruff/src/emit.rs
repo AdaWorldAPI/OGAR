@@ -22,11 +22,19 @@
 //! **mechanical transliteration** of the same compiled spine rather than a
 //! re-implementation — the layer-1 / layer-2 story of substrate doc §1.6.
 //!
-//! Scalar attributes currently emit `OgScalar` uniformly: the Odoo field type
-//! (`Char` / `Monetary` / …) is not yet carried on the SPO `Field`, so there
-//! is nothing to specialise on. When the `field_type` capture lands (the ruff
-//! follow-up), `OgScalar` refines to the mapped concrete type with no change
-//! to this seam.
+//! Scalar attributes emit a **concrete wrapper type** mapped from the Odoo
+//! constructor carried on `Attribute::type_name` (the ruff `field_type`
+//! predicate): `char`/`text`/`html` → `OgStr`, `integer` → `OgInt`,
+//! `float` → `OgFloat`, `monetary` → `OgMoney` (Decimal-backed), `boolean` →
+//! `OgBool`, `date`/`datetime` → `OgDate`/`OgDateTime`, `binary` → `OgBytes`,
+//! `selection` → `OgSelection`, `json` → `OgJson`; an untyped/unknown column
+//! falls back to the generic `OgScalar`. See [`og_scalar_type`].
+//!
+//! Field identifiers that collide with a target-language reserved word are
+//! escaped (see [`escape_ident`]) so the emitted source compiles — e.g. an
+//! Odoo field named `type` / `ref` becomes `r#type` / `r#ref` in Rust and
+//! `@type` / `@ref` in C#. Python source field names cannot be keywords (the
+//! Odoo source would not parse), so Python emit needs no escaping.
 
 use ogar_vocab::{Association, AssociationKind};
 
@@ -45,6 +53,86 @@ fn assoc_target(assoc: &Association) -> (String, bool) {
         AssociationKind::HasMany | AssociationKind::HasAndBelongsToMany
     );
     (target, is_many)
+}
+
+/// Map an Odoo field constructor (lowercased, carried on `Attribute::type_name`
+/// as the ruff `field_type` predicate) to the consumer wrapper-contract scalar
+/// type. Shared by all three emitters — the type NAMES are identical across
+/// languages (§1.6). `None` (type not captured) and any unrecognised
+/// constructor fall back to the generic `OgScalar`, so the emit is always
+/// well-typed. `monetary` → `OgMoney` is Decimal-backed (the ERP money
+/// doctrine), never a float.
+fn og_scalar_type(type_name: Option<&str>) -> &'static str {
+    match type_name {
+        Some("char" | "text" | "html") => "OgStr",
+        Some("integer") => "OgInt",
+        Some("float") => "OgFloat",
+        Some("monetary") => "OgMoney",
+        Some("boolean") => "OgBool",
+        Some("date") => "OgDate",
+        Some("datetime") => "OgDateTime",
+        Some("binary" | "image") => "OgBytes",
+        Some("selection") => "OgSelection",
+        Some("json") => "OgJson",
+        _ => "OgScalar",
+    }
+}
+
+/// Target language for [`escape_ident`].
+#[derive(Clone, Copy)]
+enum Lang {
+    Rust,
+    CSharp,
+    Python,
+}
+
+/// Escape an emitted field/member identifier that collides with a
+/// target-language reserved word, so the generated source compiles.
+///
+/// Odoo field names are verbatim `snake_case`; some (`type`, `ref`, `move`, …)
+/// are Rust and/or C# keywords, and a raw `pub type: …` / `public … type` would
+/// not compile. Rust uses raw identifiers (`r#type`); the four that cannot be
+/// raw (`crate`/`self`/`super`/`Self`) get a trailing `_`. C# prefixes `@`
+/// (`@ref`). Python source field names cannot be keywords (the Odoo class body
+/// would not parse), so Python returns the name unchanged.
+fn escape_ident(name: &str, lang: Lang) -> String {
+    match lang {
+        Lang::Rust if matches!(name, "crate" | "self" | "super" | "Self") => format!("{name}_"),
+        Lang::Rust if is_rust_keyword(name) => format!("r#{name}"),
+        Lang::CSharp if is_csharp_keyword(name) => format!("@{name}"),
+        _ => name.to_string(),
+    }
+}
+
+/// Rust strict + reserved keywords (2021 edition + reserved-for-future).
+fn is_rust_keyword(s: &str) -> bool {
+    matches!(
+        s,
+        "as" | "break" | "const" | "continue" | "crate" | "dyn" | "else" | "enum" | "extern"
+            | "false" | "fn" | "for" | "if" | "impl" | "in" | "let" | "loop" | "match" | "mod"
+            | "move" | "mut" | "pub" | "ref" | "return" | "self" | "Self" | "static" | "struct"
+            | "super" | "trait" | "true" | "type" | "unsafe" | "use" | "where" | "while"
+            | "async" | "await" | "abstract" | "become" | "box" | "do" | "final" | "macro"
+            | "override" | "priv" | "typeof" | "unsized" | "virtual" | "yield" | "try" | "gen"
+    )
+}
+
+/// C# reserved keywords. Contextual keywords (`type`, `record`, `var`, …) are
+/// legal identifiers in C#, so they are deliberately omitted.
+fn is_csharp_keyword(s: &str) -> bool {
+    matches!(
+        s,
+        "abstract" | "as" | "base" | "bool" | "break" | "byte" | "case" | "catch" | "char"
+            | "checked" | "class" | "const" | "continue" | "decimal" | "default" | "delegate"
+            | "do" | "double" | "else" | "enum" | "event" | "explicit" | "extern" | "false"
+            | "finally" | "fixed" | "float" | "for" | "foreach" | "goto" | "if" | "implicit"
+            | "in" | "int" | "interface" | "internal" | "is" | "lock" | "long" | "namespace"
+            | "new" | "null" | "object" | "operator" | "out" | "override" | "params" | "private"
+            | "protected" | "public" | "readonly" | "ref" | "return" | "sbyte" | "sealed"
+            | "short" | "sizeof" | "stackalloc" | "static" | "string" | "struct" | "switch"
+            | "this" | "throw" | "true" | "try" | "typeof" | "uint" | "ulong" | "unchecked"
+            | "unsafe" | "ushort" | "using" | "virtual" | "void" | "volatile" | "while"
+    )
 }
 
 /// Emit a [`CompiledClass`] as Rust source: a struct whose fields use the
@@ -71,7 +159,11 @@ pub fn emit_rust(cc: &CompiledClass) -> String {
 
     out.push_str(&format!("pub struct {ty} {{\n"));
     for attr in &cc.class.attributes {
-        out.push_str(&format!("    pub {}: OgScalar,\n", attr.name));
+        out.push_str(&format!(
+            "    pub {}: {},\n",
+            escape_ident(&attr.name, Lang::Rust),
+            og_scalar_type(attr.type_name.as_deref()),
+        ));
     }
     for assoc in &cc.class.associations {
         let (target, is_many) = assoc_target(assoc);
@@ -80,7 +172,10 @@ pub fn emit_rust(cc: &CompiledClass) -> String {
         } else {
             format!("ToOne<{target}>")
         };
-        out.push_str(&format!("    pub {}: {field_ty},\n", assoc.name));
+        out.push_str(&format!(
+            "    pub {}: {field_ty},\n",
+            escape_ident(&assoc.name, Lang::Rust),
+        ));
     }
     out.push_str("}\n");
 
@@ -105,10 +200,10 @@ pub fn emit_rust(cc: &CompiledClass) -> String {
 /// codegen mode of the C# SDK (substrate doc §1.6); a host compiles the emitted
 /// record into an assembly — the strongest "compiled, not parsed" form.
 ///
-/// Field/member identifiers are emitted **verbatim** (Odoo `snake_case`),
-/// matching [`emit_rust`]'s wire fidelity; idiomatic PascalCase member casing
-/// is a future refinement on this same seam (cf. the `OgScalar` `field_type`
-/// note above).
+/// Field/member identifiers keep their Odoo `snake_case` spelling (matching
+/// [`emit_rust`]'s wire fidelity), reserved-word-escaped via [`escape_ident`]
+/// (`@ref`); idiomatic PascalCase member casing is a future refinement on this
+/// same seam.
 #[must_use]
 pub fn emit_csharp(cc: &CompiledClass) -> String {
     let ty = pascal_case(&cc.class.name);
@@ -127,8 +222,9 @@ pub fn emit_csharp(cc: &CompiledClass) -> String {
     ));
     for attr in &cc.class.attributes {
         out.push_str(&format!(
-            "    public OgScalar {} {{ get; init; }}\n",
-            attr.name
+            "    public {} {} {{ get; init; }}\n",
+            og_scalar_type(attr.type_name.as_deref()),
+            escape_ident(&attr.name, Lang::CSharp),
         ));
     }
     for assoc in &cc.class.associations {
@@ -140,7 +236,7 @@ pub fn emit_csharp(cc: &CompiledClass) -> String {
         };
         out.push_str(&format!(
             "    public {field_ty} {} {{ get; init; }}\n",
-            assoc.name
+            escape_ident(&assoc.name, Lang::CSharp),
         ));
     }
     for c in &cc.class.computed_fields {
@@ -182,7 +278,11 @@ pub fn emit_python(cc: &CompiledClass) -> String {
         cc.facet.facet_classid(),
     ));
     for attr in &cc.class.attributes {
-        out.push_str(&format!("    {}: OgScalar\n", attr.name));
+        out.push_str(&format!(
+            "    {}: {}\n",
+            escape_ident(&attr.name, Lang::Python),
+            og_scalar_type(attr.type_name.as_deref()),
+        ));
     }
     for assoc in &cc.class.associations {
         let (target, is_many) = assoc_target(assoc);
@@ -191,7 +291,10 @@ pub fn emit_python(cc: &CompiledClass) -> String {
         } else {
             format!("ToOne[\"{target}\"]")
         };
-        out.push_str(&format!("    {}: {field_ty}\n", assoc.name));
+        out.push_str(&format!(
+            "    {}: {field_ty}\n",
+            escape_ident(&assoc.name, Lang::Python),
+        ));
     }
     for c in &cc.class.computed_fields {
         out.push_str(&format!(
@@ -240,6 +343,18 @@ mod tests {
         let mut m = Model::new("account_move");
         m.fields.push(Field {
             name: "name".to_string(),
+            field_type: Some("char".to_string()),
+            ..Default::default()
+        });
+        // A field whose name is a Rust + C# reserved word — exercises escape_ident.
+        m.fields.push(Field {
+            name: "ref".to_string(),
+            field_type: Some("char".to_string()),
+            ..Default::default()
+        });
+        // No field_type → the OgScalar fallback path.
+        m.fields.push(Field {
+            name: "narration".to_string(),
             ..Default::default()
         });
         m.fields.push(Field {
@@ -255,8 +370,10 @@ mod tests {
             relation_kind: Some("one2many".to_string()),
             ..Default::default()
         });
+        // Monetary + computed → OgMoney (Decimal-backed) AND a computed doc line.
         m.fields.push(Field {
             name: "amount_total".to_string(),
+            field_type: Some("monetary".to_string()),
             emitted_by: Some("_compute_amount".to_string()),
             depends_on: vec!["line_ids.balance".to_string()],
             ..Default::default()
@@ -281,8 +398,14 @@ mod tests {
         assert!(rust.contains("pub const ACCOUNT_MOVE_CLASSID: u32 = 0x00020202;"));
         // The struct is PascalCase.
         assert!(rust.contains("pub struct AccountMove {"));
-        // Scalar -> the wrapper's OgScalar.
-        assert!(rust.contains("pub name: OgScalar,"));
+        // Typed scalar: char -> OgStr.
+        assert!(rust.contains("pub name: OgStr,"), "got:\n{rust}");
+        // Reserved-word field name -> raw identifier r#ref (and still typed).
+        assert!(rust.contains("pub r#ref: OgStr,"), "got:\n{rust}");
+        // Untyped scalar -> the OgScalar fallback.
+        assert!(rust.contains("pub narration: OgScalar,"), "got:\n{rust}");
+        // Monetary -> OgMoney (Decimal-backed money doctrine).
+        assert!(rust.contains("pub amount_total: OgMoney,"), "got:\n{rust}");
         // Many2one -> ToOne<comodel>; One2many -> ToMany<comodel>.
         assert!(
             rust.contains("pub partner_id: ToOne<ResPartner>,"),
@@ -311,9 +434,23 @@ mod tests {
             cs.contains("public sealed record AccountMove"),
             "got:\n{cs}"
         );
-        // Scalar -> the wrapper's OgScalar (init-only property).
+        // Typed scalar: char -> OgStr (init-only property).
         assert!(
-            cs.contains("public OgScalar name { get; init; }"),
+            cs.contains("public OgStr name { get; init; }"),
+            "got:\n{cs}"
+        );
+        // Reserved-word field name -> @-escaped C# identifier (and still typed).
+        assert!(
+            cs.contains("public OgStr @ref { get; init; }"),
+            "got:\n{cs}"
+        );
+        // Untyped scalar -> the OgScalar fallback; monetary -> OgMoney.
+        assert!(
+            cs.contains("public OgScalar narration { get; init; }"),
+            "got:\n{cs}"
+        );
+        assert!(
+            cs.contains("public OgMoney amount_total { get; init; }"),
             "got:\n{cs}"
         );
         // Many2one -> ToOne<comodel>; One2many -> ToMany<comodel> (shared <T> syntax).
@@ -345,8 +482,14 @@ mod tests {
         // A PascalCase @dataclass.
         assert!(py.contains("@dataclass"), "got:\n{py}");
         assert!(py.contains("class AccountMove:"), "got:\n{py}");
-        // Scalar -> OgScalar annotation.
-        assert!(py.contains("    name: OgScalar"), "got:\n{py}");
+        // Typed scalar: char -> OgStr annotation.
+        assert!(py.contains("    name: OgStr"), "got:\n{py}");
+        // Reserved-word field name needs NO escaping in Python (Odoo source
+        // field names cannot be Python keywords); still typed.
+        assert!(py.contains("    ref: OgStr"), "got:\n{py}");
+        // Untyped scalar -> OgScalar fallback; monetary -> OgMoney.
+        assert!(py.contains("    narration: OgScalar"), "got:\n{py}");
+        assert!(py.contains("    amount_total: OgMoney"), "got:\n{py}");
         // Relations use [T] subscripts with forward-ref comodels (not <T>).
         assert!(
             py.contains("    partner_id: ToOne[\"ResPartner\"]"),
@@ -369,6 +512,10 @@ mod tests {
         // syntax differs. Assert the shared vocabulary across all three.
         let cc = &compile_graph_python::<OdooPort>(&account_move_graph())[0];
         for src in [emit_rust(cc), emit_csharp(cc), emit_python(cc)] {
+            // Typed scalar wrappers (mapped from field_type) are shared vocab.
+            assert!(src.contains("OgStr"), "OgStr in every emitter");
+            assert!(src.contains("OgMoney"), "OgMoney in every emitter");
+            // The untyped fallback is shared too.
             assert!(src.contains("OgScalar"), "OgScalar in every emitter");
             assert!(src.contains("ToOne"), "ToOne in every emitter");
             assert!(src.contains("ToMany"), "ToMany in every emitter");
@@ -386,5 +533,43 @@ mod tests {
         assert_eq!(pascal_case("account_move"), "AccountMove");
         assert_eq!(pascal_case("res.partner"), "ResPartner");
         assert_eq!(screaming_snake("account_move"), "ACCOUNT_MOVE");
+    }
+
+    #[test]
+    fn og_scalar_type_maps_odoo_constructors() {
+        assert_eq!(og_scalar_type(Some("char")), "OgStr");
+        assert_eq!(og_scalar_type(Some("text")), "OgStr");
+        assert_eq!(og_scalar_type(Some("html")), "OgStr");
+        assert_eq!(og_scalar_type(Some("integer")), "OgInt");
+        assert_eq!(og_scalar_type(Some("float")), "OgFloat");
+        assert_eq!(og_scalar_type(Some("monetary")), "OgMoney");
+        assert_eq!(og_scalar_type(Some("boolean")), "OgBool");
+        assert_eq!(og_scalar_type(Some("date")), "OgDate");
+        assert_eq!(og_scalar_type(Some("datetime")), "OgDateTime");
+        assert_eq!(og_scalar_type(Some("binary")), "OgBytes");
+        assert_eq!(og_scalar_type(Some("selection")), "OgSelection");
+        assert_eq!(og_scalar_type(Some("json")), "OgJson");
+        // Unknown constructor and absent type both fall back to OgScalar.
+        assert_eq!(og_scalar_type(Some("reference")), "OgScalar");
+        assert_eq!(og_scalar_type(None), "OgScalar");
+    }
+
+    #[test]
+    fn escape_ident_per_language_reserved_words() {
+        // Rust: raw identifiers for keywords; the four non-raw-able get a suffix.
+        assert_eq!(escape_ident("ref", Lang::Rust), "r#ref");
+        assert_eq!(escape_ident("type", Lang::Rust), "r#type");
+        assert_eq!(escape_ident("move", Lang::Rust), "r#move");
+        assert_eq!(escape_ident("self", Lang::Rust), "self_");
+        assert_eq!(escape_ident("crate", Lang::Rust), "crate_");
+        assert_eq!(escape_ident("amount", Lang::Rust), "amount");
+        // C#: @-escape reserved words; contextual keywords (type) stay legal.
+        assert_eq!(escape_ident("ref", Lang::CSharp), "@ref");
+        assert_eq!(escape_ident("lock", Lang::CSharp), "@lock");
+        assert_eq!(escape_ident("type", Lang::CSharp), "type");
+        assert_eq!(escape_ident("amount", Lang::CSharp), "amount");
+        // Python: no escaping (Odoo source field names cannot be keywords).
+        assert_eq!(escape_ident("ref", Lang::Python), "ref");
+        assert_eq!(escape_ident("type", Lang::Python), "type");
     }
 }
