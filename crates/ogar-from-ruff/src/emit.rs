@@ -383,6 +383,7 @@ mod tests {
             reads: Vec::new(),
             raises: Vec::new(),
             traverses: Vec::new(),
+            ..Default::default()
         });
         let mut g = ModelGraph::new("odoo");
         g.models.push(m);

@@ -1334,12 +1334,14 @@ mod tests {
             reads: vec!["status".to_string()],
             raises: Vec::new(),
             traverses: Vec::new(),
+            ..Default::default()
         });
         m.functions.push(Function {
             name: "close!".to_string(),
             reads: Vec::new(),
             raises: vec!["ArgumentError".to_string()],
             traverses: Vec::new(),
+            ..Default::default()
         });
         m
     }
