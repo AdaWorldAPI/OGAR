@@ -7,6 +7,30 @@
 
 ---
 
+## 2026-06-30 — E-RECIPE-BITMASK-CHAIN — constructor-chained `LazyLock` ClassViews resolve "out-of-slice"; the chain makes "redundant = referential identity" (not a hash test); the inheritance collapse axis MEASURED
+
+**Status:** FINDING (`[G]` — the inheritance-collapse axis is measured: 21.0% full / 22.7% behavioural, `odoo-rs tests/recipe_chaining_collapse.rs`) + CONJECTURE (`[H]` — the `LazyLock` constructor-chaining *impl* is operator-proposed). Extends E-RECIPE-BITMASK (same day). Operator-directed 2026-06-30.
+
+**Scope:** how a derived class's ClassView assembles its inherited recipe — and what that does to the recipe-bitmask's "out-of-slice" limitation and its redundancy guard. The **second** collapse axis (inheritance), orthogonal to E-RECIPE-BITMASK's within-class axis.
+
+**The mechanism (operator):** a derived class's ClassView is built by **chaining its base ClassViews — each a `LazyLock<ClassView>` constant — then layering its own delta** (constructor: `inherited(1+2) + own(1+2+3)`). This IS `classid → ClassView` made compositional; the chain is the MRO; lance-graph #533's `resolve_overrides` (nearest-base-wins BFS = Python C3 for linear mixin chains) is the chain-order resolver; the borrow-strategy rule already prescribes `LazyLock` / built-once for exactly this.
+
+**Two things the chain fixes:**
+1. **"out-of-slice" dissolves.** The base isn't a corpus slice you need present — it's a registry constant you chain. (E-RECIPE-BITMASK's Odoo 54.3% was an UPPER bound *because* the slice's base mixins were absent; the chain resolves them regardless of slice.)
+2. **"redundant = content-hash-equal-to-default" becomes REFERENTIAL IDENTITY.** The inherited part IS the same `LazyLock` constant — one allocation, shared by every subclass, pointer-identical. A clear bit literally points at the base's cached `ActionDef`; there is no copy to drift. The guard stops being a hash test and becomes structural.
+
+**Orthogonal to the 3×4 GUID carving — no re-carve needed.** Chaining is **value/registry-side** (`classid prefix → registry → LazyLock<ClassView>`, each base another classid); the 3×4 HEEL/HIP/TWIG path is **address/centroid-side**. Inheritance depth lives in the classid + registry resolve, never the path tiers — exactly the canon's *"depth beyond 12 native levels was always the hierarchy's job (registry resolve + ref-escape)."* So the operator's offered fallbacks (4×3 / 2×6 / 6×2) are NOT spent here, and the standing-watch flip condition (a measured radix/de-interleave workload) is not tripped — **3×4 stands.**
+
+**Two correctness constraints:**
+- **chain order = the language MRO** (last writer wins the slot) — already the falsifier `F1` ("Delegation ≡ Odoo `_inherit`": the single chain AND a diamond `D(B,C),B(A),C(A)` where C3-over-`LastOrderedSet` picks C, naive parent-first picks A).
+- **acyclic chain** — a `LazyLock` whose init locks another deadlocks on a cycle; inheritance is a DAG, resolve in topological order (`debug_assert`).
+
+**The measurement (F16 / `PROBE-OGAR-CHAINING-COLLAPSE`).** `odoo-rs tests/recipe_chaining_collapse.rs` (default build, offline) on the full Odoo inheritance manifest (388 classes, 101 with ancestors, max depth 5; 166 `inherits_from`; 3328 methods): naive flatten (own + inherited copies) 4215 vs chained (stored once) 3328 → **21.0% collapse (full recipe) / 22.7% (behavioural)**. Top sources: `mail_activity_mixin` (324 inherited copies), `account_move` (220), `mail_thread` (156). This is the inheritance axis the slice_2 probe could not see; it **STACKS** with E-RECIPE-BITMASK's within-class 54.3% (a class's genuine leftover is its own-after-shape-dedup methods, and even those are stored once and shared wherever inherited). **LOWER bound** — the corpus mixin harvest is shallow (real `mail.thread` ~100 methods, a handful captured), so richer extraction only raises it.
+
+**Cross-ref:** E-RECIPE-BITMASK (the axis-1 parent), D-RECIPE-BITMASK, D-RECIPE-BITMASK-CHAIN, F15, F16, F1 (chain-order falsifier), lance-graph #533 `resolve_overrides`; the borrow-strategy `LazyLock`/built-once rule; `odoo-rs tests/recipe_chaining_collapse.rs` + `data/odoo_inheritance_manifest.ndjson`.
+
+---
+
 ## 2026-06-30 — E-RECIPE-BITMASK — OGAR = Open Graph *Active Record*: the canonical "recipe" IS the AR lifecycle protocol; a class = the shared recipe + a per-class override bitmask + the genuine deltas
 
 **Status:** CONJECTURE (`[H]` — the mechanism is `[G]`/measured on one arm; the headline "15%→7% for best-shaped consumers" prediction is operator-proposed, falsifier RUN on the Odoo upper bound, clean Rails-AR run pending). Operator-directed 2026-06-30.
