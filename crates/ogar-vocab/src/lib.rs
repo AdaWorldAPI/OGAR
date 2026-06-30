@@ -38,11 +38,12 @@ use serde::{Deserialize, Serialize};
 /// `pub enum` / `pub struct` in this module: the OGAR vocabulary is
 /// expected to evolve over time, and every base type is forward-
 /// compatible-by-construction.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[non_exhaustive]
 pub enum Language {
     /// Ruby ActiveRecord (`class Foo < ApplicationRecord`).
+    #[default]
     Ruby,
     /// Python — covers Django ORM and Odoo `models.Model`.
     Python,
@@ -305,7 +306,7 @@ pub struct MethodDecl {
 /// Method kind — distinguishes overrides from helpers from plain
 /// methods. The producer determines kind from decorator + name
 /// inspection; see `docs/ODOO-TRANSCODING.md` §13.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[non_exhaustive]
 pub enum MethodKind {
@@ -318,35 +319,25 @@ pub enum MethodKind {
     /// Odoo's bulk-create override.
     ApiModelCreateMulti,
     /// Plain instance method, no special semantics.
+    #[default]
     Instance,
-}
-
-impl Default for MethodKind {
-    fn default() -> Self {
-        Self::Instance
-    }
 }
 
 /// Recordset semantics — Odoo methods can bind to a record (single),
 /// a recordset (the default for most methods), or be class-level
 /// (`@api.model`). Captured for cross-language consumers that
 /// project to per-record vs per-collection APIs.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[non_exhaustive]
 pub enum RecordSemantics {
     /// Single-record context.
     Record,
     /// Recordset (Odoo default for most methods).
+    #[default]
     Recordset,
     /// Class-level (`@api.model` or no `self`).
     ClassLevel,
-}
-
-impl Default for RecordSemantics {
-    fn default() -> Self {
-        Self::Recordset
-    }
 }
 
 // ─────────────────────────────────────────────────────────────────────
@@ -368,7 +359,6 @@ impl Default for RecordSemantics {
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[non_exhaustive]
-
 pub struct ActionDef {
     /// Stable identity for the action declaration (e.g.
     /// `ogit-erp/sale.order::action_def::action_confirm`).
@@ -446,7 +436,7 @@ impl EnterEffect {
 /// Disposition when a `KausalSpec::StateGuard` is not satisfied — the Modal
 /// sub-property for the Rubicon statem lowering (OGAR-AST-CONTRACT §6).
 /// `#[non_exhaustive]` per the vocabulary forward-compat convention.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[non_exhaustive]
 pub enum GuardFailurePolicy {
@@ -454,13 +444,8 @@ pub enum GuardFailurePolicy {
     /// transition. Lowers to `Transition::Postpone`.
     Postponable,
     /// Hard failure — `Pending → Failed` (the default).
+    #[default]
     Reject,
-}
-
-impl Default for GuardFailurePolicy {
-    fn default() -> Self {
-        Self::Reject
-    }
 }
 
 /// A runtime invocation of an `ActionDef` — one per (S, P, O, context)
@@ -509,13 +494,14 @@ pub struct ActionInvocation {
 }
 
 /// Subject of a business action — who/what initiated it.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[non_exhaustive]
 pub enum ActionSubject {
     /// A human user (UI button click, RPC call from authenticated user).
     User,
     /// Internal system trigger (no specific user).
+    #[default]
     System,
     /// Scheduled (`ir.cron`, Rails `Whenever`).
     Cron,
@@ -525,19 +511,14 @@ pub enum ActionSubject {
     Cascade,
 }
 
-impl Default for ActionSubject {
-    fn default() -> Self {
-        Self::System
-    }
-}
-
 /// Temporal context — when does the action happen relative to its
 /// trigger.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[non_exhaustive]
 pub enum TemporalSpec {
     /// Synchronous, on-call.
+    #[default]
     Immediate,
     /// Queued, async background.
     Deferred,
@@ -548,20 +529,15 @@ pub enum TemporalSpec {
     OnCommit,
 }
 
-impl Default for TemporalSpec {
-    fn default() -> Self {
-        Self::Immediate
-    }
-}
-
 /// Modal context — how is the action performed.
 /// Per B3 YAGNI: dropped `Requires` (no v1 consumer); kept Idempotent
 /// because it gates the dedup mechanism in `ActionInvocation`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[non_exhaustive]
 pub enum ModalSpec {
     /// Synchronous, blocking.
+    #[default]
     Sync,
     /// Fire-and-forget.
     Async,
@@ -569,12 +545,6 @@ pub enum ModalSpec {
     Idempotent,
     /// All-or-nothing transaction.
     Atomic,
-}
-
-impl Default for ModalSpec {
-    fn default() -> Self {
-        Self::Sync
-    }
 }
 
 /// Causal precondition — what triggered this action. **Sum type** per
@@ -630,11 +600,12 @@ pub struct LokalSpec {
 /// Lifecycle state of an `ActionInvocation`.
 /// Per B2 production-blocker #3: explicit state machine prevents
 /// the silent-gap problem (action started, didn't complete, no record).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[non_exhaustive]
 pub enum ActionState {
     /// Emitted but not yet processed by the callcenter.
+    #[default]
     Pending,
     /// Successfully processed; effects committed.
     Committed,
@@ -643,12 +614,6 @@ pub enum ActionState {
     Failed,
     /// Cancelled before execution.
     Cancelled,
-}
-
-impl Default for ActionState {
-    fn default() -> Self {
-        Self::Pending
-    }
 }
 
 // ─────────────────────────────────────────────────────────────────────
@@ -719,11 +684,12 @@ impl KausalSpec {
 /// Rails `belongs_to`/`has_one`/`has_many`/`has_and_belongs_to_many`,
 /// Odoo `Many2one`/`One2many`/`Many2many` (Odoo collapses `has_one` into
 /// `One2many` constrained to 1).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[non_exhaustive]
 pub enum AssociationKind {
     /// Owning side of a 1:N — the FK lives on this class's table.
+    #[default]
     BelongsTo,
     /// Non-owning side of a 1:1.
     HasOne,
@@ -799,12 +765,6 @@ pub struct Association {
     /// `delegate=True` — legacy Odoo Many2one delegation (rare;
     /// modern Odoo uses `_inherits` on the class instead).
     pub delegate: Option<bool>,
-}
-
-impl Default for AssociationKind {
-    fn default() -> Self {
-        Self::BelongsTo
-    }
 }
 
 /// An enum-backed column declaration.
@@ -1543,8 +1503,8 @@ pub mod class_ids {
     /// Promoted Phase-3 from the cross-axis identity gap surfaced in odoo-rs
     /// PR #14: the alignment table seeds `product.template → schema:Product`
     /// + BillingCore (0x61); this id is the OGAR-side identity that closes
-    /// the same axis. `OdooPort` carries `product.template` and
-    /// `product.product` as aliases of `PRODUCT`.
+    ///   the same axis. `OdooPort` carries `product.template` and
+    ///   `product.product` as aliases of `PRODUCT`.
     pub const PRODUCT: u16 = 0x0207;
     /// `accounting_account` (`0x0208`) — general-ledger account (SKR-aligned
     /// chart concept). OSB `Account`, Odoo `account.account` +
@@ -5680,11 +5640,5 @@ mod tests {
                 c.name,
             );
         }
-    }
-}
-
-impl Default for Language {
-    fn default() -> Self {
-        Self::Ruby
     }
 }
