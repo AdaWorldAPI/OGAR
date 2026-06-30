@@ -9,7 +9,7 @@
 
 ## 2026-06-30 — E-ACCIDENTAL-IMPERATIVE — the hand-rolled residue = accidentally-imperative (AR verbs on AR targets, no declarative home) ∪ essentially-foreign; the body pass TRIAGES, it does not decompile
 
-**Status:** CONJECTURE (`[H]` — the split is operator-reasoned + grounded in the Odoo↔Rails asymmetry; the ratio is unmeasured pending the body pass). Operator-directed 2026-06-30. Builds on E-FUNCTION-CATALOG.
+**Status:** CONJECTURE (`[H]` — the split is operator-reasoned + grounded in the Odoo↔Rails asymmetry; the ratio is unmeasured pending the body pass). Operator-directed 2026-06-30. Builds on E-FUNCTION-CATALOG. **Update 2026-06-30:** the F17 prerequisite SHIPPED — ruff now captures per-function `writes`/`calls` (AdaWorldAPI/ruff @ `claude/odoo-rs-transcode-lf8ya5`, commit `dd70588`): `ruff_spo_triplet::Function` gains `writes`+`calls`, the closed predicate vocab gains `writes_field` (Authoritative) + `calls` (Inferred), and the `ruff_ruby_spo` body walker populates both from the Rails AST (closed `AR_MUTATORS` set; `self.x=`→write, mutator dispatch→call, else read). The "NOT writes" blocker in the Falsifier below is **cleared**; F17 is RUNNABLE — the body-triage probe is the next deliverable. Ratio still unmeasured.
 
 **Scope:** the "hand-rolled hook bodies" residue that E-RECIPE-BITMASK / E-FUNCTION-CATALOG leave. Why it is smaller than it looks, and the bounded thing ruff can actually do about it.
 
