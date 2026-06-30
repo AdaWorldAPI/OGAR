@@ -7,6 +7,30 @@
 
 ---
 
+## 2026-06-30 — E-RECIPE-BITMASK — OGAR = Open Graph *Active Record*: the canonical "recipe" IS the AR lifecycle protocol; a class = the shared recipe + a per-class override bitmask + the genuine deltas
+
+**Status:** CONJECTURE (`[H]` — the mechanism is `[G]`/measured on one arm; the headline "15%→7% for best-shaped consumers" prediction is operator-proposed, falsifier RUN on the Odoo upper bound, clean Rails-AR run pending). Operator-directed 2026-06-30.
+
+**Scope:** the behavioural-arm compression for any AR-shaped consumer (Odoo / Rails / Redmine / OpenProject) — how much of a class's lifecycle behaviour is a shared canonical recipe vs genuine per-class content, and the per-class override **bitmask** that hides the redundant majority. The ClassView + bitmask + ERB→askama view port is the rendering tier ON TOP (the icing); the AR core is the substrate.
+
+**The framing (operator):** OGAR's name is the thesis — Open Graph **Active Record**. The "recipe" is not a novel compression trick; it IS the ActiveRecord lifecycle protocol (`before_save`/`after_create`/`validates`/`_compute_*`/`_check_*`/`action_*`). A consumer "shapes AR where it makes sense": AR-shaped behaviour collapses to the shared recipe + a per-class override bitmask (set bit = this class overrides, clear bit = inherited default, fall-through per the zero-fallback ladder); non-AR behaviour (chess move legality, pure arithmetic) stays a foreign-call escape. The bitmask is a **register**, not VSA (`I-VSA-IDENTITIES` Test 0 — action presence has a natural positional slot; a `u64` mask beats VSA at exact-match; cascade if it overflows, never widen).
+
+**The two guards (so it stays lossless, not a heuristic):**
+- slot positions are **RESERVE-DON'T-RECLAIM** — a bitmask over a recipe is only valid if slot N means the same lifecycle hook forever (`I-LEGACY-API-FEATURE-GATED`; same fixed-offset discipline as classid/family in the key). Append hooks at the end; never reorder, never reclaim a slot's meaning.
+- "redundant" = **content-hash-identical-to-default** — a bit is clear iff the class's body for that slot resolves to the same content-addressed `ActionDef` as the default (lossless-DO §1: the ActionDef POINTS TO its body, never inlines it). Content-addressing is what makes "hide the redundant" provably lossless rather than a heuristic that drops a real override.
+
+**The mechanism is already half-visible in shipped code.** `od-ontology::ogar_actions::corpus_to_actions` lifts Odoo's behaviour into exactly TWO recipe shapes: the recompute arm (`KausalSpec::Depends{paths}`) and the guard arm (`KausalSpec::LifecycleTrigger{before_save}` + `Reject`). Every guard is byte-identical except its address; every compute shares one shape and differs only in `Depends.paths`. That IS the recipe + per-class delta, in the wild.
+
+**The falsifier RAN (Odoo = UPPER bound).** `odoo-rs tests/recipe_redundancy_probe.rs` (default build, offline, `PROBE-OGAR-AR-RECIPE-COLLAPSE`) on the slice_2 corpus: behavioural arm 358 (47 guards + 311 computes; 141 computes reads-captured), **guard arm collapses fully (47→1 shared recipe)**, compute arm 101 distinct path-sets of 141 resolved (mostly genuine), headline **45.7% recipe-collapsible / 54.3% leftover** over the 188 resolved methods. This **REFUTES the strong reading** ("Odoo collapses to 7%") and **CONFIRMS the scoping**: 7% is the best-shaped *Rails-AR* case, not compute-heavy *Odoo-Python*. Upper bound because the slice's base mixins are out-of-slice (inherited-vs-override unmeasurable here), the live-source `ruff_python_spo` path drops `_inherit`, and method bodies aren't captured — all three can only LOWER the leftover.
+
+**Why Rails/OpenProject is the clean test.** `ruff_ruby_spo` captures `callbacks` / `validations` / `sti` as first-class `Model` data — the AR recipe survives into the IR exactly where Odoo's inheritance is dropped. Same `ruff_spo_triplet::ModelGraph` + `expand()` for both frontends. Handover with the concrete Ruby probe spec: `openproject-nexgen-rs/.claude/handovers/`.
+
+**Gate / next:** `PROBE-OGAR-AR-RECIPE-COLLAPSE` (F15) promotes D-RECIPE-BITMASK `[H]→[G]` when the Rails-AR clean run lands near the ~7% leftover target (callback-override bitmask density on `ruff_ruby_spo`'s captured `callbacks`). The Odoo bound is recorded; the Rails run is the pending half.
+
+**Cross-ref:** D-RECIPE-BITMASK, F15, D-VOCAB, D-HIRO-DO (lossless-DO §1 — ActionDef points to body), D-ACTION; `I-VSA-IDENTITIES` Test 0, `I-LEGACY-API-FEATURE-GATED`; the zero-fallback ladder + EdgeBlock (`CLAUDE.md` CANON); `odoo-rs tests/recipe_redundancy_probe.rs` + `docs/ODOO-OGAR-MIGRATION-SPRINT.md`; `openproject-nexgen-rs/.claude/handovers/`.
+
+---
+
 ## 2026-06-25 — E-CLASSID-ENVELOPE-PARSER — V2/V3 (and value-schema/edge-codec) are classid-defined per file+consumer; ONE reusable envelope parser reads classid → registry → parse
 
 **Status:** CONJECTURE (`[H]` — the composed parser is operator-proposed, "to be wired"; the pieces are `[G]`/CODED). Operator-directed 2026-06-25.

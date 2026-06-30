@@ -393,6 +393,7 @@ R2 — not D.)
 | F12 | **θ conditioning window** | jc P5b (Pearl 2³) + `hpc::quantized` θ-sweep | θ ∈ [1.45, 1.6] with ρ envelope [0.93..0.9973] — D‑THETA/D‑RHOENV `[H]→[G]` |
 | F13 | **Backend parity** | `hpc::simd_dispatch` W1c: AVX‑512 vs NEON vs scalar | identical within **1 ULP** — the correctness floor under every gate above |
 | F14 | **Wide-model render** | render `account.move` through `ClassView` with full presence (**>64 is the load-bearing bound; 109 declarations counted** in account_move.py, Odoo 17) | **gated: cannot RUN until Phase B** wires the field-enum into `RegistryClassView`; once runnable, fails by construction (FieldMask u64, L0b) until presence exceeds u64 — **Track X7 is the named path** |
+| F15 | **AR-recipe collapse** (`PROBE-OGAR-AR-RECIPE-COLLAPSE`) | measure how much of a consumer's lifted behavioural arm folds to the shared ActiveRecord-lifecycle recipe + per-class override bitmask vs genuine per-class leftover. **Odoo upper-bound RUN** (`odoo-rs tests/recipe_redundancy_probe.rs`, default build, slice_2): guard arm 47→1 full-collapse, compute arm 101 distinct of 141 resolved, **45.7% collapse / 54.3% leftover**; clean run is Rails/OpenProject where `ruff_ruby_spo` captures `callbacks` as first-class `Model` data | D‑RECIPE‑BITMASK `[H]→[G]` when the Rails-AR clean run lands near the ~7% leftover target; the Odoo bound already refutes the strong "Odoo→7%" reading |
 
 (F3 already carries the D‑QUANTGATE pre/post-quantization contrast.
 F10–F13 restore the DISCOVERY-MAP §4.2 jc×hpc floor that v1.0 omitted —

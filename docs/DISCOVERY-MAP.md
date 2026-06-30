@@ -221,6 +221,7 @@ two halves of a cell. ADR‑026 names the cascade that ties them.
 | D‑PATTERN | `ogar-pattern` — recognition library + confidence (FMA‑D/FIBO/SKR/PROV‑O) | H | IDEA | (queued) | D‑TTL |
 | D‑ACTION | `ogar-actionable` — lifecycle → `ActionDef`/`KausalSpec` | H | IDEA | (queued) | D‑PATTERN |
 | D‑NSM | 4096‑dim Deep‑NSM encoder (Wierzbicka primes, `NUM_PRIMES=63`) calibration | H | IDEA | RDF‑OWL §4.10 | D‑CAM, `[per rt]` |
+| D‑RECIPE‑BITMASK | OGAR = Open Graph **Active Record**: the canonical recipe IS the AR lifecycle protocol; a class stores it once + a per‑class override **bitmask** (set=override, clear=inherited default, fall‑through per the zero‑fallback ladder) + the genuine deltas → thins the "impossible 15%" behavioural leftover toward ~7% for best‑shaped (AR‑canonical) consumers. Guards: zero per‑class payload (recipe IS the spec); computes: shape + `Depends.paths` delta. Guards: bitmask=register not VSA (`I‑VSA‑IDENTITIES` T0); redundant = content‑hash‑equal‑to‑default (lossless‑DO §1); slots RESERVE‑DON'T‑RECLAIM (`I‑LEGACY‑API‑FEATURE‑GATED`). Odoo (Python, UPPER bound) RUN: guard arm 47→1 full‑collapse, compute arm 101 distinct of 141 resolved, **45.7% collapse / 54.3% leftover** — REFUTES "Odoo→7%", CONFIRMS the Rails‑AR scoping | H | EPIPHANY | E‑RECIPE‑BITMASK · F15 · `odoo-rs tests/recipe_redundancy_probe.rs` | D‑VOCAB, D‑HIRO‑DO, D‑ACTION |
 
 ### 2.9 Domain instances (universality witnesses)
 
