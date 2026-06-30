@@ -136,8 +136,8 @@ fn model_of(node: &str) -> &str {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ogar_vocab::ports::{OdooPort, OpenProjectPort, RedminePort};
     use ogar_vocab::Language;
+    use ogar_vocab::ports::{OdooPort, OpenProjectPort, RedminePort};
     use ruff_spo_triplet::{AssocDecl, AssocKind, Field, Function, Model};
 
     // A representative `account.move` `ModelGraph`, constructed directly (the
@@ -301,11 +301,7 @@ mod tests {
 
         // OpenProject prefix 0x0001 | project_work_item concept 0x0102.
         assert_eq!(cc.facet.facet_classid(), 0x0001_0102);
-        assert_eq!(
-            cc.facet.facet_classid() & 0xFFFF,
-            0x0102,
-            "shared concept"
-        );
+        assert_eq!(cc.facet.facet_classid() & 0xFFFF, 0x0102, "shared concept");
         assert_eq!(
             (cc.facet.facet_classid() >> 16) as u16,
             OpenProjectPort::APP_PREFIX,
