@@ -34,7 +34,7 @@ use ogar_vocab::Class;
 use ruff_spo_address::{mint_with_classid, Facet, Mint};
 use ruff_spo_triplet::{expand, ModelGraph};
 
-use crate::lift_model_graph_python;
+use crate::{lift_model_graph, lift_model_graph_python};
 
 /// A class compiled to its rail-shaped, language-agnostic form: the lifted
 /// schema ([`Class`]) plus its 16-byte address ([`Facet`]). This is what a
@@ -83,6 +83,32 @@ pub fn compile_graph_python<P: PortSpec>(graph: &ModelGraph) -> Vec<CompiledClas
         .collect()
 }
 
+/// Compile a Ruby/Rails [`ModelGraph`] into rail-shaped [`CompiledClass`]es:
+/// lift each model's schema ([`Language::Ruby`](ogar_vocab::Language), via
+/// [`lift_model_graph`] — **not** [`lift_model_graph_python`], which would
+/// mis-stamp the producer language) and pair it with its minted facet,
+/// classid via port `P`. Declaration order is preserved (mirrors
+/// [`lift_model_graph`]). The Rails counterpart of
+/// [`compile_graph_python`] — same mint, same assembly shape, the only
+/// difference is which lift stamps the [`Class::language`](ogar_vocab::Class)
+/// field. E.g. `openproject:WorkPackage` → `0x0001_0102`,
+/// `redmine:Issue` → `0x0007_0102` (same shared concept, different render
+/// prefix — the two-render-skins-one-concept convergence).
+#[must_use]
+pub fn compile_graph_ruby<P: PortSpec>(graph: &ModelGraph) -> Vec<CompiledClass> {
+    let mint = mint_graph::<P>(graph);
+    lift_model_graph(graph)
+        .into_iter()
+        .map(|class| {
+            let node = format!("{}:{}", graph.namespace, class.name);
+            let facet = mint
+                .facet(&node)
+                .unwrap_or_else(|| Facet::from_parts(classid_for_node::<P>(&node), [0; 6], [0; 6]));
+            CompiledClass { class, facet }
+        })
+        .collect()
+}
+
 /// Resolve a node IRI's full render classid via port `P`.
 ///
 /// The IRI is `<ns>:<model>` or `<ns>:<model>.<member>`; members inherit
@@ -110,8 +136,9 @@ fn model_of(node: &str) -> &str {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ogar_vocab::ports::{OdooPort, OpenProjectPort};
-    use ruff_spo_triplet::{Field, Function, Model};
+    use ogar_vocab::Language;
+    use ogar_vocab::ports::{OdooPort, OpenProjectPort, RedminePort};
+    use ruff_spo_triplet::{AssocDecl, AssocKind, Field, Function, Model};
 
     // A representative `account.move` `ModelGraph`, constructed directly (the
     // source→ModelGraph parse is `ruff_python_spo`'s job, tested there). Carries
@@ -146,6 +173,7 @@ mod tests {
             reads: Vec::new(),
             raises: Vec::new(),
             traverses: Vec::new(),
+            ..Default::default()
         });
         let mut g = ModelGraph::new("odoo");
         g.models.push(m);
@@ -222,5 +250,88 @@ mod tests {
         let mint = mint_graph::<OdooPort>(&graph);
         let facet = mint.facet("odoo:ir_cron").expect("node mints");
         assert_eq!(facet.facet_classid(), 0, "unmapped -> bootstrap address");
+    }
+
+    // ───── compile_graph_ruby (Rails: the OP/Redmine convergence path) ─────
+
+    /// A representative `WorkPackage` `ModelGraph`, constructed directly (the
+    /// source→ModelGraph parse is `ruff_ruby_spo`'s job, tested there).
+    /// Carries an association so the schema-arm projects something besides
+    /// a bare name.
+    fn work_package_graph(namespace: &str, model_name: &str) -> ModelGraph {
+        let mut m = Model::new(model_name);
+        m.associations.push(AssocDecl {
+            kind: AssocKind::BelongsTo,
+            name: "project".to_string(),
+            options: Vec::new(),
+        });
+        m.functions.push(Function {
+            name: "update_status".to_string(),
+            ..Default::default()
+        });
+        let mut g = ModelGraph::new(namespace);
+        g.models.push(m);
+        g
+    }
+
+    #[test]
+    fn compile_graph_ruby_stamps_language_ruby_not_python() {
+        // The bug compile_graph_python's own doc-comment warns against:
+        // calling the Python lift on a Rails graph mis-stamps the producer
+        // language. compile_graph_ruby must route through `lift_model_graph`
+        // (Language::Ruby), never `lift_model_graph_python`.
+        let graph = work_package_graph("openproject", "WorkPackage");
+        let compiled = compile_graph_ruby::<OpenProjectPort>(&graph);
+        assert_eq!(compiled.len(), 1);
+        assert_eq!(compiled[0].class.language, Language::Ruby);
+    }
+
+    #[test]
+    fn openproject_work_package_compiles_to_project_work_item_rail_class() {
+        let graph = work_package_graph("openproject", "WorkPackage");
+        let compiled = compile_graph_ruby::<OpenProjectPort>(&graph);
+        assert_eq!(compiled.len(), 1);
+        let cc = &compiled[0];
+
+        assert_eq!(cc.class.name, "WorkPackage");
+        assert!(
+            !cc.class.associations.is_empty(),
+            "belongs_to :project projects into an association"
+        );
+
+        // OpenProject prefix 0x0001 | project_work_item concept 0x0102.
+        assert_eq!(cc.facet.facet_classid(), 0x0001_0102);
+        assert_eq!(cc.facet.facet_classid() & 0xFFFF, 0x0102, "shared concept");
+        assert_eq!(
+            (cc.facet.facet_classid() >> 16) as u16,
+            OpenProjectPort::APP_PREFIX,
+            "OpenProject render prefix",
+        );
+    }
+
+    #[test]
+    fn openproject_and_redmine_compile_to_the_same_concept_different_render_skin() {
+        // The literal "one canonical concept, two render skins" proof: the
+        // SAME Rails-shaped ModelGraph (WorkPackage / Issue) minted through
+        // each fork's port converges on the identical low-u16 concept and
+        // diverges only on the high-u16 app-render prefix.
+        let op_graph = work_package_graph("openproject", "WorkPackage");
+        let rm_graph = work_package_graph("redmine", "Issue");
+
+        let op_compiled = compile_graph_ruby::<OpenProjectPort>(&op_graph);
+        let rm_compiled = compile_graph_ruby::<RedminePort>(&rm_graph);
+
+        let op_id = op_compiled[0].facet.facet_classid();
+        let rm_id = rm_compiled[0].facet.facet_classid();
+
+        assert_eq!(op_id & 0xFFFF, rm_id & 0xFFFF, "shared concept converges");
+        assert_eq!(op_id & 0xFFFF, 0x0102, "project_work_item");
+        assert_ne!(
+            (op_id >> 16) as u16,
+            (rm_id >> 16) as u16,
+            "render prefixes diverge (OpenProject vs Redmine skin)"
+        );
+        assert_eq!((op_id >> 16) as u16, OpenProjectPort::APP_PREFIX);
+        assert_eq!((rm_id >> 16) as u16, RedminePort::APP_PREFIX);
     }
 }

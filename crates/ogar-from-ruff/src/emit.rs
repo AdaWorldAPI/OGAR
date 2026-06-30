@@ -323,13 +323,33 @@ fn pascal_case(name: &str) -> String {
         .collect()
 }
 
-/// `account_move` → `ACCOUNT_MOVE` (for the `*_CLASSID` const name).
+/// `account_move` → `ACCOUNT_MOVE`; `WorkPackage` → `WORK_PACKAGE` (for the
+/// `*_CLASSID` const name). Splits on `.`/`_` (Odoo's dotted/underscored
+/// names) AND on a lower→upper case transition (Rails' bare PascalCase class
+/// names carry no separator at all — `screaming_snake` must still find the
+/// word boundary, or every Rails-sourced const collapses to one run-on word
+/// like `WORKPACKAGE_CLASSID`). Does not split consecutive uppercase runs
+/// (acronyms): `HTTPServer` → `HTTPSERVER` — no Rails/Odoo class name in the
+/// corpus is acronym-prefixed, so this is a deliberately narrow rule, not a
+/// general camelCase tokenizer.
 fn screaming_snake(name: &str) -> String {
-    name.split(['.', '_'])
-        .filter(|seg| !seg.is_empty())
-        .map(str::to_uppercase)
-        .collect::<Vec<_>>()
-        .join("_")
+    let mut out = String::new();
+    let mut prev_lower = false;
+    for ch in name.chars() {
+        if ch == '.' || ch == '_' {
+            if !out.is_empty() && !out.ends_with('_') {
+                out.push('_');
+            }
+            prev_lower = false;
+            continue;
+        }
+        if ch.is_uppercase() && prev_lower {
+            out.push('_');
+        }
+        out.extend(ch.to_uppercase());
+        prev_lower = ch.is_lowercase();
+    }
+    out
 }
 
 #[cfg(test)]
@@ -337,7 +357,9 @@ mod tests {
     use super::*;
     use crate::mint::compile_graph_python;
     use ogar_vocab::ports::OdooPort;
-    use ruff_spo_triplet::{Field, Function, Model, ModelGraph};
+    use ruff_spo_triplet::{
+        AssocDecl, AssocKind, AttrDecl, AttrKind, Field, Function, Model, ModelGraph,
+    };
 
     fn account_move_graph() -> ModelGraph {
         let mut m = Model::new("account_move");
@@ -383,6 +405,7 @@ mod tests {
             reads: Vec::new(),
             raises: Vec::new(),
             traverses: Vec::new(),
+            ..Default::default()
         });
         let mut g = ModelGraph::new("odoo");
         g.models.push(m);
@@ -417,6 +440,79 @@ mod tests {
         );
         // Computed behaviour is a doc line (the 15% lands as an adapter).
         assert!(rust.contains("// computed: amount_total <- _compute_amount(line_ids.balance)"));
+    }
+
+    // ───── Rails (compile_graph_ruby) — the convergence proof ─────
+    //
+    // The pull-back codegen leg (emit_rust/csharp/python) was, before this
+    // session, only ever exercised on an Odoo-lifted `CompiledClass`. This
+    // fixture proves the SAME emitters run unmodified on a Rails-lifted one
+    // (compile_graph_ruby, ruff#38 + this crate's `mint::compile_graph_ruby`),
+    // closing the "unproven on Rails" gap named in the OP+Redmine convergence
+    // handover (openproject-nexgen-rs .claude/handovers/
+    // 2026-06-30-1200-op-redmine-ogar-convergence-assessment.md §4 step 2).
+
+    fn work_package_rail_graph() -> ModelGraph {
+        let mut m = Model::new("WorkPackage");
+        m.attributes.push(AttrDecl {
+            kind: AttrKind::Attribute,
+            name: "estimated_hours".to_string(),
+            options: vec![("type".to_string(), "integer".to_string())],
+        });
+        // No "type" option → the OgScalar fallback path, same as Odoo's
+        // `narration` case.
+        m.attributes.push(AttrDecl {
+            kind: AttrKind::Attribute,
+            name: "subject".to_string(),
+            options: vec![],
+        });
+        m.associations.push(AssocDecl {
+            kind: AssocKind::BelongsTo,
+            name: "project".to_string(),
+            options: vec![("class_name".to_string(), "\"Project\"".to_string())],
+        });
+        m.associations.push(AssocDecl {
+            kind: AssocKind::HasMany,
+            name: "time_entries".to_string(),
+            options: vec![],
+        });
+        let mut g = ModelGraph::new("openproject");
+        g.models.push(m);
+        g
+    }
+
+    #[test]
+    fn emits_rust_struct_for_rails_lifted_class() {
+        use crate::mint::compile_graph_ruby;
+        use ogar_vocab::ports::OpenProjectPort;
+
+        let cc = &compile_graph_ruby::<OpenProjectPort>(&work_package_rail_graph())[0];
+        let rust = emit_rust(cc);
+
+        assert!(
+            rust.contains("pub const WORK_PACKAGE_CLASSID: u32 = 0x00010102;"),
+            "got:\n{rust}"
+        ); // exercises the screaming_snake PascalCase fix below
+        assert!(rust.contains("pub struct WorkPackage {"));
+        // Rails `attribute :estimated_hours, :integer` -> OgInt (the same
+        // og_scalar_type table Odoo's `integer` constructor maps through —
+        // shared vocabulary across producers, per §1.6).
+        assert!(rust.contains("pub estimated_hours: OgInt,"), "got:\n{rust}");
+        // Untyped attribute -> OgScalar fallback.
+        assert!(rust.contains("pub subject: OgScalar,"), "got:\n{rust}");
+        // belongs_to with class_name override -> ToOne<Project>, not
+        // ToOne<Project> from the (singular) relation name by coincidence —
+        // assert the class_name path specifically by using a relation name
+        // that would pascal_case differently if class_name were ignored.
+        assert!(
+            rust.contains("pub project: ToOne<Project>,"),
+            "got:\n{rust}"
+        );
+        // has_many, no class_name -> pascal_case(time_entries) = TimeEntries.
+        assert!(
+            rust.contains("pub time_entries: ToMany<TimeEntries>,"),
+            "got:\n{rust}"
+        );
     }
 
     #[test]
@@ -533,6 +629,19 @@ mod tests {
         assert_eq!(pascal_case("account_move"), "AccountMove");
         assert_eq!(pascal_case("res.partner"), "ResPartner");
         assert_eq!(screaming_snake("account_move"), "ACCOUNT_MOVE");
+    }
+
+    #[test]
+    fn screaming_snake_splits_bare_pascal_case_rails_names() {
+        // Rails class names carry no separator at all (no dots, no
+        // underscores) — screaming_snake must find the word boundary from
+        // case alone, or every Rails const collapses to one run-on word.
+        assert_eq!(screaming_snake("WorkPackage"), "WORK_PACKAGE");
+        assert_eq!(screaming_snake("TimeEntry"), "TIME_ENTRY");
+        // Already-snake input is unaffected (the original behaviour).
+        assert_eq!(screaming_snake("account.move.line"), "ACCOUNT_MOVE_LINE");
+        // A single PascalCase word with no internal boundary stays whole.
+        assert_eq!(screaming_snake("Project"), "PROJECT");
     }
 
     #[test]

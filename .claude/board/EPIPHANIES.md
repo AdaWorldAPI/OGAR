@@ -7,6 +7,24 @@
 
 ---
 
+## 2026-06-30 — E-KEEP-AR-REMOVE-ORM — the consumer open-heart op KEEPS ActiveRecord and removes the ORM; OGAR is named after AR
+
+**Status:** FRAMING (`[G]` for the name origin + the keep/remove split, operator-stated 2026-06-30; the convergence wiring it implies is `[H]`, gated per the OP assessment). Corrects a session inversion (mine) that read the consumer pivot as "castrate the hand-rolled Rails ActiveRecord betrayal" — **backwards**.
+
+**The correction (operator):** *"We don't remove Active Record — that's exactly what we keep. We just do an open-heart operation to remove the ORM and wire pure AR on Rails. Hence OGAR (Open Graph Active Record) — the name was literally inspired by AR in OpenProject."*
+
+- **KEEP — the ActiveRecord pattern.** A class IS a record + behavior (associations / validations / callbacks / STI). This is the domain model and it is literally what OGAR's `Class`/`ClassView` represents. **OGAR = Open Graph Active Record**, named after AR in OpenProject. The ClassView IS the active record.
+- **REMOVE — the ORM.** The hand-rolled persistence plumbing between AR and the DB. In `openproject-nexgen-rs` that is `op-db`'s hand-typed SQL repos + `FromRow` rows (9009 LOC) and `op-api`'s hand-mapped row→DTO (8592 LOC). An ORM re-implemented by hand IS the "betrayal" — **never AR itself.**
+- **WIRE — "pure AR on Rails":** the AR domain model backed **directly by the OGAR graph** (classid-keyed node + ClassView = the record; persistence = the graph via OGAR emit), no ORM intermediary. The "open-heart operation": excise the ORM organ, keep the AR heart, re-plumb AR onto OGAR.
+
+**Redmine-as-root.** OpenProject is a Redmine→ChiliProject→OpenProject fork; Redmine's cleaner ancestral AR (ERB **fieldview**) defines the canonical ClassView, OP (which accreted the hand-rolled ORM on top) converges onto it. **fieldview/erb → classview/askama** = the AR view layer becomes the OGAR ClassView rendered via askama — the render *skin* over the AR *substance* ("ice caking"). The hi/lo classid split already encodes it: lo-u16 = shared concept (Redmine≡OP, machine-checked 26/26), hi-u16 = per-app render skin.
+
+**Guard (do not re-invert):** the operation is ORM-out / AR-in. Removing or re-deriving the ActiveRecord domain model is the inversion this entry exists to prevent. AR stays throughout; only the ORM and (later, gated) the SPO-corpus/native emit paths are subtractive — additive-then-subtractive, never the reverse.
+
+**Cross-ref:** the 6-agent assessment (RESONATES/QUALIFIED) + the concrete additive increment (OGAR `compile_graph_ruby` ~15 LOC → OP `ogar-emit` Stage-B alongside the ORM → Redmine↔OP convergence pin) is captured in `openproject-nexgen-rs/.claude/handovers/2026-06-30-1200-op-redmine-ogar-convergence-assessment.md`. Doctrine home: `docs/OGAR-CONSUMER-BEST-PRACTICES.md` (classid-is-address / magic-at-resolution); `docs/OGAR-TRANSPILE-SUBSTRATE.md` (the 85/15 pull-in/pull-back). The OGAR-side keystone gap: a Rails `compile_graph_ruby` (today only `compile_graph_python` exists in `crates/ogar-from-ruff/src/mint.rs`).
+
+---
+
 ## 2026-06-30 — E-ACCIDENTAL-IMPERATIVE — the hand-rolled residue = accidentally-imperative (AR verbs on AR targets, no declarative home) ∪ essentially-foreign; the body pass TRIAGES, it does not decompile
 
 **Status:** CONJECTURE (`[H]` — the split is operator-reasoned + grounded in the Odoo↔Rails asymmetry; the ratio is unmeasured pending the body pass). Operator-directed 2026-06-30. Builds on E-FUNCTION-CATALOG. **Update 2026-06-30:** the F17 prerequisite SHIPPED — ruff now captures per-function `writes`/`calls` (AdaWorldAPI/ruff @ `claude/odoo-rs-transcode-lf8ya5`, commit `dd70588`): `ruff_spo_triplet::Function` gains `writes`+`calls`, the closed predicate vocab gains `writes_field` (Authoritative) + `calls` (Inferred), and the `ruff_ruby_spo` body walker populates both from the Rails AST (closed `AR_MUTATORS` set; `self.x=`→write, mutator dispatch→call, else read). The "NOT writes" blocker in the Falsifier below is **cleared**; F17 is RUNNABLE — the body-triage probe is the next deliverable. Ratio still unmeasured.
