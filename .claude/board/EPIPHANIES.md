@@ -7,6 +7,50 @@
 
 ---
 
+## 2026-06-30 — E-ACCIDENTAL-IMPERATIVE — the hand-rolled residue = accidentally-imperative (AR verbs on AR targets, no declarative home) ∪ essentially-foreign; the body pass TRIAGES, it does not decompile
+
+**Status:** CONJECTURE (`[H]` — the split is operator-reasoned + grounded in the Odoo↔Rails asymmetry; the ratio is unmeasured pending the body pass). Operator-directed 2026-06-30. Builds on E-FUNCTION-CATALOG.
+
+**Scope:** the "hand-rolled hook bodies" residue that E-RECIPE-BITMASK / E-FUNCTION-CATALOG leave. Why it is smaller than it looks, and the bounded thing ruff can actually do about it.
+
+**The split (operator).** A hook's TARGET is AR-shaped — the body sets a field / CRUDs an association / computes from relations, i.e. the SAME verbs (filter/map/project/reduce/CRUD) on AR targets. So the residue is two populations:
+- **accidentally-imperative** (the big chunk): AR verbs on AR targets, written imperatively ONLY because the source had no declarative form. Proof = the Odoo↔Rails asymmetry: `total` recompute is DECLARATIVE in Odoo (`@api.depends`) and HAND-ROLLED in Rails (`before_save { total = lines.sum }`) — identical semantics, identical AR target; the imperative-ness is a property of source *expressiveness*, not logic complexity. Recoverable to `(verb, criteria)`.
+- **essentially-foreign** (the small chunk): real algorithms / external / ledger semantics. The only true escape.
+
+So the residue is bounded below by essentially-foreign; population 1 re-declarativizes. **OGAR is the "ontology to call" those developers lacked** — forward it prevents the accidental hand-rolling; backward it re-recognizes it.
+
+**The body pass TRIAGES — it does not decompile (operator).** ruff cannot normalize arbitrary imperative bodies. The most it recovers is `(target classid, verb-class, order-signature)` — "something that calls an update on X, in some order" — grouped by target. So the residue becomes LEGIBLE ("47 hooks that all update WorkPackage") instead of opaque, and lands at a COARSE catalog tier: `ActionDef` keyed on `(target classid, verb-class)` + point-to-body (lossless-DO §1, the precise body preserved).
+
+**"random orders" is the recover/preserve GATE, not noise.** Incidental order (operations commute) → declarative form round-trips → RECOVER. Significant order (app depends on the sequence) → PRESERVE (sequenced/foreign body). Arbiter = the **round-trip-order-free parity check**: does the order-free `(verb,criteria)` reproduce the source output? Yes → order was random → recover. No → order mattered → preserve (+ RFC if behaviour diverges — "runs" can hide ordering/side-effect quirks the app now depends on; behaviour-preserving discipline, never silently "fix").
+
+**Three landing tiers** (a body drops only as far as its deformity forces): clean `(verb,criteria)` → declarative emit · coarse `(target,verb-class)` + point-to-body, order-sig gates recover/preserve · foreign → full escape.
+
+**Falsifier (F17 / `PROBE-OGAR-BODY-TRIAGE`):** body pass → `(target, verb-class, order-sig)` per hook → round-trip-order-free each coarse group → PASS-rate = the real "how many were accidentally-imperative" number; FAIL-rate = the order-dependent/foreign tail. **Gated on a ruff extension:** capture **writes/calls** per function (today ruff captures reads/raises/traverses — NOT writes), so "calls update on X" is extractable.
+
+**Cross-ref:** E-FUNCTION-CATALOG, E-RECIPE-BITMASK, E-RECIPE-LABEL-DTO; lossless-DO §1 (point-to-body); the consumer behaviour-preserving / RFC discipline; F17; `openproject-nexgen-rs/.claude/knowledge/RAILS-COVERAGE-KIT.md` §6.
+
+---
+
+## 2026-06-30 — E-FUNCTION-CATALOG — the catalog is of CRITERIA over SHIPPED deterministic verbs (filter/project/map/reduce already coded); a consumer function = `(verb, criteria)` keyed canonically
+
+**Status:** CONJECTURE (`[H]` — the verbs are `[G]`/CODED; the criteria-catalog + the round-trip gate are the to-wire). Operator-directed 2026-06-30. Extends E-RECIPE-LABEL-DTO; records two operator corrections of an over-scoping.
+
+**Scope:** "a catalog of AR-shaped functions landing on OGIT/Auth + a DTO-guided landing zone." What it actually is.
+
+**The verbs are SHIPPED, deterministic — nothing to build:** **filter** = the query/predicate engine (Cypher WHERE → DataFusion predicate, SigmaBandScan); **project** = the compute/recompute DAG + formula eval (`KausalSpec::Depends`); **map** = a deterministic table/lookup; **reduce** = the 15 semirings / GraphBLAS.
+
+**So the "catalog" is a catalog of CRITERIA, not functions.** Entry = `(verb: canonical concept id, criteria: { selection-condition + params })`, params grounded on a DOMAIN ontology (SKR / tax / Auth / OGIT / the class schema). Verb = the shipped op; criteria = EXTRACTED from source (deterministic, not authored). The DTO-guided landing zone = a criteria DTO selecting + parameterizing a shipped verb. Existing surfaces it lands on: `lance-graph-contract::action` (`actions_for`/`ClassActions`/`OgarResolver`/`ClassResolver`/`ExecutorRegistry`/`RunnerKind`), `ogar-render-askama` artifact_kinds (`html_list`/`detail`/`form` = the view landing zone), `ogar-vocab` (`canonical_concept_id`, `auth_store`, `ConceptDomain`).
+
+**CORRECTION 1 — map ≠ CAM-PQ (Test-0 register laziness).** Kontenerkennung (account determination) is a DETERMINISTIC relational rule resolution, NOT a similarity search: product/category default account → fiscal-position remap (contract/partner) → precedent (`reduce(filter(prior_bookings, partner×product), most-recent/modal account)`), with a priority/fallback. Natural keys ⇒ use the register (relational lookup + history query), per `I-VSA-IDENTITIES` Test 0. CAM-PQ enters ONLY for fuzzy suggestion on unseen combinations — a separate opt-in layer, never Kontenerkennung itself.
+
+**CORRECTION 2 — CRUD is generic, not hand-rolled.** create/update = the generic AR lifecycle (defaults → validate → hooks → persist → journal); per-class criteria = the recipe (validations/callbacks/defaults/associations) + the permission (RBAC) + the writable-field set; the controller action is a HandlerKind (`create/update-for-tenant`). Zero hand-rolled — only a genuinely non-standard hook BODY escapes (→ E-ACCIDENTAL-IMPERATIVE).
+
+**The only gate:** the extracted criterion must ROUND-TRIP (the parameterized verb reproduces the source output); a `map`/`project` claim that doesn't reproduce isn't one — it escapes.
+
+**Cross-ref:** E-RECIPE-LABEL-DTO (verbs + params are canonical concept ids + label DTOs), E-ACCIDENTAL-IMPERATIVE (the residue), E-RECIPE-BITMASK; `lance-graph-contract::action`, `ogar-render-askama`, `ogar-vocab`; `I-VSA-IDENTITIES` Test 0; `RAILS-COVERAGE-KIT.md` §6.
+
+---
+
 ## 2026-06-30 — E-RECIPE-LABEL-DTO — recipe labels are content-addressable concept ids on ONE generic ontology + per-language label DTOs; NOT a per-consumer enum zoo
 
 **Status:** CONJECTURE (`[H]` — the doctrine is operator-directed; the recipe-concept codebook is to-mint, the class-concept codebook + `canonical_concept_id`/`name` it extends are `[G]`/CODED). Operator-directed 2026-06-30. Extends E-RECIPE-BITMASK / E-RECIPE-BITMASK-CHAIN.
