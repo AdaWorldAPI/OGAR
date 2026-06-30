@@ -7,6 +7,29 @@
 
 ---
 
+## 2026-06-30 — E-RECIPE-LABEL-DTO — recipe labels are content-addressable concept ids on ONE generic ontology + per-language label DTOs; NOT a per-consumer enum zoo
+
+**Status:** CONJECTURE (`[H]` — the doctrine is operator-directed; the recipe-concept codebook is to-mint, the class-concept codebook + `canonical_concept_id`/`name` it extends are `[G]`/CODED). Operator-directed 2026-06-30. Extends E-RECIPE-BITMASK / E-RECIPE-BITMASK-CHAIN.
+
+**Scope:** the *recipe vocabulary* — the labels every consumer frontend produces for the behavioural/structural recipe (Rails callback phases `before_save`/`after_create_commit`, `ValidationKind`, `AssocKind`, the emergent controller `HandlerKind`; Odoo `MethodKind{Compute,Check}`, `KausalSpec.event` strings). How those labels land **canonically reusable** instead of an extinct per-consumer zoo.
+
+**The risk (operator).** Left as per-consumer enums/strings, each frontend invents its own label set → a class's recipe in Rails cannot be compared, shared, or co-resolved with the same concept in Odoo. The recipe-bitmask (E-RECIPE-BITMASK) only pays off if its slots are the **same across consumers**.
+
+**The fix (operator instinct, made canon).** A recipe label is **not** an enum variant — it is a **content-addressable concept id** in a shared **generic recipe ontology**, and the per-language surface string is a thin **label DTO** (`{ concept_id, lang, surface }`) pointing at that id. This is **exactly OGAR's existing class-concept doctrine — `classid` is the address, the lo-u16 is the shared concept, the hi-u16/surface name is the render skin (`canonical_concept_id` forward / `canonical_concept_name` reverse) — extended from the class vocabulary to the recipe vocabulary.** Rails `before_save` and Odoo before-persist guard resolve to ONE concept id (`LIFECYCLE_BEFORE_PERSIST`), one bitmask slot.
+
+**Three rules:**
+1. **Bitmask slot = concept id, never a surface string** — so the per-class override vector is cross-consumer comparable. Slots are **RESERVE-DON'T-RECLAIM** (`I-LEGACY-API-FEATURE-GATED`): append concept ids; never reorder/repurpose.
+2. **One ontology, N label DTOs** — a new consumer with a new surface for an existing concept emits a DTO that **reuses the slot**, mints nothing; only a genuinely-new concept mints a new id (extends, never forks).
+3. **Id is truth, label is skin** — resolution/RBAC/bitmask key on the content-addressable id (stable forever); the surface is render-only/per-language. PII leaf-rename rides the DTO skin, never the id.
+
+**The recipe families to mint** (a recipe-concept codebook in OGAR, sibling to the class-concept codebook): lifecycle hooks · guard kinds · relation kinds · action/HandlerKinds. The ruff frontends (`ruff_ruby_spo`, `ruff_python_spo`) emit the surface; the OGAR lift resolves it to the id. Concrete first step: `KausalSpec::LifecycleTrigger{event:String}` + ruff `Callback{phase:String}` gain a `RecipeConceptId` resolved at lift time, keeping the string as the DTO surface.
+
+**Why it's the whole point.** "Planner times align with billable hours" IS cross-consumer concept convergence — OpenProject `TimeEntry` / Odoo `account.analytic.line` / WoA `Stundenzettel` already converge on `BILLABLE_WORK_ENTRY` (`0x0103`). The recipe vocabulary must converge the same way, or the behavioural arm fragments back into the zoo the structural arm escaped.
+
+**Cross-ref:** E-RECIPE-BITMASK, E-RECIPE-BITMASK-CHAIN; `ogar-vocab` `canonical_concept_id`/`canonical_concept_name` + the class-concept codebook (the pattern to mirror); `I-LEGACY-API-FEATURE-GATED` (RESERVE-DON'T-RECLAIM slots); full kit + mapping table + runbook: `openproject-nexgen-rs/.claude/knowledge/RAILS-COVERAGE-KIT.md` §5.
+
+---
+
 ## 2026-06-30 — E-RECIPE-BITMASK-CHAIN — constructor-chained `LazyLock` ClassViews resolve "out-of-slice"; the chain makes "redundant = referential identity" (not a hash test); the inheritance collapse axis MEASURED
 
 **Status:** FINDING (`[G]` — the inheritance-collapse axis is measured: 21.0% full / 22.7% behavioural, `odoo-rs tests/recipe_chaining_collapse.rs`) + CONJECTURE (`[H]` — the `LazyLock` constructor-chaining *impl* is operator-proposed). Extends E-RECIPE-BITMASK (same day). Operator-directed 2026-06-30.
