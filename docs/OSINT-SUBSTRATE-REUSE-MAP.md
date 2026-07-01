@@ -160,16 +160,20 @@ learn path (the operator's "only if it works without" gate).
 | **P1** · distance identity (keystone) | **GREEN** 2026-07-01 | `crates/lance-graph-osint/tests/p1_distance_identity.rs` (2 passed): deepnsm `subspace_distance_table` (f32 source) → quantizer → u16 palette → `SpoDistances::s_dist` (planner) ≡ `MatrixDistance::distance` (arm-discovery), byte-exact over 4096 pairs; `causal_distance(0b111)` == plane sum. Commit `3c79f29`; EPIPHANIES `E-P1-DISTANCE-IDENTITY-GREEN`. **deepnsm already ships 6×256 CAM-PQ — no re-bake needed.** |
 | **P2** · edge round-trip | **GREEN** 2026-07-01 | `crates/lance-graph-osint/tests/p2_p3_edge_pearl.rs` (2 of 3 tests): `CausalEdge64::pack_v2` round-trips `s_idx/p_idx/o_idx/causal_mask/frequency/confidence`; `causal_distance` of two edges' heads == per-plane palette sum. Commit `23aff55`; EPIPHANIES `E-P2-P3-EDGE-PEARL-GREEN`. |
 | **P3** · Pearl ladder | **GREEN** 2026-07-01 | same test (3rd): `causal_edge::CausalMask` ≡ `SpoDistances::causal_distance` mask byte (S=0b100,P=0b010,O=0b001); each mask keeps exactly its planes; `PO < SPO` when Subject term > 0 (do-calculus confounder projection). Commit `23aff55`. |
-| P4–P9 | queued | — |
+| **P4** · discovery determinism | **GREEN** 2026-07-01 | `crates/lance-graph-osint/tests/p4_discovery_edge.rs` (3 passed): OSINT `militaryUse⟹impact` fixture, `AerialProposer` mines the known rule with exact `support_ppm=500_000`/`confidence_ppm=1_000_000`; two mines byte-identical (no seed); `arm_to_truth_u8` → `TruthU8{255,254}` → `CausalEdge64::pack_v2` round-trips. Commit `c2c0dd8`; EPIPHANIES `E-P4-DISCOVERY-EDGE-GREEN`. Live-SpoStore promotion still gated on D-ARM-7. |
+| P5 · syllogize chain | queued | — |
+| P6–P9 | queued | — |
 
-**Convergence milestone PROVEN:** P1 (distance identity) + P2 (edge round-trip) +
-P3 (Pearl ladder) all green ⇒ the V3 palette is ONE metric across the distance
-sources, the edge carrier, and the causal-mask semantics — integer-exact on
-shipped code. The edge↔distance↔causality triangle is closed. Next: P4 (ARM
-discovery emitting `CausalEdge64` from mined rules — the arm-discovery
-`AerialProposer` → `arm_to_truth_u8` → edge path) and P5 (`syllogize` multi-hop
-chains). P4's live-`SpoStore` promotion stays gated on D-ARM-7 (jc Pillar 5,
-Jirak floor).
+**Convergence milestone PROVEN + extended:** P1 (distance identity) + P2 (edge
+round-trip) + P3 (Pearl ladder) + P4 (discovery determinism) all green ⇒ the V3
+palette is ONE metric across the **four** vertices — distance sources, edge
+carrier, causal-mask semantics, and ARM discovery — integer-exact on shipped
+code. Next: P5 (`syllogize` multi-hop is_a/part_of chains → derived
+`CausalEdge64` with `Figure::Chain` + NARS truth). P6–P8 (awareness rollover /
+owner fence / reflex determinism) exercise the MailboxSoA runtime loop; P9
+(hot/cold isolation) needs the AriGraph cold-KV reference tenant, which is not
+yet wired in `lance-graph-osint` (the `arigraph` feature is still commented out)
+— P9 is gated on that wiring.
 
 ## Formal pillars (`jc`) — the math the baby steps rest on
 
