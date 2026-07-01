@@ -85,6 +85,15 @@ STORE                    ValueTenant: MaterializedEdges(2)=full CausalEdge64 · 
 5. **Register OSINT `OgarAction` bodies** in the `template-runtime` `ActionRegistry` + an OSINT
    Rubicon/source-ranking template.
 6. **deepnsm** — re-express its 4096² u8 distance as the 6×(8:8) palette256² code.
+7. **AriGraph reference tenant + cold KV blob table (hot/cold split).** Add an AriGraph
+   value tenant holding a small fixed-size **`path:documentid` reference** (not text). A
+   **second KV table** (cold; `surreal_container`/kv-lance) maps `documentid → {wiki
+   profile, links, blobs}`. The 6×(8:8) tiers stay the hot structured OSINT format; **raw
+   text/links never touch the hot path** — the SIMD sweep / `causal_distance` / kanban /
+   `syllogize` read only structured tenants; the profile resolves cold, off-path, for
+   render/LLM/human. One-way: hot→cold read-only reference, cold never writes hot (the
+   ladybug HOT/COLD invariant). Node stays 512 B; Lance compresses the cold value while the
+   key stays addressable. → rich wiki node-profiles at zero hot-path cost.
 
 ## Why it's GoBD-clean
 No LLM on the hot path → deterministic → replayable/auditable. The LLM (rig/spider) teaches at
@@ -133,6 +142,10 @@ the "one format" claim breaks there.
 - **P8 · reflex determinism.** An OSINT `ElixirTemplate` through `template-runtime` with stub
   OGAR actions: same input ⇒ same output; `template-equivalence` (rank_tolerance, no_new_claims)
   green. Closes the GoBD replay loop.
+- **P9 · hot/cold isolation.** Attach a large wiki text profile to a node's AriGraph tenant
+  (`documentid` ref). Assert: (a) the node stays 512 B; (b) `causal_distance` / the SIMD sweep
+  is byte-identical with and without the profile (raw text never touches the hot path); (c)
+  resolving the reference fetches the profile from the cold KV. The HOT/COLD invariant, tested.
 
 **Milestone (convergence proven):** P1 green + P2–P3 green = the V3 palette format is one
 metric across discovery/distance/edge. Then P4–P5 = deterministic OSINT reasoning; P6–P8 =
