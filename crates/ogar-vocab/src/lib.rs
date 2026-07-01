@@ -2465,6 +2465,18 @@ pub fn canonical_concept(name: &str) -> String {
     ) {
         return "priority".to_string();
     }
+    // OSINT domain (0x07XX) — the canonical class-name spellings must
+    // round-trip so ordinary PascalCase model-name inputs (`OsintSystem` /
+    // `OsintPerson`, the builders' `Class::new(...)` names) recover their
+    // codebook ids; without this arm they lexically land on `osintsystem` /
+    // `osintperson`, which are NOT in the codebook (`osint_system` /
+    // `osint_person` are). Codex P2 on PR #145, mirrors the PR #60 pattern.
+    if matches!(lower.as_str(), "osintsystem" | "osint_system") {
+        return "osint_system".to_string();
+    }
+    if matches!(lower.as_str(), "osintperson" | "osint_person") {
+        return "osint_person".to_string();
+    }
     // ── Layer 2: lexical fallback ──
     lexical_concept(name)
 }
@@ -4244,6 +4256,24 @@ mod tests {
         // an undomained class is ignored entirely
         let c = Class::new("res.users");
         assert!(wire_synergies(&[a, b, c]).is_empty());
+    }
+
+    #[test]
+    fn canonical_concept_promotes_osint_classes_deterministically() {
+        // OSINT domain (0x07XX): the builders' PascalCase class names must
+        // round-trip to their codebook ids, like every other promoted class
+        // (codex P2 on PR #145). Without the resolver arm, `OsintSystem`
+        // lexically lands on `osintsystem`, which is NOT in the codebook.
+        assert_eq!(canonical_concept("OsintSystem"), "osint_system");
+        assert_eq!(canonical_concept("OsintPerson"), "osint_person");
+        assert_eq!(canonical_concept("osint_system"), "osint_system");
+        assert_eq!(canonical_concept("osint_person"), "osint_person");
+        // Full round-trip through the codebook resolver.
+        assert_eq!(ogar_codebook("OsintSystem"), Some(0x0700));
+        assert_eq!(ogar_codebook("OsintPerson"), Some(0x0701));
+        // The class builder's own `.name` resolves to its codebook id.
+        assert_eq!(ogar_codebook(&osint_system().name), Some(0x0700));
+        assert_eq!(ogar_codebook(&osint_person().name), Some(0x0701));
     }
 
     #[test]
