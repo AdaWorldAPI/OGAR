@@ -178,6 +178,20 @@ writes) and require `MailboxSoA`/`template-runtime`/AriGraph wiring into
 `lance-graph-osint` that does not yet exist — the next wiring milestone, gated on
 the operator's "only if it works without" external-OSINT sequencing.
 
+**Rung-ladder framing (operator, 2026-07-01).** The probes are not a flat menu —
+they are a climb of the 0–9 `RungLevel` ladder
+(`lance_graph_contract::cognitive_shader::RungLevel`), which gates higher
+reasoning on grounded lower rungs (`ShaderDispatch.rung` *elevates on sustained
+BLOCK*, bottom-up): observation (0–1) ← P1; hypothesis (2–5) ← P3-`PO` + P4;
+counterfactual (6, *on top*) ← P3-`SPO` + P5; the D-ARM-7 Jirak floor is the
+stack guard (no counterfactual promotion of a discovery without observation
+evidence). Consequence: **P6 (awareness rollover) IS the rung-elevation
+mechanism** — unresolved surprise carried in the MailboxSoA `MetaWord` awareness
+bits across cycles is what pushes `rung` up toward Counterfactual and rests it
+back down on FLOW. P6 must assert the *elevation order*, not just bit
+persistence. Full invariant: lance-graph EPIPHANIES
+`E-RUNG-LADDER-IS-A-DEPENDENCY-STACK`.
+
 ## Formal pillars (`jc`) — the math the baby steps rest on
 
 The `jc` crate PROVES the substrate's statistical/geometric foundations, one
