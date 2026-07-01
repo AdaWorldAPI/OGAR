@@ -71,7 +71,8 @@ use ogar_vocab::{
     canonical_concept_id, commercial_document, commercial_line_item, currency_policy, diagnosis,
     hr_department, hr_employee, hr_employment_contract, hr_job, joint, knowledge_item, lab_value,
     mars_application, mars_machine, mars_node_template, mars_resource, mars_software, medication,
-    patient, payment_record, pricelist, pricelist_rule, priority, product, project, project_actor,
+    osint_person, osint_system, patient, payment_record, pricelist, pricelist_rule, priority,
+    product, project, project_actor,
     project_attachment, project_changeset, project_comment, project_custom_field,
     project_custom_value, project_enabled_module, project_forum, project_journal,
     project_member_role, project_membership, project_message, project_news, project_query,
@@ -127,6 +128,9 @@ fn all_canonical_classes() -> Vec<(&'static str, Class)> {
         ("pricelist", pricelist()),
         ("pricelist_rule", pricelist_rule()),
         ("unit_of_measure", unit_of_measure()),
+        // ── 0x07XX — OSINT (AIRO/AIwar dual-use intelligence) ──
+        ("osint_system", osint_system()),
+        ("osint_person", osint_person()),
         // ── 0x09XX — health (OGIT Healthcare) ──
         ("patient", patient()),
         ("diagnosis", diagnosis()),
