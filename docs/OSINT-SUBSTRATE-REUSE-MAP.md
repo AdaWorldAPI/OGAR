@@ -161,19 +161,22 @@ learn path (the operator's "only if it works without" gate).
 | **P2** · edge round-trip | **GREEN** 2026-07-01 | `crates/lance-graph-osint/tests/p2_p3_edge_pearl.rs` (2 of 3 tests): `CausalEdge64::pack_v2` round-trips `s_idx/p_idx/o_idx/causal_mask/frequency/confidence`; `causal_distance` of two edges' heads == per-plane palette sum. Commit `23aff55`; EPIPHANIES `E-P2-P3-EDGE-PEARL-GREEN`. |
 | **P3** · Pearl ladder | **GREEN** 2026-07-01 | same test (3rd): `causal_edge::CausalMask` ≡ `SpoDistances::causal_distance` mask byte (S=0b100,P=0b010,O=0b001); each mask keeps exactly its planes; `PO < SPO` when Subject term > 0 (do-calculus confounder projection). Commit `23aff55`. |
 | **P4** · discovery determinism | **GREEN** 2026-07-01 | `crates/lance-graph-osint/tests/p4_discovery_edge.rs` (3 passed): OSINT `militaryUse⟹impact` fixture, `AerialProposer` mines the known rule with exact `support_ppm=500_000`/`confidence_ppm=1_000_000`; two mines byte-identical (no seed); `arm_to_truth_u8` → `TruthU8{255,254}` → `CausalEdge64::pack_v2` round-trips. Commit `c2c0dd8`; EPIPHANIES `E-P4-DISCOVERY-EDGE-GREEN`. Live-SpoStore promotion still gated on D-ARM-7. |
-| P5 · syllogize chain | queued | — |
-| P6–P9 | queued | — |
+| **P5** · syllogize chain | **GREEN** 2026-07-01 | `crates/lance-graph-osint/tests/p5_syllogize.rs` (4 passed): `is_a(A,B).syllogize(is_a(B,C))` → `Figure::Chain`, conclusion `is_a(A,C)`, deduction truth exact (f=255, c=163), mantissa +1, mask SPO&SPO=SPO; no-shared-term and identical-(S,O) ⇒ `None`; deterministic. Commit `a3820df`; EPIPHANIES `E-P5-SYLLOGIZE-GREEN`. |
+| P6–P8 · MailboxSoA runtime loop | queued (needs wiring) | awareness rollover / owner fence / reflex determinism — exercise the `MailboxSoA` + `template-runtime` runtime; `lance-graph-osint` does not yet dep those. |
+| P9 · hot/cold isolation | blocked | needs the AriGraph cold-KV reference tenant; `arigraph` feature still commented out in `lance-graph-osint`. |
 
-**Convergence milestone PROVEN + extended:** P1 (distance identity) + P2 (edge
-round-trip) + P3 (Pearl ladder) + P4 (discovery determinism) all green ⇒ the V3
-palette is ONE metric across the **four** vertices — distance sources, edge
-carrier, causal-mask semantics, and ARM discovery — integer-exact on shipped
-code. Next: P5 (`syllogize` multi-hop is_a/part_of chains → derived
-`CausalEdge64` with `Figure::Chain` + NARS truth). P6–P8 (awareness rollover /
-owner fence / reflex determinism) exercise the MailboxSoA runtime loop; P9
-(hot/cold isolation) needs the AriGraph cold-KV reference tenant, which is not
-yet wired in `lance-graph-osint` (the `arigraph` feature is still commented out)
-— P9 is gated on that wiring.
+**Convergence milestone PROVEN across FIVE vertices:** P1 (distance identity) +
+P2 (edge round-trip) + P3 (Pearl ladder) + P4 (discovery determinism) + P5
+(syllogize reasoning) all green ⇒ the V3 palette is ONE integer-exact metric
+across distance sources, the edge carrier, the causal-mask semantics, ARM
+discovery, and multi-hop NAL reasoning — on shipped code, no new production
+deps (only an `arm-discovery` dev-dep + 4 test files). The "static" convergence
+(how a fact is *encoded*, *compared*, *discovered*, *chained*) is proven. The
+remaining probes (P6–P8 awareness/owner/reflex loop, P9 hot/cold) are the
+*runtime* convergence (how facts *roll over between cycles* under single-owner
+writes) and require `MailboxSoA`/`template-runtime`/AriGraph wiring into
+`lance-graph-osint` that does not yet exist — the next wiring milestone, gated on
+the operator's "only if it works without" external-OSINT sequencing.
 
 ## Formal pillars (`jc`) — the math the baby steps rest on
 
