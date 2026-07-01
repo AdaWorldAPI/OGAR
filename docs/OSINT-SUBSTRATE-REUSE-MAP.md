@@ -152,6 +152,21 @@ metric across discovery/distance/edge. Then P4–P5 = deterministic OSINT reason
 the awareness/owner/reflex loop. Only after P1–P8 green do we wire the external `spider`→OSINT
 learn path (the operator's "only if it works without" gate).
 
+## Probe status ledger (append-only; regrade in place)
+
+| Probe | Status | Receipt |
+|---|---|---|
+| **P0** · edge-type dedup (pre-req) | **GREEN** 2026-07-01 | lance-graph `thinking-engine`: local `CausalEdge64` → `CascadeChannels8`; canonical `causal_edge::CausalEdge64` is now the sole `CausalEdge64` in the crate. `cargo check -p thinking-engine` green. Commit `7e31cd7`; EPIPHANIES `E-CE64-NAME-COLLISION-DEDUP`. |
+| **P1** · distance identity (keystone) | **GREEN** 2026-07-01 | `crates/lance-graph-osint/tests/p1_distance_identity.rs` (2 passed): deepnsm `subspace_distance_table` (f32 source) → quantizer → u16 palette → `SpoDistances::s_dist` (planner) ≡ `MatrixDistance::distance` (arm-discovery), byte-exact over 4096 pairs; `causal_distance(0b111)` == plane sum. Commit `3c79f29`; EPIPHANIES `E-P1-DISTANCE-IDENTITY-GREEN`. **deepnsm already ships 6×256 CAM-PQ — no re-bake needed.** |
+| P2 · edge round-trip | queued | — |
+| P3 · Pearl ladder | queued | — |
+| P4–P9 | queued | — |
+
+**Convergence milestone progress:** P1 green (keystone). Next: P2 (edge
+round-trip via `CausalEdge64::pack_v2` → `to_spo`/`from_spo` + `causal_distance`
+of the packed edge) and P3 (Pearl PO/SPO mask drop), both directly on shipped
+code — no new cross-crate deps.
+
 ## Formal pillars (`jc`) — the math the baby steps rest on
 
 The `jc` crate PROVES the substrate's statistical/geometric foundations, one
