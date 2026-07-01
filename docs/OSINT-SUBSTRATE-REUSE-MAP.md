@@ -158,14 +158,18 @@ learn path (the operator's "only if it works without" gate).
 |---|---|---|
 | **P0** · edge-type dedup (pre-req) | **GREEN** 2026-07-01 | lance-graph `thinking-engine`: local `CausalEdge64` → `CascadeChannels8`; canonical `causal_edge::CausalEdge64` is now the sole `CausalEdge64` in the crate. `cargo check -p thinking-engine` green. Commit `7e31cd7`; EPIPHANIES `E-CE64-NAME-COLLISION-DEDUP`. |
 | **P1** · distance identity (keystone) | **GREEN** 2026-07-01 | `crates/lance-graph-osint/tests/p1_distance_identity.rs` (2 passed): deepnsm `subspace_distance_table` (f32 source) → quantizer → u16 palette → `SpoDistances::s_dist` (planner) ≡ `MatrixDistance::distance` (arm-discovery), byte-exact over 4096 pairs; `causal_distance(0b111)` == plane sum. Commit `3c79f29`; EPIPHANIES `E-P1-DISTANCE-IDENTITY-GREEN`. **deepnsm already ships 6×256 CAM-PQ — no re-bake needed.** |
-| P2 · edge round-trip | queued | — |
-| P3 · Pearl ladder | queued | — |
+| **P2** · edge round-trip | **GREEN** 2026-07-01 | `crates/lance-graph-osint/tests/p2_p3_edge_pearl.rs` (2 of 3 tests): `CausalEdge64::pack_v2` round-trips `s_idx/p_idx/o_idx/causal_mask/frequency/confidence`; `causal_distance` of two edges' heads == per-plane palette sum. Commit `23aff55`; EPIPHANIES `E-P2-P3-EDGE-PEARL-GREEN`. |
+| **P3** · Pearl ladder | **GREEN** 2026-07-01 | same test (3rd): `causal_edge::CausalMask` ≡ `SpoDistances::causal_distance` mask byte (S=0b100,P=0b010,O=0b001); each mask keeps exactly its planes; `PO < SPO` when Subject term > 0 (do-calculus confounder projection). Commit `23aff55`. |
 | P4–P9 | queued | — |
 
-**Convergence milestone progress:** P1 green (keystone). Next: P2 (edge
-round-trip via `CausalEdge64::pack_v2` → `to_spo`/`from_spo` + `causal_distance`
-of the packed edge) and P3 (Pearl PO/SPO mask drop), both directly on shipped
-code — no new cross-crate deps.
+**Convergence milestone PROVEN:** P1 (distance identity) + P2 (edge round-trip) +
+P3 (Pearl ladder) all green ⇒ the V3 palette is ONE metric across the distance
+sources, the edge carrier, and the causal-mask semantics — integer-exact on
+shipped code. The edge↔distance↔causality triangle is closed. Next: P4 (ARM
+discovery emitting `CausalEdge64` from mined rules — the arm-discovery
+`AerialProposer` → `arm_to_truth_u8` → edge path) and P5 (`syllogize` multi-hop
+chains). P4's live-`SpoStore` promotion stays gated on D-ARM-7 (jc Pillar 5,
+Jirak floor).
 
 ## Formal pillars (`jc`) — the math the baby steps rest on
 
