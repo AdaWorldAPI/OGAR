@@ -16,6 +16,18 @@ SurrealDB happens to have the same-looking verbs (`DEFINE`, `SELECT`, `RELATE`,
 `LIVE`, …). That's a **familiar shape we borrow, not the engine.** The engine is
 the compiled ClassView. Think "same silhouette, different body."
 
+## What SurrealQL is (and isn't)
+
+SurrealQL is **only the API shape** — the verb names. Nothing structural.
+
+The real knowledge transfer is our own stack:
+- **ClassView + askama** (the Redmine-ERB ViewFilter shape) — the view/render
+  surface; ClassView carries the schema and inherits it (knowledge transfer).
+- **the transpiler** — ingests Active Record / Rails → an OGAR `Class`, plus
+  **SPO triplets** and **part_of / is_a** relations.
+- **the 3×4 GUID cascade** — pulled in **only when a domain needs it** (Odoo or
+  similar); not universal.
+
 ## The one honest rule the council found
 
 Only **`define` really matches** SurrealDB (schema in → schema out, no runtime).
