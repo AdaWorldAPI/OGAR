@@ -7,6 +7,21 @@
 
 ---
 
+## 2026-07-01 — E-OSINT-SUBSTRATE-CONVERGES-PER-SOA — the massive cognitive stack converges into the V3 2+14 tenant SoA; the dedup IS the convergence
+
+**Status:** FRAMING (`[G]` for the shipped crates + the tenant carve + the sole-writer canon E-CE64-MB-4; `[H]` for the convergence *program* — the deltas + baby-step probes P0–P8 are unrun). Operator-framed 2026-07-01 (*"massive codebase massive entropy … the V3 2+14 tenants converge the awareness massively per SoA"*).
+
+The lance-graph cognitive stack (`causal-edge`, `thinking-engine`, planner `nars_engine`/`causal_distance`, `cognitive-shader-driver` MailboxSoA, `symbiont`, `arm-discovery`, the `elixir-template`+`template-runtime` reflex cluster, the `jc` pillars) is ~80% of an OSINT reasoning substrate already. The V3 **2+14 tenant node is the convergence vessel**: every awareness facet = one typed tenant column on one 512-B row (Meta / Qualia / MaterializedEdges=`CausalEdge64` / Fingerprint / Energy / Plasticity / EntityType / Kanban). Each duplicate type deleted (4× `CausalEdge64`, 4× `ThinkingStyle`, N× fingerprint/qualia) = one crate re-pointed at its tenant — **the dedup IS the convergence**. The sole-writer sandbox (SoA's own owner only; ractor single-`&mut self`; **E-CE64-MB-4**) is what makes it race-free by compile error.
+
+- **One distance format:** `causal_distance` = Pearl-masked Σ of 3×256² palette = the same palette256 shared by `arm-discovery`'s oracle (ρ=0.9973), `deepnsm` (→6×8:8), and the V3 6×(8:8) GUID tiers. Keystone probe **P1** = distance identity across the three.
+- **Formal gate = `jc` pillars:** D-ARM-7 (`arm-discovery`→SpoStore) = Pillar 5 (`jirak.rs`, `I-NOISE-FLOOR-JIRAK`); Pearl masks = Pillar 5b (`pearl.rs`); the `syllogize` multi-hop chain = Pillars 6/9 (EWA-sandwich); ℓ²-fingerprint geometry = Pillars 7/8.
+- **OSINT deltas (small):** mint `0x0700`/`0x0701` (DONE) · dedup `thinking-engine` `CausalEdge64`→canonical · retarget `osint_bridge`→ClassView · register OGAR action bodies · `deepnsm`→6×(8:8) · gate SPO promotion on D-ARM-7.
+- **GoBD-clean:** no LLM on the hot path — rig/spider teach at learn-time → `cognitive-compiler` compiles an `ElixirTemplate` → `template-runtime` runs OGAR actions deterministically on the OSINT ClassView.
+
+**Full map + convergence baby-step roadmap (P0–P8) + pillar gates:** `docs/OSINT-SUBSTRATE-REUSE-MAP.md`.
+
+---
+
 ## 2026-06-30 — E-KEEP-AR-REMOVE-ORM — the consumer open-heart op KEEPS ActiveRecord and removes the ORM; OGAR is named after AR
 
 **Status:** FRAMING (`[G]` for the name origin + the keep/remove split, operator-stated 2026-06-30; the convergence wiring it implies is `[H]`, gated per the OP assessment). Corrects a session inversion (mine) that read the consumer pivot as "castrate the hand-rolled Rails ActiveRecord betrayal" — **backwards**.
