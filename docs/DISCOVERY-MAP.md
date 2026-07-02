@@ -652,3 +652,61 @@ isolation. The map's job is to keep them visible.
   `PHILOSOPHY.md`/`PHILOSOPHIE.md`, `README.md`/`README.de.md`,
   `integration/AR-OGAR-MAILBOX-INTEGRATION-PLAN.md` §7, and this
   repo's `CLAUDE.md`.
+
+---
+
+- **D-TRUNCATION-DISALLOWED-SOC-REROUTE (truncation-disallowed /
+  overflow-as-SoC-reroute doctrine; 2026-07-02; [G], mirrored from
+  lance-graph):** names/entries over the 256-slot cascade-tier
+  cardinality are NEVER truncated; overflow is rerouted as a
+  separation-of-concerns split, never a silent drop and never a
+  field-widen. This operationalizes OGAR's own `256-cap-is-a-lint` law
+  stated at the top of this file (`scale = the next cascade level,
+  never field-widening`) — a bucket/tier that exceeds its 256-slot
+  cardinality is a DESIGN smell, and the overflow itself is the reroute
+  signal (split the overflowing class into sub-concerns, or escalate to
+  the next family/basin), not a minter limitation to "fix" with a bigger
+  packer. Doctrine statement: lance-graph
+  `.claude/knowledge/ast-as-partof-isa-address.md` ("Truncation is
+  DISALLOWED; bucket overflow is a separation-of-concerns REROUTE
+  trigger") + lance-graph `.claude/board/EPIPHANIES.md`
+  E-BRICK3-RAN-TRUNCATION-DISALLOWED (2026-07-01, operator doctrine:
+  "truncations were disallowed / we introduced bucket overflow with
+  separation of concerns as a trigger for rerouting"). **Shipped
+  implementation** (the reason this is graded `[G]` rather than `[H]`):
+  `ruff` `crates/ruff_spo_address/src/soc.rs` —
+  `MAX_SIBLINGS_PER_TIER: usize = u8::MAX as usize` (255, the
+  byte-cardinality ceiling shared with the per-tier sibling rank),
+  `SocVerdict::{Duplication, Conflation, DuplicationAndConflation,
+  Counterexample}`, and `law_holds` as the falsifier (`false` iff some
+  over-cap class is neither type-collapsible nor
+  data⊥behaviour-mixed). Division of labour: `mint_factored`
+  (lance-graph's rank-minter, per the brick-3 falsification of the naive
+  fixed-width 6-tier packer) handles **addressing precision**;
+  overflow→SoC-reroute (`ruff::soc`) handles **structure** — together:
+  zero truncation, zero collision, over-cap classes flagged for split
+  rather than silently mangled.
+
+- **D-CLASSID-HI-U16-SPELLING (operator confirmation; 2026-07-02; [G],
+  recorded in both ledgers same-arc):** the composed classid u32 reads
+  **`domain : appid : classview`** — canon hi u16 = `domain byte ++
+  appid byte`, custom lo u16 = the ClassView selector — and **"concept"
+  NAMES the whole hi u16** while `domain:appid` is its byte spelling.
+  Canonical text: lance-graph `.claude/v3/soa_layout/le-contract.md`
+  (§ the 4-byte prefix; worked example `0x07:01` = OSINT:q2) +
+  `.claude/v3/knowledge/v3-substrate-primer.md` §5 (`[hi u16 CANON
+  concept/domain:appid][lo u16 CUSTOM]`). The 2026-07-02 cross-session
+  "conflict" between OGAR's `domain:concept-slot` prose and the
+  le-contract's `domain:appid` was a PHANTOM — the same second byte
+  under two names. **Homonym warning (the root cause):** the word "app"
+  appears in BOTH halves with different meanings — the **appid byte**
+  (hi half) is the canonical app-concept slot within a domain (shared
+  across vendors: `0x0102` = project work item, converged on by
+  OpenProject `0x0102_0001` AND Redmine `0x0102_0007`), while the
+  **APP render PREFIX** (lo half, OGAR#95 register: `0x0001` =
+  OpenProject) is the per-vendor ClassView skin. q2's appid `0x01`
+  (inside `0x07:01` OSINT:q2, hi half) and OpenProject's APP_PREFIX
+  `0x0001` (lo half) are positionally distinct registers — no collision,
+  no guard needed beyond this line. Cite this entry instead of
+  re-deriving; a "two ledgers disagree" claim checks the le-contract /
+  primer line FIRST.
