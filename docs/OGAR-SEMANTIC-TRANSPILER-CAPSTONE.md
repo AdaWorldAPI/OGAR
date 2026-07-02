@@ -51,7 +51,8 @@ Per `OGAR-AST-CONTRACT.md`:
 
 - **THINK arm — `Class` → ClassView → fieldview (a three-level chain, not one
   layer):** `Class` is the source-of-truth IR node (data + declared hooks);
-  **ClassView** is a per-app render skin (hi-u16); **fieldview** is a presence
+  **ClassView** is a per-app render skin (lo-u16, canon HIGH / custom LOW
+  since the 2026-07-02 half-order flip); **fieldview** is a presence
   mask over ClassView. Structure-preserving: Odoo view → ClassView; Redmine ERB
   partial → Askama bitmask partial; OpenProject WP schema → `Class` facets.
   **CODED-today** (`lance-graph-contract/src/class_view.rs`: `ClassView`,
