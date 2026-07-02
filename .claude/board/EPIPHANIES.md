@@ -11,6 +11,8 @@
 
 **Status:** FINDING (`[G]`, operator-triggered). Doc-sweep companion to `docs/DISCOVERY-MAP.md` D-CLASSID-CANON-HIGH-FLIP — read that entry for the full ledger; this entry records the same correction in the session-findings log.
 
+**Scope:** the composed 32-bit classid ONLY (`ogar_vocab::app` compose/decompose + every doc/worked example carrying a composed literal). Bare u16 concept ids, `APP_PREFIX` values, the 16-byte GUID key layout, and the HEEL/HIP/TWIG tiers are untouched; already-baked old-order ids stay valid via the legacy registry aliases; consumer repos flip in their own lockstep PRs.
+
 **The trigger:** the operator's `0x07:01::1000` mnemonic — read as `domain:appid::marker` — exposed that the working composed classid stored the APP/render prefix in the **high** u16 and the canonical concept in the **low** u16, backwards from the mnemonic's own read order (domain/concept first, appid second).
 
 **The ruling:** flip the composed order to `classid : u32 = [hi u16: canon concept][lo u16: APP/render prefix]`. `ogar_vocab::app::{render_classid, app_of, concept_of}` flip in lockstep with lance-graph-contract's `CLASSID_ORDER = CanonHigh` (PR #628 there) — `app_of` now reads `classid as u16`, `concept_of` now reads `classid >> 16`. **APP_PREFIX values are unchanged** (`0x0000` Core … `0x0007` Redmine) — only their bit position moves. V3 marker forms move in lockstep (`0x1000_0700` → `0x0701_1000`; FMA `0x1000_0A01` → `0x0A01_1000`; CPIC `0x1000_0E00` → `0x0E01_1000`, appid normalized `:00`→`:01`). Auth RBAC literals: `0x0000_0B0N` → `0x0B0N_0000` for N∈{1,2,3,4}.
