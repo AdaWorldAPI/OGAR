@@ -8,18 +8,23 @@ The [Active Record pattern](https://martinfowler.com/eaaCatalog/activeRecord.htm
 (Martin Fowler, 2003) as a canonical 32-bit `classid`. One codebook;
 every consumer pulls, never re-mints.
 
+> Order flipped 2026-07-02 — canon HIGH / custom LOW: the canonical
+> concept sits in the high u16, the per-app render prefix sits in the
+> low u16. Pre-flip material and already-baked data use the legacy
+> order; see `docs/DISCOVERY-MAP.md` D-CLASSID-CANON-HIGH-FLIP.
+
 ```rust
 let cid: u16  = HealthcarePort::class_id("Patient");        // 0x0901
-let render    = HealthcarePort::APP_PREFIX | (cid as u32);  // 0x0005_0901
-authorize(actor, cid, Op::Read);                            // shared grant on lo u16
+let render    = ((cid as u32) << 16) | HealthcarePort::APP_PREFIX;  // 0x0901_0005
+authorize(actor, cid, Op::Read);                            // shared grant on hi u16
 //                                                          // enrich locally — yours
 ```
 
 ```
-classid : u32  =  0xAAAA ‖ 0xDDCC                  both halves are ADDRESS
+classid : u32  =  0xDDCC ‖ 0xAAAA                  both halves are ADDRESS
                     │         │
-                    │         └─ lo u16 — WHICH CONCEPT  (shared identity)
-                    └─────────── hi u16 — WHOSE RENDER   (per-app skin)
+                    │         └─ lo u16 — WHOSE RENDER   (per-app skin)
+                    └─────────── hi u16 — WHICH CONCEPT  (shared identity)
 
          ──────►  resolves to  ──────►
             ├─ ClassView                the SKIN    (per-app)
@@ -49,16 +54,16 @@ Django, Prisma — same vocabulary, one IR.
 
 ## Render lens — one concept, many apps
 
-| classid       | concept (lo u16)            | render (hi u16)          | app                  |
+| classid       | concept (hi u16)            | render (lo u16)          | app                  |
 |---------------|-----------------------------|--------------------------|----------------------|
-| `0x0001_0102` | `0x0102` project_work_item  | `0x0001` OpenProject     | openproject-nexgen-rs |
-| `0x0007_0102` | `0x0102` project_work_item  | `0x0007` Redmine         | (consumer TBD)        |
-| `0x0005_0901` | `0x0901` patient            | `0x0005` Medcare         | medcare-rs            |
-| `0x0003_0103` | `0x0103` billable_work_entry | `0x0003` WoA            | woa-rs                |
-| `0x0004_0103` | `0x0103` billable_work_entry | `0x0004` SMB            | smb-office-rs         |
-| `0x0001_0103` | `0x0103` billable_work_entry | `0x0001` OpenProject    | openproject-nexgen-rs |
-| `0x0007_0103` | `0x0103` billable_work_entry | `0x0007` Redmine        | (consumer TBD)        |
-| `0x0002_0103` | `0x0103` billable_work_entry | `0x0002` Odoo           | odoo-rs               |
+| `0x0102_0001` | `0x0102` project_work_item  | `0x0001` OpenProject     | openproject-nexgen-rs |
+| `0x0102_0007` | `0x0102` project_work_item  | `0x0007` Redmine         | (consumer TBD)        |
+| `0x0901_0005` | `0x0901` patient            | `0x0005` Medcare         | medcare-rs            |
+| `0x0103_0003` | `0x0103` billable_work_entry | `0x0003` WoA            | woa-rs                |
+| `0x0103_0004` | `0x0103` billable_work_entry | `0x0004` SMB            | smb-office-rs         |
+| `0x0103_0001` | `0x0103` billable_work_entry | `0x0001` OpenProject    | openproject-nexgen-rs |
+| `0x0103_0007` | `0x0103` billable_work_entry | `0x0007` Redmine        | (consumer TBD)        |
+| `0x0103_0002` | `0x0103` billable_work_entry | `0x0002` Odoo           | odoo-rs               |
 
 Same `0x0103` → same RBAC grant, same ontology, same cross-fork
 identity. Five apps render *billable time* five ways; planner hours
@@ -69,7 +74,7 @@ align with billing by codebook lookup, not translation.
 | Move      | Call                                       | Yours?    |
 |-----------|--------------------------------------------|-----------|
 | pull      | `Port::class_id(name) -> Option<u16>`      | no — pure function |
-| render    | `Port::APP_PREFIX \| (cid as u32)`         | no — typed helper |
+| render    | `((cid as u32) << 16) \| Port::APP_PREFIX` | no — typed helper |
 | authorize | `authorize(actor, cid, op)` ²              | no — shared grant lattice |
 | enrich    | your domain logic keyed on `cid`           | **yes**   |
 

@@ -610,3 +610,45 @@ isolation. The map's job is to keep them visible.
   consumed by q2; CPIC likewise its own Genetics domain (`0x0E`) under
   q2. Do NOT re-mint OSINT concept rows; the codebook section carries
   the guard note.
+
+---
+
+- **D-CLASSID-CANON-HIGH-FLIP (classid half-order flip — canon concept
+  now HIGH, APP/render prefix now LOW; 2026-07-02; [G], operator
+  triggered):** the operator's `0x07:01::1000` mnemonic ("domain 0x07,
+  appid 0x01=q2, custom marker 0x1000" — human-readable as
+  `domain:appid::marker`) exposed that the working composed-classid
+  order had the APP/render prefix in the **high** u16 and the canonical
+  concept in the **low** u16 — backwards from how the mnemonic reads
+  (domain/concept first, appid second). **Ruling:** flip the composed
+  order to `classid : u32 = [hi u16: canon concept][lo u16: APP/render
+  prefix]` — the mnemonic's read order becomes the storage order.
+  `ogar_vocab::app::{render_classid, app_of, concept_of}` flipped in
+  lockstep with lance-graph-contract's `CLASSID_ORDER = CanonHigh` (PR
+  #628 there): `app_of` now reads `classid as u16`; `concept_of` now
+  reads `classid >> 16`. **APP_PREFIX *values* are unchanged** (`0x0000`
+  Core, `0x0001` OpenProject, `0x0002` Odoo, `0x0003` WoA, `0x0004` SMB,
+  `0x0005` Healthcare, `0x0007` Redmine) — only their **position**
+  moves (hi → lo). V3 marker forms move in lockstep: `0x1000_0700` →
+  `0x0701_1000`; FMA `0x1000_0A01` → `0x0A01_1000`; CPIC `0x1000_0E00` →
+  `0x0E01_1000` (appid normalized `:00`→`:01` in the same pass). Auth
+  RBAC literals: `0x0000_0B01`→`0x0B01_0000`,
+  `0x0000_0B02`→`0x0B02_0000`, `0x0000_0B03`→`0x0B03_0000`,
+  `0x0000_0B04`→`0x0B04_0000`. **Legacy stored forms resolve via a
+  read-only registry alias** (mint-forward doctrine, RESERVE-DON'T-
+  RECLAIM held) — no data is rewritten, and pre-flip docs are annotated
+  in place rather than deleted; retirement of the legacy-alias path is
+  gated on a corpus proof, not assumed. **This supersedes the order
+  stated in D-APPCLASS** (`classid = APP(hi u16) ‖ class(lo u16)`,
+  2026-06-22) **and the `0x1000_0701` literal in
+  D-OSINT-APPID-NOT-CONCEPT** (2026-07-02, same-day predecessor) — both
+  entries stand as written (append-only; do not edit), this entry is
+  the correction of record for the half-order going forward. Doc sweep:
+  `APP-CLASS-CODEBOOK-LAYOUT.md`, `APP-CODEBOOK-MIGRATION-PLAN.md`,
+  `OGAR-CONSUMER-BEST-PRACTICES.md`, `OGAR-TRANSPILE-SUBSTRATE.md`,
+  `OGAR-AS-IR.md`, `SURREAL-AST-TRAP-PREFLIGHT.md`,
+  `NODEGUID-CANON-AUDIT.md`, `FOUNDRY-ODOO-MARS-LENS.md`,
+  `CLASSID-RBAC-KEYSTONE-SPEC.md`, `ODOO-REDMINE-OPENPROJECT-LANDING.md`,
+  `PHILOSOPHY.md`/`PHILOSOPHIE.md`, `README.md`/`README.de.md`,
+  `integration/AR-OGAR-MAILBOX-INTEGRATION-PLAN.md` §7, and this
+  repo's `CLAUDE.md`.

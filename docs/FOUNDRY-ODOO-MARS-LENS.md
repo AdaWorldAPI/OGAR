@@ -127,9 +127,9 @@ collapses to one IR with three lowering targets:
 
 Foundry's "object explorer" is one `ClassView` (render lens —
 `docs/APP-CLASS-CODEBOOK-LAYOUT.md`); Odoo's web UI is another;
-bardioc's CLI is a third. **Same lo u16 concept, different hi u16
-render prefix** — already the architecture per
-`docs/OGAR-CONSUMER-BEST-PRACTICES.md`.
+bardioc's CLI is a third. **Same hi u16 concept, different lo u16
+render prefix** (order flipped 2026-07-02 — canon HIGH / custom LOW) —
+already the architecture per `docs/OGAR-CONSUMER-BEST-PRACTICES.md`.
 
 ---
 

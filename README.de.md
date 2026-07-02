@@ -8,18 +8,24 @@ Das [Active-Record-Muster](https://martinfowler.com/eaaCatalog/activeRecord.html
 (Martin Fowler, 2003) als kanonische 32-Bit-`classid`. Ein Codebook;
 jeder Consumer zieht, prägt niemals neu.
 
+> Reihenfolge geflippt 2026-07-02 — Kanon HOCH / App-eigen NIEDRIG: das
+> kanonische Konzept sitzt im hohen u16, der App-Render-Präfix im
+> niedrigen u16. Material von vor dem Flip und bereits gebackene Daten
+> nutzen die alte Reihenfolge; siehe `docs/DISCOVERY-MAP.md`
+> D-CLASSID-CANON-HIGH-FLIP.
+
 ```rust
 let cid: u16  = HealthcarePort::class_id("Patient");        // 0x0901
-let render    = HealthcarePort::APP_PREFIX | (cid as u32);  // 0x0005_0901
-authorize(actor, cid, Op::Read);                            // geteilter Grant auf lo u16
+let render    = ((cid as u32) << 16) | HealthcarePort::APP_PREFIX;  // 0x0901_0005
+authorize(actor, cid, Op::Read);                            // geteilter Grant auf hi u16
 //                                                          // lokal anreichern — deins
 ```
 
 ```
-classid : u32  =  0xAAAA ‖ 0xDDCC                  beide Hälften sind ADRESSE
+classid : u32  =  0xDDCC ‖ 0xAAAA                  beide Hälften sind ADRESSE
                     │         │
-                    │         └─ lo u16 — WELCHES KONZEPT  (geteilte Identität)
-                    └─────────── hi u16 — WESSEN RENDER     (App-eigene Haut)
+                    │         └─ lo u16 — WESSEN RENDER     (App-eigene Haut)
+                    └─────────── hi u16 — WELCHES KONZEPT  (geteilte Identität)
 
          ──────►  löst auf zu  ──────►
             ├─ ClassView                die HAUT      (pro App)
@@ -49,16 +55,16 @@ Prisma — gleiches Vokabular, ein IR.
 
 ## Render-Linse — ein Konzept, viele Apps
 
-| classid       | Konzept (lo u16)            | Render (hi u16)          | App                  |
+| classid       | Konzept (hi u16)            | Render (lo u16)          | App                  |
 |---------------|-----------------------------|--------------------------|----------------------|
-| `0x0001_0102` | `0x0102` project_work_item  | `0x0001` OpenProject     | openproject-nexgen-rs |
-| `0x0007_0102` | `0x0102` project_work_item  | `0x0007` Redmine         | (Consumer TBD)        |
-| `0x0005_0901` | `0x0901` patient            | `0x0005` Medcare         | medcare-rs            |
-| `0x0003_0103` | `0x0103` billable_work_entry | `0x0003` WoA            | woa-rs                |
-| `0x0004_0103` | `0x0103` billable_work_entry | `0x0004` SMB            | smb-office-rs         |
-| `0x0001_0103` | `0x0103` billable_work_entry | `0x0001` OpenProject    | openproject-nexgen-rs |
-| `0x0007_0103` | `0x0103` billable_work_entry | `0x0007` Redmine        | (Consumer TBD)        |
-| `0x0002_0103` | `0x0103` billable_work_entry | `0x0002` Odoo           | odoo-rs               |
+| `0x0102_0001` | `0x0102` project_work_item  | `0x0001` OpenProject     | openproject-nexgen-rs |
+| `0x0102_0007` | `0x0102` project_work_item  | `0x0007` Redmine         | (Consumer TBD)        |
+| `0x0901_0005` | `0x0901` patient            | `0x0005` Medcare         | medcare-rs            |
+| `0x0103_0003` | `0x0103` billable_work_entry | `0x0003` WoA            | woa-rs                |
+| `0x0103_0004` | `0x0103` billable_work_entry | `0x0004` SMB            | smb-office-rs         |
+| `0x0103_0001` | `0x0103` billable_work_entry | `0x0001` OpenProject    | openproject-nexgen-rs |
+| `0x0103_0007` | `0x0103` billable_work_entry | `0x0007` Redmine        | (Consumer TBD)        |
+| `0x0103_0002` | `0x0103` billable_work_entry | `0x0002` Odoo           | odoo-rs               |
 
 Gleiche `0x0103` → gleicher RBAC-Grant, gleiche Ontologie, gleiche
 Cross-Fork-Identität. Fünf Apps rendern *abrechenbare Zeit* auf fünf
@@ -70,7 +76,7 @@ Arten; Planer-Stunden stimmen mit der Abrechnung per Codebook-Lookup
 | Zug       | Aufruf                                     | Deiner?   |
 |-----------|--------------------------------------------|-----------|
 | pull      | `Port::class_id(name) -> Option<u16>`      | nein — reine Funktion |
-| render    | `Port::APP_PREFIX \| (cid as u32)`         | nein — typisierter Helfer |
+| render    | `((cid as u32) << 16) \| Port::APP_PREFIX` | nein — typisierter Helfer |
 | authorize | `authorize(actor, cid, op)` ²              | nein — geteiltes Grant-Gitter |
 | enrich    | deine Domänen-Logik, an `cid` verschlüsselt | **ja**   |
 

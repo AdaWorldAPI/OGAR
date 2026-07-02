@@ -7,6 +7,24 @@
 
 ---
 
+## 2026-07-02 — E-CLASSID-CANON-HIGH-FLIP — the composed classid half-order flips: canon concept HIGH, APP/render prefix LOW
+
+**Status:** FINDING (`[G]`, operator-triggered). Doc-sweep companion to `docs/DISCOVERY-MAP.md` D-CLASSID-CANON-HIGH-FLIP — read that entry for the full ledger; this entry records the same correction in the session-findings log.
+
+**Scope:** the composed 32-bit classid ONLY (`ogar_vocab::app` compose/decompose + every doc/worked example carrying a composed literal). Bare u16 concept ids, `APP_PREFIX` values, the 16-byte GUID key layout, and the HEEL/HIP/TWIG tiers are untouched; already-baked old-order ids stay valid via the legacy registry aliases; consumer repos flip in their own lockstep PRs.
+
+**The trigger:** the operator's `0x07:01::1000` mnemonic — read as `domain:appid::marker` — exposed that the working composed classid stored the APP/render prefix in the **high** u16 and the canonical concept in the **low** u16, backwards from the mnemonic's own read order (domain/concept first, appid second).
+
+**The ruling:** flip the composed order to `classid : u32 = [hi u16: canon concept][lo u16: APP/render prefix]`. `ogar_vocab::app::{render_classid, app_of, concept_of}` flip in lockstep with lance-graph-contract's `CLASSID_ORDER = CanonHigh` (PR #628 there) — `app_of` now reads `classid as u16`, `concept_of` now reads `classid >> 16`. **APP_PREFIX values are unchanged** (`0x0000` Core … `0x0007` Redmine) — only their bit position moves. V3 marker forms move in lockstep (`0x1000_0700` → `0x0701_1000`; FMA `0x1000_0A01` → `0x0A01_1000`; CPIC `0x1000_0E00` → `0x0E01_1000`, appid normalized `:00`→`:01`). Auth RBAC literals: `0x0000_0B0N` → `0x0B0N_0000` for N∈{1,2,3,4}.
+
+**Legacy is aliased, never rewritten.** Already-baked/persisted classids in the old order resolve via a read-only legacy registry alias (mint-forward doctrine; RESERVE-DON'T-RECLAIM held throughout). Retirement of the alias path is gated on a corpus proof, never assumed.
+
+**Supersedes, without editing:** D-APPCLASS (`docs/DISCOVERY-MAP.md`, 2026-06-22 — `classid = APP(hi u16) ‖ class(lo u16)`) and the `0x1000_0701` literal in D-OSINT-APPID-NOT-CONCEPT (same-day predecessor, 2026-07-02). Both entries stand as written per the append-only rule; this entry and its DISCOVERY-MAP twin are the correction of record for the half-order going forward.
+
+**Cross-ref:** `docs/DISCOVERY-MAP.md` D-CLASSID-CANON-HIGH-FLIP (canonical ledger entry); the doc-wide sweep landed the same session across `APP-CLASS-CODEBOOK-LAYOUT.md`, `APP-CODEBOOK-MIGRATION-PLAN.md`, `OGAR-CONSUMER-BEST-PRACTICES.md`, `OGAR-TRANSPILE-SUBSTRATE.md`, `OGAR-AS-IR.md`, `SURREAL-AST-TRAP-PREFLIGHT.md`, `NODEGUID-CANON-AUDIT.md`, `FOUNDRY-ODOO-MARS-LENS.md`, `CLASSID-RBAC-KEYSTONE-SPEC.md`, `ODOO-REDMINE-OPENPROJECT-LANDING.md`, `PHILOSOPHY.md`/`PHILOSOPHIE.md`, `README.md`/`README.de.md`, `integration/AR-OGAR-MAILBOX-INTEGRATION-PLAN.md` §7, and this repo's `CLAUDE.md`.
+
+---
+
 ## 2026-07-01 — E-OSINT-SUBSTRATE-CONVERGES-PER-SOA — the massive cognitive stack converges into the V3 2+14 tenant SoA; the dedup IS the convergence
 
 **Status:** FRAMING (`[G]` for the shipped crates + the tenant carve + the sole-writer canon E-CE64-MB-4; `[H]` for the convergence *program* — the deltas + baby-step probes P0–P8 are unrun). Operator-framed 2026-07-01 (*"massive codebase massive entropy … the V3 2+14 tenants converge the awareness massively per SoA"*).

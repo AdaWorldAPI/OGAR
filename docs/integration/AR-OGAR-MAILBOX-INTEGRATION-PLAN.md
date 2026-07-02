@@ -162,7 +162,7 @@ pub struct PredicateName(pub Cow<'static, str>);   // contract-side newtype
 
 pub struct ActionDef {
     pub predicate: PredicateName,   // const &'static OR owned-harvested
-    pub object_class: u32,          // §7 — low-u16 classid widened here
+    pub object_class: u32,          // §7 — concept widened into the CANON high u16 here
     // exec / guard / required_role / overrides …
 }
 ```
@@ -260,15 +260,22 @@ schema** — never a stored duplicate.
 
 ## 7. classid width — resolved (council contract-surface finding)
 
+> **Order flipped 2026-07-02 — canon HIGH / custom LOW.** The
+> canonical concept now sits in the CANON high u16, the custom/render
+> half in the low u16. This section originally described the pre-flip
+> layout (`hi = APP`, `lo = concept`, `classid >> 16 != 0` refusing a
+> lossy fold on the app half); the guidance below reflects the new
+> order. Pre-flip docs and already-baked data use the legacy order —
+> see OGAR `docs/DISCOVERY-MAP.md` D-CLASSID-CANON-HIGH-FLIP.
+
 Verified against `lance-graph-contract` source: `class_view.rs:53` declares
 `pub type ClassId = u16` (OD-CLASSID-WIDTH ratified); the `NodeGuid` layout
-(`canonical_node.rs:23-35`) stores classid in bytes `0..4` as **u32 with the high
-u16 canon-reserved zero**; `NiblePath::from_guid_prefix` returns `None` when
-`classid >> 16 != 0` (lossy fold refused — no silent truncation);
+(`canonical_node.rs:23-35`) stores classid in bytes `0..4` as a **u32**;
 `register_class_path(entity_type_id: u16, …)` is the narrowing seam; `NodeGuid::new`
 already `assert!`s family/identity ≤ 24 bits. Not a blocker, not a casting nuance —
-a **design asymmetry the producer must honor**: mint into the low u16 only (§5.4),
-widen to u32 at the `ActionDef::object_class` boundary. **No contract violation.**
+a **design asymmetry the producer must honor**: mint the concept into the CANON
+high u16 (`(concept as u32) << 16`) (§5.4); the low u16 is the custom/render
+half. **No contract violation.**
 
 ## 8. Mailbox-SoA blast radius — verified zero
 

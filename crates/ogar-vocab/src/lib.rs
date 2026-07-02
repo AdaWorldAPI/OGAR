@@ -1127,8 +1127,10 @@ const CODEBOOK: &[(&str, u16)] = &[
     // `osint_system@0x0700` / `osint_person@0x0701`). Within the OSINT domain
     // the low byte is NOT a concept slot — it is allocated domain-wise as an
     // APPID: `0x0700` = the OSINT domain itself (low byte 00 = domain-wide),
-    // `0x0701` = OSINT-for-q2 (q2 is appid 0x01, the consumer); V3 form
-    // `0x1000_0701`. Class content (AIRO/VAIR system card, McClelland/Rubicon
+    // `0x0701` = OSINT-for-q2 (q2 is appid 0x01, the consumer); V3 stored form
+    // `0x0701_1000` (canon HIGH since the same-day half-order flip —
+    // human-readable `0x07:01::1000`). Class content (AIRO/VAIR system card,
+    // McClelland/Rubicon
     // person lens) lives consumer-side in q2's `osint_classview.rs` — OGAR
     // vocabulary carries no OSINT concept names. Do NOT re-mint rows here.
     // ── 0x09XX — Health domain (clinical / patient / care) ──
