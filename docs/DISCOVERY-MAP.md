@@ -587,3 +587,26 @@ isolation. The map's job is to keep them visible.
   the ClassView from a manifest is fine ("compile types", not hot-path
   serde). Detail: `docs/APP-CLASS-CODEBOOK-LAYOUT.md` §3.5–3.7. `[H]`
   pending a hot-path no-serde probe across one render + one RAG path.
+
+- **D-OSINT-APPID-NOT-CONCEPT (the OSINT low byte is appid space,
+  domain-wise; 2026-07-02; [G], operator ruling):** PR #145's two OSINT
+  codebook mints were hallucinations — "OSINT Person was a
+  hallucination" (operator, verbatim). The corrected semantics: `0x07`
+  is the OSINT **domain**; its low byte is allocated **domain-wise as
+  an APPID**, not as concept vocabulary. `0x0700` = the domain itself
+  (low byte `00` = domain-wide); `0x0701` = **OSINT-for-q2** (q2 is
+  appid `0x01`, the consumer); V3 form `0x1000_0701`. Consequently the
+  OSINT domain contributes **zero vocabulary rows** — `osint_system` /
+  `osint_person` removed from `CODEBOOK` / `class_ids::ALL` / the
+  resolver / `all_promoted_classes` / the Class builders (this pass).
+  Class *content* (AIRO/VAIR system card, McClelland/Rubicon person
+  lens) is consumer-side — q2 `osint_classview.rs` — never OGAR
+  vocabulary. Side effect: codebook count returns 67 → 65, balancing
+  the lance-graph mirror COUNT_FUSE with zero mirror changes, and
+  dissolving lance-graph `ISS-OSINT-SYSTEM-ROOT-SLOT-VIOLATION`
+  (neither of its Options A/B — the ruling is sharper: no concept rows
+  at all). Adjacent confirmations in the same ruling: FMA anatomy = own
+  domain (`0x0A`), adjacent to but separate from Health (`0x09`),
+  consumed by q2; CPIC likewise its own Genetics domain (`0x0E`) under
+  q2. Do NOT re-mint OSINT concept rows; the codebook section carries
+  the guard note.
