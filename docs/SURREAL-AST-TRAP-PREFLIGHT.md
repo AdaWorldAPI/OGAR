@@ -29,9 +29,11 @@
 > resolves to.** (Drilled with worked examples in
 > `OGAR-CONSUMER-BEST-PRACTICES.md` §0.)
 
-The classid (`0xAAAA_DDCC`) is **pure address**. Both halves —
-hi u16 (APP / render lens) and lo u16 (canonical concept) — are
-*address dimensions*. Neither carries behavior.
+The classid (`0xDDCC_AAAA`) is **pure address**. Both halves —
+hi u16 (canonical concept) and lo u16 (APP / render lens) — are
+*address dimensions*. Neither carries behavior. (Order flipped
+2026-07-02 — canon HIGH / custom LOW; pre-flip docs and baked data use
+the legacy order — see `docs/DISCOVERY-MAP.md` D-CLASSID-CANON-HIGH-FLIP.)
 
 Where does the behavior live? At the **resolution target**:
 

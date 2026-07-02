@@ -27,6 +27,11 @@ patient. You don't build it. You don't mint it. You **scoop**.
 
 The rest of this document is the thirty years.
 
+> Order flipped 2026-07-02 — canon HIGH / custom LOW: the canonical
+> concept sits in the high u16, the per-app render prefix sits in the
+> low u16. Pre-flip material and already-baked data use the legacy
+> order; see `docs/DISCOVERY-MAP.md` D-CLASSID-CANON-HIGH-FLIP.
+
 ---
 
 ## The three epiphanies
@@ -42,10 +47,10 @@ behaviour. Knowing it tells you *which* node, *whose* skin, *what*
 shape — never *how it acts*.
 
 ```
-classid : u32  =  0xAAAA ‖ 0xDDCC              both halves are ADDRESS
+classid : u32  =  0xDDCC ‖ 0xAAAA              both halves are ADDRESS
                     │         │
-                    │         └─ lo u16 — WHICH CONCEPT  (shared identity)
-                    └─────────── hi u16 — WHOSE RENDER   (per-app skin)
+                    │         └─ lo u16 — WHOSE RENDER   (per-app skin)
+                    └─────────── hi u16 — WHICH CONCEPT  (shared identity)
 
          ──────►  resolves to  ──────►
             ├─ ClassView                the SKIN    (render — per-app)
@@ -62,13 +67,13 @@ id keys into. The id addresses; the Core behaves.
 
 ### 2 · One concept, many renders.
 
-The **low** 16 bits name the concept — shared by every app, with one
-RBAC grant and one ontology. The **high** 16 bits name the render lens —
+The **high** 16 bits name the concept — shared by every app, with one
+RBAC grant and one ontology. The **low** 16 bits name the render lens —
 each app's own template, its own skin. Same concept, different dress:
 
 ```
-0x0001_0102  ─ OpenProject's WorkPackage  ┐  same lo 0x0102 = project_work_item
-0x0007_0102  ─ Redmine's Issue            ┘  → ONE grant, ONE ontology, TWO templates
+0x0102_0001  ─ OpenProject's WorkPackage  ┐  same hi 0x0102 = project_work_item
+0x0102_0007  ─ Redmine's Issue            ┘  → ONE grant, ONE ontology, TWO templates
 ```
 
 Five apps can render *billable time* five ways and still resolve to the
@@ -97,7 +102,7 @@ them is ever yours to write:
 | Move | The gesture | Yours? |
 |---|---|---|
 | **Pull** | `Port::class_id("Patient")` → `0x0901` | no — a pure function |
-| **Render** | `APP_PREFIX \| concept` → `0x0005_0901` | no — a typed helper |
+| **Render** | `(concept << 16) \| APP_PREFIX` → `0x0901_0005` | no — a typed helper |
 | **Authorize** | `authorize(actor, concept, op)` | no — the shared grant lattice |
 | **Enrich** | your domain logic keyed on the classid | **yes** — this is the part that's legitimately yours |
 

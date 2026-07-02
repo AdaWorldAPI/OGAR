@@ -211,14 +211,17 @@ alignment costs. Until measured: 3×4 stands.
 10. `docs/OGAR-TRANSPILE-SUBSTRATE.md` — **the power, in one doc.** OGAR
     as the bidirectional per-class transpiler: pull-in (`source →
     ogar-from-<lang> → ModelGraph → lift + mint → CompiledClass`),
-    rail-facet addressing (`classid = (APP_PREFIX<<16)|concept`, the 16-byte
-    `FacetCascade`, cross-app convergence), pull-back (runtime wrapper
-    contract like `lance-graph-contract`, or codegen emit like
+    rail-facet addressing (`classid = (concept<<16)|APP_PREFIX`, the
+    16-byte `FacetCascade`, cross-app convergence), pull-back (runtime
+    wrapper contract like `lance-graph-contract`, or codegen emit like
     `ogar-adapter-surrealql`), and the **85/15 split** (mechanical logic
     minted into OGAR; the "impossible" 15% = a per-language adapter +
     ClassView + ontological grounding). READ to understand why a consumer
     collapses to "a compiler-store caller + adapters, at the cost of an
-    import." Worked example: `account.move → 0x0002_0202`.
+    import." Worked example: `account.move → 0x0202_0002`. (Order
+    flipped 2026-07-02 — canon HIGH / custom LOW; pre-flip docs and
+    baked data use the legacy order — see `docs/DISCOVERY-MAP.md`
+    D-CLASSID-CANON-HIGH-FLIP.)
 8. `docs/ARCHITECTURAL-DECISIONS-2026-06-04.md` — ADR-001..025
    (ADR-026 pending).
 9. `.claude/agents/` — the 5+3 hardening pattern (5 research savants +
@@ -241,11 +244,13 @@ alignment costs. Until measured: 3×4 stands.
   resolution target:** before authoring consumer code that pulls a
   classid, composes a render address, authorizes, or migrates off a
   bridge, read `docs/OGAR-CONSUMER-BEST-PRACTICES.md` (the muscle-
-  memory guide). The hi u16 chooses **render** skin (per-app
-  ClassView/template), the lo u16 names the **shared concept** (RBAC +
+  memory guide). The lo u16 chooses **render** skin (per-app
+  ClassView/template), the hi u16 names the **shared concept** (RBAC +
   ontology); **neither half carries behavior** — class-magic
   (`ActionDef`+`KausalSpec`) is a property of the Core node the
-  address resolves to, never of the address.
+  address resolves to, never of the address. (Order flipped 2026-07-02
+  — canon HIGH / custom LOW; pre-flip docs and baked data use the
+  legacy order — see `docs/DISCOVERY-MAP.md` D-CLASSID-CANON-HIGH-FLIP.)
 - **PII:** never emit German PII labels (medcare-rs leaf-rename at the
   adapter is the guarantee). Word-boundary abort-guard before commit.
 - **No model identifier** in any committed artifact (chat only).

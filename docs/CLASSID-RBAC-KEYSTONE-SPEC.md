@@ -126,14 +126,16 @@ hardened to restrictive default-deny.
 > **Correction (2026-06-22, supersedes the `0x011B`–`0x011E` ids below):**
 > auth classes do NOT belong in the project block (`0x01XX`). Per
 > `APP-CLASS-CODEBOOK-LAYOUT.md` §2, auth is a **core domain of its own,
-> `0x0B`** (cross-app, provider-agnostic profiles → core, `hi = 0x0000`).
-> Mint: `auth_store = 0x0000_0B01`, `auth_zitadel = 0x0000_0B02`,
-> `auth_zanzibar = 0x0000_0B03`, `auth_ory_keto = 0x0000_0B04`. The
-> `0x011B`–`0x011E` ids in this section are the earlier (project-block)
-> draft, retained for provenance only — use the `0x0B` domain.
-> Everything else in §7 (the mapping behaviour, I-K7, the Zitadel 1:1)
-> stands unchanged. Auth classes still target `actor 0x0104` / `role
-> 0x0117` whose low halves are shared core concepts.
+> `0x0B`** (cross-app, provider-agnostic profiles → core, `lo = 0x0000`).
+> Mint: `auth_store = 0x0B01_0000`, `auth_zitadel = 0x0B02_0000`,
+> `auth_zanzibar = 0x0B03_0000`, `auth_ory_keto = 0x0B04_0000`. (Order
+> flipped 2026-07-02 — canon HIGH / custom LOW; pre-flip docs and baked
+> data use the legacy order.) The `0x011B`–`0x011E` ids in this section
+> are the earlier (project-block) draft, retained for provenance only —
+> use the `0x0B` domain. Everything else in §7 (the mapping behaviour,
+> I-K7, the Zitadel 1:1) stands unchanged. Auth classes still target
+> `actor 0x0104` / `role 0x0117` whose high halves are shared core
+> concepts.
 >
 > **MINTED + CONFIRMED (2026-06-23):** the `0x0B` family is now in code
 > — `ogar_vocab::class_ids::{AUTH_STORE 0x0B01, AUTH_ZITADEL 0x0B02,

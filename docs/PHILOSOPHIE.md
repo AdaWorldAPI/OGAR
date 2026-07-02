@@ -28,6 +28,12 @@ Du **schöpfst**.
 
 Der Rest dieses Dokuments sind die dreißig Jahre.
 
+> Reihenfolge geflippt 2026-07-02 — Kanon HOCH / App-eigen NIEDRIG: das
+> kanonische Konzept sitzt im hohen u16, der App-Render-Präfix im
+> niedrigen u16. Material von vor dem Flip und bereits gebackene Daten
+> nutzen die alte Reihenfolge; siehe `docs/DISCOVERY-MAP.md`
+> D-CLASSID-CANON-HIGH-FLIP.
+
 ---
 
 ## Die drei Erkenntnisse
@@ -43,10 +49,10 @@ Verhalten. Sie zu kennen sagt dir *welcher* Knoten, *wessen* Haut,
 *welche* Form — nie *wie er sich verhält*.
 
 ```
-classid : u32  =  0xAAAA ‖ 0xDDCC              beide Hälften sind ADRESSE
+classid : u32  =  0xDDCC ‖ 0xAAAA              beide Hälften sind ADRESSE
                     │         │
-                    │         └─ lo u16 — WELCHES KONZEPT  (geteilte Identität)
-                    └─────────── hi u16 — WESSEN RENDER     (App-eigene Haut)
+                    │         └─ lo u16 — WESSEN RENDER     (App-eigene Haut)
+                    └─────────── hi u16 — WELCHES KONZEPT  (geteilte Identität)
 
          ──────►  löst auf zu  ──────►
             ├─ ClassView                die HAUT      (Render — pro App)
@@ -64,14 +70,14 @@ sich.
 
 ### 2 · Ein Konzept, viele Render.
 
-Die **unteren** 16 Bit benennen das Konzept — geteilt von jeder App, mit
-einem RBAC-Grant und einer Ontologie. Die **oberen** 16 Bit benennen die
+Die **oberen** 16 Bit benennen das Konzept — geteilt von jeder App, mit
+einem RBAC-Grant und einer Ontologie. Die **unteren** 16 Bit benennen die
 Render-Linse — das eigene Template jeder App, ihre eigene Haut. Gleiches
 Konzept, andere Kleidung:
 
 ```
-0x0001_0102  ─ OpenProjects WorkPackage  ┐  gleiche lo 0x0102 = project_work_item
-0x0007_0102  ─ Redmines Issue            ┘  → EIN Grant, EINE Ontologie, ZWEI Templates
+0x0102_0001  ─ OpenProjects WorkPackage  ┐  gleiche hi 0x0102 = project_work_item
+0x0102_0007  ─ Redmines Issue            ┘  → EIN Grant, EINE Ontologie, ZWEI Templates
 ```
 
 Fünf Apps können *abrechenbare Zeit* auf fünf Arten rendern und lösen
@@ -101,7 +107,7 @@ davon ist je deiner:
 | Zug | Die Geste | Deiner? |
 |---|---|---|
 | **Pull** | `Port::class_id("Patient")` → `0x0901` | nein — reine Funktion |
-| **Render** | `APP_PREFIX \| concept` → `0x0005_0901` | nein — typisierter Helfer |
+| **Render** | `(concept << 16) \| APP_PREFIX` → `0x0901_0005` | nein — typisierter Helfer |
 | **Authorize** | `authorize(actor, concept, op)` | nein — das geteilte Grant-Gitter |
 | **Enrich** | deine Domänen-Logik, an der classid verschlüsselt | **ja** — das ist der Teil, der legitim deiner ist |
 

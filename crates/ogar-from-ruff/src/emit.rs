@@ -108,12 +108,57 @@ fn escape_ident(name: &str, lang: Lang) -> String {
 fn is_rust_keyword(s: &str) -> bool {
     matches!(
         s,
-        "as" | "break" | "const" | "continue" | "crate" | "dyn" | "else" | "enum" | "extern"
-            | "false" | "fn" | "for" | "if" | "impl" | "in" | "let" | "loop" | "match" | "mod"
-            | "move" | "mut" | "pub" | "ref" | "return" | "self" | "Self" | "static" | "struct"
-            | "super" | "trait" | "true" | "type" | "unsafe" | "use" | "where" | "while"
-            | "async" | "await" | "abstract" | "become" | "box" | "do" | "final" | "macro"
-            | "override" | "priv" | "typeof" | "unsized" | "virtual" | "yield" | "try" | "gen"
+        "as" | "break"
+            | "const"
+            | "continue"
+            | "crate"
+            | "dyn"
+            | "else"
+            | "enum"
+            | "extern"
+            | "false"
+            | "fn"
+            | "for"
+            | "if"
+            | "impl"
+            | "in"
+            | "let"
+            | "loop"
+            | "match"
+            | "mod"
+            | "move"
+            | "mut"
+            | "pub"
+            | "ref"
+            | "return"
+            | "self"
+            | "Self"
+            | "static"
+            | "struct"
+            | "super"
+            | "trait"
+            | "true"
+            | "type"
+            | "unsafe"
+            | "use"
+            | "where"
+            | "while"
+            | "async"
+            | "await"
+            | "abstract"
+            | "become"
+            | "box"
+            | "do"
+            | "final"
+            | "macro"
+            | "override"
+            | "priv"
+            | "typeof"
+            | "unsized"
+            | "virtual"
+            | "yield"
+            | "try"
+            | "gen"
     )
 }
 
@@ -122,16 +167,83 @@ fn is_rust_keyword(s: &str) -> bool {
 fn is_csharp_keyword(s: &str) -> bool {
     matches!(
         s,
-        "abstract" | "as" | "base" | "bool" | "break" | "byte" | "case" | "catch" | "char"
-            | "checked" | "class" | "const" | "continue" | "decimal" | "default" | "delegate"
-            | "do" | "double" | "else" | "enum" | "event" | "explicit" | "extern" | "false"
-            | "finally" | "fixed" | "float" | "for" | "foreach" | "goto" | "if" | "implicit"
-            | "in" | "int" | "interface" | "internal" | "is" | "lock" | "long" | "namespace"
-            | "new" | "null" | "object" | "operator" | "out" | "override" | "params" | "private"
-            | "protected" | "public" | "readonly" | "ref" | "return" | "sbyte" | "sealed"
-            | "short" | "sizeof" | "stackalloc" | "static" | "string" | "struct" | "switch"
-            | "this" | "throw" | "true" | "try" | "typeof" | "uint" | "ulong" | "unchecked"
-            | "unsafe" | "ushort" | "using" | "virtual" | "void" | "volatile" | "while"
+        "abstract"
+            | "as"
+            | "base"
+            | "bool"
+            | "break"
+            | "byte"
+            | "case"
+            | "catch"
+            | "char"
+            | "checked"
+            | "class"
+            | "const"
+            | "continue"
+            | "decimal"
+            | "default"
+            | "delegate"
+            | "do"
+            | "double"
+            | "else"
+            | "enum"
+            | "event"
+            | "explicit"
+            | "extern"
+            | "false"
+            | "finally"
+            | "fixed"
+            | "float"
+            | "for"
+            | "foreach"
+            | "goto"
+            | "if"
+            | "implicit"
+            | "in"
+            | "int"
+            | "interface"
+            | "internal"
+            | "is"
+            | "lock"
+            | "long"
+            | "namespace"
+            | "new"
+            | "null"
+            | "object"
+            | "operator"
+            | "out"
+            | "override"
+            | "params"
+            | "private"
+            | "protected"
+            | "public"
+            | "readonly"
+            | "ref"
+            | "return"
+            | "sbyte"
+            | "sealed"
+            | "short"
+            | "sizeof"
+            | "stackalloc"
+            | "static"
+            | "string"
+            | "struct"
+            | "switch"
+            | "this"
+            | "throw"
+            | "true"
+            | "try"
+            | "typeof"
+            | "uint"
+            | "ulong"
+            | "unchecked"
+            | "unsafe"
+            | "ushort"
+            | "using"
+            | "virtual"
+            | "void"
+            | "volatile"
+            | "while"
     )
 }
 
@@ -418,7 +530,7 @@ mod tests {
         let rust = emit_rust(cc);
 
         // The rail address travels as a const.
-        assert!(rust.contains("pub const ACCOUNT_MOVE_CLASSID: u32 = 0x00020202;"));
+        assert!(rust.contains("pub const ACCOUNT_MOVE_CLASSID: u32 = 0x02020002;"));
         // The struct is PascalCase.
         assert!(rust.contains("pub struct AccountMove {"));
         // Typed scalar: char -> OgStr.
@@ -490,7 +602,7 @@ mod tests {
         let rust = emit_rust(cc);
 
         assert!(
-            rust.contains("pub const WORK_PACKAGE_CLASSID: u32 = 0x00010102;"),
+            rust.contains("pub const WORK_PACKAGE_CLASSID: u32 = 0x01020001;"),
             "got:\n{rust}"
         ); // exercises the screaming_snake PascalCase fix below
         assert!(rust.contains("pub struct WorkPackage {"));
@@ -522,7 +634,7 @@ mod tests {
 
         // The rail address travels as a const inside the record.
         assert!(
-            cs.contains("public const uint ClassId = 0x00020202;"),
+            cs.contains("public const uint ClassId = 0x02020002;"),
             "got:\n{cs}"
         );
         // The type is a PascalCase sealed record.
@@ -572,7 +684,7 @@ mod tests {
 
         // The rail address travels as a ClassVar.
         assert!(
-            py.contains("CLASSID: ClassVar[int] = 0x00020202"),
+            py.contains("CLASSID: ClassVar[int] = 0x02020002"),
             "got:\n{py}"
         );
         // A PascalCase @dataclass.
@@ -617,7 +729,7 @@ mod tests {
             assert!(src.contains("ToMany"), "ToMany in every emitter");
             // The same rail classid concept in every emitter.
             assert!(
-                src.contains("0x00020202"),
+                src.contains("0x02020002"),
                 "classid travels in every emitter"
             );
         }

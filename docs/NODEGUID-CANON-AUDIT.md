@@ -47,8 +47,11 @@ bone anchor specifically. The OGAR codebook is canon; the wrapper realigns.
 
 ### F-2 — `[G]` **classid width: FMA `Guid` carries 2 bytes, canon carries 4.**
 
-The canon classid is `u32 = [app:u16][concept:u16]` (`app_of` / `concept_of`,
-`ogar-vocab/src/app.rs`). The FMA `Guid` tier 0 holds only the **concept** half
+The canon classid is `u32 = [concept:u16][app:u16]` (`app_of` reads
+`classid as u16`, `concept_of` reads `classid >> 16` — order flipped
+2026-07-02, canon HIGH / custom LOW; `ogar-vocab/src/app.rs`). Pre-flip
+docs and already-baked data use the legacy `[app:u16][concept:u16]`
+order. The FMA `Guid` tier 0 holds only the **concept** half
 (`0x0A03`), i.e. the `app = 0x0000` (core/default-render) projection. For a
 non-zero app render prefix it must widen to 4 bytes (tiers 0–1), shifting HEEL to
 tier 2. **Reconciliation:** treat the FMA `Guid` as the *core-render* (app=0)

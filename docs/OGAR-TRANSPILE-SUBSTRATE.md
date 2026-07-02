@@ -272,21 +272,26 @@ classes from the 16-byte key alone.
 
 ### 2.1 The classid (the cross-app join key)
 
+> Order flipped 2026-07-02 — canon HIGH / custom LOW: the canonical
+> concept sits in the high u16, the app render prefix sits in the low
+> u16. Pre-flip docs and already-baked data use the legacy order; see
+> `docs/DISCOVERY-MAP.md` D-CLASSID-CANON-HIGH-FLIP.
+
 ```
-render classid (u32) = (APP_PREFIX as u32) << 16 | concept (u16)
-                         └── high u16 ──┘         └── low u16 ──┘
-                         the app RENDER skin       the SHARED concept
+render classid (u32) = (concept as u32) << 16 | APP_PREFIX (u16)
+                         └── high u16 ──┘        └── low u16 ──┘
+                         the SHARED concept       the app RENDER skin
 ```
 
-- **low u16 = the shared concept** — resolved by `PortSpec::class_id` against
+- **high u16 = the shared concept** — resolved by `PortSpec::class_id` against
   the OGAR codebook (`ogar_vocab::class_ids` / `ogar_codebook`). This is the
   de-facto `owl:equivalentClass` expressed as a u16.
-- **high u16 = the app render skin** — `PortSpec::APP_PREFIX`. Picks the
+- **low u16 = the app render skin** — `PortSpec::APP_PREFIX`. Picks the
   per-app `ClassView` / template; **carries no behaviour**.
 - composed by the canonical `ogar_vocab::app::render_classid_for::<P>(concept)`.
 
 **Cross-app convergence is the payoff.** The same concept across apps gets the
-same low u16, so a consumer joins across apps with a `==`:
+same high u16, so a consumer joins across apps with a `==`:
 
 | concept | id | Odoo (`0x0002`) | OpenProject (`0x0001`) | Redmine (`0x0007`) | WoA/SMB (`0x0003`/`0x0004`) |
 |---|---|---|---|---|---|
@@ -415,11 +420,11 @@ account.move (Odoo Python)
   │                       line_ids   → HasMany account.move.line (inverse move_id)]
   │     computed_fields: [amount_total ← _compute_amount, depends [line_ids.balance]]
   └─ mint_graph::<OdooPort> ─► Facet
-        facet_classid = 0x0002_0202   (Odoo 0x0002 | commercial_document 0x0202)
+        facet_classid = 0x0202_0002   (commercial_document 0x0202 | Odoo 0x0002)
         ⇒ CompiledClass { class, facet }
 
   Cross-checks (all probe-verified):
-    • facet.to_bytes() ≡ lance_graph_contract::FacetCascade(0x0002_0202)   (byte-exact)
+    • facet.to_bytes() ≡ lance_graph_contract::FacetCascade(0x0202_0002)   (byte-exact)
     • canonical_concept_domain(0x0202) == Commerce                          (routes to the right ClassView)
     • grounding resolvable: 0x0202 → fibo:Transaction / DOLCE Perdurant     (late, via OGIT)
     • the GoBD posting (account.move._post) stays od-posting's Rust adapter  (the 15%)
@@ -446,10 +451,10 @@ correct because of the `relation_kind` predicate (ruff#35): `target` +
     OgScalar, partner_id: ToOne<ResPartner>, line_ids: ToMany<AccountMoveLine> }`
     + `ACCOUNT_MOVE_CLASSID`.
   - `emit_csharp` → `public sealed record AccountMove { public const uint
-    ClassId = 0x00020202; public OgScalar name {get;init;} public
+    ClassId = 0x02020002; public OgScalar name {get;init;} public
     ToOne<ResPartner> partner_id {…} public ToMany<AccountMoveLine> line_ids {…} }`.
   - `emit_python` → `@dataclass class AccountMove: CLASSID: ClassVar[int] =
-    0x00020202; name: OgScalar; partner_id: ToOne["ResPartner"]; line_ids:
+    0x02020002; name: OgScalar; partner_id: ToOne["ResPartner"]; line_ids:
     ToMany["AccountMoveLine"]`.
 
   All three use the **same wrapper-contract type names** (`OgScalar` / `ToOne` /

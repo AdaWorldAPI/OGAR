@@ -2,8 +2,13 @@
 
 > Companion to `APP-CLASS-CODEBOOK-LAYOUT.md` (the layout) and
 > `CONSUMER-MIGRATION-HOWTO.md` (the generic steps). This doc applies
-> the **APP‖class** model (`classid = APP(hi u16) ‖ class(lo u16)`) to
+> the **APP‖class** model (`classid = class(hi u16) ‖ APP(lo u16)`) to
 > each remaining app and orders the work.
+>
+> **Order flipped 2026-07-02 — canon HIGH / custom LOW**: the canonical
+> concept sits in the high u16, the APP prefix sits in the low u16. All
+> composed literals below use the new order; see
+> `docs/DISCOVERY-MAP.md` D-CLASSID-CANON-HIGH-FLIP.
 >
 > Status: **PLAN**. Append-only. The minting steps are gated on the
 > 5+3 codebook pass; nothing here mints a classid yet.
@@ -16,10 +21,10 @@ For each surface entity, the app answers **one** question:
 
 > *Would a second, unrelated consumer reuse this concept verbatim?*
 
-- **Yes →** map onto a **CORE** classid (`hi = 0x0000`) via the app's
+- **Yes →** map onto a **CORE** classid (`lo = 0x0000`) via the app's
   OGAR `PortSpec`. No private mint. This is the default and the
   overwhelming majority.
-- **No →** mint an **APP-private** classid (`hi = 0xAAAA`) in the app's
+- **No →** mint an **APP-private** classid (`lo = 0xAAAA`) in the app's
   reserved codebook namespace. Escape hatch only.
 
 The migration is then identical to `CONSUMER-MIGRATION-HOWTO.md`: pull
@@ -65,44 +70,44 @@ one id. **Private codebook: no** — every project concept is canonical.
 renderers of the same canonical concepts**. The hi/lo split
 (`APP-CLASS-CODEBOOK-LAYOUT.md` §1) is at its cleanest here:
 
-| Surface name | shared concept (lo u16) | OpenProject id | Redmine id |
+| Surface name | shared concept (hi u16) | OpenProject id | Redmine id |
 |---|---|---|---|
-| WorkPackage / Issue | `0x0102` project_work_item | `0x0001_0102` | `0x0007_0102` |
-| Project | `0x0101` project | `0x0001_0101` | `0x0007_0101` |
-| Role | `0x0117` project_role | `0x0001_0117` | `0x0007_0117` |
-| TimeEntry / billable | `0x0103` billable_work_entry | `0x0001_0103` | `0x0007_0103` |
+| WorkPackage / Issue | `0x0102` project_work_item | `0x0102_0001` | `0x0102_0007` |
+| Project | `0x0101` project | `0x0101_0001` | `0x0101_0007` |
+| Role | `0x0117` project_role | `0x0117_0001` | `0x0117_0007` |
+| TimeEntry / billable | `0x0103` billable_work_entry | `0x0103_0001` | `0x0103_0007` |
 
-- **Same low half ⇒ same RBAC + ontology.** Both authorize on `0x0102`;
+- **Same high half ⇒ same RBAC + ontology.** Both authorize on `0x0102`;
   both inherit the `project_role 0x0117` grant lattice — which is already
   the keystone's worked example (`CLASSID-RBAC-KEYSTONE-SPEC.md` §4,
   harvested from the Rails/Redmine model). One grant lattice, two apps.
-- **Different high half ⇒ different render.** `WorkPackage` renders via
+- **Different low half ⇒ different render.** `WorkPackage` renders via
   OpenProject's ClassView/template (`0x0001`); `Issue` renders via
   Redmine's (`0x0007`) — distinct field layouts, distinct Askama
   templates, **zero** concept duplication. This is precisely why the
-  high u16 exists (§3.5).
+  low u16 exists (§3.5 of the layout doc).
 
 Steps (OpenProject-nexgen-rs is the live migrating consumer; Redmine is
 the alias-twin that proves the model — any Redmine Rust consumer follows
 the identical pattern):
-1. **Pull the concept low half statically.** Repoint off any
+1. **Pull the concept high half statically.** Repoint off any
    `OpenProjectBridge` / `RedmineBridge` usage to
    `OpenProjectPort::class_id(name)` / `RedminePort::class_id(name)`;
-   form the render classid `app_prefix << 16 | concept` (e.g.
-   `0x0001_0000 | 0x0102`).
+   form the render classid `(concept << 16) | app_prefix` (e.g.
+   `0x0102_0001`).
 2. **Delete the bridges.** No hand-rolled registry/hydration; the
    consumer holds no ontology.
 3. **Enrich by classid.** Redmine's per-project visibility +
    role-based access, OpenProject's work-package permissions, become the
    row-scope axis — compiled to a bitmap, **not** runtime domain-eval
    (Firewall).
-4. **Authorize by the low half.** `authorize(actor, 0x0102, op)` — the
+4. **Authorize by the high half.** `authorize(actor, 0x0102, op)` — the
    shared project grant lattice. Both apps, one upstream resolution.
 5. **Render by the full classid.** Each app's ClassView selects its own
    template; fields resolve key-value against content stores (no serde —
    `APP-CLASS-CODEBOOK-LAYOUT.md` §3.6).
 6. **Private mint only if** an app ships a genuinely non-canonical
-   project object (none known today) → `0x0001_FFCC` / `0x0007_FFCC`.
+   project object (none known today) → `0xFFCC_0001` / `0xFFCC_0007`.
 
 Cross-ref: `OPENPROJECT-TRANSCODING.md`,
 `CLASSID-RBAC-KEYSTONE-SPEC.md` §4 (the project_role lattice is the
@@ -114,13 +119,13 @@ canonical RBAC worked example).
 
 **Port:** `WoaPort` exists (OGAR #93), maps `WorkOrder` and friends onto
 the commerce block. **Private codebook: no** — work orders, line items,
-invoices, dunning stages are canonical commerce concepts (`0x0000_02CC`).
+invoices, dunning stages are canonical commerce concepts (`0x02CC_0000`).
 
 Steps:
 1. Repoint `src/registry.rs`, `src/unified_bridge.rs`, `src/lib.rs`,
    `tests/…` off `lance_graph_ontology::bridges::WoaBridge` to the
    static pull: `WoaPort::class_id(name) -> Option<u16>`, widened to
-   `0x0000_0000 | id` at the u32 boundary.
+   `(id << 16) | 0x0000` at the u32 boundary.
 2. Delete `WoaBridge` (= `UnifiedBridge<WoaPort>`) + any hand-rolled
    registry/hydration.
 3. Enrich by classid (tenant scoping, Mahnwesen stage rules) — this is
@@ -134,7 +139,7 @@ Steps:
    crate.
 6. **Private mint only if** WoA has a genuinely non-canonical object
    (e.g. a Stefan-specific KeePass-vault row with no commerce analogue)
-   → `0x0003_FFCC`. Default: none.
+   → `0xFFCC_0003`. Default: none.
 
 Spec cross-ref: `woa-rs/.claude/board/` OGAR-migration note;
 behaviour-parity stays the witness (Python writer ↔ Rust writer).
@@ -145,7 +150,7 @@ behaviour-parity stays the witness (Python writer ↔ Rust writer).
 
 **Port:** `SmbPort` exists (OGAR #93). **Private codebook: no** — SKR04
 accounts, customers, suppliers, work orders, FiBu reconciliation map
-onto canonical commerce (`0x0000_02CC`).
+onto canonical commerce (`0x02CC_0000`).
 
 Steps:
 1. `crates/smb-bridge/src/unified_bridge_wiring.rs` drops `OgitBridge`;
@@ -158,7 +163,7 @@ Steps:
    additive-only — this migration edits **only** smb-office-rs + (if a
    port gap) OGAR. The spine is untouched.
 6. **Private mint only if** an SMB object has no commerce analogue →
-   `0x0004_FFCC`. Default: none.
+   `0xFFCC_0004`. Default: none.
 
 Tracked: `smb-office-rs/.claude/board/TECH_DEBT.md`
 `TD-OGAR-CONSUMER-MIGRATION-1`.
@@ -187,7 +192,7 @@ Steps (this is convergence, not just a repoint):
    row-scope compiled to a bitmap (NOT runtime domain-eval — that would
    violate the Firewall).
 5. **Private mint only if** an Odoo module ships an object with no
-   canonical commerce analogue → `0x0002_FFCC`. Most map onto core.
+   canonical commerce analogue → `0xFFCC_0002`. Most map onto core.
 
 Cross-ref: `ODOO-TRANSCODING.md`, `SURREAL-AST-AS-ADAPTER.md`.
 
@@ -210,14 +215,14 @@ Sub-steps, in order:
 2. **Author `Q2Port: PortSpec`** in `ogar-vocab::ports` (its own OGAR
    PR). Map q2's public entity names → classids. For entities that ARE
    canonical (a generic `document`, `person`, `organization`,
-   `location`), map onto core (`0x0000_07CC` osint or the relevant
+   `location`), map onto core (`0x07CC_0000` osint or the relevant
    domain). For entities that are q2-specific (a Gotham investigation
    case, an aiwar scenario branch, a neo4j-native node label with no
    canonical analogue), mint **app-private** under `0x0006`:
    ```
-   0x0006_01CC   q2/Gotham object classes
-   0x0006_02CC   q2/aiwar scenario + branch classes
-   0x0006_03CC   q2/neo4j legacy node/rel adapter classes (if still live)
+   0x01CC_0006   q2/Gotham object classes
+   0x02CC_0006   q2/aiwar scenario + branch classes
+   0x03CC_0006   q2/neo4j legacy node/rel adapter classes (if still live)
    ```
    This is the operator's "codebook per project" win in its purest form:
    q2 gets a full 65 536-class private space, its own centroid-codebook
@@ -241,8 +246,8 @@ Every app's render path migrates to the same shape
 
 - **Template dispatch becomes classid-driven.** Replace ad-hoc
   `match entity_kind { … }` template selection with the object's full
-  classid → `ClassView::resolve(classid)` → Askama template. The **high
-  u16** is the app's render prefix; the **low u16** is the shared concept
+  classid → `ClassView::resolve(classid)` → Askama template. The **low
+  u16** is the app's render prefix; the **high u16** is the shared concept
   (RBAC + ontology). woa-rs and smb-office-rs already use Askama
   (compile-time-checked) — only the *selection* changes, not the engine.
 - **Fields become keys, not blobs.** Strings, text, media, online
@@ -257,7 +262,7 @@ Every app's render path migrates to the same shape
 
 This is the operator's stated goal: strings / text / media / online
 sources rendered via key-value, so no serialization exists in the hot
-path. The per-app classid (high u16) is what makes per-app rendering
+path. The per-app classid (low u16) is what makes per-app rendering
 scale without forking concept ids or overflowing the shared codebook.
 
 ## Convergence with the RBAC keystone (all waves)
@@ -273,7 +278,7 @@ authorize(actor, classid, op) -> Allow | Deny
 ```
 
 The auth providers (Zitadel / Zanzibar / Ory-Keto) are **core**
-preminted class profiles (`0x0000_0BCC`), so token→actor resolution is
+preminted class profiles (`0x0BCC_0000`), so token→actor resolution is
 shared by every app — no per-app auth wiring. An app hands a classid;
 the grant lattice is upstream. Until the keystone lands, each app keeps
 its existing auth (do NOT reintroduce a bridge as a stopgap).

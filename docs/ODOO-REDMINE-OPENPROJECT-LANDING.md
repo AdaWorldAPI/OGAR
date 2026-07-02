@@ -21,9 +21,11 @@
 - **Connecting tissue** (BBB-allowed in any consumer binary): `lance-graph-contract`
   / `-ontology` / `-ogar` / `-callcenter`. The BBB bars only the **brain/engine**
   crates (planner, cognitive engine).
-- **"Odoo" / "Redmine" are render labels** (the hi-u16 `AppPrefix`): Odoo=`0x0002`,
-  OpenProject=`0x0001`, Redmine=`0x0007`. The **lo-u16 canonical concept** is the
-  shared, agnostic identity. Same concept across apps ⇒ same lo-u16.
+- **"Odoo" / "Redmine" are render labels** (the lo-u16 `AppPrefix`): Odoo=`0x0002`,
+  OpenProject=`0x0001`, Redmine=`0x0007`. The **hi-u16 canonical concept** is the
+  shared, agnostic identity. Same concept across apps ⇒ same hi-u16.
+  (Order flipped 2026-07-02 — canon HIGH / custom LOW; pre-flip docs and
+  baked data use the legacy order.)
 
 ## 1. Mission: native + agnostic + truthful
 

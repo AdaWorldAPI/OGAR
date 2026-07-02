@@ -14,6 +14,12 @@
 > Read once before authoring consumer code. Pattern-match against the
 > examples; if your code doesn't look like one of them, stop and check.
 >
+> **Order flipped 2026-07-02 — canon HIGH / custom LOW.** Every worked
+> example below now reads `classid = concept(hi u16) ‖ APP(lo u16)` —
+> the canonical concept sits in the high u16, the per-app render prefix
+> sits in the low u16. Pre-flip material and already-baked data use the
+> legacy order; see `docs/DISCOVERY-MAP.md` D-CLASSID-CANON-HIGH-FLIP.
+>
 > Status: **BEST PRACTICE v1** (2026-06-22). Append-only.
 >
 > Companions: `APP-CLASS-CODEBOOK-LAYOUT.md` (the layout spec),
@@ -32,21 +38,22 @@
 Both halves of the classid are address dimensions, never behavior:
 
 ```
-classid : u32  =  0xAAAA  ‖  0xDDCC                       (8 nibbles)
+classid : u32  =  0xDDCC  ‖  0xAAAA                       (8 nibbles)
                     │           │
-                    │           └─ lo u16: WHICH CONCEPT  ─┐
-                    │              (DD = domain,            │
-                    │               CC = concept index)     │  BOTH halves
-                    │              shared across all apps   ├─ are pure
+                    │           └─ lo u16: WHOSE RENDER  ─┐
+                    │              (APP / ClassView /       │
+                    │               Askama template)        │  BOTH halves
+                    │              per-app; never shared    ├─ are pure
                     │                                       │  ADDRESS.
-                    └─ hi u16: WHOSE RENDER ───────────────┤  Neither
-                       (APP / ClassView / Askama template)  │  carries
-                       per-app; never shared                ─┘  behavior.
+                    └─ hi u16: WHICH CONCEPT ───────────────┤  Neither
+                       (DD = domain,                         │  carries
+                        CC = concept index)                  │  behavior.
+                       shared across all apps                ─┘
 
          ──────►  resolves to  ──────►
                      │
-                     ├─ ClassView           the SKIN     (render shape, per-app — picked by hi)
-                     ├─ Class               the SHAPE    (structural — canonical, picked by lo)
+                     ├─ ClassView           the SKIN     (render shape, per-app — picked by lo)
+                     ├─ Class               the SHAPE    (structural — canonical, picked by hi)
                      └─ ActionDef +         the MAGIC    (behavioral — lifecycle, callbacks,
                         KausalSpec                        validations; ALWAYS in OGAR Core,
                                                          NEVER in DDL or in the address)
@@ -55,7 +62,7 @@ classid : u32  =  0xAAAA  ‖  0xDDCC                       (8 nibbles)
 **Three drilled corollaries:**
 
 1. **The address is dumb.** Knowing the classid tells you the *shape* + *skin* + which Core node to fetch — it tells you **nothing** about behavior. Behavior lives at the resolution target.
-2. **Class-magic ≠ render-magic.** The hi u16 chooses **render** magic (which app's template), not **class** magic (which callbacks/lifecycle). Class magic is the Core's; render magic is the app's.
+2. **Class-magic ≠ render-magic.** The lo u16 chooses **render** magic (which app's template), not **class** magic (which callbacks/lifecycle). Class magic is the Core's; render magic is the app's.
 3. **You can't smuggle magic into the address.** Encoding behavior in DDL constructs (`DEFINE EVENT … WHEN … THEN …`) puts magic where only the address lives — the trap `SURREAL-AST-TRAP-PREFLIGHT.md` exists to prevent.
 
 ---
@@ -65,41 +72,41 @@ classid : u32  =  0xAAAA  ‖  0xDDCC                       (8 nibbles)
 Memorize these. They appear across every consumer doc; recognizing them on sight is the muscle.
 
 ```
-0x0000_0901 ─── canonical patient (core anchor, no app skin)
+0x0901_0000 ─── canonical patient (core anchor, no app skin)
    │      │
-   │      └── 0x09 = Health domain · 0x01 = patient concept
-   └───────── 0x0000 = core (shared, no app prefix)
+   │      └── 0x0000 = core (shared, no app prefix)
+   └───────── 0x09 = Health domain · 0x01 = patient concept
 
-0x0005_0901 ─── Medcare's patient — same concept, Medcare's render lens
+0x0901_0005 ─── Medcare's patient — same concept, Medcare's render lens
    ↑      ↑
-   │      └── same 0x0901 = same RBAC grant, same ontology, same OGIT identity
-   └───────── 0x0005 = Medcare's APP prefix → Medcare's ClassView + Askama template
+   │      └── 0x0005 = Medcare's APP prefix → Medcare's ClassView + Askama template
+   └───────── same 0x0901 = same RBAC grant, same ontology, same OGIT identity
 
-0x0001_0102 ─── OpenProject's WorkPackage
-0x0007_0102 ─── Redmine's Issue
+0x0102_0001 ─── OpenProject's WorkPackage
+0x0102_0007 ─── Redmine's Issue
    ↑              ↑
-   │              └── BOTH lo = 0x0102 = project_work_item
+   │              └── BOTH hi = 0x0102 = project_work_item
    │                  → ONE RBAC grant lattice (project_role 0x0117)
    │                  → ONE ontology shape
-   └───────────────── DIFFERENT hi u16 → DIFFERENT templates, zero concept dup
+   └───────────────── DIFFERENT lo u16 → DIFFERENT templates, zero concept dup
 
-0x0003_0103 ─── WoA's Stundenzettel (billable_work_entry)
-0x0004_0103 ─── SMB's Stundenzettel
-0x0001_0103 ─── OpenProject's TimeEntry  (planner side)
-0x0007_0103 ─── Redmine's TimeEntry      (planner side)
-0x0002_0103 ─── Odoo's HrAttendance / account.move.line(qty=hours)
+0x0103_0003 ─── WoA's Stundenzettel (billable_work_entry)
+0x0103_0004 ─── SMB's Stundenzettel
+0x0103_0001 ─── OpenProject's TimeEntry  (planner side)
+0x0103_0007 ─── Redmine's TimeEntry      (planner side)
+0x0103_0002 ─── Odoo's HrAttendance / account.move.line(qty=hours)
    ↑              ↑
-   │              └── ALL share lo = 0x0103 = BILLABLE_WORK_ENTRY
-   │                  → ONE canonical billable-time concept
-   │                  → the cross-fork convergence pin (OGAR #93/#94/#96)
-   └───────────────── FIVE app-private renders of the same concept
-                      "Planner times align with billable hours" =
-                      a codebook lookup, not a translation layer.
+   │              └── FIVE app-private renders of the same concept
+   │                  "Planner times align with billable hours" =
+   │                  a codebook lookup, not a translation layer.
+   └───────────────── ALL share hi = 0x0103 = BILLABLE_WORK_ENTRY
+                      → ONE canonical billable-time concept
+                      → the cross-fork convergence pin (OGAR #93/#94/#96)
 ```
 
 **APP prefix allocation** (committed; OGAR #95 §2):
 
-| APP `0xAAAA` | App | Consumer crate |
+| APP (lo u16) `0xAAAA` | App | Consumer crate |
 |---|---|---|
 | `0x0000` | shared core / no app skin | — |
 | `0x0001` | OpenProject | openproject-nexgen-rs |
@@ -109,7 +116,7 @@ Memorize these. They appear across every consumer doc; recognizing them on sight
 | `0x0005` | Medcare / Healthcare | medcare-rs |
 | `0x0007` | Redmine | (consumer TBD) |
 
-**Domain bytes** (committed; the high byte of the lo u16):
+**Domain bytes** (committed; the high byte of the hi u16):
 
 | `0xDD` | Domain |
 |---|---|
@@ -219,9 +226,9 @@ split as Pattern 1.
 use ogar_vocab::ports::{HealthcarePort, PortSpec};
 
 let cid: u16 = HealthcarePort::class_id("Patient").unwrap();   // 0x0901
-let render_classid: u32 = HealthcarePort::APP_PREFIX | (cid as u32);
-//                        0x0005_0000                 | 0x0901
-//                      = 0x0005_0901   ← Medcare's patient render address
+let render_classid: u32 = ((cid as u32) << 16) | HealthcarePort::APP_PREFIX;
+//                        0x0901_0000                        | 0x0005
+//                      = 0x0901_0005   ← Medcare's patient render address
 
 // → resolves to:
 //     ClassView       = Medcare's clinical patient view (Askama template:
@@ -235,12 +242,12 @@ let render_classid: u32 = HealthcarePort::APP_PREFIX | (cid as u32);
 Worked examples by app:
 
 ```rust
-HealthcarePort::APP_PREFIX  | 0x0901  →  0x0005_0901  // Medcare patient
-WoaPort::APP_PREFIX         | 0x0103  →  0x0003_0103  // WoA Stundenzettel
-SmbPort::APP_PREFIX         | 0x0204  →  0x0004_0204  // SMB Kunde
-OdooPort::APP_PREFIX        | 0x0103  →  0x0002_0103  // Odoo HrAttendance
-OpenProjectPort::APP_PREFIX | 0x0102  →  0x0001_0102  // OpenProject WorkPackage
-RedminePort::APP_PREFIX     | 0x0102  →  0x0007_0102  // Redmine Issue
+(0x0901u32 << 16) | HealthcarePort::APP_PREFIX   →  0x0901_0005  // Medcare patient
+(0x0103u32 << 16) | WoaPort::APP_PREFIX          →  0x0103_0003  // WoA Stundenzettel
+(0x0204u32 << 16) | SmbPort::APP_PREFIX          →  0x0204_0004  // SMB Kunde
+(0x0103u32 << 16) | OdooPort::APP_PREFIX         →  0x0103_0002  // Odoo HrAttendance
+(0x0102u32 << 16) | OpenProjectPort::APP_PREFIX  →  0x0102_0001  // OpenProject WorkPackage
+(0x0102u32 << 16) | RedminePort::APP_PREFIX      →  0x0102_0007  // Redmine Issue
 ```
 
 #### Pattern 2b — membrane (BBB-safe, per lance-graph #592)
@@ -253,7 +260,7 @@ let render: Option<u32> = render_classid_for_concept(
     AppPrefix::Healthcare,
     "patient",
 );
-// → Some(0x0005_0901)
+// → Some(0x0901_0005)
 ```
 
 Or split (pull then stamp), for symmetry with Pattern 1b:
@@ -262,7 +269,7 @@ Or split (pull then stamp), for symmetry with Pattern 1b:
 use lance_graph_contract::ogar_codebook::{canonical_concept_id, AppPrefix};
 
 let cid: u16 = canonical_concept_id("patient").unwrap();   // 0x0901
-let render: u32 = AppPrefix::Healthcare.render(cid);       // 0x0005_0901
+let render: u32 = AppPrefix::Healthcare.render(cid);       // 0x0901_0005
 ```
 
 `AppPrefix` is the OGAR #95 §2 allocation table mirrored into the
@@ -275,25 +282,25 @@ hand-stamps `0x000N`** — both halves come from one source.
 Worked examples (mirror of 2a, via the contract):
 
 ```rust
-AppPrefix::Healthcare.render(0x0901)   →  0x0005_0901  // Medcare patient
-AppPrefix::Woa.render(0x0103)          →  0x0003_0103  // WoA Stundenzettel
-AppPrefix::Smb.render(0x0204)          →  0x0004_0204  // SMB Kunde
-AppPrefix::Odoo.render(0x0103)         →  0x0002_0103  // Odoo HrAttendance
-AppPrefix::OpenProject.render(0x0102)  →  0x0001_0102  // OpenProject WorkPackage
-AppPrefix::Redmine.render(0x0102)      →  0x0007_0102  // Redmine Issue
+AppPrefix::Healthcare.render(0x0901)   →  0x0901_0005  // Medcare patient
+AppPrefix::Woa.render(0x0103)          →  0x0103_0003  // WoA Stundenzettel
+AppPrefix::Smb.render(0x0204)          →  0x0204_0004  // SMB Kunde
+AppPrefix::Odoo.render(0x0103)         →  0x0103_0002  // Odoo HrAttendance
+AppPrefix::OpenProject.render(0x0102)  →  0x0102_0001  // OpenProject WorkPackage
+AppPrefix::Redmine.render(0x0102)      →  0x0102_0007  // Redmine Issue
 ```
 
 ```rust
 // ANTI — hardcode the APP prefix as a magic constant
-const MEDCARE_APP: u32 = 0x0005_0000;                  // ← drifts from PortSpec
-let render = MEDCARE_APP | (cid as u32);               //   if APP allocation changes
+const MEDCARE_APP: u32 = 0x0005;                        // ← drifts from PortSpec
+let render = ((cid as u32) << 16) | MEDCARE_APP;        //   if APP allocation changes
 
 // ANTI — bit-shift inline
-let render = ((0x0005u32) << 16) | (cid as u32);       // ← un-typed; lose source-of-truth
+let render = ((cid as u32) << 16) | 0x0005u32;          // ← un-typed; lose source-of-truth
 
-// ANTI — store full u32 render classid where lo u16 would do (RBAC, ontology)
+// ANTI — store full u32 render classid where hi u16 would do (RBAC, ontology)
 fn authorize(actor: &Actor, render_cid: u32, op: Op) { … }
-//                                  ^^^^^^^^^^^^ shared grant lattice keys on LO u16;
+//                                  ^^^^^^^^^^^^ shared grant lattice keys on HI u16;
 //                                               passing the full u32 leaks render lens
 //                                               into auth (concept is shared, render is not)
 ```
@@ -310,7 +317,7 @@ use lance_graph_rbac::authorize;
 
 let concept: u16 = HealthcarePort::class_id("Patient").unwrap();   // 0x0901
 let decision = authorize(&actor, concept, Op::Read);
-//                                ^^^^^^^ KEY ON LO u16: shared grant lattice
+//                                ^^^^^^^ KEY ON HI u16: shared grant lattice
 //                                        across all health apps
 ```
 
@@ -380,12 +387,12 @@ shapes negatively is half the muscle memory.
 | Anti-pattern | Right shape (§reference) | Why it bites |
 |---|---|---|
 | Re-mint a canonical classid locally (`const PATIENT = 0x0901`) | §2 Pattern 1 | Bypasses PortSpec — loses alias table, alias-to-id stability is a per-Port guarantee |
-| Hardcode `APP_PREFIX` as a literal (`0x0005_0000`) | §2 Pattern 2 | Drifts from the typed source; APP allocation changes break silently |
-| Pass full u32 render classid to authorize() | §2 Pattern 3 (note) | Auth keys on LO u16; passing full u32 leaks render lens into grant lookup |
+| Hardcode `APP_PREFIX` as a literal (`0x0005`) | §2 Pattern 2 | Drifts from the typed source; APP allocation changes break silently |
+| Pass full u32 render classid to authorize() | §2 Pattern 3 (note) | Auth keys on HI u16; passing full u32 leaks render lens into grant lookup |
 | Use the deprecated `lance_graph_ogar::bridges::*` re-export | §2 Pattern 4a | The beacon will warn (lance-graph #589/#590); canonical path is `ogar_vocab::ports` |
 | Re-introduce `UnifiedBridge<PortBridge>` as a stopgap while keystone is pending | §2 Pattern 3 (anti) | Replaces one deprecated wrapper with the same wrapper. Wait for the real authorize |
 | Smuggle behavior into DDL via `DEFINE EVENT … WHEN … THEN …` | `SURREAL-AST-TRAP-PREFLIGHT.md` | Behavior belongs in OGAR Core (`ActionDef` + `KausalSpec`), not in the address-side artifact |
-| Mint a per-tenant low-u16 to dodge sharing the canonical class | §0 corollary 1 | The point of the lo u16 is sharing; per-tenant variation lives in the HI u16 (render lens) |
+| Mint a per-tenant high-u16 to dodge sharing the canonical class | §0 corollary 1 | The point of the hi u16 is sharing; per-tenant variation lives in the LO u16 (render lens) |
 
 ---
 
@@ -396,14 +403,14 @@ To cement: the same patient concept seen through every pattern.
 ```rust
 // The address — pure routing identity
 let concept_cid: u16 = HealthcarePort::class_id("Patient").unwrap();   // 0x0901
-let render_cid:  u32 = HealthcarePort::APP_PREFIX | (concept_cid as u32);
-//                   = 0x0005_0901
+let render_cid:  u32 = ((concept_cid as u32) << 16) | HealthcarePort::APP_PREFIX;
+//                   = 0x0901_0005
 
 // The address resolves to (no magic on the address itself):
 //
-//   render_cid (0x0005_0901)
+//   render_cid (0x0901_0005)
 //      │
-//      ├──► ClassView::resolve(0x0005_0901)  →  Medcare's patient view
+//      ├──► ClassView::resolve(0x0901_0005)  →  Medcare's patient view
 //      │                                          (template: patient.html,
 //      │                                           PII leaf-rename at adapter,
 //      │                                           German labels stripped at membrane)
@@ -416,13 +423,13 @@ let render_cid:  u32 = HealthcarePort::APP_PREFIX | (concept_cid as u32);
 //                                                  before_save_audit,
 //                                                  after_destroy_archive, …]
 //                                                (canonical Healthcare lifecycle —
-//                                                 ALL apps share these, hi u16 doesn't matter)
+//                                                 ALL apps share these, lo u16 doesn't matter)
 
 // Pattern 1: pull the classid
 let cid = HealthcarePort::class_id("Patient").unwrap();
 
 // Pattern 2: compose the render
-let render = HealthcarePort::APP_PREFIX | (cid as u32);
+let render = ((cid as u32) << 16) | HealthcarePort::APP_PREFIX;
 
 // Pattern 3: authorize (interim — keystone pending)
 let decision = static_role_check(actor, "physician");   // existing medcare-rbac path

@@ -20,19 +20,20 @@
 //!     (intrusive / stateful logic) stays a per-language adapter + ClassView.
 //! ```
 //!
-//! The classid is the cross-app join key: the **low u16** is the shared
-//! concept ([`PortSpec::class_id`] → the OGAR codebook), the **high u16** is
-//! the app render prefix ([`PortSpec::APP_PREFIX`]). So `account.move` lands
-//! as `0x0002_0202` under [`OdooPort`](ogar_vocab::ports::OdooPort) and an
-//! OpenProject `WorkPackage` lands as `0x0001_0102` under
+//! The classid is the cross-app join key: the **high u16** (CANON, since the
+//! 2026-07-02 half-order flip) is the shared concept ([`PortSpec::class_id`]
+//! → the OGAR codebook), the **low u16** is the app render prefix
+//! ([`PortSpec::APP_PREFIX`]). So `account.move` lands as `0x0202_0002`
+//! under [`OdooPort`](ogar_vocab::ports::OdooPort) and an OpenProject
+//! `WorkPackage` lands as `0x0102_0001` under
 //! [`OpenProjectPort`](ogar_vocab::ports::OpenProjectPort) — different render
 //! skins, the same conceptual identity where they converge.
 
+use ogar_vocab::Class;
 use ogar_vocab::app::render_classid_for;
 use ogar_vocab::ports::PortSpec;
-use ogar_vocab::Class;
-use ruff_spo_address::{mint_with_classid, Facet, Mint};
-use ruff_spo_triplet::{expand, ModelGraph};
+use ruff_spo_address::{Facet, Mint, mint_with_classid};
+use ruff_spo_triplet::{ModelGraph, expand};
 
 use crate::{lift_model_graph, lift_model_graph_python};
 
@@ -91,8 +92,8 @@ pub fn compile_graph_python<P: PortSpec>(graph: &ModelGraph) -> Vec<CompiledClas
 /// [`lift_model_graph`]). The Rails counterpart of
 /// [`compile_graph_python`] — same mint, same assembly shape, the only
 /// difference is which lift stamps the [`Class::language`](ogar_vocab::Class)
-/// field. E.g. `openproject:WorkPackage` → `0x0001_0102`,
-/// `redmine:Issue` → `0x0007_0102` (same shared concept, different render
+/// field. E.g. `openproject:WorkPackage` → `0x0102_0001`,
+/// `redmine:Issue` → `0x0102_0007` (same shared concept, different render
 /// prefix — the two-render-skins-one-concept convergence).
 #[must_use]
 pub fn compile_graph_ruby<P: PortSpec>(graph: &ModelGraph) -> Vec<CompiledClass> {
@@ -113,7 +114,8 @@ pub fn compile_graph_ruby<P: PortSpec>(graph: &ModelGraph) -> Vec<CompiledClass>
 ///
 /// The IRI is `<ns>:<model>` or `<ns>:<model>.<member>`; members inherit
 /// their class's id, so we resolve the *model*'s concept and compose the
-/// render classid `(APP_PREFIX << 16) | concept`. Odoo models arrive
+/// render classid `((concept as u32) << 16) | APP_PREFIX` (canon HIGH since
+/// the 2026-07-02 flip). Odoo models arrive
 /// underscore-normalised in the IRI (`account_move`) while ports key on the
 /// dotted name (`account.move`), so we try the dotted form first, then the
 /// raw form (mirrors `od-ontology`'s `concept_classid`). An unmapped model
@@ -199,12 +201,16 @@ mod tests {
             "amount_total projects into computed_fields"
         );
 
-        // The rail facet carries the canonical render classid — Odoo prefix
-        // 0x0002 | commercial_document concept 0x0202.
-        assert_eq!(cc.facet.facet_classid(), 0x0002_0202);
-        assert_eq!(cc.facet.facet_classid() & 0xFFFF, 0x0202, "shared concept");
+        // The rail facet carries the canonical render classid —
+        // commercial_document concept 0x0202 (canon HIGH) | Odoo prefix 0x0002.
+        assert_eq!(cc.facet.facet_classid(), 0x0202_0002);
         assert_eq!(
-            (cc.facet.facet_classid() >> 16) as u16,
+            ogar_vocab::app::concept_of(cc.facet.facet_classid()),
+            0x0202,
+            "shared concept"
+        );
+        assert_eq!(
+            ogar_vocab::app::app_of(cc.facet.facet_classid()),
             OdooPort::APP_PREFIX,
             "Odoo render prefix",
         );
@@ -217,7 +223,7 @@ mod tests {
         // Members are addressed within their class: same render classid.
         for node in ["odoo:account_move", "odoo:account_move.partner_id"] {
             let f = mint.facet(node).unwrap_or_else(|| panic!("{node} mints"));
-            assert_eq!(f.facet_classid(), 0x0002_0202, "{node} classid");
+            assert_eq!(f.facet_classid(), 0x0202_0002, "{node} classid");
         }
     }
 
@@ -225,18 +231,22 @@ mod tests {
     fn mint_is_port_agnostic_same_concept_different_render_prefix() {
         // The mint doesn't care about the source language — only the port
         // lens. An OpenProject WorkPackage graph minted through OpenProjectPort
-        // lands as 0x0001_0102 (OpenProject prefix | project_work_item), the
-        // SAME low-u16 concept Odoo/Redmine converge on, a different prefix.
+        // lands as 0x0102_0001 (project_work_item canon | OpenProject prefix),
+        // the SAME canon concept Odoo/Redmine converge on, a different prefix.
         let mut graph = ModelGraph::new("openproject");
         graph.models.push(Model::new("WorkPackage"));
         let mint = mint_graph::<OpenProjectPort>(&graph);
         let facet = mint
             .facet("openproject:WorkPackage")
             .expect("WorkPackage mints");
-        assert_eq!(facet.facet_classid(), 0x0001_0102);
-        assert_eq!(facet.facet_classid() & 0xFFFF, 0x0102, "project_work_item");
+        assert_eq!(facet.facet_classid(), 0x0102_0001);
         assert_eq!(
-            (facet.facet_classid() >> 16) as u16,
+            ogar_vocab::app::concept_of(facet.facet_classid()),
+            0x0102,
+            "project_work_item"
+        );
+        assert_eq!(
+            ogar_vocab::app::app_of(facet.facet_classid()),
             OpenProjectPort::APP_PREFIX,
         );
     }
@@ -299,11 +309,15 @@ mod tests {
             "belongs_to :project projects into an association"
         );
 
-        // OpenProject prefix 0x0001 | project_work_item concept 0x0102.
-        assert_eq!(cc.facet.facet_classid(), 0x0001_0102);
-        assert_eq!(cc.facet.facet_classid() & 0xFFFF, 0x0102, "shared concept");
+        // project_work_item concept 0x0102 (canon HIGH) | OpenProject prefix 0x0001.
+        assert_eq!(cc.facet.facet_classid(), 0x0102_0001);
         assert_eq!(
-            (cc.facet.facet_classid() >> 16) as u16,
+            ogar_vocab::app::concept_of(cc.facet.facet_classid()),
+            0x0102,
+            "shared concept"
+        );
+        assert_eq!(
+            ogar_vocab::app::app_of(cc.facet.facet_classid()),
             OpenProjectPort::APP_PREFIX,
             "OpenProject render prefix",
         );
@@ -313,8 +327,8 @@ mod tests {
     fn openproject_and_redmine_compile_to_the_same_concept_different_render_skin() {
         // The literal "one canonical concept, two render skins" proof: the
         // SAME Rails-shaped ModelGraph (WorkPackage / Issue) minted through
-        // each fork's port converges on the identical low-u16 concept and
-        // diverges only on the high-u16 app-render prefix.
+        // each fork's port converges on the identical CANON concept and
+        // diverges only on the app-render prefix (the CUSTOM/low half).
         let op_graph = work_package_graph("openproject", "WorkPackage");
         let rm_graph = work_package_graph("redmine", "Issue");
 
@@ -324,14 +338,19 @@ mod tests {
         let op_id = op_compiled[0].facet.facet_classid();
         let rm_id = rm_compiled[0].facet.facet_classid();
 
-        assert_eq!(op_id & 0xFFFF, rm_id & 0xFFFF, "shared concept converges");
-        assert_eq!(op_id & 0xFFFF, 0x0102, "project_work_item");
+        use ogar_vocab::app::{app_of, concept_of};
+        assert_eq!(
+            concept_of(op_id),
+            concept_of(rm_id),
+            "shared concept converges"
+        );
+        assert_eq!(concept_of(op_id), 0x0102, "project_work_item");
         assert_ne!(
-            (op_id >> 16) as u16,
-            (rm_id >> 16) as u16,
+            app_of(op_id),
+            app_of(rm_id),
             "render prefixes diverge (OpenProject vs Redmine skin)"
         );
-        assert_eq!((op_id >> 16) as u16, OpenProjectPort::APP_PREFIX);
-        assert_eq!((rm_id >> 16) as u16, RedminePort::APP_PREFIX);
+        assert_eq!(app_of(op_id), OpenProjectPort::APP_PREFIX);
+        assert_eq!(app_of(rm_id), RedminePort::APP_PREFIX);
     }
 }
