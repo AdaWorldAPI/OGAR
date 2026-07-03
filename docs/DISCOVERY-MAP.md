@@ -767,3 +767,26 @@ isolation. The map's job is to keep them visible.
   state }` (dropping field 1 `amount_total`), `fn new(name, state)`, and
   `fn action_post(&mut self)` with `CLASS_ID = 0x0202`. Closes the
   transpile chain with LEG 1 (ruff #40) + LEG 2 (D-OGAR-ODOO-INHERIT-MIXINS).
+- **D-CHAIN-CONSUMPTION-GROUPING (operator framing, OPEN ruling;
+  2026-07-03; ungraded — no grade until the operator rules; the SDK
+  must NOT freeze a chain-entry format before then):** the operator's
+  transpiler-substrate reminder names two consumption geometries for
+  the substrate: *"to be consumed via part_of/is_a (rails) or triplets
+  (4x (8:8:8), or (3x (8:8:8:8) (odoo ?)"* (verbatim, question mark
+  included — the Odoo grouping is explicitly open). Candidate readings,
+  recorded so the ruling has something concrete to confirm or correct:
+  **(a)** the 12 bytes of facet tier chains (`part_of[6] + is_a[6]`)
+  admit two groupings — **4×(8:8:8)** = four 3-byte compressed-classid
+  entries (deeper ancestry, compressed refs; the Rails hierarchical
+  read), vs **3×(8:8:8:8)** = three full 4-byte `u32` classids (fewer
+  levels, full fidelity; the Odoo triplet-stream read). Same 12 bytes,
+  two groupings — a byte-level echo of the 3×4-vs-4×3 standing watch
+  (`CLAUDE.md`). **(b)** the 3-byte entry spelling could be
+  `domain:appid:classview-byte` per D-CLASSID-HI-U16-SPELLING's byte
+  registers (drops one lo-half byte per entry). **Consequence either
+  way:** Rails consumers navigate hierarchically (`part_of`/`is_a` —
+  the AR object-graph read); triplet-flavored consumers stream SPO
+  groupings — one chain field, two reads, so the grouping choice is a
+  *view*, not a layout fork, IF entry width is settled. Gate: OGAR SDK
+  chain-navigation API (see EPIPHANIES E-AR-DIRECT-SDK) blocks on this
+  entry's ruling.

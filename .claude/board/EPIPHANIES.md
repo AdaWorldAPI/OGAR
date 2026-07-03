@@ -7,6 +7,42 @@
 
 ---
 
+## 2026-07-03 — E-AR-DIRECT-SDK — consume the AR shape directly; OGAR serves ERP at the cost of an import; the DO shape lands on ActionHandler + unified adapters + constructor-shaping ClassViews
+
+**Status:** FRAMING (`[G]` for the operator rulings, quoted verbatim below; `[H]` for the SDK build + the OP retirement path, gated on parity witnesses).
+
+**The rulings (operator, 2026-07-03, verbatim):**
+
+1. *"we want to remove the json and the ORM shape from OP and use the rail / AR shape directly making OGAR a transpiler substrate replacing the previous mistake to make surrealQL AST DLL host what is supposed to be compiling substrate to be consumed via part_of/is_a (rails) or triplets (4x (8:8:8), or (3x (8:8:8:8) (odoo ?) and then build the necessary API SDK so that OGAR can serve eg ODOO at the const of an import and class dto store and ERB shaped classview <> askama"*
+2. *"basically we take the best of AR rails and ORM and remove the bad and force every substrate to land reusable transpiler substrate with codebook for readability and ontologically converging (eg OGIT Auth > RBAC, DTO maps to odoo if desirable or any other consumer that wants to wire ERP"*
+3. *"the DO shape then lands on OGAR actionhandler and unified adapters and classviews that shape constructors reusable"*
+
+**What it pins:**
+
+- **Completes E-KEEP-AR-REMOVE-ORM on the consumer side, with both keeps named.** Keep from AR: the domain model as a live object graph (`ClassView`, associations as `part_of`, inheritance as `is_a`). Keep from ORM: compile-time typed schema — the **class DTO store**, types minted once, never runtime-reflected. Remove (the bad): runtime SQL plumbing, JSON-first internal shapes, **DDL text as an API**. JSON survives only at the client membrane — never as internal truth (ADR-022 firewall alignment).
+- **SURREAL-AST-AS-ADAPTER extends producer→consumer.** OP's `op-surreal-ast` / DDL-text-as-interface + the JSON row→DTO plumbing are the consumer-side residue of the same "previous mistake" — on a **retirement path**: additive-then-subtractive (W3.3 guardrail governs sequencing, not destination), each removal authorized by its parity witness going green, never ahead of it.
+- **The SDK surface (serve an ERP at the cost of an import), four pillars:** (1) one Cargo import; (2) the class DTO store — pull `CompiledClass`/`ClassView` by classid; (3) `part_of`/`is_a` navigation + codebook name resolution for readability (fuse-guarded, `canonical_concept_name`); (4) the ERB-shaped `ClassView ⇄ askama` render contract. One surface for OP / odoo-rs / woa-rs / medcare-rs / any ERP consumer — differing only by port prefix and render skin. **Ontological convergence rides the same rails:** OGIT Auth → RBAC as the pilot; the DTO maps to Odoo where desirable.
+- **The DO arm's landing zone, named:** `ActionDef`/`ActionInvocation` facts (writes/calls/callbacks from the reunified Rails extractor) lower onto **OGAR ActionHandler + unified adapters**, with **ClassViews shaping reusable constructors** — the recipe-bitmask + constructor-chaining canon (E-RECIPE-BITMASK, E-RECIPE-BITMASK-CHAIN) is the constructor-shaping mechanism this lands on.
+- **Guard:** the SDK's chain-navigation API must NOT freeze a chain-entry grouping until `docs/DISCOVERY-MAP.md` D-CHAIN-CONSUMPTION-GROUPING (OPEN, same arc) is ruled — 4×(8:8:8) vs 3×(8:8:8:8) is the operator's open question, not a decided layout.
+
+**Cross-ref:** E-KEEP-AR-REMOVE-ORM (2026-06-30, the producer-side half of this ruling); `docs/OGAR-TRANSPILE-SUBSTRATE.md` (85/15, "consumer collapses to a compiler-store caller + adapters, at the cost of an import" — this entry makes that sentence the *deliverable*); `docs/SURREAL-AST-AS-ADAPTER.md`; D-CHAIN-CONSUMPTION-GROUPING (the OPEN grouping ruling). Extractor prerequisite: E-VENDOR-SPLIT-BRAIN (below, same day) — the ruff_ruby_spo reunification is Phase 1 of the execution arc.
+
+---
+
+## 2026-07-03 — E-VENDOR-SPLIT-BRAIN — openproject-nexgen-rs's vendored ruff crates are a FORK developed in place, not a stale snapshot; the planned re-vendor would have destroyed three sprints
+
+**Status:** FINDING (`[G]` — verified first-hand: vendor git history shows Sprints C17a/C17b/C17c landing inside `openproject-nexgen-rs/vendor/AdaWorldAPI-ruff/`, never flowed to `AdaWorldAPI/ruff`).
+
+**The finding.** The OP vendor tree and live ruff `ruff_ruby_spo` diverged in BOTH directions: the **vendor fork** carries C17a (lib-ruby-parser typed-AST class shape, 1469-line `parse.rs`) + C17b (concerns/enums/store_accessors/attributes/class-meta, gaps G8–G14) + C17c (ignored_columns/scopes/default_scope/callbacks/collection callbacks, G13/G15–G17/G19/G20) — on the OLD skinny IR (103-line `ir.rs`, no `AssocDecl`). The **live repo** carries the rich IR (742-line `ir.rs`: `AssocDecl`, `field_type`, validates→required, writes/calls #38) + `extract_app` engine-walking + class-reopen merging — without the C17 DSL breadth. Frontend breadth on one side, IR depth on the other; **neither subsumes the other**, and the version numbers lie (vendor claims 0.2.0, live says 0.1.0). The planned "re-vendor" (`rm -rf` + copy live→vendor) would have silently deleted ~1,900 LOC of unmerged sprint work.
+
+**The correction:** reunify INTO live ruff (the canonical home) — merge spec derived mechanically by running BOTH extractors over the union of fixtures and diffing triple sets — then OP drops the vendor for a rev-pinned git dep (the lock-pin-bump ritual OP already runs for OGAR). Deletion of the vendor tree only after the A/B triple-diff fuse is green.
+
+**The doctrine (fuse extension):** any vendored tree gets a **drift fuse or a deletion date** — a test pinning e.g. `Predicate::ALL.len()` against the recorded upstream count would have screamed at ruff#34 instead of rotting silently. Corollary from the same arc: prose that restates code state rots on every flip — prose should cite the fuse test's *name*, not restate the value it guards (the #147 post-flip sweep needed 6 prose sites; this pattern kills the class).
+
+**Cross-ref:** E-AR-DIRECT-SDK (above — this reunification is its extractor prerequisite); 66316fa's fuse pattern (`classid_order_agrees_with_lance_graph_contract_canon_high`, COUNT_FUSE) as the model being extended; ruff#38 (writes/calls) + OP vendor C17c (callbacks) = the DO-arm's two fact sources, unified by this merge.
+
+---
+
 ## 2026-07-02 — E-CLASSID-CANON-HIGH-FLIP — the composed classid half-order flips: canon concept HIGH, APP/render prefix LOW
 
 **Status:** FINDING (`[G]`, operator-triggered). Doc-sweep companion to `docs/DISCOVERY-MAP.md` D-CLASSID-CANON-HIGH-FLIP — read that entry for the full ledger; this entry records the same correction in the session-findings log.
