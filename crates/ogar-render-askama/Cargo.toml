@@ -7,4 +7,5 @@ description = "Build-time askama codegen harness over the canonical layer — on
 
 [dependencies]
 ogar-vocab = { path = "../ogar-vocab" }
+lance-graph-contract = { git = "https://github.com/AdaWorldAPI/lance-graph", branch = "main" }
 askama = "0.12"

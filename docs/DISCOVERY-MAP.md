@@ -739,3 +739,30 @@ isolation. The map's job is to keep them visible.
   clippy clean. Supersedes the "widen parent vs primary+relation"
   framing in the 2026-07-04 lance-graph broadcast — the vocab's mixins
   axis is the answer.
+
+- **D-OGAR-RENDER-CLASSVIEW-FIELDMASK-METHODS (transpile-chain LEG 3;
+  2026-07-04; [G] — CODED + tested):** the render end of the operator's
+  chain (`ruff harvest → ogar-from-ruff lift → CompiledClass →
+  ClassView × FieldMask → askama render`). `ogar-render-askama` gains
+  `render_class_with_methods(class, mask, actions)` — a compile-time
+  (askama = the ERB/XSLT analog) transpiler that emits a Rust struct
+  whose FIELDS are the `ClassView × FieldMask` projection (the
+  `FieldMask` bitmask indexes the ObjectView N3 order — attributes then
+  family edges — the exact basis `OgarClassView::render_rows` uses; bit
+  `n` set ⇒ n-th field emits) and whose METHODS are the OGAR `ActionDef`
+  DO-arm, assembled as a **struct-of-methods constructor** (`impl { new(..)
+  ctor + one fn per ActionDef }`). **Operator rulings baked in
+  (2026-07-04):** (1) behaviour is Rust methods, NOT SurrealQL DDL — the
+  deprecated SurrealQL-AST adapter (`DEFINE EVENT … WHEN … THEN …`
+  carrying lifecycle) is not a target; consistent with
+  `SURREAL-AST-AS-ADAPTER.md` §0. (2) `on_enter` (the Rubicon state
+  mutation) makes a method take `&mut self`; read actions take `&self`.
+  New dep: `lance-graph-contract` (for `FieldMask`, branch=main). 6 new
+  tests (mask gates fields; ActionDef→methods; no `DEFINE EVENT`/`DEFINE
+  TABLE`; dotted-predicate + PascalCase sanitisers); 50 tests green in
+  `ogar-render-askama`; workspace `cargo check` clean; `cargo clippy
+  -p ogar-render-askama -- -D warnings` clean. End-to-end verified: a
+  masked `account.move` (mask={0,2}) renders `struct AccountMove { name,
+  state }` (dropping field 1 `amount_total`), `fn new(name, state)`, and
+  `fn action_post(&mut self)` with `CLASS_ID = 0x0202`. Closes the
+  transpile chain with LEG 1 (ruff #40) + LEG 2 (D-OGAR-ODOO-INHERIT-MIXINS).
