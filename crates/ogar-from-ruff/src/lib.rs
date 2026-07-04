@@ -35,6 +35,7 @@
 //! | `scopes`               | `scopes` / `default_scope`    | `Scope` / `Scopes` → `Class.scopes`; `DefaultScope` → `Class.default_scope` |
 //! | `acts_as`              | `mixins`                      | rendered as `acts_as_<variant>` so they survive on the same shelf as concerns (`ogar-vocab` has no separate `acts_as` slot) |
 //! | `sti.inherits_from`    | `parent`                      | STI parent — matches `Class.parent` slot    |
+//! | `inherits`             | `mixins` (appended)           | Odoo `_inherit` multi-parent mixin composition — the vocab's `mixins` doc names `_inherit`; the `inheritance` axis excludes mixins. Frontend-agnostic field, populated only by the Odoo frontend |
 //! | `functions`            | `Vec<ActionDef>` (DO-arm)     | [`lift_actions`] — one `ActionDef` per method; standalone, not on `Class` |
 //!
 //! Fields NOT lifted today (no equivalent on the ruff side OR no clean
@@ -177,6 +178,15 @@ fn lift_model_with_language(model: &Model, language: Language) -> Class {
     class.canonical_concept = Some(canonical_concept(&model.name));
     class.associations = model.associations.iter().filter_map(lift_association).collect();
     class.mixins = lift_mixins(model);
+    // Odoo `_inherit` (multi-parent mixin composition) lands on the same
+    // mixins shelf the vocab designates for it — `Class::mixins` doc names
+    // `_inherit = 'mixin.thread'`, and `Class::inheritance` explicitly
+    // excludes mixins ("Mixins / concerns are a SEPARATE axis"). The ruff
+    // frontend already normalised the names (dot→underscore→verbatim),
+    // deduped, and excluded the bare-`_inherit` reopen self-edge. Only the
+    // Odoo frontend populates `Model::inherits`, so this is a no-op for the
+    // Rails (`sti`) and C++ (`bases`) producers — hence unconditional.
+    class.mixins.extend(model.inherits.iter().cloned());
     class.attributes = model.attributes.iter().filter_map(lift_attribute).collect();
     class.enums = model.attributes.iter().filter_map(lift_enum).collect();
     class.scopes = model.scopes.iter().filter_map(lift_scope).collect();
@@ -883,6 +893,36 @@ mod tests {
         assert!(class.attributes.is_empty());
         assert!(class.associations.is_empty());
         assert!(class.computed_fields.is_empty());
+    }
+
+    #[test]
+    fn odoo_inherit_lands_on_mixins_not_parent() {
+        // The is_a input end of the transpile chain: `ruff_python_spo`
+        // populates the frontend-agnostic `Model::inherits` from Odoo
+        // `_inherit` (self-reopen already excluded upstream). The lift routes
+        // it to `Class::mixins` — the vocab's designated multi-parent shelf —
+        // NOT to the single `parent` / `inheritance` is_a spine (those stay
+        // Rails-STI-shaped; the vocab excludes mixins from `inheritance`).
+        let mut m = mk_odoo_model();
+        m.inherits = vec!["mail_thread".to_string(), "mail_activity_mixin".to_string()];
+        let class = lift_model_python(&m);
+
+        // Both parents preserved on the mixins shelf, order kept.
+        assert!(class.mixins.contains(&"mail_thread".to_string()));
+        assert!(class.mixins.contains(&"mail_activity_mixin".to_string()));
+        // The is_a spine is untouched — Odoo `_inherit` is NOT STI.
+        assert_eq!(class.parent, None);
+        assert_eq!(class.inheritance, Inheritance::Root);
+    }
+
+    #[test]
+    fn empty_inherits_adds_no_mixins() {
+        // Frontend-agnostic no-op: the Rails / C++ producers never populate
+        // `Model::inherits`, so the lift must not fabricate mixins. A bare
+        // model (no concerns, no acts_as, no `_inherit`) lifts with an empty
+        // mixins shelf — the `inherits` extension contributes nothing.
+        let class = lift_model(&Model::new("Bare"));
+        assert!(class.mixins.is_empty());
     }
 
     #[test]

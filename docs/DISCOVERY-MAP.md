@@ -710,3 +710,32 @@ isolation. The map's job is to keep them visible.
   no guard needed beyond this line. Cite this entry instead of
   re-deriving; a "two ledgers disagree" claim checks the le-contract /
   primer line FIRST.
+
+- **D-OGAR-ODOO-INHERIT-MIXINS (transpile-chain LEG 2; 2026-07-04;
+  [G] — CODED + tested):** the middle leg of the operator's transpile
+  chain (`ruff *_spo harvest → ogar-from-ruff lift → CompiledClass →
+  ClassView × FieldMask → askama render`). ruff PR #40 shipped the input
+  end: a frontend-agnostic `ruff_spo_triplet::Model.inherits: Vec<String>`
+  populated by the Odoo frontend from `_inherit` (self-reopen self-edge
+  excluded upstream). `ogar-from-ruff` previously consumed only
+  `sti.inherits_from → Class.parent` (Rails STI) and **dropped**
+  `Model.inherits`, so the Odoo is_a linkage never reached the Core.
+  **Resolution (this commit):** bump the ruff pin to merged main
+  (`61ce2b49`), then `class.mixins.extend(model.inherits)` in
+  `lift_model_with_language`. **The multi-parent "decision required" I
+  forwarded was already answered by the vocab:** `Class::mixins` doc
+  explicitly names `_inherit = 'mixin.thread'`, and `Class::inheritance`
+  doc states "Mixins / concerns are a SEPARATE axis … never folded in
+  here." So Odoo `_inherit` → `mixins` (the multi-parent `Vec` shelf),
+  NOT `parent`/`inheritance` (STI single-parent spine) — no `parent`
+  widening, no information loss, no vocab-axis violation. **Consequence
+  for LEG 3 (V3/D-VCW-3 render):** the FieldMask compose step must union
+  over `parent` ∪ `mixins` when materialising Odoo inherited fields —
+  the is_a spine and the mixin shelf are BOTH inheritance surfaces for
+  the render; `render_rows` itself stays concept-local (the union is the
+  caller's compose-time `FieldMask::inherit` bitwise-or). 48 tests green
+  in `ogar-from-ruff` (2 new: `odoo_inherit_lands_on_mixins_not_parent`,
+  `empty_inherits_adds_no_mixins`); workspace `cargo check` clean;
+  clippy clean. Supersedes the "widen parent vs primary+relation"
+  framing in the 2026-07-04 lance-graph broadcast — the vocab's mixins
+  axis is the answer.
