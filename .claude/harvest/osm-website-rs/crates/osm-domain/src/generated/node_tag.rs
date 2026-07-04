@@ -5,13 +5,13 @@
 
 
 
-//! `NodeTag` — canonical class generated from `ogar_vocab::nodetag()`.
+//! `NodeTag` — canonical class generated from `ogar_vocab::osm_element_tag()`.
 //! Fields are the ClassView × FieldMask projection; methods are the OGAR
 //! `ActionDef` DO-arm (behaviour is Rust, never SurrealQL DDL).
 //! DO NOT EDIT BY HAND. Re-render via `ogar-render-askama`.
 
 /// Canonical concept name as in the OGAR codebook.
-pub const CANONICAL_CONCEPT: &str = "nodetag";
+pub const CANONICAL_CONCEPT: &str = "osm_element_tag";
 
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct NodeTag {
@@ -20,6 +20,8 @@ pub struct NodeTag {
 }
 
 impl NodeTag {
+    /// Canonical codebook id for this class.
+    pub const CLASS_ID: u16 = 0x0F05;
 
     /// Struct-of-methods constructor over the ClassView × FieldMask field set.
     pub fn new(node: Option<u64>) -> Self {

@@ -6,6 +6,27 @@ use ogar_render_askama::render_class_with_methods;
 use std::fs;
 use std::path::Path;
 
+/// Rails class name → OGAR canonical concept (the `ogar-vocab` codebook, Geo
+/// domain `0x0FXX`). `None` for classes that aren't canonical geodata concepts
+/// (diary / message / issue / … app-social entities) — they render without a
+/// `CLASS_ID`.
+fn ground(rails: &str) -> Option<&'static str> {
+    Some(match rails {
+        "Node" | "OldNode" => "osm_node",
+        "Way" | "OldWay" => "osm_way",
+        "Relation" | "OldRelation" => "osm_relation",
+        "Changeset" => "osm_changeset",
+        "NodeTag" | "WayTag" | "RelationTag" | "OldNodeTag" | "OldWayTag"
+        | "OldRelationTag" => "osm_element_tag",
+        "RelationMember" | "OldRelationMember" => "osm_relation_member",
+        "WayNode" | "OldWayNode" => "osm_way_node",
+        "Note" => "osm_note",
+        "Trace" => "osm_gpx_trace",
+        "User" => "osm_user",
+        _ => return None,
+    })
+}
+
 /// PascalCase / dotted name → snake_case module/file stem.
 fn snake(name: &str) -> String {
     let mut out = String::new();
@@ -49,6 +70,16 @@ fn main() {
         classes = ogar_from_rails::extract_with(&src_path.join("app/models"), "osm");
     }
     classes.sort_by(|a, b| a.name.cmp(&b.name));
+
+    // Grounding: map each Rails class onto its OGAR canonical concept (the 15%
+    // ontological step the mechanical lift can't infer) so the render emits
+    // `CLASS_ID` from the codebook. Versioned `Old*` classes ground to the same
+    // concept as their base (temporal axis, not a new id).
+    for c in classes.iter_mut() {
+        if let Some(concept) = ground(&c.name) {
+            c.canonical_concept = Some(concept.to_string());
+        }
+    }
 
     let mut mods: Vec<String> = Vec::new();
     for c in &classes {

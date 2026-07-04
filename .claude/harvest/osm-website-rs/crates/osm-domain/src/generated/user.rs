@@ -5,13 +5,13 @@
 
 
 
-//! `User` — canonical class generated from `ogar_vocab::user()`.
+//! `User` — canonical class generated from `ogar_vocab::osm_user()`.
 //! Fields are the ClassView × FieldMask projection; methods are the OGAR
 //! `ActionDef` DO-arm (behaviour is Rust, never SurrealQL DDL).
 //! DO NOT EDIT BY HAND. Re-render via `ogar-render-askama`.
 
 /// Canonical concept name as in the OGAR codebook.
-pub const CANONICAL_CONCEPT: &str = "user";
+pub const CANONICAL_CONCEPT: &str = "osm_user";
 
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct User {
@@ -82,6 +82,8 @@ pub struct User {
 }
 
 impl User {
+    /// Canonical codebook id for this class.
+    pub const CLASS_ID: u16 = 0x0F0A;
 
     /// Struct-of-methods constructor over the ClassView × FieldMask field set.
     pub fn new(traces: Vec<u64>, diary_entries: Vec<u64>, diary_comments: Vec<u64>, diary_entry_subscriptions: Vec<u64>, diary_subscriptions: Vec<u64>, messages: Vec<u64>, new_messages: Vec<u64>, sent_messages: Vec<u64>, muted_messages: Vec<u64>, follows: Vec<u64>, followings: Vec<u64>, preferences: Vec<u64>, changesets: Vec<u64>, changeset_comments: Vec<u64>, changeset_subscriptions: Vec<u64>, note_comments: Vec<u64>, notes: Vec<u64>, note_subscriptions: Vec<u64>, subscribed_notes: Vec<u64>, oauth2_applications: Vec<u64>, access_grants: Vec<u64>, access_tokens: Vec<u64>, blocks: Vec<u64>, blocks_created: Vec<u64>, blocks_revoked: Vec<u64>, mutes: Vec<u64>, muted_users: Vec<u64>, roles: Vec<u64>, issues: Vec<u64>, issue_comments: Vec<u64>, reports: Vec<u64>, social_links: Vec<u64>) -> Self {

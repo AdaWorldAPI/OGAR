@@ -5,13 +5,13 @@
 
 
 
-//! `Way` — canonical class generated from `ogar_vocab::way()`.
+//! `Way` — canonical class generated from `ogar_vocab::osm_way()`.
 //! Fields are the ClassView × FieldMask projection; methods are the OGAR
 //! `ActionDef` DO-arm (behaviour is Rust, never SurrealQL DDL).
 //! DO NOT EDIT BY HAND. Re-render via `ogar-render-askama`.
 
 /// Canonical concept name as in the OGAR codebook.
-pub const CANONICAL_CONCEPT: &str = "way";
+pub const CANONICAL_CONCEPT: &str = "osm_way";
 
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Way {
@@ -32,6 +32,8 @@ pub struct Way {
 }
 
 impl Way {
+    /// Canonical codebook id for this class.
+    pub const CLASS_ID: u16 = 0x0F02;
 
     /// Struct-of-methods constructor over the ClassView × FieldMask field set.
     pub fn new(changeset: Option<u64>, old_ways: Vec<u64>, way_nodes: Vec<u64>, nodes: Vec<u64>, element_tags: Vec<u64>, containing_relation_members: Vec<u64>, containing_relations: Vec<u64>) -> Self {

@@ -1236,6 +1236,24 @@ const CODEBOOK: &[(&str, u16)] = &[
     // mints, per the ledger commitment to the V3 marker form
     // `0x0E01_1000` (`docs/DISCOVERY-MAP.md` D-CLASSID-CANON-HIGH-FLIP).
     // Do NOT mint rows here without an operator ruling.
+    // ── 0x0FXX — Geo domain (OpenStreetMap geodata reference ontology).
+    // The public OSM element model harvested from openstreetmap-website
+    // (Rails) via ruff → OGAR (`.claude/harvest/osm-website-rs`). node/way/
+    // relation are THE canonical geodata primitives; element_tag / relation_
+    // member / way_node are the join concepts; changeset / note / gpx_trace /
+    // user are the edit-provenance concepts. Versioned `Old*` Rails classes
+    // ground to their base concept (same concept — the temporal axis is not a
+    // new id).
+    ("osm_node", 0x0F01),
+    ("osm_way", 0x0F02),
+    ("osm_relation", 0x0F03),
+    ("osm_changeset", 0x0F04),
+    ("osm_element_tag", 0x0F05),
+    ("osm_relation_member", 0x0F06),
+    ("osm_way_node", 0x0F07),
+    ("osm_note", 0x0F08),
+    ("osm_gpx_trace", 0x0F09),
+    ("osm_user", 0x0F0A),
 ];
 
 /// Codebook **domain** — the high byte of a canonical id (see
@@ -1300,8 +1318,15 @@ pub enum ConceptDomain {
     /// concept rows here — same guard as the OSINT domain note in
     /// [`CODEBOOK`].
     Genetics,
+    /// `0x0FXX` — Geo (OpenStreetMap geodata reference ontology). The public
+    /// OSM element model — node / way / relation + element_tag / relation_
+    /// member / way_node + changeset / note / gpx_trace / user — harvested
+    /// from openstreetmap-website (Rails) via ruff → OGAR. Public reference
+    /// geodata, NOT PHI; same public-reference posture as
+    /// [`Anatomy`](Self::Anatomy).
+    Geo,
     /// Any high-byte slot not yet assigned a domain (`0x03XX`–`0x06XX`,
-    /// `0x0FXX`+).
+    /// `0x10XX`+).
     Unassigned,
 }
 
@@ -1321,6 +1346,7 @@ pub fn canonical_concept_domain(id: u16) -> ConceptDomain {
         0x0C => ConceptDomain::Automation,
         0x0D => ConceptDomain::HR,
         0x0E => ConceptDomain::Genetics,
+        0x0F => ConceptDomain::Geo,
         _ => ConceptDomain::Unassigned,
     }
 }
@@ -1704,6 +1730,36 @@ pub mod class_ids {
     /// (`ogit.Automation:Trigger`).
     pub const AUTOMATION_TRIGGER: u16 = 0x0C09;
 
+    // ── 0x0FXX — Geo domain (OpenStreetMap geodata reference ontology) ──
+
+    /// `osm_node` (`0x0F01`) — a single lat/lon point, the atomic geodata
+    /// primitive. Rails `Node` / `OldNode`.
+    pub const OSM_NODE: u16 = 0x0F01;
+    /// `osm_way` (`0x0F02`) — an ordered list of nodes (polyline / area).
+    /// Rails `Way` / `OldWay`.
+    pub const OSM_WAY: u16 = 0x0F02;
+    /// `osm_relation` (`0x0F03`) — a typed set of member elements (routes,
+    /// multipolygons, …). Rails `Relation` / `OldRelation`.
+    pub const OSM_RELATION: u16 = 0x0F03;
+    /// `osm_changeset` (`0x0F04`) — the edit-provenance envelope grouping
+    /// element versions. Rails `Changeset`.
+    pub const OSM_CHANGESET: u16 = 0x0F04;
+    /// `osm_element_tag` (`0x0F05`) — a `k=v` tag on an element. Rails
+    /// `NodeTag` / `WayTag` / `RelationTag` (+ the `Old*Tag` mirrors).
+    pub const OSM_ELEMENT_TAG: u16 = 0x0F05;
+    /// `osm_relation_member` (`0x0F06`) — a role-typed membership edge of a
+    /// relation. Rails `RelationMember` / `OldRelationMember`.
+    pub const OSM_RELATION_MEMBER: u16 = 0x0F06;
+    /// `osm_way_node` (`0x0F07`) — an ordered node membership of a way. Rails
+    /// `WayNode` / `OldWayNode`.
+    pub const OSM_WAY_NODE: u16 = 0x0F07;
+    /// `osm_note` (`0x0F08`) — a public map note (issue pin). Rails `Note`.
+    pub const OSM_NOTE: u16 = 0x0F08;
+    /// `osm_gpx_trace` (`0x0F09`) — an uploaded GPS trace. Rails `Trace`.
+    pub const OSM_GPX_TRACE: u16 = 0x0F09;
+    /// `osm_user` (`0x0F0A`) — a mapper account. Rails `User`.
+    pub const OSM_USER: u16 = 0x0F0A;
+
     // ── 0x07XX — OSINT domain: no concept constants (low byte = APPID,
     // domain-wise; q2 = 0x01 → `0x0701` is OSINT-for-q2, not a concept —
     // operator ruling 2026-07-02; see the CODEBOOK section note). ──
@@ -1791,6 +1847,17 @@ pub mod class_ids {
         ("action_handler", ACTION_HANDLER),
         ("action_applicability", ACTION_APPLICABILITY),
         ("automation_trigger", AUTOMATION_TRIGGER),
+        // 0x0FXX — Geo (OpenStreetMap geodata reference ontology)
+        ("osm_node", OSM_NODE),
+        ("osm_way", OSM_WAY),
+        ("osm_relation", OSM_RELATION),
+        ("osm_changeset", OSM_CHANGESET),
+        ("osm_element_tag", OSM_ELEMENT_TAG),
+        ("osm_relation_member", OSM_RELATION_MEMBER),
+        ("osm_way_node", OSM_WAY_NODE),
+        ("osm_note", OSM_NOTE),
+        ("osm_gpx_trace", OSM_GPX_TRACE),
+        ("osm_user", OSM_USER),
     ];
 
     #[cfg(test)]
@@ -1854,7 +1921,7 @@ pub mod class_ids {
             // lance-graph mirror is rebuilt against it.
             assert_eq!(
                 ALL.len(),
-                68,
+                78,
                 "class_ids::ALL count changed — update this pin AND the \
                  lance-graph mirror COUNT_FUSE (crates/lance-graph-ogar/src/lib.rs) \
                  in the same PR",
@@ -2716,6 +2783,18 @@ pub fn all_promoted_classes() -> Vec<Class> {
         action_handler(),
         action_applicability(),
         automation_trigger(),
+        // 0x0FXX — Geo arm (OpenStreetMap geodata reference ontology),
+        // in class_ids::ALL order.
+        osm_node(),
+        osm_way(),
+        osm_relation(),
+        osm_changeset(),
+        osm_element_tag(),
+        osm_relation_member(),
+        osm_way_node(),
+        osm_note(),
+        osm_gpx_trace(),
+        osm_user(),
     ]
 }
 
@@ -4096,6 +4175,141 @@ pub fn joint() -> Class {
     c.canonical_concept = Some("joint".to_string());
     c.parent = Some("AnatomicalStructure".to_string());
     c.associations = vec![family_edge("connects", "Bone")];
+    c
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// 0x0FXX — Geo domain builders (OpenStreetMap geodata reference ontology).
+// The canonical reference shape of the OSM element model harvested from
+// openstreetmap-website (Rails) via ruff → OGAR. node/way/relation are the
+// geodata primitives; the join + provenance concepts complete the graph.
+// ─────────────────────────────────────────────────────────────────────
+
+/// The `osm_node` (`0x0F01`) — a single lat/lon point, the atomic geodata
+/// primitive.
+#[must_use]
+pub fn osm_node() -> Class {
+    let mut c = Class::new("Node");
+    c.language = Language::Unknown;
+    c.canonical_concept = Some("osm_node".to_string());
+    c.associations = vec![
+        family_edge("changeset", "Changeset"),
+        family_edge("element_tags", "NodeTag"),
+    ];
+    c
+}
+
+/// The `osm_way` (`0x0F02`) — an ordered list of nodes (polyline / area).
+#[must_use]
+pub fn osm_way() -> Class {
+    let mut c = Class::new("Way");
+    c.language = Language::Unknown;
+    c.canonical_concept = Some("osm_way".to_string());
+    c.associations = vec![
+        family_edge("changeset", "Changeset"),
+        family_edge("way_nodes", "WayNode"),
+        family_edge("element_tags", "WayTag"),
+    ];
+    c
+}
+
+/// The `osm_relation` (`0x0F03`) — a typed set of member elements.
+#[must_use]
+pub fn osm_relation() -> Class {
+    let mut c = Class::new("Relation");
+    c.language = Language::Unknown;
+    c.canonical_concept = Some("osm_relation".to_string());
+    c.associations = vec![
+        family_edge("changeset", "Changeset"),
+        family_edge("relation_members", "RelationMember"),
+        family_edge("element_tags", "RelationTag"),
+    ];
+    c
+}
+
+/// The `osm_changeset` (`0x0F04`) — the edit-provenance envelope.
+#[must_use]
+pub fn osm_changeset() -> Class {
+    let mut c = Class::new("Changeset");
+    c.language = Language::Unknown;
+    c.canonical_concept = Some("osm_changeset".to_string());
+    c.associations = vec![
+        family_edge("user", "User"),
+        family_edge("nodes", "Node"),
+        family_edge("ways", "Way"),
+        family_edge("relations", "Relation"),
+    ];
+    c
+}
+
+/// The `osm_element_tag` (`0x0F05`) — a `k=v` tag on an element.
+#[must_use]
+pub fn osm_element_tag() -> Class {
+    let mut c = Class::new("ElementTag");
+    c.language = Language::Unknown;
+    c.canonical_concept = Some("osm_element_tag".to_string());
+    let mut k = Attribute::new("k");
+    k.type_name = Some("string".to_string());
+    let mut v = Attribute::new("v");
+    v.type_name = Some("string".to_string());
+    c.attributes = vec![k, v];
+    c
+}
+
+/// The `osm_relation_member` (`0x0F06`) — a role-typed relation membership.
+#[must_use]
+pub fn osm_relation_member() -> Class {
+    let mut c = Class::new("RelationMember");
+    c.language = Language::Unknown;
+    c.canonical_concept = Some("osm_relation_member".to_string());
+    c.associations = vec![family_edge("relation", "Relation")];
+    c
+}
+
+/// The `osm_way_node` (`0x0F07`) — an ordered node membership of a way.
+#[must_use]
+pub fn osm_way_node() -> Class {
+    let mut c = Class::new("WayNode");
+    c.language = Language::Unknown;
+    c.canonical_concept = Some("osm_way_node".to_string());
+    c.associations = vec![
+        family_edge("way", "Way"),
+        family_edge("node", "Node"),
+    ];
+    c
+}
+
+/// The `osm_note` (`0x0F08`) — a public map note (issue pin).
+#[must_use]
+pub fn osm_note() -> Class {
+    let mut c = Class::new("Note");
+    c.language = Language::Unknown;
+    c.canonical_concept = Some("osm_note".to_string());
+    c.associations = vec![family_edge("comments", "NoteComment")];
+    c
+}
+
+/// The `osm_gpx_trace` (`0x0F09`) — an uploaded GPS trace.
+#[must_use]
+pub fn osm_gpx_trace() -> Class {
+    let mut c = Class::new("Trace");
+    c.language = Language::Unknown;
+    c.canonical_concept = Some("osm_gpx_trace".to_string());
+    c.associations = vec![family_edge("user", "User")];
+    c
+}
+
+/// The `osm_user` (`0x0F0A`) — a mapper account (the 32-association hub).
+#[must_use]
+pub fn osm_user() -> Class {
+    let mut c = Class::new("User");
+    c.language = Language::Unknown;
+    c.canonical_concept = Some("osm_user".to_string());
+    c.associations = vec![
+        family_edge("changesets", "Changeset"),
+        family_edge("traces", "Trace"),
+        family_edge("notes", "Note"),
+    ];
     c
 }
 

@@ -5,13 +5,13 @@
 
 
 
-//! `Changeset` — canonical class generated from `ogar_vocab::changeset()`.
+//! `Changeset` — canonical class generated from `ogar_vocab::osm_changeset()`.
 //! Fields are the ClassView × FieldMask projection; methods are the OGAR
 //! `ActionDef` DO-arm (behaviour is Rust, never SurrealQL DDL).
 //! DO NOT EDIT BY HAND. Re-render via `ogar-render-askama`.
 
 /// Canonical concept name as in the OGAR codebook.
-pub const CANONICAL_CONCEPT: &str = "changeset";
+pub const CANONICAL_CONCEPT: &str = "osm_changeset";
 
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Changeset {
@@ -40,6 +40,8 @@ pub struct Changeset {
 }
 
 impl Changeset {
+    /// Canonical codebook id for this class.
+    pub const CLASS_ID: u16 = 0x0F04;
 
     /// Struct-of-methods constructor over the ClassView × FieldMask field set.
     pub fn new(user: Option<u64>, changeset_tags: Vec<u64>, nodes: Vec<u64>, ways: Vec<u64>, relations: Vec<u64>, old_nodes: Vec<u64>, old_ways: Vec<u64>, old_relations: Vec<u64>, comments: Vec<u64>, subscriptions: Vec<u64>, subscribers: Vec<u64>) -> Self {

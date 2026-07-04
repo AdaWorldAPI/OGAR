@@ -5,13 +5,13 @@
 
 
 
-//! `Relation` — canonical class generated from `ogar_vocab::relation()`.
+//! `Relation` — canonical class generated from `ogar_vocab::osm_relation()`.
 //! Fields are the ClassView × FieldMask projection; methods are the OGAR
 //! `ActionDef` DO-arm (behaviour is Rust, never SurrealQL DDL).
 //! DO NOT EDIT BY HAND. Re-render via `ogar-render-askama`.
 
 /// Canonical concept name as in the OGAR codebook.
-pub const CANONICAL_CONCEPT: &str = "relation";
+pub const CANONICAL_CONCEPT: &str = "osm_relation";
 
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Relation {
@@ -30,6 +30,8 @@ pub struct Relation {
 }
 
 impl Relation {
+    /// Canonical codebook id for this class.
+    pub const CLASS_ID: u16 = 0x0F03;
 
     /// Struct-of-methods constructor over the ClassView × FieldMask field set.
     pub fn new(changeset: Option<u64>, old_relations: Vec<u64>, relation_members: Vec<u64>, element_tags: Vec<u64>, containing_relation_members: Vec<u64>, containing_relations: Vec<u64>) -> Self {

@@ -5,13 +5,13 @@
 
 
 
-//! `WayNode` — canonical class generated from `ogar_vocab::waynode()`.
+//! `WayNode` — canonical class generated from `ogar_vocab::osm_way_node()`.
 //! Fields are the ClassView × FieldMask projection; methods are the OGAR
 //! `ActionDef` DO-arm (behaviour is Rust, never SurrealQL DDL).
 //! DO NOT EDIT BY HAND. Re-render via `ogar-render-askama`.
 
 /// Canonical concept name as in the OGAR codebook.
-pub const CANONICAL_CONCEPT: &str = "waynode";
+pub const CANONICAL_CONCEPT: &str = "osm_way_node";
 
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct WayNode {
@@ -22,6 +22,8 @@ pub struct WayNode {
 }
 
 impl WayNode {
+    /// Canonical codebook id for this class.
+    pub const CLASS_ID: u16 = 0x0F07;
 
     /// Struct-of-methods constructor over the ClassView × FieldMask field set.
     pub fn new(way: Option<u64>, node: Option<u64>) -> Self {

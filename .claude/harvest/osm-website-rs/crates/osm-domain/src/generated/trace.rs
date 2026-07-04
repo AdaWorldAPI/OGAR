@@ -5,13 +5,13 @@
 
 
 
-//! `Trace` — canonical class generated from `ogar_vocab::trace()`.
+//! `Trace` — canonical class generated from `ogar_vocab::osm_gpx_trace()`.
 //! Fields are the ClassView × FieldMask projection; methods are the OGAR
 //! `ActionDef` DO-arm (behaviour is Rust, never SurrealQL DDL).
 //! DO NOT EDIT BY HAND. Re-render via `ogar-render-askama`.
 
 /// Canonical concept name as in the OGAR codebook.
-pub const CANONICAL_CONCEPT: &str = "trace";
+pub const CANONICAL_CONCEPT: &str = "osm_gpx_trace";
 
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Trace {
@@ -24,6 +24,8 @@ pub struct Trace {
 }
 
 impl Trace {
+    /// Canonical codebook id for this class.
+    pub const CLASS_ID: u16 = 0x0F09;
 
     /// Struct-of-methods constructor over the ClassView × FieldMask field set.
     pub fn new(user: Option<u64>, tags: Vec<u64>, points: Vec<u64>) -> Self {
