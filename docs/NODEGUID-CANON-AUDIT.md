@@ -78,6 +78,26 @@ byte), not the *shape*. **Reconciliation:** make the family:identity split a
 ratified, the FMA `Guid` is a constrained projection of the canon, not a
 replacement.
 
+> **⊘ REGRADE — MIGRATION MANDATORY (operator, 2026-07-04). F-3 inverts.** The
+> framing above — "the u24 tail is the canon; the byte-direct is a constrained
+> projection, not a replacement" — is **superseded**. Per the operator ruling and
+> `E-V3-FACET-4-PLUS-12` (operator-locked 2026-07-02), the **byte-grouped facet IS
+> the canon and the flat `u24 ++ u24` tail is V1-LEGACY, forbidden for new units.**
+> V3 is content-blind: `classid(4) + 12-byte payload` as an axis-grouped register —
+> `6×(u8:u8)` / `4×(u8:u8:u8)` / `3×(u8:u8:u8:u8)`, the ClassView holds every
+> reading at once (`part_of:is_a` / `X:Y` / `palette256²` / `segment:taxonomy` /
+> typed) and `u8:u8` is **never widened**. So the "gap is only per-field width
+> (u16 vs byte)" reading is wrong twice over: (a) the go-forward width is the
+> **byte** (u8:u8 pair), not u16 (u16 is the deprecated V2 flat read); (b) a flat
+> u24 has **no axis** and cannot carry a rail — it is not a width variant of the
+> facet, it is a different (retired) shape. The class-local carve intuition (F-3
+> "make the split a per-classid property") survives and is *exactly right* — but it
+> is the **ClassView projecting the content-blind (u8:u8) register per classid**,
+> not a u24 width knob. Reconciliation is now MANDATORY, not "until ratified":
+> `ogar-from-ruff` already mints the V3 facet (`ruff_spo_address::Facet`);
+> `ogar-fma-skeleton::Guid` classid 2→4 (F-2) is the remaining code delta. Canon
+> pin regraded in `CLAUDE.md` P0 (dated 2026-07-04, append-only).
+
 ### F-4 — `[G]` **endianness: FMA tiers are container-first (big-endian); canon is LE throughout.**
 
 `Guid::classid()` reads `(bytes[0] << 8) | bytes[1]`, so `0x0A03` stores as

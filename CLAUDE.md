@@ -6,9 +6,27 @@
 
 ## P0 — THE CANONICAL GUID (operator-pinned; counted in HEX, not bits)
 
+> **⊘ SUPERSEDED — MIGRATION MANDATORY (operator, 2026-07-04).** The flat
+> `family-basin-leaf(6) + identity(6)` tail below — two contiguous **u24**
+> bit-groupings (`family:u24 ++ identity:u24`) — is **V1-LEGACY and forbidden
+> for new units.** Every new unit is the V3 **content-blind 4+12 facet**
+> (`E-V3-FACET-4-PLUS-12`, lance-graph `soa_layout/le-contract.md` §3,
+> operator-locked 2026-07-02): `classid(4) + 12-byte payload`, the 12 bytes an
+> **axis-grouped byte register** — `6×(u8:u8)` / `4×(u8:u8:u8)` / `3×(u8:u8:u8:u8)`
+> — whose reading (`part_of:is_a` / `X:Y` / `palette256:palette256` /
+> `segment:taxonomy` / typed content) the **classid's ClassView holds all at once**
+> and picks per read. `u8:u8` stays two separate bytes — **never widened to u16
+> or u24.** A flat u24 has **no axis** and cannot carry a rail; that is why it is
+> retired. Append-only: the pin is NOT deleted — the u24 tail stays **read-only for
+> pre-flip GUIDs**, regraded V1-legacy in place. Producer already V3 in code:
+> `ruff_spo_address::Facet` (`facet_classid:u32 + 6×FacetTier{lo:u8,hi:u8}`) via
+> `ogar-from-ruff` mint/emit. Paired follow-ups (mandatory): promote
+> `docs/V3-TRANSPILER-ADR.md` RFC→adopted; reconcile `ogar-fma-skeleton::Guid`
+> classid 2→4 (F-2); invert `docs/NODEGUID-CANON-AUDIT.md` F-3 (see its dated note).
+
 ```
 xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
-classid    HEEL   HIP    TWIG   family-basin-leaf(6) + identity(6)
+classid    HEEL   HIP    TWIG   family-basin-leaf(6) + identity(6)  ← V1-LEGACY tail (read-only; new units use the V3 4+12 facet, above)
 8 hex      4 hex  4 hex  4 hex  12 hex
 ```
 
