@@ -29,8 +29,15 @@ The node / way / relation / changeset / tag model is a graph, so the harvested
 
 - ✅ **Harvest** — 50 classes lifted from real OSM source. Full IR in
   [`harvest/osm_ir.txt`](harvest/osm_ir.txt) (associations, mixins, STI parents).
-- ⏳ **Render** — `Vec<Class>` → Rust structs (+ classid mint, ClassView) via
-  `ogar-render-askama`. `crates/osm-domain` is the landing crate.
+- ✅ **Render** — all 50 `Class`es rendered to Rust in
+  [`crates/osm-domain/src/generated/`](crates/osm-domain/src/generated/) via
+  `ogar-render-askama` (`render_class_with_methods`): associations become typed
+  edge fields (`belongs_to → Option<u64>`, `has_many → Vec<u64>`) + a `new(..)`
+  constructor. **Compiles + tests green** (`cargo build` / `cargo test`).
+  Regenerate: `cargo run -p ogar-render-askama --example render_osm -- <osm-root> <out>`.
+- ⏳ **Next** — classid mint (OSM concepts into the codebook so `CLASS_ID`
+  emits), `ActionDef` DO-arm (behaviour methods) once controller/model actions
+  are harvested, and lance-graph wiring (node/way/relation as a graph).
 
 ## Provenance (regenerate deterministically)
 
