@@ -3,8 +3,27 @@
 //! `cargo run -p ogar-render-askama --example render_osm -- <osm-root> <out-dir>`
 use lance_graph_contract::class_view::FieldMask;
 use ogar_render_askama::render_class_with_methods;
+use ogar_vocab::canonical_concept_id;
 use std::fs;
 use std::path::Path;
+
+/// Resolve an association target (a class_name like `"User"` or a relation
+/// name like `"changeset"`) to its OGAR canonical concept, if grounded.
+fn ground_target(target: &str) -> Option<&'static str> {
+    // Try the raw name, then a PascalCase-ish normalisation of a snake name.
+    ground(target).or_else(|| {
+        let pascal: String = target
+            .split('_')
+            .map(|w| {
+                let mut ch = w.chars();
+                ch.next()
+                    .map(|c| c.to_ascii_uppercase().to_string() + ch.as_str())
+                    .unwrap_or_default()
+            })
+            .collect();
+        ground(&pascal)
+    })
+}
 
 /// Rails class name → OGAR canonical concept (the `ogar-vocab` codebook, Geo
 /// domain `0x0FXX`). `None` for classes that aren't canonical geodata concepts
@@ -105,5 +124,45 @@ fn main() {
     )
     .unwrap();
 
-    println!("rendered {} classes -> {}", classes.len(), out.display());
+    // ── OSM association graph as classid-keyed SPO edges (lance-graph feed) ──
+    // node/way/relation as a graph: each grounded class is a subject carrying a
+    // CLASS_ID; each association is an edge to a target concept (classid where
+    // the target grounds).
+    let mut spo = String::from(
+        "# OSM association graph — SPO edges (ruff → OGAR), classid-keyed\n\
+         # subject_concept[classid] --assoc_kind:name--> object[classid]\n\n",
+    );
+    let mut edges = 0usize;
+    for c in &classes {
+        let s_concept = c.canonical_concept.as_deref().unwrap_or("-");
+        let s_id = c
+            .canonical_concept
+            .as_deref()
+            .and_then(canonical_concept_id)
+            .map(|i| format!("0x{i:04X}"))
+            .unwrap_or_else(|| "----".into());
+        for a in &c.associations {
+            let target = a.class_name.clone().unwrap_or_else(|| a.name.clone());
+            let o_id = ground_target(&target)
+                .and_then(canonical_concept_id)
+                .map(|i| format!("0x{i:04X}"))
+                .unwrap_or_else(|| "----".into());
+            spo.push_str(&format!(
+                "{s_concept}[{s_id}] --{:?}:{}--> {target}[{o_id}]\n",
+                a.kind, a.name
+            ));
+            edges += 1;
+        }
+    }
+    if let Some(root) = out.ancestors().nth(4) {
+        let hp = root.join("harvest");
+        fs::create_dir_all(&hp).ok();
+        fs::write(hp.join("osm_graph.spo"), &spo).unwrap();
+    }
+
+    println!(
+        "rendered {} classes, emitted {edges} SPO edges -> {}",
+        classes.len(),
+        out.display()
+    );
 }
