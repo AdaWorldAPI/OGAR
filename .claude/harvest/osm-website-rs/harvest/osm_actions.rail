@@ -95,7 +95,7 @@ diary_entrie[0x13]:edit[0x05]	DiaryEntriesController#edit
 diary_entrie[0x13]:entry_params[0x35]	DiaryEntriesController#entry_params
 diary_entrie[0x13]:hide[0x40]	DiaryEntriesController#hide
 diary_entrie[0x13]:list[0x01]	DiaryEntriesController#index
-diary_entrie[0x13]:new[0x03]	DiaryEntriesController#new
+diary_entrie[0x13]:new_form[0x03]	DiaryEntriesController#new
 diary_entrie[0x13]:rss[0x71]	DiaryEntriesController#rss
 diary_entrie[0x13]:set_map_location[0x78]	DiaryEntriesController#set_map_location
 diary_entrie[0x13]:show[0x02]	DiaryEntriesController#show
@@ -151,7 +151,7 @@ message[0x2C]:create[0x04]	MessagesController#create
 message[0x2C]:delete[0x07]	Api::MessagesController#destroy
 message[0x2C]:delete[0x07]	MessagesController#destroy
 message[0x2C]:message_params[0x52]	MessagesController#message_params
-message[0x2C]:new[0x03]	MessagesController#new
+message[0x2C]:new_form[0x03]	MessagesController#new
 message[0x2C]:show[0x02]	Api::MessagesController#show
 message[0x2C]:show[0x02]	MessagesController#show
 message[0x2C]:update[0x06]	Api::MessagesController#update
@@ -176,7 +176,7 @@ note[0x32]:delete[0x07]	Api::NotesController#destroy
 note[0x32]:feed[0x37]	Api::NotesController#feed
 note[0x32]:list[0x01]	Api::NotesController#index
 note[0x32]:list[0x01]	NotesController#index
-note[0x32]:new[0x03]	NotesController#new
+note[0x32]:new_form[0x03]	NotesController#new
 note[0x32]:reopen[0x64]	Api::NotesController#reopen
 note[0x32]:search[0x75]	Api::NotesController#search
 note[0x32]:show[0x02]	Api::NotesController#show
@@ -208,7 +208,7 @@ outboxe[0x3B]:show[0x02]	Api::Messages::OutboxesController#show
 outboxe[0x3B]:show[0x02]	Messages::OutboxesController#show
 password[0x3C]:create[0x04]	PasswordsController#create
 password[0x3C]:edit[0x05]	PasswordsController#edit
-password[0x3C]:new[0x03]	PasswordsController#new
+password[0x3C]:new_form[0x03]	PasswordsController#new
 password[0x3C]:update[0x06]	PasswordsController#update
 pd_declaration[0x3D]:create[0x04]	Accounts::PdDeclarationsController#create
 pd_declaration[0x3D]:show[0x02]	Accounts::PdDeclarationsController#show
@@ -236,7 +236,7 @@ redaction[0x45]:lookup_old_element[0x4B]	Api::OldNodes::RedactionsController#loo
 redaction[0x45]:lookup_old_element[0x4B]	Api::OldRelations::RedactionsController#lookup_old_element
 redaction[0x45]:lookup_old_element[0x4B]	Api::OldWays::RedactionsController#lookup_old_element
 redaction[0x45]:lookup_redaction[0x4D]	RedactionsController#lookup_redaction
-redaction[0x45]:new[0x03]	RedactionsController#new
+redaction[0x45]:new_form[0x03]	RedactionsController#new
 redaction[0x45]:show[0x02]	RedactionsController#show
 redaction[0x45]:update[0x06]	RedactionsController#update
 relation[0x46]:create[0x04]	Api::RelationsController#create
@@ -249,12 +249,12 @@ relation[0x46]:show[0x02]	Api::RelationsController#show
 relation[0x46]:show[0x02]	RelationsController#show
 relation[0x46]:update[0x06]	Api::RelationsController#update
 relation_member[0x47]:show[0x02]	RelationMembersController#show
-replie[0x48]:new[0x03]	Messages::RepliesController#new
+replie[0x48]:new_form[0x03]	Messages::RepliesController#new
 report[0x49]:create[0x04]	ReportsController#create
 report[0x49]:create_new_report_params[0x2C]	ReportsController#create_new_report_params
 report[0x49]:default_assigned_role[0x2F]	ReportsController#default_assigned_role
 report[0x49]:issue_params[0x47]	ReportsController#issue_params
-report[0x49]:new[0x03]	ReportsController#new
+report[0x49]:new_form[0x03]	ReportsController#new
 report[0x49]:report_params[0x66]	ReportsController#report_params
 report[0x49]:required_new_report_params_present?[0x6E]	ReportsController#required_new_report_params_present?
 reporter[0x4A]:list[0x01]	Issues::ReportersController#index
@@ -264,7 +264,7 @@ searche[0x4B]:show[0x02]	SearchesController#show
 searche[0x4B]:to_decdeg[0x7F]	SearchesController#to_decdeg
 session[0x4C]:create[0x04]	SessionsController#create
 session[0x4C]:delete[0x07]	SessionsController#destroy
-session[0x4C]:new[0x03]	SessionsController#new
+session[0x4C]:new_form[0x03]	SessionsController#new
 session[0x4C]:password_authentication[0x5B]	SessionsController#password_authentication
 share_pane[0x4D]:show[0x02]	SharePanesController#show
 site[0x4E]:about[0x08]	SiteController#about
@@ -296,7 +296,7 @@ trace[0x51]:edit[0x05]	TracesController#edit
 trace[0x51]:list[0x01]	Api::Users::TracesController#index
 trace[0x51]:list[0x01]	TracesController#index
 trace[0x51]:mine[0x53]	TracesController#mine
-trace[0x51]:new[0x03]	TracesController#new
+trace[0x51]:new_form[0x03]	TracesController#new
 trace[0x51]:offline_error[0x58]	Api::TracesController#offline_error
 trace[0x51]:offline_redirect[0x59]	TracesController#offline_redirect
 trace[0x51]:offline_warning[0x5A]	TracesController#offline_warning
@@ -314,7 +314,7 @@ user[0x54]:create[0x04]	UsersController#create
 user[0x54]:details[0x32]	Api::UsersController#details
 user[0x54]:go_public[0x3C]	UsersController#go_public
 user[0x54]:list[0x01]	Api::UsersController#index
-user[0x54]:new[0x03]	UsersController#new
+user[0x54]:new_form[0x03]	UsersController#new
 user[0x54]:save_new_user[0x73]	UsersController#save_new_user
 user[0x54]:show[0x02]	Api::UsersController#show
 user[0x54]:show[0x02]	UsersController#show
@@ -326,7 +326,7 @@ user_block[0x55]:create[0x04]	UserBlocksController#create
 user_block[0x55]:edit[0x05]	UserBlocksController#edit
 user_block[0x55]:list[0x01]	UserBlocksController#index
 user_block[0x55]:lookup_user_block[0x4E]	UserBlocksController#lookup_user_block
-user_block[0x55]:new[0x03]	UserBlocksController#new
+user_block[0x55]:new_form[0x03]	UserBlocksController#new
 user_block[0x55]:require_valid_params[0x6C]	UserBlocksController#require_valid_params
 user_block[0x55]:show[0x02]	Api::UserBlocksController#show
 user_block[0x55]:show[0x02]	UserBlocksController#show
@@ -356,5 +356,5 @@ way[0x5B]:show[0x02]	WaysController#show
 way[0x5B]:update[0x06]	Api::WaysController#update
 webgl_error_pane[0x5C]:show[0x02]	WebglErrorPanesController#show
 
-# is_a axis (140 archetypes): list=0x01 show=0x02 new=0x03 create=0x04 edit=0x05 update=0x06 delete=0x07 about=0x08 add_comment=0x09 api_call_handle_error=0x0A api_call_timeout=0x0B api_status=0x0C application_params=0x0D auth_failure=0x0E auth_success=0x0F author_info=0x10 authorize=0x11 authorize_web=0x12 bad_request=0x13 bbox_condition=0x14 check_api_readable=0x15 check_api_writable=0x16 check_database_readable=0x17 check_database_writable=0x18 check_rate_limit=0x19 check_signup_allowed?=0x1A close=0x1B close_body=0x1C closed_condition=0x1D comment=0x1E comment_params=0x1F communities=0x20 conditions_bbox=0x21 conditions_closed=0x22 conditions_ids=0x23 conditions_nonempty=0x24 conditions_open=0x25 conditions_time=0x26 conditions_user=0x27 confirm=0x28 confirm_email=0x29 confirm_resend=0x2A copyright=0x2B create_new_report_params=0x2C current_ability=0x2D database_status=0x2E default_assigned_role=0x2F default_visibility=0x30 deny_access=0x31 details=0x32 dms_regexp=0x33 do_create=0x34 entry_params=0x35 export=0x36 feed=0x37 fetch_text=0x38 fetch_xml=0x39 find_issue=0x3A forbidden=0x3B go_public=0x3C gpx_status=0x3D gravatar_status_message=0x3E help=0x3F hide=0x40 id=0x41 ignore=0x42 in_role=0x43 internal_server_error=0x44 invalid_parameter=0x45 issue_comment_params=0x46 issue_params=0x47 load_nodes=0x48 load_relations=0x49 load_ways=0x4A lookup_old_element=0x4B lookup_old_element_versions=0x4C lookup_redaction=0x4D lookup_user_block=0x4E lookup_user_by_name=0x4F map_layout=0x50 mark=0x51 message_params=0x52 mine=0x53 normalize_params=0x54 not_found=0x55 not_in_role=0x56 offline=0x57 offline_error=0x58 offline_redirect=0x59 offline_warning=0x5A password_authentication=0x5B permalink=0x5C preferred_editor=0x5D preferred_languages=0x5E preview=0x5F rate_limit_exceeded?=0x60 reassign_issue=0x61 redirect_browse_params=0x62 redirect_map_params=0x63 reopen=0x64 report_error=0x65 report_params=0x66 require_cookies=0x67 require_moderator_for_unredacted_history=0x68 require_oauth=0x69 require_public_data=0x6A require_user=0x6B require_valid_params=0x6C require_valid_role=0x6D required_new_report_params_present?=0x6E resolve=0x6F respond_to_timeout=0x70 rss=0x71 safe_referer=0x72 save_new_user=0x73 scope_enabled?=0x74 search=0x75 set_application=0x76 set_locale=0x77 set_map_location=0x78 set_request_formats=0x79 setup_user_auth=0x7A show_messages=0x7B show_redactions?=0x7C site_layout=0x7D subscribe=0x7E to_decdeg=0x7F trace_params=0x80 unhide=0x81 unsubscribe=0x82 update_all=0x83 update_preferences=0x84 update_profile=0x85 update_totp=0x86 user_params=0x87 valid_turnstile_response?=0x88 web_timeout=0x89 welcome=0x8A welcome_options=0x8B wrap_lon=0x8C
+# is_a axis (140 archetypes): list=0x01 show=0x02 new_form=0x03 create=0x04 edit=0x05 update=0x06 delete=0x07 about=0x08 add_comment=0x09 api_call_handle_error=0x0A api_call_timeout=0x0B api_status=0x0C application_params=0x0D auth_failure=0x0E auth_success=0x0F author_info=0x10 authorize=0x11 authorize_web=0x12 bad_request=0x13 bbox_condition=0x14 check_api_readable=0x15 check_api_writable=0x16 check_database_readable=0x17 check_database_writable=0x18 check_rate_limit=0x19 check_signup_allowed?=0x1A close=0x1B close_body=0x1C closed_condition=0x1D comment=0x1E comment_params=0x1F communities=0x20 conditions_bbox=0x21 conditions_closed=0x22 conditions_ids=0x23 conditions_nonempty=0x24 conditions_open=0x25 conditions_time=0x26 conditions_user=0x27 confirm=0x28 confirm_email=0x29 confirm_resend=0x2A copyright=0x2B create_new_report_params=0x2C current_ability=0x2D database_status=0x2E default_assigned_role=0x2F default_visibility=0x30 deny_access=0x31 details=0x32 dms_regexp=0x33 do_create=0x34 entry_params=0x35 export=0x36 feed=0x37 fetch_text=0x38 fetch_xml=0x39 find_issue=0x3A forbidden=0x3B go_public=0x3C gpx_status=0x3D gravatar_status_message=0x3E help=0x3F hide=0x40 id=0x41 ignore=0x42 in_role=0x43 internal_server_error=0x44 invalid_parameter=0x45 issue_comment_params=0x46 issue_params=0x47 load_nodes=0x48 load_relations=0x49 load_ways=0x4A lookup_old_element=0x4B lookup_old_element_versions=0x4C lookup_redaction=0x4D lookup_user_block=0x4E lookup_user_by_name=0x4F map_layout=0x50 mark=0x51 message_params=0x52 mine=0x53 normalize_params=0x54 not_found=0x55 not_in_role=0x56 offline=0x57 offline_error=0x58 offline_redirect=0x59 offline_warning=0x5A password_authentication=0x5B permalink=0x5C preferred_editor=0x5D preferred_languages=0x5E preview=0x5F rate_limit_exceeded?=0x60 reassign_issue=0x61 redirect_browse_params=0x62 redirect_map_params=0x63 reopen=0x64 report_error=0x65 report_params=0x66 require_cookies=0x67 require_moderator_for_unredacted_history=0x68 require_oauth=0x69 require_public_data=0x6A require_user=0x6B require_valid_params=0x6C require_valid_role=0x6D required_new_report_params_present?=0x6E resolve=0x6F respond_to_timeout=0x70 rss=0x71 safe_referer=0x72 save_new_user=0x73 scope_enabled?=0x74 search=0x75 set_application=0x76 set_locale=0x77 set_map_location=0x78 set_request_formats=0x79 setup_user_auth=0x7A show_messages=0x7B show_redactions?=0x7C site_layout=0x7D subscribe=0x7E to_decdeg=0x7F trace_params=0x80 unhide=0x81 unsubscribe=0x82 update_all=0x83 update_preferences=0x84 update_profile=0x85 update_totp=0x86 user_params=0x87 valid_turnstile_response?=0x88 web_timeout=0x89 welcome=0x8A welcome_options=0x8B wrap_lon=0x8C
 # part_of axis (92 containers): account=0x01 active_list=0x02 advanced_preference=0x03 api=0x04 application=0x05 basic_preference=0x06 capabilitie=0x07 changeset=0x08 changeset_comment=0x09 changeset_subscription=0x0A close=0x0B companie=0x0C confirmation=0x0D dashboard=0x0E data=0x0F deletion=0x10 description=0x11 diary_comment=0x12 diary_entrie=0x13 direction=0x14 download=0x15 error=0x16 export=0x17 feature_querie=0x18 feed=0x19 follow=0x1A heatmap=0x1B home=0x1C icon=0x1D image=0x1E inboxe=0x1F issue=0x20 issue_comment=0x21 issued_block=0x22 languages_pane=0x23 latlon_querie=0x24 layers_pane=0x25 legend_pane=0x26 link=0x27 list=0x28 location=0x29 mailboxe=0x2A map=0x2B message=0x2C mute=0x2D muted_inboxe=0x2E node=0x2F nominatim_querie=0x30 nominatim_reverse_querie=0x31 note=0x32 note_subscription=0x33 notification_preference=0x34 oauth2_application=0x35 old_element=0x36 old_node=0x37 old_relation=0x38 old_relation_member=0x39 old_way=0x3A outboxe=0x3B password=0x3C pd_declaration=0x3D permission=0x3E picture=0x3F preference=0x40 profile_section=0x41 querie=0x42 read_mark=0x43 received_block=0x44 redaction=0x45 relation=0x46 relation_member=0x47 replie=0x48 report=0x49 reporter=0x4A searche=0x4B session=0x4C share_pane=0x4D site=0x4E statuse=0x4F term=0x50 trace=0x51 tracepoint=0x52 upload=0x53 user=0x54 user_block=0x55 user_mute=0x56 user_preference=0x57 user_role=0x58 version=0x59 visibilitie=0x5A way=0x5B webgl_error_pane=0x5C

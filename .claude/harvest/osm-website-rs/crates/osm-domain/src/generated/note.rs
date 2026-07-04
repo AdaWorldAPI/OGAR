@@ -101,8 +101,8 @@ impl Note {
         // TODO: port `add_comment` from Api::NotesController
     }
 
-    /// OGAR action `new` (DO-arm).
-    pub fn new(&self) {
-        // TODO: port `new` from NotesController
+    /// OGAR action `new_form` (DO-arm).
+    pub fn new_form(&self) {
+        // TODO: port `new_form` from NotesController
     }
 }

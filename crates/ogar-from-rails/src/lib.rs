@@ -177,14 +177,17 @@ fn controller_to_model(controller: &str) -> Option<String> {
 
 /// Canonical archetypes for the `is_a` axis — CRUD first (stable low ids),
 /// then any custom verb (`render`, `export`, `download`, …) as its own.
-const CRUD_ARCHETYPES: &[&str] = &["list", "show", "new", "create", "edit", "update", "delete"];
+const CRUD_ARCHETYPES: &[&str] =
+    &["list", "show", "new_form", "create", "edit", "update", "delete"];
 
 /// The `is_a` archetype for a Rails action verb (`index → list`,
-/// `destroy → delete`; custom verbs kept verbatim).
+/// `destroy → delete`; `new → new_form` so it never collides with the struct's
+/// `new()` constructor; custom verbs kept verbatim).
 fn is_a_archetype(verb: &str) -> String {
     match verb {
         "index" => "list",
         "destroy" => "delete",
+        "new" => "new_form",
         other => other,
     }
     .to_string()

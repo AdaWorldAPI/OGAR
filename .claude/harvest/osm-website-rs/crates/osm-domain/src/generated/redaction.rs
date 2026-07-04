@@ -57,9 +57,9 @@ impl Redaction {
         // TODO: port `show` from RedactionsController
     }
 
-    /// OGAR action `new` (DO-arm).
-    pub fn new(&self) {
-        // TODO: port `new` from RedactionsController
+    /// OGAR action `new_form` (DO-arm).
+    pub fn new_form(&self) {
+        // TODO: port `new_form` from RedactionsController
     }
 
     /// OGAR action `edit` (DO-arm).

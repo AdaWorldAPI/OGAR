@@ -48,9 +48,9 @@ impl Message {
         // TODO: port `delete` from Api::MessagesController
     }
 
-    /// OGAR action `new` (DO-arm).
-    pub fn new(&self) {
-        // TODO: port `new` from MessagesController
+    /// OGAR action `new_form` (DO-arm).
+    pub fn new_form(&self) {
+        // TODO: port `new_form` from MessagesController
     }
 
     /// OGAR action `message_params` (DO-arm).

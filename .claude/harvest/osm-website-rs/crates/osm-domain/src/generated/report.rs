@@ -28,9 +28,9 @@ impl Report {
         Self { issue, user }
     }
 
-    /// OGAR action `new` (DO-arm).
-    pub fn new(&self) {
-        // TODO: port `new` from ReportsController
+    /// OGAR action `new_form` (DO-arm).
+    pub fn new_form(&self) {
+        // TODO: port `new_form` from ReportsController
     }
 
     /// OGAR action `create` (DO-arm).

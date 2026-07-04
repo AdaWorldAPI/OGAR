@@ -105,9 +105,9 @@ impl User {
         // TODO: port `details` from Api::UsersController
     }
 
-    /// OGAR action `new` (DO-arm).
-    pub fn new(&self) {
-        // TODO: port `new` from UsersController
+    /// OGAR action `new_form` (DO-arm).
+    pub fn new_form(&self) {
+        // TODO: port `new_form` from UsersController
     }
 
     /// OGAR action `create` (DO-arm).
