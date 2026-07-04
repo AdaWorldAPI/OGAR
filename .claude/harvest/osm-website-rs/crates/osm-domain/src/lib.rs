@@ -4,17 +4,25 @@
 //! - [`generated`] — the 50 rendered domain **structs** (THINK arm): associations
 //!   become typed edge fields (`belongs_to → Option<u64>`, `has_many → Vec<u64>`),
 //!   each with a `new(..)` constructor.
-//! - [`osm`] — the **DO arm**: controller actions as standalone
-//!   `osm::<part_of>::<is_a>(input)` free functions (`osm::map::render(..)`),
-//!   NOT methods on the structs.
+//! - [`controllers`] — the **DO arm**: a faithful mirror of `app/controllers/`.
+//!   Each module is a source controller by its own verbatim (snake) name
+//!   (`NodesController → nodes`, `MapController → map` — no singularisation);
+//!   each fn is an `is_a` action (`show`, `render`, …), standalone, NOT a method
+//!   on the record. The controller modules are re-exported at the crate root, so
+//!   `osm_domain::controllers::nodes::show(input)` and the re-exported
+//!   `osm_domain::nodes::show(input)` both resolve.
 //!
 //! Rendered by `ogar-render-askama`; do not edit by hand. [`HARVESTED_CLASSES`]
 //! is the flat inventory.
 
 pub mod generated;
 
-#[path = "generated/actions.rs"]
-pub mod osm;
+#[path = "generated/controllers.rs"]
+pub mod controllers;
+
+// Re-export the controller modules at the crate root — the ergonomic surface
+// over the faithful mirror (`osm_domain::nodes::show` ≡ `controllers::nodes::show`).
+pub use controllers::*;
 
 /// The 50 classes harvested from `openstreetmap-website@173885c1` `app/models`,
 /// in the order OGAR lifted them. Each maps to a rendered domain module.

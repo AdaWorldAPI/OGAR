@@ -109,8 +109,8 @@ pub fn extract_app(source_tree: &Path) -> Vec<Class> {
 
 /// Harvest the **DO-arm**: walk `<source_tree>/app/controllers`, lift each
 /// controller's public actions to `ActionDef`s via [`ogar_from_ruff::lift_actions`],
-/// keyed by the resource model name the controller acts on
-/// (`Api::NodesController` → `Node`). Controllers that don't map to a resource
+/// keyed by the controller's own (namespace-stripped) name
+/// (`Api::NodesController` → `Nodes`). Controllers that don't map to a resource
 /// (dashboards, errors, sessions, …) are dropped.
 ///
 /// This is the MVC other half — OGAR is *Open Graph of Active Record*, and
@@ -151,16 +151,18 @@ pub fn extract_actions(source_tree: &Path, curator: &str) -> Vec<(String, Vec<Ac
     by_model.into_iter().collect()
 }
 
-/// `Api::NodesController` → `Node`. Strips the module namespace and the
-/// `Controller` suffix, then naively singularises (drops a trailing `s`).
-/// `None` for names that aren't `*Controller` or reduce to empty.
+/// `Api::NodesController` → `Nodes`. Strips the module namespace and the
+/// `Controller` suffix. **No singularisation** — the controller's own name is
+/// the faithful identity (Rails names resources plural, and English plurals
+/// aren't invertible by heuristic); the semantics live in the classid, not in a
+/// prettified string. `None` for names that aren't `*Controller` or empty.
 fn controller_to_model(controller: &str) -> Option<String> {
     let base = controller.rsplit("::").next()?;
     let stem = base.strip_suffix("Controller")?;
     if stem.is_empty() {
         return None;
     }
-    Some(stem.strip_suffix('s').unwrap_or(stem).to_string())
+    Some(stem.to_string())
 }
 
 // ── The action rail: (part_of : is_a) — the V3 castable action shape ──
@@ -169,7 +171,7 @@ fn controller_to_model(controller: &str) -> Option<String> {
 // cannot cast between them or compose them. The V3 rail addresses an action as
 // a `(part_of : is_a)` pair — the SAME `u8:u8` HHTL tile shape as the GUID
 // tiers — so you CAST by fixing one axis and walking the other:
-//   fix is_a=show, walk part_of → `node:show`, `way:show`, `overview:show`
+//   fix is_a=show, walk part_of → `nodes:show`, `ways:show`, `changesets:show`
 //   fix part_of=map, walk is_a  → `map:render`, `map:show`, `map:export`
 // `part_of` is the controller container (INCLUDING view controllers like
 // `map` / `overview` that have no resource model); `is_a` is the action
@@ -177,8 +179,9 @@ fn controller_to_model(controller: &str) -> Option<String> {
 
 /// Canonical archetypes for the `is_a` axis — CRUD first (stable low ids),
 /// then any custom verb (`render`, `export`, `download`, …) as its own.
-const CRUD_ARCHETYPES: &[&str] =
-    &["list", "show", "new_form", "create", "edit", "update", "delete"];
+const CRUD_ARCHETYPES: &[&str] = &[
+    "list", "show", "new_form", "create", "edit", "update", "delete",
+];
 
 /// The `is_a` archetype for a Rails action verb (`index → list`,
 /// `destroy → delete`; `new → new_form` so it never collides with the struct's
@@ -193,20 +196,20 @@ fn is_a_archetype(verb: &str) -> String {
     .to_string()
 }
 
-/// The `part_of` container for a controller (`Api::NodesController` → `node`,
-/// `MapController` → `map`). Strips namespace + `Controller`, snake+singular.
-/// Unlike [`controller_to_model`] this keeps view containers (`map`,
-/// `overview`) that have no resource model.
+/// The `part_of` container for a controller — the controller's own name,
+/// snake-cased **verbatim** (`Api::NodesController` → `nodes`, `MapController`
+/// → `map`, `SearchesController` → `searches`). No singularisation, no invented
+/// namespace: the module mirrors the source controller 1:1 and is reversible.
+/// Keeps view containers (`map`, `overview`) that have no resource model.
 fn container_of(controller: &str) -> Option<String> {
     let base = controller.rsplit("::").next()?;
     let stem = base.strip_suffix("Controller")?;
     if stem.is_empty() {
         return None;
     }
-    let singular = stem.strip_suffix('s').unwrap_or(stem);
     let mut out = String::new();
     let mut prev_ln = false;
-    for c in singular.chars() {
+    for c in stem.chars() {
         if c.is_ascii_uppercase() && prev_ln {
             out.push('_');
         }
@@ -218,7 +221,10 @@ fn container_of(controller: &str) -> Option<String> {
 
 /// Assign u8 ids: `canonical` names first (from `0x01`, in given order), then
 /// the remaining distinct names in sorted order.
-fn codebook(names: &std::collections::BTreeSet<String>, canonical: &[&str]) -> BTreeMap<String, u8> {
+fn codebook(
+    names: &std::collections::BTreeSet<String>,
+    canonical: &[&str],
+) -> BTreeMap<String, u8> {
     let mut map = BTreeMap::new();
     let mut next: u8 = 1;
     for c in canonical {
@@ -293,6 +299,32 @@ pub fn extract_action_rail(source_tree: &Path, curator: &str) -> Vec<RailAction>
 mod tests {
     use super::*;
     use std::path::PathBuf;
+
+    /// The container is the controller's own name, snake-cased verbatim — no
+    /// singularisation (English plurals aren't invertible by heuristic; the
+    /// semantics live in the classid, not a prettified string).
+    #[test]
+    fn container_of_mirrors_the_controller_verbatim() {
+        assert_eq!(
+            container_of("Api::NodesController").as_deref(),
+            Some("nodes")
+        );
+        assert_eq!(
+            container_of("SearchesController").as_deref(),
+            Some("searches")
+        );
+        assert_eq!(
+            container_of("Api::CapabilitiesController").as_deref(),
+            Some("capabilities")
+        );
+        assert_eq!(container_of("MapController").as_deref(), Some("map"));
+        assert_eq!(
+            container_of("ChangesetCommentsController").as_deref(),
+            Some("changeset_comments")
+        );
+        // not a controller → None
+        assert_eq!(container_of("ApplicationRecord"), None);
+    }
 
     /// Empty / nonexistent source tree → empty Vec, never panics. The
     /// `ruff_ruby_spo` contract is "no app/models → empty graph"; this
@@ -374,7 +406,10 @@ mod tests {
         let openproject = extract_with(&op_path, "openproject");
 
         let issue = redmine.iter().find(|c| c.name == "Issue").unwrap();
-        let wp = openproject.iter().find(|c| c.name == "WorkPackage").unwrap();
+        let wp = openproject
+            .iter()
+            .find(|c| c.name == "WorkPackage")
+            .unwrap();
 
         // Distinct curators ...
         assert_eq!(issue.source_curator.as_deref(), Some("redmine"));
@@ -512,7 +547,10 @@ mod tests {
         // detected deterministically from class names alone. This is the
         // load-bearing convergence assertion — it holds *regardless* of
         // per-curator surface-extraction depth.
-        assert_eq!(issue.canonical_concept.as_deref(), Some("project_work_item"));
+        assert_eq!(
+            issue.canonical_concept.as_deref(),
+            Some("project_work_item")
+        );
         assert_eq!(
             work_package.canonical_concept.as_deref(),
             Some("project_work_item"),
@@ -645,8 +683,15 @@ mod tests {
         // The full canonical surface: every role on
         // [`ogar_vocab::project_work_item`].
         let expected: std::collections::HashSet<&'static str> = [
-            "project", "status", "type", "priority", "author", "assignee",
-            "journals", "relations", "time_entries",
+            "project",
+            "status",
+            "type",
+            "priority",
+            "author",
+            "assignee",
+            "journals",
+            "relations",
+            "time_entries",
         ]
         .into_iter()
         .collect();
@@ -725,7 +770,9 @@ mod tests {
         // producer does not yet decode either, so the v1 surface stays
         // at 3 roles. A follow-up mixin-decode adds it.
         let expected: std::collections::HashSet<&'static str> =
-            ["work_items", "time_entries", "members"].into_iter().collect();
+            ["work_items", "time_entries", "members"]
+                .into_iter()
+                .collect();
         assert_eq!(
             r_roles, expected,
             "Redmine Project must cover the canonical 3-role surface",
@@ -780,7 +827,10 @@ mod tests {
         // All four classes — Redmine User + Principal, OP User + Principal
         // — share the canonical concept and the binary codebook id.
         let expected_id = ogar_vocab::canonical_concept_id("project_actor");
-        assert!(expected_id.is_some(), "project_actor must be in the codebook");
+        assert!(
+            expected_id.is_some(),
+            "project_actor must be in the codebook"
+        );
 
         for (curator, classes) in [("Redmine", &redmine), ("OpenProject", &openproject)] {
             for class_name in ["User", "Principal"] {
@@ -943,16 +993,24 @@ mod tests {
         assert!(rel_id.is_some() && cs_id.is_some() && w_id.is_some());
 
         for (curator, classes, table) in [
-            ("Redmine", &redmine, &[
-                ("IssueRelation", "project_relation", rel_id),
-                ("Changeset", "project_changeset", cs_id),
-                ("Watcher", "project_watcher", w_id),
-            ][..]),
-            ("OpenProject", &openproject, &[
-                ("Relation", "project_relation", rel_id),
-                ("Changeset", "project_changeset", cs_id),
-                ("Watcher", "project_watcher", w_id),
-            ][..]),
+            (
+                "Redmine",
+                &redmine,
+                &[
+                    ("IssueRelation", "project_relation", rel_id),
+                    ("Changeset", "project_changeset", cs_id),
+                    ("Watcher", "project_watcher", w_id),
+                ][..],
+            ),
+            (
+                "OpenProject",
+                &openproject,
+                &[
+                    ("Relation", "project_relation", rel_id),
+                    ("Changeset", "project_changeset", cs_id),
+                    ("Watcher", "project_watcher", w_id),
+                ][..],
+            ),
         ] {
             for (class_name, concept, expected_id) in table {
                 let c = classes
@@ -1134,7 +1192,11 @@ mod tests {
                     .iter()
                     .find(|c| c.name == class_name)
                     .unwrap_or_else(|| panic!("{curator} ships a {class_name} model"));
-                assert_eq!(c.canonical_concept.as_deref(), Some(concept), "{curator} {class_name}");
+                assert_eq!(
+                    c.canonical_concept.as_deref(),
+                    Some(concept),
+                    "{curator} {class_name}"
+                );
                 assert_eq!(c.source_domain.as_deref(), Some("project"));
                 assert_eq!(c.canonical_id(), ogar_vocab::canonical_concept_id(concept));
             }
