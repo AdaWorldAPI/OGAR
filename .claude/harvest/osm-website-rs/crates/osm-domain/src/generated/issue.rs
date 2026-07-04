@@ -35,34 +35,4 @@ impl Issue {
     pub fn new(reportable: Option<u64>, reported_user: Option<u64>, user_resolved: Option<u64>, user_updated: Option<u64>, reports: Vec<u64>, comments: Vec<u64>) -> Self {
         Self { reportable, reported_user, user_resolved, user_updated, reports, comments }
     }
-
-    /// OGAR action `list` (DO-arm).
-    pub fn list(&self) {
-        // TODO: port `list` from IssuesController
-    }
-
-    /// OGAR action `show` (DO-arm).
-    pub fn show(&self) {
-        // TODO: port `show` from IssuesController
-    }
-
-    /// OGAR action `resolve` (DO-arm).
-    pub fn resolve(&self) {
-        // TODO: port `resolve` from IssuesController
-    }
-
-    /// OGAR action `ignore` (DO-arm).
-    pub fn ignore(&self) {
-        // TODO: port `ignore` from IssuesController
-    }
-
-    /// OGAR action `reopen` (DO-arm).
-    pub fn reopen(&self) {
-        // TODO: port `reopen` from IssuesController
-    }
-
-    /// OGAR action `find_issue` (DO-arm).
-    pub fn find_issue(&self) {
-        // TODO: port `find_issue` from IssuesController
-    }
 }

@@ -27,19 +27,4 @@ impl ChangesetComment {
     pub fn new(changeset: Option<u64>, author: Option<u64>) -> Self {
         Self { changeset, author }
     }
-
-    /// OGAR action `list` (DO-arm).
-    pub fn list(&self) {
-        // TODO: port `list` from Api::ChangesetCommentsController
-    }
-
-    /// OGAR action `create` (DO-arm).
-    pub fn create(&self) {
-        // TODO: port `create` from Api::ChangesetCommentsController
-    }
-
-    /// OGAR action `rate_limit_exceeded?` (DO-arm).
-    pub fn rate_limit_exceeded_(&self) {
-        // TODO: port `rate_limit_exceeded?` from Api::ChangesetCommentsController
-    }
 }

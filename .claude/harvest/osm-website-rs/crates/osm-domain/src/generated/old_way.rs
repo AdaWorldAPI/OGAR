@@ -35,24 +35,4 @@ impl OldWay {
     pub fn new(changeset: Option<u64>, redaction: Option<u64>, current_way: Option<u64>, old_nodes: Vec<u64>, old_tags: Vec<u64>) -> Self {
         Self { changeset, redaction, current_way, old_nodes, old_tags }
     }
-
-    /// OGAR action `lookup_old_element` (DO-arm).
-    pub fn lookup_old_element(&self) {
-        // TODO: port `lookup_old_element` from Api::OldWaysController
-    }
-
-    /// OGAR action `lookup_old_element_versions` (DO-arm).
-    pub fn lookup_old_element_versions(&self) {
-        // TODO: port `lookup_old_element_versions` from Api::OldWaysController
-    }
-
-    /// OGAR action `list` (DO-arm).
-    pub fn list(&self) {
-        // TODO: port `list` from OldWaysController
-    }
-
-    /// OGAR action `show` (DO-arm).
-    pub fn show(&self) {
-        // TODO: port `show` from OldWaysController
-    }
 }

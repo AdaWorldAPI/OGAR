@@ -37,29 +37,4 @@ impl Relation {
     pub fn new(changeset: Option<u64>, old_relations: Vec<u64>, relation_members: Vec<u64>, element_tags: Vec<u64>, containing_relation_members: Vec<u64>, containing_relations: Vec<u64>) -> Self {
         Self { changeset, old_relations, relation_members, element_tags, containing_relation_members, containing_relations }
     }
-
-    /// OGAR action `list` (DO-arm).
-    pub fn list(&self) {
-        // TODO: port `list` from Api::Nodes::RelationsController
-    }
-
-    /// OGAR action `show` (DO-arm).
-    pub fn show(&self) {
-        // TODO: port `show` from Api::RelationsController
-    }
-
-    /// OGAR action `create` (DO-arm).
-    pub fn create(&self) {
-        // TODO: port `create` from Api::RelationsController
-    }
-
-    /// OGAR action `update` (DO-arm).
-    pub fn update(&self) {
-        // TODO: port `update` from Api::RelationsController
-    }
-
-    /// OGAR action `delete` (DO-arm).
-    pub fn delete(&self) {
-        // TODO: port `delete` from Api::RelationsController
-    }
 }

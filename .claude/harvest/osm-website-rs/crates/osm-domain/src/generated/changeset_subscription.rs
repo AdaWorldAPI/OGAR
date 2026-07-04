@@ -27,19 +27,4 @@ impl ChangesetSubscription {
     pub fn new(subscriber: Option<u64>, changeset: Option<u64>) -> Self {
         Self { subscriber, changeset }
     }
-
-    /// OGAR action `create` (DO-arm).
-    pub fn create(&self) {
-        // TODO: port `create` from Api::ChangesetSubscriptionsController
-    }
-
-    /// OGAR action `delete` (DO-arm).
-    pub fn delete(&self) {
-        // TODO: port `delete` from Api::ChangesetSubscriptionsController
-    }
-
-    /// OGAR action `show` (DO-arm).
-    pub fn show(&self) {
-        // TODO: port `show` from ChangesetSubscriptionsController
-    }
 }

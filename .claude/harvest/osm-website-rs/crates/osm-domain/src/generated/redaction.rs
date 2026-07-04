@@ -31,49 +31,4 @@ impl Redaction {
     pub fn new(user: Option<u64>, old_nodes: Vec<u64>, old_ways: Vec<u64>, old_relations: Vec<u64>) -> Self {
         Self { user, old_nodes, old_ways, old_relations }
     }
-
-    /// OGAR action `create` (DO-arm).
-    pub fn create(&self) {
-        // TODO: port `create` from Api::OldElements::RedactionsController
-    }
-
-    /// OGAR action `delete` (DO-arm).
-    pub fn delete(&self) {
-        // TODO: port `delete` from Api::OldElements::RedactionsController
-    }
-
-    /// OGAR action `lookup_old_element` (DO-arm).
-    pub fn lookup_old_element(&self) {
-        // TODO: port `lookup_old_element` from Api::OldNodes::RedactionsController
-    }
-
-    /// OGAR action `list` (DO-arm).
-    pub fn list(&self) {
-        // TODO: port `list` from RedactionsController
-    }
-
-    /// OGAR action `show` (DO-arm).
-    pub fn show(&self) {
-        // TODO: port `show` from RedactionsController
-    }
-
-    /// OGAR action `new_form` (DO-arm).
-    pub fn new_form(&self) {
-        // TODO: port `new_form` from RedactionsController
-    }
-
-    /// OGAR action `edit` (DO-arm).
-    pub fn edit(&self) {
-        // TODO: port `edit` from RedactionsController
-    }
-
-    /// OGAR action `update` (DO-arm).
-    pub fn update(&self) {
-        // TODO: port `update` from RedactionsController
-    }
-
-    /// OGAR action `lookup_redaction` (DO-arm).
-    pub fn lookup_redaction(&self) {
-        // TODO: port `lookup_redaction` from RedactionsController
-    }
 }

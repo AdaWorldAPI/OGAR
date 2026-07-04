@@ -29,44 +29,4 @@ impl UserBlock {
     pub fn new(user: Option<u64>, creator: Option<u64>, revoker: Option<u64>) -> Self {
         Self { user, creator, revoker }
     }
-
-    /// OGAR action `show` (DO-arm).
-    pub fn show(&self) {
-        // TODO: port `show` from Api::UserBlocksController
-    }
-
-    /// OGAR action `create` (DO-arm).
-    pub fn create(&self) {
-        // TODO: port `create` from Api::UserBlocksController
-    }
-
-    /// OGAR action `list` (DO-arm).
-    pub fn list(&self) {
-        // TODO: port `list` from UserBlocksController
-    }
-
-    /// OGAR action `new_form` (DO-arm).
-    pub fn new_form(&self) {
-        // TODO: port `new_form` from UserBlocksController
-    }
-
-    /// OGAR action `edit` (DO-arm).
-    pub fn edit(&self) {
-        // TODO: port `edit` from UserBlocksController
-    }
-
-    /// OGAR action `update` (DO-arm).
-    pub fn update(&self) {
-        // TODO: port `update` from UserBlocksController
-    }
-
-    /// OGAR action `lookup_user_block` (DO-arm).
-    pub fn lookup_user_block(&self) {
-        // TODO: port `lookup_user_block` from UserBlocksController
-    }
-
-    /// OGAR action `require_valid_params` (DO-arm).
-    pub fn require_valid_params(&self) {
-        // TODO: port `require_valid_params` from UserBlocksController
-    }
 }

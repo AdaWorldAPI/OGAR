@@ -29,9 +29,4 @@ impl OldRelationMember {
     pub fn new(old_relation: Option<u64>, member: Option<u64>) -> Self {
         Self { old_relation, member }
     }
-
-    /// OGAR action `show` (DO-arm).
-    pub fn show(&self) {
-        // TODO: port `show` from OldRelationMembersController
-    }
 }

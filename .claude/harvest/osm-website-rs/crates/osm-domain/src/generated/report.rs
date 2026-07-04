@@ -27,39 +27,4 @@ impl Report {
     pub fn new(issue: Option<u64>, user: Option<u64>) -> Self {
         Self { issue, user }
     }
-
-    /// OGAR action `new_form` (DO-arm).
-    pub fn new_form(&self) {
-        // TODO: port `new_form` from ReportsController
-    }
-
-    /// OGAR action `create` (DO-arm).
-    pub fn create(&self) {
-        // TODO: port `create` from ReportsController
-    }
-
-    /// OGAR action `required_new_report_params_present?` (DO-arm).
-    pub fn required_new_report_params_present_(&self) {
-        // TODO: port `required_new_report_params_present?` from ReportsController
-    }
-
-    /// OGAR action `create_new_report_params` (DO-arm).
-    pub fn create_new_report_params(&self) {
-        // TODO: port `create_new_report_params` from ReportsController
-    }
-
-    /// OGAR action `report_params` (DO-arm).
-    pub fn report_params(&self) {
-        // TODO: port `report_params` from ReportsController
-    }
-
-    /// OGAR action `issue_params` (DO-arm).
-    pub fn issue_params(&self) {
-        // TODO: port `issue_params` from ReportsController
-    }
-
-    /// OGAR action `default_assigned_role` (DO-arm).
-    pub fn default_assigned_role(&self) {
-        // TODO: port `default_assigned_role` from ReportsController
-    }
 }

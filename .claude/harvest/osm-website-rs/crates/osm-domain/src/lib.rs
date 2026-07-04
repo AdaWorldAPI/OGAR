@@ -1,12 +1,20 @@
 //! OSM domain types — transcoded from `openstreetmap-website` (Rails) via the
 //! ruff → OGAR pipeline. See the repo `README.md` and `harvest/osm_ir.txt`.
 //!
-//! [`generated`] holds the 50 rendered domain structs — associations become
-//! typed edge fields (`belongs_to → Option<u64>`, `has_many → Vec<u64>`), each
-//! with a `new(..)` constructor. Rendered by `ogar-render-askama`; do not edit
-//! by hand. [`HARVESTED_CLASSES`] is the flat inventory.
+//! - [`generated`] — the 50 rendered domain **structs** (THINK arm): associations
+//!   become typed edge fields (`belongs_to → Option<u64>`, `has_many → Vec<u64>`),
+//!   each with a `new(..)` constructor.
+//! - [`osm`] — the **DO arm**: controller actions as standalone
+//!   `osm::<part_of>::<is_a>(input)` free functions (`osm::map::render(..)`),
+//!   NOT methods on the structs.
+//!
+//! Rendered by `ogar-render-askama`; do not edit by hand. [`HARVESTED_CLASSES`]
+//! is the flat inventory.
 
 pub mod generated;
+
+#[path = "generated/actions.rs"]
+pub mod osm;
 
 /// The 50 classes harvested from `openstreetmap-website@173885c1` `app/models`,
 /// in the order OGAR lifted them. Each maps to a rendered domain module.

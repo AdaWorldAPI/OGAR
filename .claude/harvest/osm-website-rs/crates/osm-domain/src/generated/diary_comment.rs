@@ -27,29 +27,4 @@ impl DiaryComment {
     pub fn new(user: Option<u64>, diary_entry: Option<u64>) -> Self {
         Self { user, diary_entry }
     }
-
-    /// OGAR action `create` (DO-arm).
-    pub fn create(&self) {
-        // TODO: port `create` from DiaryCommentsController
-    }
-
-    /// OGAR action `hide` (DO-arm).
-    pub fn hide(&self) {
-        // TODO: port `hide` from DiaryCommentsController
-    }
-
-    /// OGAR action `unhide` (DO-arm).
-    pub fn unhide(&self) {
-        // TODO: port `unhide` from DiaryCommentsController
-    }
-
-    /// OGAR action `comment_params` (DO-arm).
-    pub fn comment_params(&self) {
-        // TODO: port `comment_params` from DiaryCommentsController
-    }
-
-    /// OGAR action `list` (DO-arm).
-    pub fn list(&self) {
-        // TODO: port `list` from Users::DiaryCommentsController
-    }
 }

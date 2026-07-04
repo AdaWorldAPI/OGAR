@@ -25,29 +25,4 @@ impl UserPreference {
     pub fn new(user: Option<u64>) -> Self {
         Self { user }
     }
-
-    /// OGAR action `list` (DO-arm).
-    pub fn list(&self) {
-        // TODO: port `list` from Api::UserPreferencesController
-    }
-
-    /// OGAR action `show` (DO-arm).
-    pub fn show(&self) {
-        // TODO: port `show` from Api::UserPreferencesController
-    }
-
-    /// OGAR action `update_all` (DO-arm).
-    pub fn update_all(&self) {
-        // TODO: port `update_all` from Api::UserPreferencesController
-    }
-
-    /// OGAR action `update` (DO-arm).
-    pub fn update(&self) {
-        // TODO: port `update` from Api::UserPreferencesController
-    }
-
-    /// OGAR action `delete` (DO-arm).
-    pub fn delete(&self) {
-        // TODO: port `delete` from Api::UserPreferencesController
-    }
 }

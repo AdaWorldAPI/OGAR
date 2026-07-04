@@ -29,9 +29,4 @@ impl RelationMember {
     pub fn new(relation: Option<u64>, member: Option<u64>) -> Self {
         Self { relation, member }
     }
-
-    /// OGAR action `show` (DO-arm).
-    pub fn show(&self) {
-        // TODO: port `show` from RelationMembersController
-    }
 }
