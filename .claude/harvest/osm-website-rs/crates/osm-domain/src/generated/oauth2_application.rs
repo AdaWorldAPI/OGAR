@@ -26,9 +26,9 @@ impl Oauth2Application {
         Self { owner }
     }
 
-    /// OGAR action `index` (DO-arm).
-    pub fn index(&self) {
-        // TODO: port `index` from Oauth2ApplicationsController
+    /// OGAR action `list` (DO-arm).
+    pub fn list(&self) {
+        // TODO: port `list` from Oauth2ApplicationsController
     }
 
     /// OGAR action `set_application` (DO-arm).

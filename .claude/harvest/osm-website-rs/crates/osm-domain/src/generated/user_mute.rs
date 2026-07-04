@@ -28,9 +28,9 @@ impl UserMute {
         Self { owner, subject }
     }
 
-    /// OGAR action `index` (DO-arm).
-    pub fn index(&self) {
-        // TODO: port `index` from UserMutesController
+    /// OGAR action `list` (DO-arm).
+    pub fn list(&self) {
+        // TODO: port `list` from UserMutesController
     }
 
     /// OGAR action `create` (DO-arm).
@@ -38,8 +38,8 @@ impl UserMute {
         // TODO: port `create` from UserMutesController
     }
 
-    /// OGAR action `destroy` (DO-arm).
-    pub fn destroy(&self) {
-        // TODO: port `destroy` from UserMutesController
+    /// OGAR action `delete` (DO-arm).
+    pub fn delete(&self) {
+        // TODO: port `delete` from UserMutesController
     }
 }

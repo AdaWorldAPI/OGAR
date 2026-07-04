@@ -26,9 +26,9 @@ impl UserPreference {
         Self { user }
     }
 
-    /// OGAR action `index` (DO-arm).
-    pub fn index(&self) {
-        // TODO: port `index` from Api::UserPreferencesController
+    /// OGAR action `list` (DO-arm).
+    pub fn list(&self) {
+        // TODO: port `list` from Api::UserPreferencesController
     }
 
     /// OGAR action `show` (DO-arm).
@@ -46,8 +46,8 @@ impl UserPreference {
         // TODO: port `update` from Api::UserPreferencesController
     }
 
-    /// OGAR action `destroy` (DO-arm).
-    pub fn destroy(&self) {
-        // TODO: port `destroy` from Api::UserPreferencesController
+    /// OGAR action `delete` (DO-arm).
+    pub fn delete(&self) {
+        // TODO: port `delete` from Api::UserPreferencesController
     }
 }

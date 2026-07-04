@@ -46,9 +46,9 @@ impl OldRelation {
         // TODO: port `lookup_old_element_versions` from Api::OldRelationsController
     }
 
-    /// OGAR action `index` (DO-arm).
-    pub fn index(&self) {
-        // TODO: port `index` from OldRelationsController
+    /// OGAR action `list` (DO-arm).
+    pub fn list(&self) {
+        // TODO: port `list` from OldRelationsController
     }
 
     /// OGAR action `show` (DO-arm).

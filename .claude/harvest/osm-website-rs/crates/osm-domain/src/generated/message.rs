@@ -43,9 +43,9 @@ impl Message {
         // TODO: port `update` from Api::MessagesController
     }
 
-    /// OGAR action `destroy` (DO-arm).
-    pub fn destroy(&self) {
-        // TODO: port `destroy` from Api::MessagesController
+    /// OGAR action `delete` (DO-arm).
+    pub fn delete(&self) {
+        // TODO: port `delete` from Api::MessagesController
     }
 
     /// OGAR action `new` (DO-arm).

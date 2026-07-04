@@ -46,9 +46,9 @@ impl OldWay {
         // TODO: port `lookup_old_element_versions` from Api::OldWaysController
     }
 
-    /// OGAR action `index` (DO-arm).
-    pub fn index(&self) {
-        // TODO: port `index` from OldWaysController
+    /// OGAR action `list` (DO-arm).
+    pub fn list(&self) {
+        // TODO: port `list` from OldWaysController
     }
 
     /// OGAR action `show` (DO-arm).

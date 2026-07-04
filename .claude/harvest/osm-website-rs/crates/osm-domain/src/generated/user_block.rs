@@ -40,9 +40,9 @@ impl UserBlock {
         // TODO: port `create` from Api::UserBlocksController
     }
 
-    /// OGAR action `index` (DO-arm).
-    pub fn index(&self) {
-        // TODO: port `index` from UserBlocksController
+    /// OGAR action `list` (DO-arm).
+    pub fn list(&self) {
+        // TODO: port `list` from UserBlocksController
     }
 
     /// OGAR action `new` (DO-arm).

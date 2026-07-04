@@ -36,9 +36,9 @@ impl Note {
         Self { author, comments, all_comments, subscriptions, subscribers }
     }
 
-    /// OGAR action `index` (DO-arm).
-    pub fn index(&self) {
-        // TODO: port `index` from Api::NotesController
+    /// OGAR action `list` (DO-arm).
+    pub fn list(&self) {
+        // TODO: port `list` from Api::NotesController
     }
 
     /// OGAR action `show` (DO-arm).
@@ -51,9 +51,9 @@ impl Note {
         // TODO: port `create` from Api::NotesController
     }
 
-    /// OGAR action `destroy` (DO-arm).
-    pub fn destroy(&self) {
-        // TODO: port `destroy` from Api::NotesController
+    /// OGAR action `delete` (DO-arm).
+    pub fn delete(&self) {
+        // TODO: port `delete` from Api::NotesController
     }
 
     /// OGAR action `comment` (DO-arm).

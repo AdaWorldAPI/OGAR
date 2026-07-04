@@ -37,9 +37,9 @@ impl Redaction {
         // TODO: port `create` from Api::OldElements::RedactionsController
     }
 
-    /// OGAR action `destroy` (DO-arm).
-    pub fn destroy(&self) {
-        // TODO: port `destroy` from Api::OldElements::RedactionsController
+    /// OGAR action `delete` (DO-arm).
+    pub fn delete(&self) {
+        // TODO: port `delete` from Api::OldElements::RedactionsController
     }
 
     /// OGAR action `lookup_old_element` (DO-arm).
@@ -47,9 +47,9 @@ impl Redaction {
         // TODO: port `lookup_old_element` from Api::OldNodes::RedactionsController
     }
 
-    /// OGAR action `index` (DO-arm).
-    pub fn index(&self) {
-        // TODO: port `index` from RedactionsController
+    /// OGAR action `list` (DO-arm).
+    pub fn list(&self) {
+        // TODO: port `list` from RedactionsController
     }
 
     /// OGAR action `show` (DO-arm).

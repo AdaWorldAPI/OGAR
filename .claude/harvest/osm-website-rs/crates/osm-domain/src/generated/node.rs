@@ -44,9 +44,9 @@ impl Node {
         Self { changeset, old_nodes, way_nodes, ways, element_tags, old_way_nodes, ways_via_history, containing_relation_members, containing_relations }
     }
 
-    /// OGAR action `index` (DO-arm).
-    pub fn index(&self) {
-        // TODO: port `index` from Api::NodesController
+    /// OGAR action `list` (DO-arm).
+    pub fn list(&self) {
+        // TODO: port `list` from Api::NodesController
     }
 
     /// OGAR action `show` (DO-arm).
@@ -64,8 +64,8 @@ impl Node {
         // TODO: port `update` from Api::NodesController
     }
 
-    /// OGAR action `destroy` (DO-arm).
-    pub fn destroy(&self) {
-        // TODO: port `destroy` from Api::NodesController
+    /// OGAR action `delete` (DO-arm).
+    pub fn delete(&self) {
+        // TODO: port `delete` from Api::NodesController
     }
 }

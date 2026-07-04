@@ -47,9 +47,9 @@ impl Trace {
         // TODO: port `update` from Api::TracesController
     }
 
-    /// OGAR action `destroy` (DO-arm).
-    pub fn destroy(&self) {
-        // TODO: port `destroy` from Api::TracesController
+    /// OGAR action `delete` (DO-arm).
+    pub fn delete(&self) {
+        // TODO: port `delete` from Api::TracesController
     }
 
     /// OGAR action `do_create` (DO-arm).
@@ -62,9 +62,9 @@ impl Trace {
         // TODO: port `offline_error` from Api::TracesController
     }
 
-    /// OGAR action `index` (DO-arm).
-    pub fn index(&self) {
-        // TODO: port `index` from Api::Users::TracesController
+    /// OGAR action `list` (DO-arm).
+    pub fn list(&self) {
+        // TODO: port `list` from Api::Users::TracesController
     }
 
     /// OGAR action `new` (DO-arm).

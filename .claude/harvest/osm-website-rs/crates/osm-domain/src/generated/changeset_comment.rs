@@ -28,9 +28,9 @@ impl ChangesetComment {
         Self { changeset, author }
     }
 
-    /// OGAR action `index` (DO-arm).
-    pub fn index(&self) {
-        // TODO: port `index` from Api::ChangesetCommentsController
+    /// OGAR action `list` (DO-arm).
+    pub fn list(&self) {
+        // TODO: port `list` from Api::ChangesetCommentsController
     }
 
     /// OGAR action `create` (DO-arm).

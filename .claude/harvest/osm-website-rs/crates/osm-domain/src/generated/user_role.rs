@@ -33,9 +33,9 @@ impl UserRole {
         // TODO: port `create` from UserRolesController
     }
 
-    /// OGAR action `destroy` (DO-arm).
-    pub fn destroy(&self) {
-        // TODO: port `destroy` from UserRolesController
+    /// OGAR action `delete` (DO-arm).
+    pub fn delete(&self) {
+        // TODO: port `delete` from UserRolesController
     }
 
     /// OGAR action `require_valid_role` (DO-arm).

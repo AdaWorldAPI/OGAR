@@ -48,9 +48,9 @@ impl Changeset {
         Self { user, changeset_tags, nodes, ways, relations, old_nodes, old_ways, old_relations, comments, subscriptions, subscribers }
     }
 
-    /// OGAR action `index` (DO-arm).
-    pub fn index(&self) {
-        // TODO: port `index` from Api::ChangesetsController
+    /// OGAR action `list` (DO-arm).
+    pub fn list(&self) {
+        // TODO: port `list` from Api::ChangesetsController
     }
 
     /// OGAR action `show` (DO-arm).

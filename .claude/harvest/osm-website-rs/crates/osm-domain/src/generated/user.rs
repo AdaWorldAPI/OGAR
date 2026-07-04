@@ -90,9 +90,9 @@ impl User {
         Self { traces, diary_entries, diary_comments, diary_entry_subscriptions, diary_subscriptions, messages, new_messages, sent_messages, muted_messages, follows, followings, preferences, changesets, changeset_comments, changeset_subscriptions, note_comments, notes, note_subscriptions, subscribed_notes, oauth2_applications, access_grants, access_tokens, blocks, blocks_created, blocks_revoked, mutes, muted_users, roles, issues, issue_comments, reports, social_links }
     }
 
-    /// OGAR action `index` (DO-arm).
-    pub fn index(&self) {
-        // TODO: port `index` from Api::UsersController
+    /// OGAR action `list` (DO-arm).
+    pub fn list(&self) {
+        // TODO: port `list` from Api::UsersController
     }
 
     /// OGAR action `show` (DO-arm).

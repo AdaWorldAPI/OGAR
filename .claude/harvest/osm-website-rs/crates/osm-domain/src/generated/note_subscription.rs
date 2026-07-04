@@ -33,8 +33,8 @@ impl NoteSubscription {
         // TODO: port `create` from Api::NoteSubscriptionsController
     }
 
-    /// OGAR action `destroy` (DO-arm).
-    pub fn destroy(&self) {
-        // TODO: port `destroy` from Api::NoteSubscriptionsController
+    /// OGAR action `delete` (DO-arm).
+    pub fn delete(&self) {
+        // TODO: port `delete` from Api::NoteSubscriptionsController
     }
 }

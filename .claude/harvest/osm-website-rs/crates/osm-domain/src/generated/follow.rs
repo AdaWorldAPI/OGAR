@@ -38,8 +38,8 @@ impl Follow {
         // TODO: port `create` from FollowsController
     }
 
-    /// OGAR action `destroy` (DO-arm).
-    pub fn destroy(&self) {
-        // TODO: port `destroy` from FollowsController
+    /// OGAR action `delete` (DO-arm).
+    pub fn delete(&self) {
+        // TODO: port `delete` from FollowsController
     }
 }

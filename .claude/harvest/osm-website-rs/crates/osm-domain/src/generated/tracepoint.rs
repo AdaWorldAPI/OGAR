@@ -26,8 +26,8 @@ impl Tracepoint {
         Self { trace }
     }
 
-    /// OGAR action `index` (DO-arm).
-    pub fn index(&self) {
-        // TODO: port `index` from Api::TracepointsController
+    /// OGAR action `list` (DO-arm).
+    pub fn list(&self) {
+        // TODO: port `list` from Api::TracepointsController
     }
 }

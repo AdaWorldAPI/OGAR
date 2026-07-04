@@ -33,9 +33,9 @@ impl ChangesetSubscription {
         // TODO: port `create` from Api::ChangesetSubscriptionsController
     }
 
-    /// OGAR action `destroy` (DO-arm).
-    pub fn destroy(&self) {
-        // TODO: port `destroy` from Api::ChangesetSubscriptionsController
+    /// OGAR action `delete` (DO-arm).
+    pub fn delete(&self) {
+        // TODO: port `delete` from Api::ChangesetSubscriptionsController
     }
 
     /// OGAR action `show` (DO-arm).

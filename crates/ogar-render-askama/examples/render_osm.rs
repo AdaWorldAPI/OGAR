@@ -170,11 +170,53 @@ fn main() {
         fs::write(hp.join("osm_graph.spo"), &spo).unwrap();
     }
 
+    // ── Action rail: (part_of : is_a) — the castable V3 action shape ──
+    let rail = ogar_from_rails::extract_action_rail(src_path, "osm");
+    let mut rt = String::from(
+        "# OSM action rail — (part_of : is_a), the V3 castable action shape\n\
+         # a u8:u8 HHTL tile per action; cast = fix one axis, walk the other\n\
+         # part_of[id]:is_a[id]\\tcontroller#action\n\n",
+    );
+    let mut parts: std::collections::BTreeSet<(u8, String)> = std::collections::BTreeSet::new();
+    let mut isas: std::collections::BTreeSet<(u8, String)> = std::collections::BTreeSet::new();
+    for r in &rail {
+        rt.push_str(&format!(
+            "{}[0x{:02X}]:{}[0x{:02X}]\t{}#{}\n",
+            r.part_of, r.part_of_id, r.is_a, r.is_a_id, r.controller, r.action
+        ));
+        parts.insert((r.part_of_id, r.part_of.clone()));
+        isas.insert((r.is_a_id, r.is_a.clone()));
+    }
+    rt.push_str(&format!("\n# is_a axis ({} archetypes): ", isas.len()));
+    rt.push_str(
+        &isas
+            .iter()
+            .map(|(i, n)| format!("{n}=0x{i:02X}"))
+            .collect::<Vec<_>>()
+            .join(" "),
+    );
+    rt.push_str(&format!("\n# part_of axis ({} containers): ", parts.len()));
+    rt.push_str(
+        &parts
+            .iter()
+            .map(|(i, n)| format!("{n}=0x{i:02X}"))
+            .collect::<Vec<_>>()
+            .join(" "),
+    );
+    rt.push('\n');
+    if let Some(root) = out.ancestors().nth(4) {
+        fs::write(root.join("harvest/osm_actions.rail"), &rt).unwrap();
+    }
+
     println!(
-        "rendered {} classes ({total_actions} DO-arm actions across {} controllers), \
-         emitted {edges} SPO edges -> {}",
+        "rendered {} classes ({total_actions} DO-arm methods across {} model \
+         containers); action rail = {} (part_of:is_a) tiles [{} part_of x {} is_a]; \
+         {edges} SPO edges -> {}",
         classes.len(),
         actions_by_model.len(),
+        rail.len(),
+        parts.len(),
+        isas.len(),
         out.display()
     );
 }

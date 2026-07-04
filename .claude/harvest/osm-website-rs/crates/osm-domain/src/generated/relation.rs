@@ -38,9 +38,9 @@ impl Relation {
         Self { changeset, old_relations, relation_members, element_tags, containing_relation_members, containing_relations }
     }
 
-    /// OGAR action `index` (DO-arm).
-    pub fn index(&self) {
-        // TODO: port `index` from Api::Nodes::RelationsController
+    /// OGAR action `list` (DO-arm).
+    pub fn list(&self) {
+        // TODO: port `list` from Api::Nodes::RelationsController
     }
 
     /// OGAR action `show` (DO-arm).
@@ -58,8 +58,8 @@ impl Relation {
         // TODO: port `update` from Api::RelationsController
     }
 
-    /// OGAR action `destroy` (DO-arm).
-    pub fn destroy(&self) {
-        // TODO: port `destroy` from Api::RelationsController
+    /// OGAR action `delete` (DO-arm).
+    pub fn delete(&self) {
+        // TODO: port `delete` from Api::RelationsController
     }
 }

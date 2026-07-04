@@ -48,8 +48,8 @@ impl DiaryComment {
         // TODO: port `comment_params` from DiaryCommentsController
     }
 
-    /// OGAR action `index` (DO-arm).
-    pub fn index(&self) {
-        // TODO: port `index` from Users::DiaryCommentsController
+    /// OGAR action `list` (DO-arm).
+    pub fn list(&self) {
+        // TODO: port `list` from Users::DiaryCommentsController
     }
 }

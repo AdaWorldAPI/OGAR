@@ -36,9 +36,9 @@ impl Issue {
         Self { reportable, reported_user, user_resolved, user_updated, reports, comments }
     }
 
-    /// OGAR action `index` (DO-arm).
-    pub fn index(&self) {
-        // TODO: port `index` from IssuesController
+    /// OGAR action `list` (DO-arm).
+    pub fn list(&self) {
+        // TODO: port `list` from IssuesController
     }
 
     /// OGAR action `show` (DO-arm).
