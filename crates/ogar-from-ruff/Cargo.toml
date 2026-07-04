@@ -14,6 +14,13 @@ serde = ["dep:serde", "ogar-vocab/serde"]
 
 [dependencies]
 ogar-vocab = { path = "../ogar-vocab" }
-ruff_spo_triplet = { git = "https://github.com/AdaWorldAPI/ruff", branch = "main" }
-ruff_spo_address = { git = "https://github.com/AdaWorldAPI/ruff", branch = "main" }
+# ruff pinned to an exact rev (not floating `branch = "main"`): this crate
+# reads `ruff_spo_triplet::Model::inherits`, added in ruff PR #40. With no
+# committed Cargo.lock, a floating branch could resolve `main` to a rev
+# WITHOUT that field and fail to compile. `61ce2b49` is ruff main at the #40
+# merge. Both ruff crates MUST share one rev (they depend on ruff_spo_triplet
+# internally; a mismatch double-checks-out ruff). Bump in lockstep with
+# ogar-from-rails.
+ruff_spo_triplet = { git = "https://github.com/AdaWorldAPI/ruff", rev = "61ce2b490fc3c432d36c44eceed08125f838b405" }
+ruff_spo_address = { git = "https://github.com/AdaWorldAPI/ruff", rev = "61ce2b490fc3c432d36c44eceed08125f838b405" }
 serde = { workspace = true, optional = true }
