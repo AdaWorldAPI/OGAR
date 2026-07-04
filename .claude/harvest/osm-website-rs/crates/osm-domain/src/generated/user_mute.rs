@@ -27,4 +27,19 @@ impl UserMute {
     pub fn new(owner: Option<u64>, subject: Option<u64>) -> Self {
         Self { owner, subject }
     }
+
+    /// OGAR action `index` (DO-arm).
+    pub fn index(&self) {
+        // TODO: port `index` from UserMutesController
+    }
+
+    /// OGAR action `create` (DO-arm).
+    pub fn create(&self) {
+        // TODO: port `create` from UserMutesController
+    }
+
+    /// OGAR action `destroy` (DO-arm).
+    pub fn destroy(&self) {
+        // TODO: port `destroy` from UserMutesController
+    }
 }

@@ -35,4 +35,74 @@ impl Note {
     pub fn new(author: Option<u64>, comments: Vec<u64>, all_comments: Vec<u64>, subscriptions: Vec<u64>, subscribers: Vec<u64>) -> Self {
         Self { author, comments, all_comments, subscriptions, subscribers }
     }
+
+    /// OGAR action `index` (DO-arm).
+    pub fn index(&self) {
+        // TODO: port `index` from Api::NotesController
+    }
+
+    /// OGAR action `show` (DO-arm).
+    pub fn show(&self) {
+        // TODO: port `show` from Api::NotesController
+    }
+
+    /// OGAR action `create` (DO-arm).
+    pub fn create(&self) {
+        // TODO: port `create` from Api::NotesController
+    }
+
+    /// OGAR action `destroy` (DO-arm).
+    pub fn destroy(&self) {
+        // TODO: port `destroy` from Api::NotesController
+    }
+
+    /// OGAR action `comment` (DO-arm).
+    pub fn comment(&self) {
+        // TODO: port `comment` from Api::NotesController
+    }
+
+    /// OGAR action `close` (DO-arm).
+    pub fn close(&self) {
+        // TODO: port `close` from Api::NotesController
+    }
+
+    /// OGAR action `reopen` (DO-arm).
+    pub fn reopen(&self) {
+        // TODO: port `reopen` from Api::NotesController
+    }
+
+    /// OGAR action `feed` (DO-arm).
+    pub fn feed(&self) {
+        // TODO: port `feed` from Api::NotesController
+    }
+
+    /// OGAR action `search` (DO-arm).
+    pub fn search(&self) {
+        // TODO: port `search` from Api::NotesController
+    }
+
+    /// OGAR action `closed_condition` (DO-arm).
+    pub fn closed_condition(&self) {
+        // TODO: port `closed_condition` from Api::NotesController
+    }
+
+    /// OGAR action `bbox_condition` (DO-arm).
+    pub fn bbox_condition(&self) {
+        // TODO: port `bbox_condition` from Api::NotesController
+    }
+
+    /// OGAR action `author_info` (DO-arm).
+    pub fn author_info(&self) {
+        // TODO: port `author_info` from Api::NotesController
+    }
+
+    /// OGAR action `add_comment` (DO-arm).
+    pub fn add_comment(&self) {
+        // TODO: port `add_comment` from Api::NotesController
+    }
+
+    /// OGAR action `new` (DO-arm).
+    pub fn new(&self) {
+        // TODO: port `new` from NotesController
+    }
 }

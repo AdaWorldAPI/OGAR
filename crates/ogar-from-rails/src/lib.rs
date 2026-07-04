@@ -42,9 +42,10 @@
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
 
+use std::collections::BTreeMap;
 use std::path::Path;
 
-use ogar_vocab::Class;
+use ogar_vocab::{ActionDef, Class};
 
 /// Top-level entry: extract from a Rails source tree to a list of
 /// OGAR `Class` values.
@@ -104,6 +105,56 @@ pub fn extract_app_with(source_tree: &Path, curator: &str) -> Vec<Class> {
 pub fn extract_app(source_tree: &Path) -> Vec<Class> {
     let graph = ruff_ruby_spo::extract_app(source_tree);
     ogar_from_ruff::lift_model_graph(&graph)
+}
+
+/// Harvest the **DO-arm**: walk `<source_tree>/app/controllers`, lift each
+/// controller's public actions to `ActionDef`s via [`ogar_from_ruff::lift_actions`],
+/// keyed by the resource model name the controller acts on
+/// (`Api::NodesController` → `Node`). Controllers that don't map to a resource
+/// (dashboards, errors, sessions, …) are dropped.
+///
+/// This is the MVC other half — OGAR is *Open Graph of Active Record*, and
+/// Active Record is Model **+ Controller**. [`extract`] harvests the models
+/// (THINK arm); this harvests the controllers (DO arm). Pair the two by model
+/// name: `render_class_with_methods(model_class, mask, &actions_for[model])`
+/// attaches the controller's actions as Rust methods on the model struct.
+///
+/// Returns `(model_name, actions)` pairs in deterministic (sorted) order.
+/// Empty when there is no `app/controllers` tree.
+#[must_use]
+pub fn extract_actions(source_tree: &Path, curator: &str) -> Vec<(String, Vec<ActionDef>)> {
+    let dir = source_tree.join("app/controllers");
+    let graph = ruff_ruby_spo::extract_tree_with(&dir, curator);
+    let mut by_model: BTreeMap<String, Vec<ActionDef>> = BTreeMap::new();
+    for m in &graph.models {
+        if let Some(model) = controller_to_model(&m.name) {
+            let acts = ogar_from_ruff::lift_actions(m);
+            if !acts.is_empty() {
+                by_model.entry(model).or_default().extend(acts);
+            }
+        }
+    }
+    // A model can be served by several controllers (`Api::NodesController` +
+    // the browse `NodesController`), and controllers repeat private helper
+    // `def`s — both produce same-named actions. Dedup by predicate (first
+    // wins) so the rendered `impl` has no duplicate method definitions.
+    for acts in by_model.values_mut() {
+        let mut seen = std::collections::HashSet::new();
+        acts.retain(|a| seen.insert(a.predicate.clone()));
+    }
+    by_model.into_iter().collect()
+}
+
+/// `Api::NodesController` → `Node`. Strips the module namespace and the
+/// `Controller` suffix, then naively singularises (drops a trailing `s`).
+/// `None` for names that aren't `*Controller` or reduce to empty.
+fn controller_to_model(controller: &str) -> Option<String> {
+    let base = controller.rsplit("::").next()?;
+    let stem = base.strip_suffix("Controller")?;
+    if stem.is_empty() {
+        return None;
+    }
+    Some(stem.strip_suffix('s').unwrap_or(stem).to_string())
 }
 
 #[cfg(test)]

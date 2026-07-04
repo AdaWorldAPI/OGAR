@@ -43,4 +43,29 @@ impl Node {
     pub fn new(changeset: Option<u64>, old_nodes: Vec<u64>, way_nodes: Vec<u64>, ways: Vec<u64>, element_tags: Vec<u64>, old_way_nodes: Vec<u64>, ways_via_history: Vec<u64>, containing_relation_members: Vec<u64>, containing_relations: Vec<u64>) -> Self {
         Self { changeset, old_nodes, way_nodes, ways, element_tags, old_way_nodes, ways_via_history, containing_relation_members, containing_relations }
     }
+
+    /// OGAR action `index` (DO-arm).
+    pub fn index(&self) {
+        // TODO: port `index` from Api::NodesController
+    }
+
+    /// OGAR action `show` (DO-arm).
+    pub fn show(&self) {
+        // TODO: port `show` from Api::NodesController
+    }
+
+    /// OGAR action `create` (DO-arm).
+    pub fn create(&self) {
+        // TODO: port `create` from Api::NodesController
+    }
+
+    /// OGAR action `update` (DO-arm).
+    pub fn update(&self) {
+        // TODO: port `update` from Api::NodesController
+    }
+
+    /// OGAR action `destroy` (DO-arm).
+    pub fn destroy(&self) {
+        // TODO: port `destroy` from Api::NodesController
+    }
 }

@@ -27,4 +27,29 @@ impl UserRole {
     pub fn new(user: Option<u64>, granter: Option<u64>) -> Self {
         Self { user, granter }
     }
+
+    /// OGAR action `create` (DO-arm).
+    pub fn create(&self) {
+        // TODO: port `create` from UserRolesController
+    }
+
+    /// OGAR action `destroy` (DO-arm).
+    pub fn destroy(&self) {
+        // TODO: port `destroy` from UserRolesController
+    }
+
+    /// OGAR action `require_valid_role` (DO-arm).
+    pub fn require_valid_role(&self) {
+        // TODO: port `require_valid_role` from UserRolesController
+    }
+
+    /// OGAR action `not_in_role` (DO-arm).
+    pub fn not_in_role(&self) {
+        // TODO: port `not_in_role` from UserRolesController
+    }
+
+    /// OGAR action `in_role` (DO-arm).
+    pub fn in_role(&self) {
+        // TODO: port `in_role` from UserRolesController
+    }
 }

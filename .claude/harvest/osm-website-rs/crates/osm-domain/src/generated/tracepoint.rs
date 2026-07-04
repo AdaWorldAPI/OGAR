@@ -25,4 +25,9 @@ impl Tracepoint {
     pub fn new(trace: Option<u64>) -> Self {
         Self { trace }
     }
+
+    /// OGAR action `index` (DO-arm).
+    pub fn index(&self) {
+        // TODO: port `index` from Api::TracepointsController
+    }
 }

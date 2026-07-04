@@ -25,4 +25,19 @@ impl Oauth2Application {
     pub fn new(owner: Option<u64>) -> Self {
         Self { owner }
     }
+
+    /// OGAR action `index` (DO-arm).
+    pub fn index(&self) {
+        // TODO: port `index` from Oauth2ApplicationsController
+    }
+
+    /// OGAR action `set_application` (DO-arm).
+    pub fn set_application(&self) {
+        // TODO: port `set_application` from Oauth2ApplicationsController
+    }
+
+    /// OGAR action `application_params` (DO-arm).
+    pub fn application_params(&self) {
+        // TODO: port `application_params` from Oauth2ApplicationsController
+    }
 }

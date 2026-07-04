@@ -27,4 +27,19 @@ impl Follow {
     pub fn new(follower: Option<u64>, following: Option<u64>) -> Self {
         Self { follower, following }
     }
+
+    /// OGAR action `show` (DO-arm).
+    pub fn show(&self) {
+        // TODO: port `show` from FollowsController
+    }
+
+    /// OGAR action `create` (DO-arm).
+    pub fn create(&self) {
+        // TODO: port `create` from FollowsController
+    }
+
+    /// OGAR action `destroy` (DO-arm).
+    pub fn destroy(&self) {
+        // TODO: port `destroy` from FollowsController
+    }
 }

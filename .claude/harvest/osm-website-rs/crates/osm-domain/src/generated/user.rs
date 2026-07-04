@@ -89,4 +89,69 @@ impl User {
     pub fn new(traces: Vec<u64>, diary_entries: Vec<u64>, diary_comments: Vec<u64>, diary_entry_subscriptions: Vec<u64>, diary_subscriptions: Vec<u64>, messages: Vec<u64>, new_messages: Vec<u64>, sent_messages: Vec<u64>, muted_messages: Vec<u64>, follows: Vec<u64>, followings: Vec<u64>, preferences: Vec<u64>, changesets: Vec<u64>, changeset_comments: Vec<u64>, changeset_subscriptions: Vec<u64>, note_comments: Vec<u64>, notes: Vec<u64>, note_subscriptions: Vec<u64>, subscribed_notes: Vec<u64>, oauth2_applications: Vec<u64>, access_grants: Vec<u64>, access_tokens: Vec<u64>, blocks: Vec<u64>, blocks_created: Vec<u64>, blocks_revoked: Vec<u64>, mutes: Vec<u64>, muted_users: Vec<u64>, roles: Vec<u64>, issues: Vec<u64>, issue_comments: Vec<u64>, reports: Vec<u64>, social_links: Vec<u64>) -> Self {
         Self { traces, diary_entries, diary_comments, diary_entry_subscriptions, diary_subscriptions, messages, new_messages, sent_messages, muted_messages, follows, followings, preferences, changesets, changeset_comments, changeset_subscriptions, note_comments, notes, note_subscriptions, subscribed_notes, oauth2_applications, access_grants, access_tokens, blocks, blocks_created, blocks_revoked, mutes, muted_users, roles, issues, issue_comments, reports, social_links }
     }
+
+    /// OGAR action `index` (DO-arm).
+    pub fn index(&self) {
+        // TODO: port `index` from Api::UsersController
+    }
+
+    /// OGAR action `show` (DO-arm).
+    pub fn show(&self) {
+        // TODO: port `show` from Api::UsersController
+    }
+
+    /// OGAR action `details` (DO-arm).
+    pub fn details(&self) {
+        // TODO: port `details` from Api::UsersController
+    }
+
+    /// OGAR action `new` (DO-arm).
+    pub fn new(&self) {
+        // TODO: port `new` from UsersController
+    }
+
+    /// OGAR action `create` (DO-arm).
+    pub fn create(&self) {
+        // TODO: port `create` from UsersController
+    }
+
+    /// OGAR action `go_public` (DO-arm).
+    pub fn go_public(&self) {
+        // TODO: port `go_public` from UsersController
+    }
+
+    /// OGAR action `auth_success` (DO-arm).
+    pub fn auth_success(&self) {
+        // TODO: port `auth_success` from UsersController
+    }
+
+    /// OGAR action `auth_failure` (DO-arm).
+    pub fn auth_failure(&self) {
+        // TODO: port `auth_failure` from UsersController
+    }
+
+    /// OGAR action `save_new_user` (DO-arm).
+    pub fn save_new_user(&self) {
+        // TODO: port `save_new_user` from UsersController
+    }
+
+    /// OGAR action `welcome_options` (DO-arm).
+    pub fn welcome_options(&self) {
+        // TODO: port `welcome_options` from UsersController
+    }
+
+    /// OGAR action `user_params` (DO-arm).
+    pub fn user_params(&self) {
+        // TODO: port `user_params` from UsersController
+    }
+
+    /// OGAR action `check_signup_allowed?` (DO-arm).
+    pub fn check_signup_allowed_(&self) {
+        // TODO: port `check_signup_allowed?` from UsersController
+    }
+
+    /// OGAR action `valid_turnstile_response?` (DO-arm).
+    pub fn valid_turnstile_response_(&self) {
+        // TODO: port `valid_turnstile_response?` from UsersController
+    }
 }

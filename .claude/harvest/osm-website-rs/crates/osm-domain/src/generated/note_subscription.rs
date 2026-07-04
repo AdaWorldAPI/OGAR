@@ -27,4 +27,14 @@ impl NoteSubscription {
     pub fn new(user: Option<u64>, note: Option<u64>) -> Self {
         Self { user, note }
     }
+
+    /// OGAR action `create` (DO-arm).
+    pub fn create(&self) {
+        // TODO: port `create` from Api::NoteSubscriptionsController
+    }
+
+    /// OGAR action `destroy` (DO-arm).
+    pub fn destroy(&self) {
+        // TODO: port `destroy` from Api::NoteSubscriptionsController
+    }
 }

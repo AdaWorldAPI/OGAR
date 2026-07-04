@@ -27,4 +27,34 @@ impl Message {
     pub fn new(sender: Option<u64>, recipient: Option<u64>) -> Self {
         Self { sender, recipient }
     }
+
+    /// OGAR action `show` (DO-arm).
+    pub fn show(&self) {
+        // TODO: port `show` from Api::MessagesController
+    }
+
+    /// OGAR action `create` (DO-arm).
+    pub fn create(&self) {
+        // TODO: port `create` from Api::MessagesController
+    }
+
+    /// OGAR action `update` (DO-arm).
+    pub fn update(&self) {
+        // TODO: port `update` from Api::MessagesController
+    }
+
+    /// OGAR action `destroy` (DO-arm).
+    pub fn destroy(&self) {
+        // TODO: port `destroy` from Api::MessagesController
+    }
+
+    /// OGAR action `new` (DO-arm).
+    pub fn new(&self) {
+        // TODO: port `new` from MessagesController
+    }
+
+    /// OGAR action `message_params` (DO-arm).
+    pub fn message_params(&self) {
+        // TODO: port `message_params` from MessagesController
+    }
 }

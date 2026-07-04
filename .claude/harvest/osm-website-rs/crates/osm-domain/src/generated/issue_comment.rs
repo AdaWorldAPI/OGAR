@@ -27,4 +27,19 @@ impl IssueComment {
     pub fn new(issue: Option<u64>, user: Option<u64>) -> Self {
         Self { issue, user }
     }
+
+    /// OGAR action `create` (DO-arm).
+    pub fn create(&self) {
+        // TODO: port `create` from IssueCommentsController
+    }
+
+    /// OGAR action `issue_comment_params` (DO-arm).
+    pub fn issue_comment_params(&self) {
+        // TODO: port `issue_comment_params` from IssueCommentsController
+    }
+
+    /// OGAR action `reassign_issue` (DO-arm).
+    pub fn reassign_issue(&self) {
+        // TODO: port `reassign_issue` from IssueCommentsController
+    }
 }
