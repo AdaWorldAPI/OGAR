@@ -1,0 +1,325 @@
+# OSM Rails → OGAR IR (namespace=osm) — 50 classes
+
+## Acl
+language: Ruby
+
+## ApplicationRecord
+language: Ruby
+mixin: LibXML
+
+## Changeset
+language: Ruby
+assoc: BelongsTo user -> user
+assoc: HasMany changeset_tags -> changeset_tags
+assoc: HasMany nodes -> nodes
+assoc: HasMany ways -> ways
+assoc: HasMany relations -> relations
+assoc: HasMany old_nodes -> old_nodes
+assoc: HasMany old_ways -> old_ways
+assoc: HasMany old_relations -> old_relations
+assoc: HasMany comments -> ChangesetComment
+assoc: HasMany subscriptions -> ChangesetSubscription
+assoc: HasMany subscribers -> subscribers
+
+## ChangesetComment
+language: Ruby
+assoc: BelongsTo changeset -> changeset
+assoc: BelongsTo author -> User
+
+## ChangesetSubscription
+language: Ruby
+assoc: BelongsTo subscriber -> User
+assoc: BelongsTo changeset -> changeset
+
+## ChangesetTag
+language: Ruby
+assoc: BelongsTo changeset -> changeset
+
+## Community
+parent: FrozenRecord::Base
+language: Ruby
+
+## DiaryComment
+language: Ruby
+assoc: BelongsTo user -> user
+assoc: BelongsTo diary_entry -> diary_entry
+
+## DiaryEntry
+language: Ruby
+assoc: BelongsTo user -> user
+assoc: BelongsTo language -> language fk=language_code
+assoc: HasMany comments -> DiaryComment
+assoc: HasMany visible_comments -> DiaryComment
+assoc: HasMany subscriptions -> DiaryEntrySubscription
+assoc: HasMany subscribers -> subscribers
+
+## DiaryEntrySubscription
+language: Ruby
+assoc: BelongsTo user -> user
+assoc: BelongsTo diary_entry -> diary_entry
+
+## Follow
+language: Ruby
+assoc: BelongsTo follower -> User fk=user_id
+assoc: BelongsTo following -> User fk=friend_user_id
+
+## GeoRecord::Coord
+language: Ruby
+
+## Issue
+language: Ruby
+mixin: AASM
+assoc: BelongsTo reportable -> reportable
+assoc: BelongsTo reported_user -> User
+assoc: BelongsTo user_resolved -> User fk=resolved_by
+assoc: BelongsTo user_updated -> User fk=updated_by
+assoc: HasMany reports -> reports
+assoc: HasMany comments -> IssueComment
+
+## IssueComment
+language: Ruby
+assoc: BelongsTo issue -> issue
+assoc: BelongsTo user -> user
+
+## Language
+language: Ruby
+assoc: HasMany diary_entries -> diary_entries fk=language
+
+## Message
+language: Ruby
+assoc: BelongsTo sender -> User fk=from_user_id
+assoc: BelongsTo recipient -> User fk=to_user_id
+
+## ModerationZone
+language: Ruby
+assoc: BelongsTo creator -> User
+assoc: BelongsTo revoker -> User
+
+## Node
+language: Ruby
+mixin: GeoRecord
+mixin: ConsistencyValidations
+mixin: NotRedactable
+assoc: BelongsTo changeset -> changeset
+assoc: HasMany old_nodes -> old_nodes
+assoc: HasMany way_nodes -> way_nodes
+assoc: HasMany ways -> ways
+assoc: HasMany element_tags -> NodeTag
+assoc: HasMany old_way_nodes -> old_way_nodes
+assoc: HasMany ways_via_history -> Way
+assoc: HasMany containing_relation_members -> RelationMember
+assoc: HasMany containing_relations -> Relation
+
+## NodeTag
+language: Ruby
+assoc: BelongsTo node -> node
+
+## Note
+language: Ruby
+mixin: GeoRecord
+assoc: BelongsTo author -> User fk=user_id
+assoc: HasMany comments -> NoteComment fk=note_id
+assoc: HasMany all_comments -> NoteComment fk=note_id
+assoc: HasMany subscriptions -> NoteSubscription
+assoc: HasMany subscribers -> subscribers
+
+## NoteComment
+language: Ruby
+assoc: BelongsTo note -> note
+assoc: BelongsTo author -> User
+
+## NoteSubscription
+language: Ruby
+assoc: BelongsTo user -> user
+assoc: BelongsTo note -> note
+
+## Oauth2Application
+parent: Doorkeeper::Application
+language: Ruby
+assoc: BelongsTo owner -> owner
+
+## OldNode
+language: Ruby
+mixin: GeoRecord
+mixin: Redactable
+assoc: BelongsTo changeset -> changeset
+assoc: BelongsTo redaction -> redaction
+assoc: BelongsTo current_node -> Node fk=node_id
+assoc: HasMany old_tags -> OldNodeTag fk=[:node_id,:version]
+
+## OldNodeTag
+language: Ruby
+assoc: BelongsTo old_node -> old_node fk=[:node_id,:version]
+
+## OldRelation
+language: Ruby
+mixin: Redactable
+assoc: BelongsTo changeset -> changeset
+assoc: BelongsTo redaction -> redaction
+assoc: BelongsTo current_relation -> Relation fk=relation_id
+assoc: HasMany old_members -> OldRelationMember fk=[:relation_id,:version]
+assoc: HasMany old_tags -> OldRelationTag fk=[:relation_id,:version]
+
+## OldRelationMember
+language: Ruby
+assoc: BelongsTo old_relation -> old_relation fk=[:relation_id,:version]
+assoc: BelongsTo member -> member
+
+## OldRelationTag
+language: Ruby
+assoc: BelongsTo old_relation -> old_relation fk=[:relation_id,:version]
+
+## OldWay
+language: Ruby
+mixin: Redactable
+assoc: BelongsTo changeset -> changeset
+assoc: BelongsTo redaction -> redaction
+assoc: BelongsTo current_way -> Way fk=way_id
+assoc: HasMany old_nodes -> OldWayNode fk=[:way_id,:version]
+assoc: HasMany old_tags -> OldWayTag fk=[:way_id,:version]
+
+## OldWayNode
+language: Ruby
+assoc: BelongsTo old_way -> old_way fk=[:way_id,:version]
+assoc: BelongsTo node -> node
+assoc: BelongsTo way -> way
+
+## OldWayTag
+language: Ruby
+assoc: BelongsTo old_way -> old_way fk=[:way_id,:version]
+
+## Redaction
+language: Ruby
+assoc: BelongsTo user -> user
+assoc: HasMany old_nodes -> old_nodes
+assoc: HasMany old_ways -> old_ways
+assoc: HasMany old_relations -> old_relations
+
+## Relation
+language: Ruby
+mixin: ConsistencyValidations
+mixin: NotRedactable
+assoc: BelongsTo changeset -> changeset
+assoc: HasMany old_relations -> old_relations
+assoc: HasMany relation_members -> relation_members
+assoc: HasMany element_tags -> RelationTag
+assoc: HasMany containing_relation_members -> RelationMember
+assoc: HasMany containing_relations -> Relation
+
+## RelationMember
+language: Ruby
+assoc: BelongsTo relation -> relation
+assoc: BelongsTo member -> member
+
+## RelationTag
+language: Ruby
+assoc: BelongsTo relation -> relation
+
+## Report
+language: Ruby
+assoc: BelongsTo issue -> issue
+assoc: BelongsTo user -> user
+
+## SocialLink
+language: Ruby
+assoc: BelongsTo user -> user
+
+## SpammyPhrase
+language: Ruby
+
+## Trace
+language: Ruby
+assoc: BelongsTo user -> user
+assoc: HasMany tags -> Tracetag fk=gpx_id
+assoc: HasMany points -> Tracepoint fk=gpx_id
+
+## Tracepoint
+language: Ruby
+mixin: GeoRecord
+assoc: BelongsTo trace -> trace fk=gpx_id
+
+## Tracetag
+language: Ruby
+assoc: BelongsTo trace -> trace fk=gpx_id
+
+## User
+language: Ruby
+mixin: AASM
+assoc: HasMany traces -> traces
+assoc: HasMany diary_entries -> diary_entries
+assoc: HasMany diary_comments -> diary_comments
+assoc: HasMany diary_entry_subscriptions -> DiaryEntrySubscription
+assoc: HasMany diary_subscriptions -> diary_subscriptions
+assoc: HasMany messages -> messages fk=to_user_id
+assoc: HasMany new_messages -> Message fk=to_user_id
+assoc: HasMany sent_messages -> Message fk=from_user_id
+assoc: HasMany muted_messages -> Message fk=to_user_id
+assoc: HasMany follows -> follows
+assoc: HasMany followings -> followings
+assoc: HasMany preferences -> UserPreference
+assoc: HasMany changesets -> changesets
+assoc: HasMany changeset_comments -> changeset_comments fk=author_id
+assoc: HasMany changeset_subscriptions -> changeset_subscriptions fk=subscriber_id
+assoc: HasMany note_comments -> note_comments fk=author_id
+assoc: HasMany notes -> notes
+assoc: HasMany note_subscriptions -> NoteSubscription
+assoc: HasMany subscribed_notes -> subscribed_notes
+assoc: HasMany oauth2_applications -> <expr>
+assoc: HasMany access_grants -> <expr> fk=resource_owner_id
+assoc: HasMany access_tokens -> <expr> fk=resource_owner_id
+assoc: HasMany blocks -> UserBlock
+assoc: HasMany blocks_created -> UserBlock fk=creator_id
+assoc: HasMany blocks_revoked -> UserBlock fk=revoker_id
+assoc: HasMany mutes -> UserMute fk=owner_id
+assoc: HasMany muted_users -> muted_users
+assoc: HasMany roles -> UserRole
+assoc: HasMany issues -> Issue fk=reported_user_id
+assoc: HasMany issue_comments -> issue_comments
+assoc: HasMany reports -> reports
+assoc: HasMany social_links -> social_links
+
+## UserBlock
+language: Ruby
+assoc: BelongsTo user -> User
+assoc: BelongsTo creator -> User
+assoc: BelongsTo revoker -> User
+
+## UserMute
+language: Ruby
+assoc: BelongsTo owner -> User
+assoc: BelongsTo subject -> User
+
+## UserNotificationPreferences
+language: Ruby
+mixin: ActiveModel::Naming
+mixin: ActiveModel::Conversion
+
+## UserPreference
+language: Ruby
+assoc: BelongsTo user -> user
+
+## UserRole
+language: Ruby
+assoc: BelongsTo user -> user
+assoc: BelongsTo granter -> User
+
+## Way
+language: Ruby
+mixin: ConsistencyValidations
+mixin: NotRedactable
+assoc: BelongsTo changeset -> changeset
+assoc: HasMany old_ways -> old_ways
+assoc: HasMany way_nodes -> way_nodes
+assoc: HasMany nodes -> nodes
+assoc: HasMany element_tags -> WayTag
+assoc: HasMany containing_relation_members -> RelationMember
+assoc: HasMany containing_relations -> Relation
+
+## WayNode
+language: Ruby
+assoc: BelongsTo way -> way
+assoc: BelongsTo node -> node
+
+## WayTag
+language: Ruby
+assoc: BelongsTo way -> way
