@@ -31,7 +31,10 @@ fn main() {
     }
 
     // --ir: full structured IR (relational graph), stable text form.
-    println!("# OSM Rails → OGAR IR (namespace=osm) — {} classes", classes.len());
+    println!(
+        "# OSM Rails → OGAR IR (namespace=osm) — {} classes",
+        classes.len()
+    );
     for c in &classes {
         println!("\n## {}", c.name);
         if let Some(p) = &c.parent {

@@ -247,15 +247,17 @@ fn main() {
         );
     }
 
-    // ── DO-arm module tree: osm::<part_of>::<is_a>(input) → generated/actions.rs.
-    // part_of = container module, is_a = action fn — standalone free functions,
-    // never methods on the data struct. e.g. `osm::map::render(input)`. ──
-    // The (part_of : is_a) tile is the CANONICAL rail address, so multiple
-    // source controllers that map to the same tile (e.g. `Api::NodesController#show`
-    // and `NodesController#show` → `node:show`) are ONE castable action by design
-    // — the api-vs-web surface is the classid's custom-low half, not a new tile.
-    // Accumulate ALL sources per tile so provenance is never dropped from the docs
-    // (Bugbot/codex #152 review: the earlier `or_insert` silently lost the 2nd+).
+    // ── DO arm: a faithful `controllers` module tree → generated/controllers.rs.
+    // Each module MIRRORS a source controller 1:1 by its own (snake, verbatim,
+    // NOT singularised) name — `NodesController → nodes`, `MapController → map`.
+    // Functions are the `is_a` actions; standalone, never methods on the record.
+    // osm-domain re-exports (`pub use controllers::*`) for the ergonomic surface,
+    // so `osm_domain::controllers::nodes::show` and re-exported `nodes::show`
+    // both resolve. The (part_of : is_a) tile stays the CANONICAL rail address,
+    // so multiple source controllers on the same tile (`Api::NodesController#show`
+    // + `NodesController#show` → `nodes:show`) are ONE castable action by design —
+    // the api-vs-web surface is the classid custom-low half, not a new tile. All
+    // sources are cited so provenance is never lost (Bugbot/codex #152).
     let mut tree: std::collections::BTreeMap<
         String,
         std::collections::BTreeMap<String, Vec<(String, String)>>,
@@ -268,9 +270,11 @@ fn main() {
             .push((r.controller.clone(), r.action.clone()));
     }
     let mut acts = String::from(
-        "//! @generated DO-arm — OSM controller actions as `osm::<part_of>::<is_a>(input)`.\n\
-         //! part_of = container module, is_a = action fn (standalone, not methods on the\n\
-         //! data struct, per OGAR's ActionDef rule). Call: `osm::map::render(Input::default())`.\n\n\
+        "//! @generated DO arm — a faithful `controllers` mirror. Each module is a\n\
+         //! source controller by its own verbatim (snake) name; each fn is an `is_a`\n\
+         //! action (standalone, not methods on the record). osm-domain re-exports this\n\
+         //! module (`pub use controllers::*`), so `controllers::nodes::show(input)` and\n\
+         //! the re-exported `nodes::show(input)` both resolve. No singularisation.\n\n\
          #![allow(clippy::all, dead_code, unused_variables)]\n\n\
          /// DO-arm action input — the Rails `params` / request. Typed-field harvest is a\n\
          /// follow-up (ruff `Function` carries reads/writes, not param types yet).\n\
@@ -313,11 +317,11 @@ fn main() {
         }
         acts.push_str("}\n\n");
     }
-    fs::write(out.join("actions.rs"), acts).unwrap();
+    fs::write(out.join("controllers.rs"), acts).unwrap();
 
     println!(
-        "rendered {} data structs (THINK) + DO arm osm::<part_of>::<is_a> = {fn_count} fns \
-         across {} containers [{} part_of x {} is_a rail, {} tiles]; {edges} SPO edges -> {}",
+        "rendered {} data structs (THINK) + DO arm controllers::<name>::<is_a> = {fn_count} fns \
+         across {} controllers [{} part_of x {} is_a rail, {} tiles]; {edges} SPO edges -> {}",
         classes.len(),
         tree.len(),
         parts.len(),
