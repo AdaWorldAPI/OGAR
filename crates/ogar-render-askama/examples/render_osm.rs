@@ -184,10 +184,27 @@ fn main() {
         let hp = root.join("harvest");
         fs::create_dir_all(&hp).ok();
         fs::write(hp.join("osm_graph.spo"), &spo).unwrap();
+    } else {
+        eprintln!(
+            "warning: out-dir {} is not ≥5 levels under a harvest tree — \
+             skipping osm_graph.spo (codex #152: no longer silent)",
+            out.display()
+        );
     }
 
     // ── Action rail: (part_of : is_a) — the castable V3 action shape ──
-    let rail = ogar_from_rails::extract_action_rail(src_path, "osm");
+    // `extract_action_rail` joins `app/controllers` internally, so it needs the
+    // REPO ROOT — not the `app/models` dir the struct-extraction fallback may use.
+    // Resolve the root so controllers resolve even when `src` was the models dir
+    // (Bugbot/codex #152: the rail was silently empty for a models-only `src`).
+    let rail_root: &Path = if src_path.join("app/controllers").is_dir() {
+        src_path
+    } else if src_path.ends_with("app/models") {
+        src_path.parent().and_then(|p| p.parent()).unwrap_or(src_path)
+    } else {
+        src_path
+    };
+    let rail = ogar_from_rails::extract_action_rail(rail_root, "osm");
     let mut rt = String::from(
         "# OSM action rail — (part_of : is_a), the V3 castable action shape\n\
          # a u8:u8 HHTL tile per action; cast = fix one axis, walk the other\n\
@@ -222,18 +239,33 @@ fn main() {
     rt.push('\n');
     if let Some(root) = out.ancestors().nth(4) {
         fs::write(root.join("harvest/osm_actions.rail"), &rt).unwrap();
+    } else {
+        eprintln!(
+            "warning: out-dir {} is not ≥5 levels under a harvest tree — \
+             skipping osm_actions.rail (codex #152: no longer silent)",
+            out.display()
+        );
     }
 
     // ── DO-arm module tree: osm::<part_of>::<is_a>(input) → generated/actions.rs.
     // part_of = container module, is_a = action fn — standalone free functions,
     // never methods on the data struct. e.g. `osm::map::render(input)`. ──
-    let mut tree: std::collections::BTreeMap<String, std::collections::BTreeMap<String, (String, String)>> =
-        std::collections::BTreeMap::new();
+    // The (part_of : is_a) tile is the CANONICAL rail address, so multiple
+    // source controllers that map to the same tile (e.g. `Api::NodesController#show`
+    // and `NodesController#show` → `node:show`) are ONE castable action by design
+    // — the api-vs-web surface is the classid's custom-low half, not a new tile.
+    // Accumulate ALL sources per tile so provenance is never dropped from the docs
+    // (Bugbot/codex #152 review: the earlier `or_insert` silently lost the 2nd+).
+    let mut tree: std::collections::BTreeMap<
+        String,
+        std::collections::BTreeMap<String, Vec<(String, String)>>,
+    > = std::collections::BTreeMap::new();
     for r in &rail {
         tree.entry(r.part_of.clone())
             .or_default()
             .entry(r.is_a.clone())
-            .or_insert((r.controller.clone(), r.action.clone()));
+            .or_default()
+            .push((r.controller.clone(), r.action.clone()));
     }
     let mut acts = String::from(
         "//! @generated DO-arm — OSM controller actions as `osm::<part_of>::<is_a>(input)`.\n\
@@ -253,15 +285,29 @@ fn main() {
             rustify(part_of)
         ));
         let mut seen = std::collections::HashSet::new();
-        for (is_a, (controller, action)) in isas {
+        for (is_a, sources) in isas {
             let fname = rustify(is_a);
             if !seen.insert(fname.clone()) {
                 continue;
             }
+            // All source controllers that collapse onto this canonical tile,
+            // deduped + sorted, cited so no route is lost from the docs.
+            let mut srcs: Vec<String> = sources
+                .iter()
+                .map(|(c, a)| format!("{c}#{a}"))
+                .collect();
+            srcs.sort();
+            srcs.dedup();
+            let primary = &srcs[0];
+            let source_line = if srcs.len() == 1 {
+                format!("Source: `{primary}`.")
+            } else {
+                format!("Sources (canonical tile): `{}`.", srcs.join("`, `"))
+            };
             acts.push_str(&format!(
-                "    /// `{part_of}:{is_a}` — DO arm. Source: `{controller}#{action}`.\n    \
+                "    /// `{part_of}:{is_a}` — DO arm. {source_line}\n    \
                  pub fn {fname}(input: Input) -> Output {{\n        \
-                 let _ = input;\n        todo!(\"port {controller}#{action}\")\n    }}\n"
+                 let _ = input;\n        todo!(\"port {primary}\")\n    }}\n"
             ));
             fn_count += 1;
         }

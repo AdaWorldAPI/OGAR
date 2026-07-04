@@ -1146,6 +1146,7 @@ const CODEBOOK: &[(&str, u16)] = &[
     ("unicharset", 0x0801),
     ("recoder", 0x0802),
     ("charset", 0x0803),
+    ("network_layer", 0x0804),
     // ── 0x09XX — Health domain (clinical / patient / care) ──
     // medcare-rs Healthcare-namespace promotion (Northstar T9). The 7
     // entities the OGIT `NTO/Healthcare/entities/` TTL ships, projected
@@ -1614,6 +1615,13 @@ pub mod class_ids {
     /// document or model asserts (distinct from the trained `unicharset`
     /// inventory).
     pub const CHARSET: u16 = 0x0803;
+    /// `network_layer` (`0x0804`) — the KIND "a Tesseract recognizer network
+    /// layer" (Series / LSTM / Convolve / …). ONE container slot: the specific
+    /// subclass is the classid's custom-low half (the `NetworkType` ordinal),
+    /// not 27 slots — the layer graph sinks onto `FacetCascade` tenants (the
+    /// ruff→OGAR network harvest lands here). Wire-declared first in the
+    /// lance-graph contract mirror; this is the authoritative OGAR counterpart.
+    pub const NETWORK_LAYER: u16 = 0x0804;
 
     // ── 0x09XX — health domain (medcare-rs Healthcare namespace) ──
 
@@ -1813,6 +1821,7 @@ pub mod class_ids {
         ("unicharset", UNICHARSET),
         ("recoder", RECODER),
         ("charset", CHARSET),
+        ("network_layer", NETWORK_LAYER),
         // 0x09XX — health
         ("patient", PATIENT),
         ("diagnosis", DIAGNOSIS),
@@ -1921,7 +1930,7 @@ pub mod class_ids {
             // lance-graph mirror is rebuilt against it.
             assert_eq!(
                 ALL.len(),
-                78,
+                79,
                 "class_ids::ALL count changed — update this pin AND the \
                  lance-graph mirror COUNT_FUSE (crates/lance-graph-ogar/src/lib.rs) \
                  in the same PR",
@@ -2743,10 +2752,11 @@ pub fn all_promoted_classes() -> Vec<Class> {
         // `osint_system` / `osint_person` mints); no calls follow — OGAR
         // vocabulary carries no OSINT concept names, see the CODEBOOK
         // 0x07XX section note.
-        // 0x08XX — OCR arm (3 container kinds), in class_ids::ALL order.
+        // 0x08XX — OCR arm (4 container kinds), in class_ids::ALL order.
         unicharset(),
         recoder(),
         charset(),
+        network_layer(),
         // 0x09XX — health arm (7 OGIT Healthcare concepts), in
         // class_ids::ALL order.
         patient(),
@@ -3742,6 +3752,23 @@ pub fn charset() -> Class {
     let mut encoding = Attribute::new("encoding");
     encoding.type_name = Some("string".to_string());
     c.attributes = vec![encoding];
+    c
+}
+
+/// NetworkLayer (`0x0804`) — the KIND "a Tesseract recognizer network layer"
+/// (Series / LSTM / Convolve / …). ONE container slot: the concrete subclass is
+/// the classid's custom-low half (the `NetworkType` ordinal), never a per-type
+/// slot — the layer graph sinks onto `FacetCascade` value tenants (the ruff→OGAR
+/// network harvest lands here). Minimal AR shape; a `network_type` ordinal
+/// attribute names the subclass.
+#[must_use]
+pub fn network_layer() -> Class {
+    let mut c = Class::new("NetworkLayer");
+    c.language = Language::Unknown;
+    c.canonical_concept = Some("network_layer".to_string());
+    let mut network_type = Attribute::new("network_type");
+    network_type.type_name = Some("u8".to_string());
+    c.attributes = vec![network_type];
     c
 }
 
@@ -5178,16 +5205,17 @@ mod tests {
         }
         // Counts line up with the codebook blocks.
         assert_eq!(concepts_in_domain(ConceptDomain::Health).count(), 7);
-        // 0x08XX OCR: the three container KINDS (unicharset/recoder/charset).
-        // Content (the 112 unichars, code tables) never becomes concepts —
-        // see the CODEBOOK 0x08XX section note (Osint zero-rows precedent).
-        assert_eq!(concepts_in_domain(ConceptDomain::Ocr).count(), 3);
+        // 0x08XX OCR: the four container KINDS (unicharset/recoder/charset/
+        // network_layer). Content (the 112 unichars, code tables) never becomes
+        // concepts — see the CODEBOOK 0x08XX section note (Osint zero-rows
+        // precedent).
+        assert_eq!(concepts_in_domain(ConceptDomain::Ocr).count(), 4);
         let ocr: Vec<&str> = concepts_in_domain(ConceptDomain::Ocr)
             .map(|(name, _)| name)
             .collect();
         assert_eq!(
             ocr,
-            ["unicharset", "recoder", "charset"],
+            ["unicharset", "recoder", "charset", "network_layer"],
             "OCR domain set drift — re-sync the consumer coverage gate",
         );
         assert_eq!(concepts_in_domain(ConceptDomain::HR).count(), 4);

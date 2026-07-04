@@ -97,6 +97,7 @@ use ogar_vocab::{
     mars_resource,
     mars_software,
     medication,
+    network_layer,
     osm_changeset,
     osm_element_tag,
     osm_gpx_trace,
@@ -198,6 +199,7 @@ fn all_canonical_classes() -> Vec<(&'static str, Class)> {
         ("unicharset", unicharset()),
         ("recoder", recoder()),
         ("charset", charset()),
+        ("network_layer", network_layer()),
         // ── 0x09XX — health (OGIT Healthcare) ──
         ("patient", patient()),
         ("diagnosis", diagnosis()),
