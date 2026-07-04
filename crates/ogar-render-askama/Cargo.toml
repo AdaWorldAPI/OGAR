@@ -9,3 +9,7 @@ description = "Build-time askama codegen harness over the canonical layer — on
 ogar-vocab = { path = "../ogar-vocab" }
 lance-graph-contract = { git = "https://github.com/AdaWorldAPI/lance-graph", branch = "main" }
 askama = "0.12"
+
+[dev-dependencies]
+# harvest driver for examples/render_osm.rs (Rails app/models → Class → Rust)
+ogar-from-rails = { path = "../ogar-from-rails" }

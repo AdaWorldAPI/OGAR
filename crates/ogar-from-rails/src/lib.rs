@@ -42,9 +42,10 @@
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
 
+use std::collections::BTreeMap;
 use std::path::Path;
 
-use ogar_vocab::Class;
+use ogar_vocab::{ActionDef, Class};
 
 /// Top-level entry: extract from a Rails source tree to a list of
 /// OGAR `Class` values.
@@ -104,6 +105,188 @@ pub fn extract_app_with(source_tree: &Path, curator: &str) -> Vec<Class> {
 pub fn extract_app(source_tree: &Path) -> Vec<Class> {
     let graph = ruff_ruby_spo::extract_app(source_tree);
     ogar_from_ruff::lift_model_graph(&graph)
+}
+
+/// Harvest the **DO-arm**: walk `<source_tree>/app/controllers`, lift each
+/// controller's public actions to `ActionDef`s via [`ogar_from_ruff::lift_actions`],
+/// keyed by the resource model name the controller acts on
+/// (`Api::NodesController` → `Node`). Controllers that don't map to a resource
+/// (dashboards, errors, sessions, …) are dropped.
+///
+/// This is the MVC other half — OGAR is *Open Graph of Active Record*, and
+/// Active Record is Model **+ Controller**. [`extract`] harvests the models
+/// (THINK arm); this harvests the controllers (DO arm). Pair the two by model
+/// name: `render_class_with_methods(model_class, mask, &actions_for[model])`
+/// attaches the controller's actions as Rust methods on the model struct.
+///
+/// Returns `(model_name, actions)` pairs in deterministic (sorted) order.
+/// Empty when there is no `app/controllers` tree.
+#[must_use]
+pub fn extract_actions(source_tree: &Path, curator: &str) -> Vec<(String, Vec<ActionDef>)> {
+    let dir = source_tree.join("app/controllers");
+    let graph = ruff_ruby_spo::extract_tree_with(&dir, curator);
+    let mut by_model: BTreeMap<String, Vec<ActionDef>> = BTreeMap::new();
+    for m in &graph.models {
+        if let Some(model) = controller_to_model(&m.name) {
+            let mut acts = ogar_from_ruff::lift_actions(m);
+            // Name each method by its `is_a` archetype (the rail axis), not the
+            // raw REST verb: `index → list`, `destroy → delete`, custom verbs
+            // verbatim. The struct is the `part_of`; the method is the `is_a`.
+            for a in &mut acts {
+                a.predicate = is_a_archetype(&a.predicate);
+            }
+            if !acts.is_empty() {
+                by_model.entry(model).or_default().extend(acts);
+            }
+        }
+    }
+    // A model can be served by several controllers (`Api::NodesController` +
+    // the browse `NodesController`), and controllers repeat private helper
+    // `def`s — both produce same-named actions. Dedup by predicate (first
+    // wins) so the rendered `impl` has no duplicate method definitions.
+    for acts in by_model.values_mut() {
+        let mut seen = std::collections::HashSet::new();
+        acts.retain(|a| seen.insert(a.predicate.clone()));
+    }
+    by_model.into_iter().collect()
+}
+
+/// `Api::NodesController` → `Node`. Strips the module namespace and the
+/// `Controller` suffix, then naively singularises (drops a trailing `s`).
+/// `None` for names that aren't `*Controller` or reduce to empty.
+fn controller_to_model(controller: &str) -> Option<String> {
+    let base = controller.rsplit("::").next()?;
+    let stem = base.strip_suffix("Controller")?;
+    if stem.is_empty() {
+        return None;
+    }
+    Some(stem.strip_suffix('s').unwrap_or(stem).to_string())
+}
+
+// ── The action rail: (part_of : is_a) — the V3 castable action shape ──
+//
+// REST verbs (index/show/create/update/destroy) are a flat, closed enum: you
+// cannot cast between them or compose them. The V3 rail addresses an action as
+// a `(part_of : is_a)` pair — the SAME `u8:u8` HHTL tile shape as the GUID
+// tiers — so you CAST by fixing one axis and walking the other:
+//   fix is_a=show, walk part_of → `node:show`, `way:show`, `overview:show`
+//   fix part_of=map, walk is_a  → `map:render`, `map:show`, `map:export`
+// `part_of` is the controller container (INCLUDING view controllers like
+// `map` / `overview` that have no resource model); `is_a` is the action
+// archetype. Both carry a u8 codebook id.
+
+/// Canonical archetypes for the `is_a` axis — CRUD first (stable low ids),
+/// then any custom verb (`render`, `export`, `download`, …) as its own.
+const CRUD_ARCHETYPES: &[&str] =
+    &["list", "show", "new_form", "create", "edit", "update", "delete"];
+
+/// The `is_a` archetype for a Rails action verb (`index → list`,
+/// `destroy → delete`; `new → new_form` so it never collides with the struct's
+/// `new()` constructor; custom verbs kept verbatim).
+fn is_a_archetype(verb: &str) -> String {
+    match verb {
+        "index" => "list",
+        "destroy" => "delete",
+        "new" => "new_form",
+        other => other,
+    }
+    .to_string()
+}
+
+/// The `part_of` container for a controller (`Api::NodesController` → `node`,
+/// `MapController` → `map`). Strips namespace + `Controller`, snake+singular.
+/// Unlike [`controller_to_model`] this keeps view containers (`map`,
+/// `overview`) that have no resource model.
+fn container_of(controller: &str) -> Option<String> {
+    let base = controller.rsplit("::").next()?;
+    let stem = base.strip_suffix("Controller")?;
+    if stem.is_empty() {
+        return None;
+    }
+    let singular = stem.strip_suffix('s').unwrap_or(stem);
+    let mut out = String::new();
+    let mut prev_ln = false;
+    for c in singular.chars() {
+        if c.is_ascii_uppercase() && prev_ln {
+            out.push('_');
+        }
+        out.push(c.to_ascii_lowercase());
+        prev_ln = c.is_ascii_lowercase() || c.is_ascii_digit();
+    }
+    Some(out)
+}
+
+/// Assign u8 ids: `canonical` names first (from `0x01`, in given order), then
+/// the remaining distinct names in sorted order.
+fn codebook(names: &std::collections::BTreeSet<String>, canonical: &[&str]) -> BTreeMap<String, u8> {
+    let mut map = BTreeMap::new();
+    let mut next: u8 = 1;
+    for c in canonical {
+        if names.contains(*c) {
+            map.insert((*c).to_string(), next);
+            next = next.saturating_add(1);
+        }
+    }
+    for n in names {
+        map.entry(n.clone()).or_insert_with(|| {
+            let id = next;
+            next = next.saturating_add(1);
+            id
+        });
+    }
+    map
+}
+
+/// One action on the `(part_of : is_a)` rail — the castable 2-axis address that
+/// supersedes the flat REST verb. `part_of_id`/`is_a_id` make the pair a
+/// `(u8:u8)` HHTL tile.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RailAction {
+    /// Container axis (`node`, `map`, `overview`).
+    pub part_of: String,
+    /// Archetype axis (`show`, `render`, `create`).
+    pub is_a: String,
+    /// `part_of` codebook id.
+    pub part_of_id: u8,
+    /// `is_a` codebook id.
+    pub is_a_id: u8,
+    /// Source controller class.
+    pub controller: String,
+    /// Source action verb.
+    pub action: String,
+}
+
+/// Harvest the DO-arm as the `(part_of : is_a)` action rail across **all**
+/// controllers (view controllers included). Deterministic order; CRUD
+/// archetypes get stable low `is_a` ids.
+#[must_use]
+pub fn extract_action_rail(source_tree: &Path, curator: &str) -> Vec<RailAction> {
+    let dir = source_tree.join("app/controllers");
+    let graph = ruff_ruby_spo::extract_tree_with(&dir, curator);
+    let mut raw: Vec<(String, String, String, String)> = Vec::new();
+    for m in &graph.models {
+        let Some(part_of) = container_of(&m.name) else {
+            continue;
+        };
+        for a in ogar_from_ruff::lift_actions(m) {
+            let is_a = is_a_archetype(&a.predicate);
+            raw.push((part_of.clone(), is_a, m.name.clone(), a.predicate));
+        }
+    }
+    raw.sort();
+    raw.dedup();
+    let part_ids = codebook(&raw.iter().map(|t| t.0.clone()).collect(), &[]);
+    let isa_ids = codebook(&raw.iter().map(|t| t.1.clone()).collect(), CRUD_ARCHETYPES);
+    raw.into_iter()
+        .map(|(part_of, is_a, controller, action)| RailAction {
+            part_of_id: part_ids[&part_of],
+            is_a_id: isa_ids[&is_a],
+            part_of,
+            is_a,
+            controller,
+            action,
+        })
+        .collect()
 }
 
 #[cfg(test)]
