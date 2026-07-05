@@ -7,6 +7,30 @@
 
 ---
 
+## 2026-07-05 — E-ROUTE-KIND-VERB-STRATA — route-kind dedup is NOT the SoC lint's DO-arm (council-rejected rhyme); what survives: the verb ≠ route-recipe carve + one pre-registered OP⇄Redmine kind A/B
+
+**Status:** FINDING (5+3 council pass, 2026-07-05 — 5 research savants + 3 brutally-honest reviewers. The proposed unification — "route deduplication is the DO-arm mirror of `ruff_spo_address::soc`" — was interrogated and **REJECTED at `[S]` mere-rhyme**. Receipts `[G]`, 16/16 verified CODED. The surviving carve is doctrine; the surviving probe is `[H]` with pre-registration required.)
+
+**The proposal (rejected):** that the SoC lint's Duplication arm (over-cap sibling fields → mask by classid into a `ClassView`) and route-kind bucketing (N controller routes → K handler kinds + per-route skin) are one collapse operation on the two arms of the IR, making `HandlerKind` a verb-codebook stratum.
+
+**Why rejected — three grounds (cross-domain + theorem passes):**
+
+1. **detect ≠ curate, a two-level gap.** `soc_findings()` computes its equivalence relation from a HARVESTED predicate (`field_type`) under a layout-motivated cap (`MAX_SIBLINGS_PER_TIER = u8::MAX`, the SoA cascade-rank byte) with a falsifier (`law_holds()`). The kind taxonomy is human-curated recipe classification; ruff does not harvest the discriminant facts a route classifier would need (HTTP verb, writes-vs-reads, return-shape collection|item), and no classifier exists. Unharvested facts → unbuilt classifier: no shared mechanism today.
+2. **discard ≠ retain.** soc Duplication is reclamation — `duplicate_rows = typed − distinct` are DROPPED. Route bucketing retains every skin (route id, tenant column, model mapping); nothing is droppable. That is DRY templating / dictionary-encoding — the dual of deduplication, described as a sameness.
+3. **the vacuity trap.** "N siblings → K representatives + residual" is this workspace's UNIVERSAL quotient primitive (palette codebooks, CAM-PQ, 256×256 centroid tiles, interning). What is distinctive about soc — harvested relation + byte-cap + `law_holds` — is exactly what does NOT transfer.
+
+**Receipts `[G]` (all verified against shipped code, archaeologist pass):** `ruff_spo_address::soc` — `soc_findings()` `soc.rs:86`, `law_holds()` `soc.rs:156`, verdicts `soc.rs:48-55`; `lance-graph-contract::codegen_spine` — `RouteBucket` `:343`, `RouteBucketTyped` `:404`; op-nexgen `op-codegen-bucket::OpHandlerKind` impl of the typed spine (kind-set distinctness owned by its `op_kinds_are_distinct` test — the count is deliberately not restated here, fuse doctrine); op-nexgen `crates/ruff_python_dto_check/` = the un-upstreamed **sqlx-target delta** against live ruff's `ruff_python_dto_check` (upstream carries `contract.rs` + seaorm codegen, no `sqlx_emit`) — PARKED, see its README.
+
+**The carve that survives (load-bearing; sentinel + doctrine passes):** a `HandlerKind` is NOT a verb — it is **verb × transport × persistence-shape** (a route RECIPE: `soft_delete` and `toggle_bool_field` are both `is_a` update; `detail_for_tenant` and `ajax_json` are both `is_a` read). The verb codebook (E-ONE-MASK-THREE-PORTS: Odoo `write` ≡ AR `update` ≡ SQL UPDATE; the **mint question** stays parked on the serialized-allocation train) is the stripped `is_a` concept, resolving through the SAME canonical-verb rail as `ActionDef` (capstone C5 operator ruling: actions are `part_of`/`is_a`) — never a parallel behaviour vocabulary beside it. **The verb projected OUT OF a kind is the codebook candidate; the kind itself is adapter-side** (recipes → `ogar-adapter-*` / the render kit). Two strata, two falsifiers.
+
+**The probe that survives `[H]` (an INDEPENDENT convergence probe — NOT `law_holds`'s mirror; it falsifies a curated relation, not a harvested one):** classify BOTH the OpenProject and Redmine route surfaces into the kind taxonomy; denominator = one port's full route surface, numerator = routes whose kind also appears in the other port's kind set; **KILL threshold (collapse-rate %) pre-registered before the run.** This is a DISTINCT measurement from capstone C5's verb A/B (route-recipe stratum vs verb stratum); neither stands in for the other. Precedent honesty: the noun-side C3 convergence (26/26) is **asserted**, not measured — only the WorkPackage oracle-diff row is measured — so the kind side cannot claim a measured precedent. Literature (grounder pass): parameterized-clone abstraction (Baker, SIAM J. Comput. 26(5), 1997) and Rails' own K=7 canonical actions make collapse PLAUSIBLE — `[G]` for the general mechanism; no coverage study of real route surfaces exists, so this A/B would be a first measurement.
+
+**GATE (mint fence):** no verb-codebook row is allocated until the kind/verb A/B falsifier is green; **naming a stratum is never mint authorization** (E-VENDOR-DELTA doctrine: spec it, don't fake it). If a route classifier is ever built, it is built in **ruff** on newly-harvested discriminant facts (spec-to-ruff wishlist: HTTP verb / writes / return-shape), phase-named per OGAR-AS-IR — classifier = front-end analysis pass, verb rows = symbol-table entries, recipes = lowering passes — never op-side.
+
+**Cross-ref:** `docs/DISCOVERY-MAP.md` D-ROUTE-KIND-VERB-STRATA (twin); E-ONE-MASK-THREE-PORTS (verb rows argued-for, mint parked); E-AR-DIRECT-SDK (DO-arm landing zone: ActionHandler + unified adapters — placement unchanged by this entry); E-OGAR-CONVERGENCE-SHAPE open seam #2 (ActionDef↔UnifiedStep); op-nexgen `.claude/handovers/2026-07-05-CAPSTONE-ar-shape-convergence.md` C5 + `2026-07-05-ogar-v3-consumer-migration-plan.md` §1/§6; op-nexgen `crates/ruff_python_dto_check/README.md` (the parked sqlx delta).
+
+---
+
 ## 2026-07-05 — E-OGAR-CONVERGENCE-SHAPE — OGAR is the convergence shape: seven layers, one invocation grammar
 
 **Status:** FRAMING (operator-ruled 2026-07-05; per-layer grades inline; the three open seams and three falsifiers are named — comfort is declared WITH them, not despite them).
