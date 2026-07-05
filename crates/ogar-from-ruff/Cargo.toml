@@ -14,13 +14,14 @@ serde = ["dep:serde", "ogar-vocab/serde"]
 
 [dependencies]
 ogar-vocab = { path = "../ogar-vocab" }
-# ruff pinned to an exact rev (not floating `branch = "main"`): this crate
-# reads `ruff_spo_triplet::Model::inherits` (ruff PR #40) and the DO-arm
-# controller harvest reads `ruff_ruby_spo::extract_tree_with` (added on the
-# medcare-bridge branch, rev `45b6e62`). With no committed Cargo.lock a floating
-# branch could resolve to a rev WITHOUT those and fail to compile. Both ruff
-# crates MUST share one rev (they depend on ruff_spo_triplet internally; a
-# mismatch double-checks-out ruff). Bump in lockstep with ogar-from-rails.
-ruff_spo_triplet = { git = "https://github.com/AdaWorldAPI/ruff", rev = "45b6e62e397528a88683376596256f9a435c1946" }
-ruff_spo_address = { git = "https://github.com/AdaWorldAPI/ruff", rev = "45b6e62e397528a88683376596256f9a435c1946" }
+# Operator ruling: rev pins on AdaWorldAPI-internal git deps are retired —
+# they were "out of desperation to lock what hadn't converged in transpiler
+# sink-in yet." Drift protection is the fuse tests, not pins. Floats on the
+# convergence branch `claude/odoo-rs-transcode-lf8ya5` (shared with
+# ogar-from-rails; bump the branch reference in lockstep if it ever
+# renames). Flips to `branch = "main"` once the convergence branches merge.
+# Cargo.lock still locks a concrete rev for reproducibility — this is not a
+# return to floating `main` unpinned.
+ruff_spo_triplet = { git = "https://github.com/AdaWorldAPI/ruff", branch = "claude/odoo-rs-transcode-lf8ya5" }
+ruff_spo_address = { git = "https://github.com/AdaWorldAPI/ruff", branch = "claude/odoo-rs-transcode-lf8ya5" }
 serde = { workspace = true, optional = true }

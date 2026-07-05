@@ -7,6 +7,122 @@
 
 ---
 
+## 2026-07-05 — E-OGAR-CONVERGENCE-SHAPE — OGAR is the convergence shape: seven layers, one invocation grammar
+
+**Status:** FRAMING (operator-ruled 2026-07-05; per-layer grades inline; the three open seams and three falsifiers are named — comfort is declared WITH them, not despite them).
+
+**The ruling (operator, verbatim):** *"Are you comfortable now to make OGAR the convergence shape — Schema, ruff codegen, classview fieldmask, OGIT Ontology as a controller dto, Lance-graph V3 substrate and classview, reasoning vs controller methods as unified surface, ractor kanban as graph execution."* Answered YES, with grades.
+
+**The composed shape:**
+
+- **address** — classid (canon concept ‖ render skin) → GUID → the graph key. `[G]`
+- **substrate** — lance-graph V3: 512-B node, 2+14 tenants, the 12-slot factoring (6×(part_of:is_a) Rails · 4×SPO generic · 3×SPOG Odoo; D-CHAIN-GROUPING-RESOLVED-12SLOT). `[G]`
+- **shape** — the Schema stratum: the global schema WITH an address (ruff `8d6c31b`: `field_type`/`not_null`; the guesses live as harvest data). `[G]`
+- **behavior** — `ActionDef`+`KausalSpec` ← ruff writes/calls/callbacks facts. `[G]` facts / `[H]` lowering.
+- **render** — classview fieldmask → fieldview fold → askama/jinja (E-ONE-MASK-THREE-PORTS below). `[H]`
+- **membrane** — OGIT ontology as controller DTO: wire names from TTL, Auth > RBAC as mask algebra. `[H]`
+- **codegen** — ruff codegen: FromRow rows, DTOs, render contexts, constructors are all generated projections, never authored truth. `[G]`
+- **execution** — ractor mailbox-kanban: an action executing IS a kanban transition on a mailbox-owned board; scheduling is graph state. `[G]` machinery / `[H]` ERP wiring.
+- **cognition** — reasoning methods on the SAME surface: `StepDomain` already unifies Thinking/Query/Persistence/Inference in `UnifiedStep`; controller methods enter as one more port. `[H]`
+
+**One sentence:** `<port>::<path>(<shape>)` is the only invocation grammar — MySQL, askama, odoo/op/redmine, and the reasoning stack are all ports; the path is the facet address; the shape is a masked, typed projection.
+
+**Three open seams (the `[H]`s, named):** (1) the **view stratum** — mint fieldmasks from real views (OP/Redmine ERB, Odoo `ir.ui.view`), the mirror of D-AR-3.5; (2) the **ActionDef ↔ UnifiedStep mapping** — one contract PR joining the ERP action arm to the existing StepDomain union (and the kanban executor); (3) **OGIT TTL → controller-DTO lowering** — today woa-rs practice (wire names from `rdfs:label`), needs to become an OGAR-minted pipeline through `ogar-from-schema`.
+
+**Three falsifiers:** the WorkPackage parity witnesses (generated model/service vs the hand-port — kills the 85% if they can't approximate); a classview-mask round-trip on one real OP view; one action end-to-end (`op::work_package::update(shape)` → ActionHandler → kanban transition → Lance tombstone).
+
+**Cross-ref:** E-AR-DIRECT-SDK (2026-07-03), D-CHAIN-GROUPING-RESOLVED-12SLOT, E-ONE-MASK-THREE-PORTS + E-MIRROR-EXTERNALIZATION (below, same arc), openproject-nexgen-rs `.claude/handovers/2026-07-05-ogar-v3-consumer-migration-plan.md`.
+
+---
+
+## 2026-07-05 — E-ONE-MASK-THREE-PORTS — the invocation grammar; one classview bitmask projects three ways
+
+**Status:** FRAMING (`[G]` for the operator's action calculus, quoted verbatim; `[H]` for the projections until the mask round-trip falsifier runs).
+
+**The operator's action calculus (verbatim):** *"actions become reusable patterns — MySQL{shape: update} · askama {classview:render} · odoo::part_of::is_a(shape:input[type]) · op::part_of::is_a(shape:input[type]) · redmine::part_of::is_a(shape:input[type])"*. Read as one grammar: **`<port>::<path>(<shape>)`** — port ∈ {MySQL, askama, odoo, op, redmine, …}, path = the `part_of::is_a` facet navigation (the 12-slot factoring read per port), shape = verb + typed payload. Storage and render are not infrastructure: they are ports with closed verb sets.
+
+**One mask, three projections.** A classview bitmask over a class's fields, per mode, projects as: (1) the **askama context** (which fields render), (2) the **typed input constructor** (`shape:input[type]` — typed from the schema stratum: `field_type` → Rust type, `not_null` → Option-ness), (3) the **SQL column set** (`MySQL{shape: update}`). Today these drift independently in every ERP; one mask makes the drift a type error. This is what "classviews shape constructors reusable" cashes out to — constructors are GENERATED from classview masks; recipe-bitmask chaining (E-RECIPE-BITMASK-CHAIN) is their composition algebra.
+
+**What each ancestor teaches:** Redmine/OP ERB — render is a FOLD over the schema (one fieldview partial per column type × skin, ~22 of them, not one template per class); ancestry resolution is longest-prefix (app-specific fieldview, falling back to concept-canonical) — the codebook radix rule again. Odoo — views-as-data is production-proven (`ir.ui.view` records with inheritance = is_a on the render side); `widget=` is Odoo's fieldview selector (independent convergence on field-type→partial dispatch); field-level `groups=` shows **RBAC = mask algebra** (`effective_mask = classview_mask ∧ role_mask`); the closed ORM verb set (create/write/unlink/search) argues for **verb codebook rows** (Odoo `write` ≡ AR `update` ≡ SQL UPDATE — one concept, three spellings; mint question goes on the serialized allocation train, NOT decided here).
+
+**Next ruff stratum — the view stratum:** parse OP/Redmine ERB (`f.text_field :subject`, …) and Odoo view XML (`<field name="…"/>`) into mode-tagged `renders_field` facts → classview bitmasks get MINTED from the apps' real views, measured, not hand-authored. Same doctrine: mechanism in ruff, oracle-diff before shipping.
+
+**SDK consequence:** the generated module tree mirrors the `part_of` chain — `op::work_package::update(input)` is a real function whose module path IS the facet address ("the key prerenders nodes with zero value decode", projected into codegen); the one unified adapter is the port trait `invoke(path, shape) → shape`.
+
+**Cross-ref:** E-OGAR-CONVERGENCE-SHAPE (above), E-AR-DIRECT-SDK, E-RECIPE-BITMASK / E-RECIPE-BITMASK-CHAIN, D-CHAIN-GROUPING-RESOLVED-12SLOT.
+
+---
+
+## 2026-07-05 — E-MIRROR-EXTERNALIZATION — Rails externalizes schema, Odoo externalizes views; OGAR is the fixed point where both come home
+
+**Status:** FINDING (`[G]` for the mechanism receipts; the closure claim inherits E-OGAR-CONVERGENCE-SHAPE's grades).
+
+**The operator's question (verbatim):** *"I understand AR's weak side was global Schema, something that Openproject tried to hold on with its ORM training wheels?"* — Confirmed, and sharpened:
+
+**AR's weak side, precisely:** ActiveRecord models contain NO schema — behavior in code, shape runtime-reflected from the DB; `schema.rb` is a generated artifact. The global schema exists only as two half-truths AR never reconciles: the DB half (`null: false`, unique indexes — enforced, semantically mute) and the model half (`validates presence/uniqueness` — semantic, unenforced). **Receipts in our own pipeline:** live ruff's `extract_fields` stub was structurally honest (there ARE no fields in AR source — hence the D-AR-3.5 schema stratum as a second input), and the harvest rule `null_false_presence` is graded a GUESS because AR itself never linked the halves.
+
+**OpenProject's compensations, twice:** upstream Ruby OP bolted on Contracts, representers, and the API v3 **Schema endpoints** — literally serving per-resource schema documents at runtime, a schema service as prosthesis; the Rust port hand-typed the same compensation as `op-db` FromRow rows (9,009 LOC) + `op-api` row→DTO (8,592 LOC) — ~17K LOC that is the measurable cost of not having the compiler. The illegitimate training wheel (hand plumbing) retires; the legitimate one (`.claude/harvest/` back-projection, data, measured) is designed to retire.
+
+**The mirror:** Rails externalizes SCHEMA (DB-reflected) and keeps views in code (ERB); Odoo externalizes VIEWS/ACCESS (`ir.ui.view`, `ir.model.access` as DB records) and keeps schema in code (`fields.Char(...)`). Opposite halves, same motive (runtime flexibility), same cost (static analyzability of the externalized half), and every mature deployment grows prostheses for its missing half. **OGAR is the fixed point:** both halves come home as addressable graph data — schema stratum + model stratum merge into `Class`; views become graph rows (Odoo proved it in production); auth becomes mask algebra; code becomes generated projections.
+
+**One line:** AR's weakness wasn't missing schema — it was **schema without an address.** OGAR doesn't re-centralize the schema into code; it gives it an address (classid) and mints code from it.
+
+**Cross-ref:** E-OGAR-CONVERGENCE-SHAPE, E-ONE-MASK-THREE-PORTS (both above), E-KEEP-AR-REMOVE-ORM (2026-06-30 — the open-heart op this entry explains the WHY of), E-VENDOR-DELTA-IS-THE-TRAINING-WHEEL.
+
+---
+
+## 2026-07-05 — E-VENDOR-DELTA-IS-THE-TRAINING-WHEEL — live ruff already subsumes C17a/b/c; the only vendor-unique capability is schema.rb→Field back-projection, which becomes harvest DATA, not a merge
+
+**Status:** FINDING (`[G]` — verified 2026-07-05 by direct inspection of live ruff main `b459ec3`: 13-variant `Declaration` enum at `crates/ruff_ruby_spo/src/lib.rs:80`, C17-breadth construct handling across `walk.rs`/`lib.rs`/`parse.rs`; and by the openproject-nexgen-rs consumer-migration handover).
+
+**Corrects E-VENDOR-SPLIT-BRAIN (2026-07-03, below; Status flipped to SUPERSEDED in place per the only-Status-mutable rule).** The "neither fork subsumes the other" claim was wrong: live ruff's `ruff_ruby_spo` natively carries the full C17a/b/c DSL breadth (concerns / enums / store_accessors / attributes / class-meta / scopes / default_scope / callbacks / STI / acts_as, routed through the 13-variant `Declaration` enum). The vendor fork is BEHIND, not ahead — except for exactly one capability: **db/schema.rb column→`Field` extraction** (vendor `scan.rs` + `fields.rs` C4 line-scanner; live `extract_fields` is a documented stub).
+
+**That one delta does NOT merge into live ruff.** Per the corrected architecture (openproject-nexgen-rs `.claude/handovers/2026-07-05-ogar-v3-consumer-migration-plan.md`): it is the D-AR-3.5 patch = the **ORM→AR back-projection training wheel**, and it becomes resolver CONFIG (data) in op-nexgen `.claude/harvest/` — "config is data; where data is insufficient, make ruff smarter — spec it, don't fake it". The reunification-merge phase planned under the superseded entry is CANCELLED; the un-vendor is a plain git-dep flip.
+
+**What survives from the superseded entry:** the fuse doctrine — any vendored tree gets a drift fuse or a deletion date; prose cites the fuse test's name, never restates the value it guards. That half stands unchanged.
+
+**Operator rulings, same arc (2026-07-05, verbatim):** *"Odoo's spog lives now in V3 substrate in lance-graph <>OGAR, not surrealdb AST. And you consume it with fieldview /classview ERB pattern> askama (rust)/jinja (python) based on classview bitmask."* This resolves `docs/DISCOVERY-MAP.md` D-CHAIN-CONSUMPTION-GROUPING — see D-CHAIN-GROUPING-RESOLVED-12SLOT there: the grouping is the **shape-adaptive 12-slot factoring** (`6·2 = 4·3 = 3·4 = 12`: AR/Rails → 6×(part_of:is_a); generic → 4× SPO triplets; Odoo → 3× SPOG quadruplets), carried natively by the lance-graph⟷OGAR V3 substrate; consumption is the ERB fieldview×classview kit rendered via askama (Rust) / jinja (Python), dispatched on the classview bitmask. No SurrealDB AST hosting anywhere. The E-AR-DIRECT-SDK chain-API gate is hereby lifted.
+
+**Cross-ref:** E-AR-DIRECT-SDK (2026-07-03, below — SDK pillars unchanged, gate lifted); E-VENDOR-SPLIT-BRAIN (superseded, below); openproject-nexgen-rs `.claude/handovers/2026-07-05-ogar-v3-consumer-migration-plan.md` (the corrected-architecture source of record, §2 the 12-slot factoring, §4 the training wheel).
+
+---
+
+## 2026-07-03 — E-AR-DIRECT-SDK — consume the AR shape directly; OGAR serves ERP at the cost of an import; the DO shape lands on ActionHandler + unified adapters + constructor-shaping ClassViews
+
+**Status:** FRAMING (`[G]` for the operator rulings, quoted verbatim below; `[H]` for the SDK build + the OP retirement path, gated on parity witnesses).
+
+**The rulings (operator, 2026-07-03, verbatim):**
+
+1. *"we want to remove the json and the ORM shape from OP and use the rail / AR shape directly making OGAR a transpiler substrate replacing the previous mistake to make surrealQL AST DLL host what is supposed to be compiling substrate to be consumed via part_of/is_a (rails) or triplets (4x (8:8:8), or (3x (8:8:8:8) (odoo ?) and then build the necessary API SDK so that OGAR can serve eg ODOO at the const of an import and class dto store and ERB shaped classview <> askama"*
+2. *"basically we take the best of AR rails and ORM and remove the bad and force every substrate to land reusable transpiler substrate with codebook for readability and ontologically converging (eg OGIT Auth > RBAC, DTO maps to odoo if desirable or any other consumer that wants to wire ERP"*
+3. *"the DO shape then lands on OGAR actionhandler and unified adapters and classviews that shape constructors reusable"*
+
+**What it pins:**
+
+- **Completes E-KEEP-AR-REMOVE-ORM on the consumer side, with both keeps named.** Keep from AR: the domain model as a live object graph (`ClassView`, associations as `part_of`, inheritance as `is_a`). Keep from ORM: compile-time typed schema — the **class DTO store**, types minted once, never runtime-reflected. Remove (the bad): runtime SQL plumbing, JSON-first internal shapes, **DDL text as an API**. JSON survives only at the client membrane — never as internal truth (ADR-022 firewall alignment).
+- **SURREAL-AST-AS-ADAPTER extends producer→consumer.** OP's `op-surreal-ast` / DDL-text-as-interface + the JSON row→DTO plumbing are the consumer-side residue of the same "previous mistake" — on a **retirement path**: additive-then-subtractive (W3.3 guardrail governs sequencing, not destination), each removal authorized by its parity witness going green, never ahead of it.
+- **The SDK surface (serve an ERP at the cost of an import), four pillars:** (1) one Cargo import; (2) the class DTO store — pull `CompiledClass`/`ClassView` by classid; (3) `part_of`/`is_a` navigation + codebook name resolution for readability (fuse-guarded, `canonical_concept_name`); (4) the ERB-shaped `ClassView ⇄ askama` render contract. One surface for OP / odoo-rs / woa-rs / medcare-rs / any ERP consumer — differing only by port prefix and render skin. **Ontological convergence rides the same rails:** OGIT Auth → RBAC as the pilot; the DTO maps to Odoo where desirable.
+- **The DO arm's landing zone, named:** `ActionDef`/`ActionInvocation` facts (writes/calls/callbacks from the reunified Rails extractor) lower onto **OGAR ActionHandler + unified adapters**, with **ClassViews shaping reusable constructors** — the recipe-bitmask + constructor-chaining canon (E-RECIPE-BITMASK, E-RECIPE-BITMASK-CHAIN) is the constructor-shaping mechanism this lands on.
+- **Guard:** the SDK's chain-navigation API must NOT freeze a chain-entry grouping until `docs/DISCOVERY-MAP.md` D-CHAIN-CONSUMPTION-GROUPING (OPEN, same arc) is ruled — 4×(8:8:8) vs 3×(8:8:8:8) is the operator's open question, not a decided layout.
+
+**Cross-ref:** E-KEEP-AR-REMOVE-ORM (2026-06-30, the producer-side half of this ruling); `docs/OGAR-TRANSPILE-SUBSTRATE.md` (85/15, "consumer collapses to a compiler-store caller + adapters, at the cost of an import" — this entry makes that sentence the *deliverable*); `docs/SURREAL-AST-AS-ADAPTER.md`; D-CHAIN-CONSUMPTION-GROUPING (the OPEN grouping ruling). Extractor prerequisite: E-VENDOR-SPLIT-BRAIN (below, same day) — the ruff_ruby_spo reunification is Phase 1 of the execution arc.
+
+---
+
+## 2026-07-03 — E-VENDOR-SPLIT-BRAIN — openproject-nexgen-rs's vendored ruff crates are a FORK developed in place, not a stale snapshot; the planned re-vendor would have destroyed three sprints
+
+**Status:** SUPERSEDED (2026-07-05 — the "neither subsumes the other" claim was WRONG: live ruff main already carries the C17 DSL breadth; the only vendor-unique capability is the schema.rb→Field back-projection, which becomes harvest DATA, not a merge. See E-VENDOR-DELTA-IS-THE-TRAINING-WHEEL above. The vendored-tree fuse-doctrine half of this entry stands.)
+
+**The finding.** The OP vendor tree and live ruff `ruff_ruby_spo` diverged in BOTH directions: the **vendor fork** carries C17a (lib-ruby-parser typed-AST class shape, 1469-line `parse.rs`) + C17b (concerns/enums/store_accessors/attributes/class-meta, gaps G8–G14) + C17c (ignored_columns/scopes/default_scope/callbacks/collection callbacks, G13/G15–G17/G19/G20) — on the OLD skinny IR (103-line `ir.rs`, no `AssocDecl`). The **live repo** carries the rich IR (742-line `ir.rs`: `AssocDecl`, `field_type`, validates→required, writes/calls #38) + `extract_app` engine-walking + class-reopen merging — without the C17 DSL breadth. Frontend breadth on one side, IR depth on the other; **neither subsumes the other**, and the version numbers lie (vendor claims 0.2.0, live says 0.1.0). The planned "re-vendor" (`rm -rf` + copy live→vendor) would have silently deleted ~1,900 LOC of unmerged sprint work.
+
+**The correction:** reunify INTO live ruff (the canonical home) — merge spec derived mechanically by running BOTH extractors over the union of fixtures and diffing triple sets — then OP drops the vendor for a rev-pinned git dep (the lock-pin-bump ritual OP already runs for OGAR). Deletion of the vendor tree only after the A/B triple-diff fuse is green.
+
+**The doctrine (fuse extension):** any vendored tree gets a **drift fuse or a deletion date** — a test pinning e.g. `Predicate::ALL.len()` against the recorded upstream count would have screamed at ruff#34 instead of rotting silently. Corollary from the same arc: prose that restates code state rots on every flip — prose should cite the fuse test's *name*, not restate the value it guards (the #147 post-flip sweep needed 6 prose sites; this pattern kills the class).
+
+**Cross-ref:** E-AR-DIRECT-SDK (above — this reunification is its extractor prerequisite); 66316fa's fuse pattern (`classid_order_agrees_with_lance_graph_contract_canon_high`, COUNT_FUSE) as the model being extended; ruff#38 (writes/calls) + OP vendor C17c (callbacks) = the DO-arm's two fact sources, unified by this merge.
+
+---
+
 ## 2026-07-02 — E-CLASSID-CANON-HIGH-FLIP — the composed classid half-order flips: canon concept HIGH, APP/render prefix LOW
 
 **Status:** FINDING (`[G]`, operator-triggered). Doc-sweep companion to `docs/DISCOVERY-MAP.md` D-CLASSID-CANON-HIGH-FLIP — read that entry for the full ledger; this entry records the same correction in the session-findings log.
