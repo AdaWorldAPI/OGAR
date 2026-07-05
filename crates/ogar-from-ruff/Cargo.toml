@@ -15,12 +15,20 @@ serde = ["dep:serde", "ogar-vocab/serde"]
 [dependencies]
 ogar-vocab = { path = "../ogar-vocab" }
 # ruff pinned to an exact rev (not floating `branch = "main"`): this crate
-# reads `ruff_spo_triplet::Model::inherits` (ruff PR #40) and the DO-arm
-# controller harvest reads `ruff_ruby_spo::extract_tree_with` (added on the
-# medcare-bridge branch, rev `45b6e62`). With no committed Cargo.lock a floating
-# branch could resolve to a rev WITHOUT those and fail to compile. Both ruff
-# crates MUST share one rev (they depend on ruff_spo_triplet internally; a
-# mismatch double-checks-out ruff). Bump in lockstep with ogar-from-rails.
-ruff_spo_triplet = { git = "https://github.com/AdaWorldAPI/ruff", rev = "45b6e62e397528a88683376596256f9a435c1946" }
-ruff_spo_address = { git = "https://github.com/AdaWorldAPI/ruff", rev = "45b6e62e397528a88683376596256f9a435c1946" }
+# reads `ruff_spo_triplet::Model::inherits`, added in ruff PR #40. With no
+# committed Cargo.lock, a floating branch could resolve `main` to a rev
+# WITHOUT that field and fail to compile. Both ruff crates MUST share one
+# rev (they depend on ruff_spo_triplet internally; a mismatch double-checks-
+# out ruff). Bump in lockstep with ogar-from-rails.
+#
+# `c514b96d38d764bb16ac070fb2fdbd13477f41bc` (bumped from `61ce2b49`,
+# falsifier #1 gap-close / D-PARITY-PROBE-WP-1): tip of
+# `AdaWorldAPI/ruff@claude/odoo-rs-transcode-lf8ya5` at the time of this
+# bump, carrying the D-AR-3.5 schema stratum (`Field::not_null`,
+# `ruff_ruby_spo::extract_app_with_schema`) this crate's
+# `project_rails_fields` reads. `61ce2b49` predates that field entirely
+# (`Field` has no `not_null` at that rev) and cannot compile this crate's
+# Rails schema-field projection.
+ruff_spo_triplet = { git = "https://github.com/AdaWorldAPI/ruff", rev = "c514b96d38d764bb16ac070fb2fdbd13477f41bc" }
+ruff_spo_address = { git = "https://github.com/AdaWorldAPI/ruff", rev = "c514b96d38d764bb16ac070fb2fdbd13477f41bc" }
 serde = { workspace = true, optional = true }

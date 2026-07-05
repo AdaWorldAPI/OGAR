@@ -21,5 +21,8 @@ ogar-vocab = { path = "../ogar-vocab" }
 ogar-from-ruff = { path = "../ogar-from-ruff" }
 # Same exact ruff rev as ogar-from-ruff (they share ruff_spo_triplet
 # internally; a rev mismatch double-checks-out ruff). Bump in lockstep.
-ruff_ruby_spo = { git = "https://github.com/AdaWorldAPI/ruff", rev = "45b6e62e397528a88683376596256f9a435c1946" }
+# Bumped to `c514b96d38d764bb16ac070fb2fdbd13477f41bc` alongside
+# ogar-from-ruff (falsifier #1 gap-close / D-PARITY-PROBE-WP-1) — see that
+# crate's Cargo.toml for why.
+ruff_ruby_spo = { git = "https://github.com/AdaWorldAPI/ruff", rev = "c514b96d38d764bb16ac070fb2fdbd13477f41bc" }
 serde = { workspace = true, optional = true }

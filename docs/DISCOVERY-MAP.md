@@ -830,3 +830,25 @@ isolation. The map's job is to keep them visible.
   E-MIRROR-EXTERNALIZATION (same arc). Execution receipts feeding the
   declaration: ruff `8d6c31b` (schema stratum upstreamed), op-nexgen
   `4102eb0` (harvest config), the un-vendor arc (§5 steps 2-3).
+
+- **D-PARITY-PROBE-WP-1 (falsifier #1 measured; 2026-07-05; [G] —
+  re-runnable probe, scratchpad parity-probe/):** the WorkPackage parity
+  witness ran against the hand-written op-work-packages model (18
+  fields). Verdict: convergence shape NOT falsified; freeze gate NOT
+  met pre-fix. Schema stratum + addressing were 100% faithful (18/18
+  columns with types + nullability in the IR; classid 0x0102_0001
+  decomposing correctly); the entire loss was ONE gate —
+  project_odoo_fields Python-only, Rails fields dropped at lift
+  (GAP-1), plus two og_scalar_type rows (string/bigint) and the
+  unwired not_null→required slot (GAP-3/4) — all closed by the commit
+  carrying this entry. Post-fix probe tally recorded in that commit's
+  body. Doctrinal reading (operator-ratified shape): the 8 oracle
+  fields spelled `<x>_id: Id` are the ORM spelling; the transpiler's
+  `<x>: ToOne<X>` is the AR spelling the canon keeps — the freeze-gate
+  metric is AR-shaped domain object vs oracle-minus-FK-spelling; the
+  `_id` scalars are the STORAGE projection of the classview mask, not
+  the domain object. Remaining honest 15%: DoneRatio/Formattable
+  newtypes, the two nullability inversions (id, done_ratio),
+  lock_version→guard (the ActionDef seam), services. Cross-ref:
+  E-OGAR-CONVERGENCE-SHAPE falsifier #1, E-ONE-MASK-THREE-PORTS,
+  E-KEEP-AR-REMOVE-ORM.

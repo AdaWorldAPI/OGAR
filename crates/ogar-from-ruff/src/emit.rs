@@ -23,12 +23,23 @@
 //! re-implementation — the layer-1 / layer-2 story of substrate doc §1.6.
 //!
 //! Scalar attributes emit a **concrete wrapper type** mapped from the Odoo
-//! constructor carried on `Attribute::type_name` (the ruff `field_type`
-//! predicate): `char`/`text`/`html` → `OgStr`, `integer` → `OgInt`,
-//! `float` → `OgFloat`, `monetary` → `OgMoney` (Decimal-backed), `boolean` →
-//! `OgBool`, `date`/`datetime` → `OgDate`/`OgDateTime`, `binary` → `OgBytes`,
+//! constructor OR the Rails migration-DSL column type — both arrive on
+//! `Attribute::type_name` (the ruff `field_type` predicate is shared by both
+//! producers): `char`/`text`/`html`/`string` → `OgStr`, `integer`/`bigint` →
+//! `OgInt`, `float` → `OgFloat`, `monetary`/`decimal` → `OgMoney`
+//! (Decimal-backed — `decimal` shares the wrapper pending a dedicated
+//! `OgDecimal`, see [`og_scalar_type`]'s doc), `boolean` → `OgBool`,
+//! `date`/`datetime` → `OgDate`/`OgDateTime`, `binary` → `OgBytes`,
 //! `selection` → `OgSelection`, `json` → `OgJson`; an untyped/unknown column
 //! falls back to the generic `OgScalar`. See [`og_scalar_type`].
+//!
+//! An attribute whose `AttributeOptions::required == Some(false)` (Rails
+//! schema-stratum columns project this explicitly — see
+//! `ogar-from-ruff::project_rails_fields`) emits wrapped in `Option<...>`
+//! in [`emit_rust`] — nullable-at-the-database IS optional-in-Rust. Any
+//! other `required` value (`Some(true)`, or `None` — the Odoo path today,
+//! which never sets `required`) emits the bare wrapper type unchanged, so
+//! the Odoo emit output is bit-for-bit stable across this change.
 //!
 //! Field identifiers that collide with a target-language reserved word are
 //! escaped (see [`escape_ident`]) so the emitted source compiles — e.g. an
@@ -36,6 +47,7 @@
 //! `@type` / `@ref` in C#. Python source field names cannot be keywords (the
 //! Odoo source would not parse), so Python emit needs no escaping.
 
+use ogar_vocab::app::{app_of, concept_of};
 use ogar_vocab::{Association, AssociationKind};
 
 use crate::mint::CompiledClass;
@@ -55,19 +67,32 @@ fn assoc_target(assoc: &Association) -> (String, bool) {
     (target, is_many)
 }
 
-/// Map an Odoo field constructor (lowercased, carried on `Attribute::type_name`
-/// as the ruff `field_type` predicate) to the consumer wrapper-contract scalar
-/// type. Shared by all three emitters — the type NAMES are identical across
+/// Map an Odoo field constructor OR a Rails migration-DSL column type
+/// (lowercased, both carried on `Attribute::type_name` as the shared ruff
+/// `field_type` predicate) to the consumer wrapper-contract scalar type.
+/// Shared by all three emitters — the type NAMES are identical across
 /// languages (§1.6). `None` (type not captured) and any unrecognised
 /// constructor fall back to the generic `OgScalar`, so the emit is always
-/// well-typed. `monetary` → `OgMoney` is Decimal-backed (the ERP money
-/// doctrine), never a float.
+/// well-typed.
+///
+/// `monetary`/`decimal` → `OgMoney` is Decimal-backed (the ERP money
+/// doctrine), never a float. There is no dedicated `OgDecimal` wrapper in
+/// the consumer contract today — `decimal` (Rails `t.decimal`, arbitrary
+/// precision, not necessarily currency) shares `OgMoney` as the closest
+/// existing Decimal-backed wrapper rather than falling back to the
+/// untyped `OgScalar`; a future `OgDecimal` should take over this arm
+/// without touching `monetary`.
+///
+/// `string`/`bigint` are the Rails migration-DSL column-type tokens
+/// (`ruff_ruby_spo::schema::COLUMN_TYPES`) for what Odoo spells
+/// `char`/… and `integer` respectively — same wrapper, different source
+/// vocabulary.
 fn og_scalar_type(type_name: Option<&str>) -> &'static str {
     match type_name {
-        Some("char" | "text" | "html") => "OgStr",
-        Some("integer") => "OgInt",
+        Some("char" | "text" | "html" | "string") => "OgStr",
+        Some("integer" | "bigint") => "OgInt",
         Some("float") => "OgFloat",
-        Some("monetary") => "OgMoney",
+        Some("monetary" | "decimal") => "OgMoney",
         Some("boolean") => "OgBool",
         Some("date") => "OgDate",
         Some("datetime") => "OgDateTime",
@@ -258,10 +283,11 @@ pub fn emit_rust(cc: &CompiledClass) -> String {
     let mut out = String::new();
 
     out.push_str(&format!(
-        "/// Rail class `{}` — classid `0x{:08X}` (concept `0x{:04X}`).\n",
+        "/// Rail class `{}` — classid `0x{:08X}` (concept `0x{:04X}`, app `0x{:04X}`).\n",
         cc.class.name,
         cc.facet.facet_classid(),
-        cc.facet.facet_classid() as u16,
+        concept_of(cc.facet.facet_classid()),
+        app_of(cc.facet.facet_classid()),
     ));
     out.push_str(&format!(
         "pub const {}_CLASSID: u32 = 0x{:08X};\n\n",
@@ -271,10 +297,21 @@ pub fn emit_rust(cc: &CompiledClass) -> String {
 
     out.push_str(&format!("pub struct {ty} {{\n"));
     for attr in &cc.class.attributes {
+        let base_ty = og_scalar_type(attr.type_name.as_deref());
+        // `required == Some(false)` is the ONLY nullability signal that
+        // wraps in `Option<...>` — the Rails schema stratum sets this
+        // explicitly (see `project_rails_fields`). `Some(true)` and `None`
+        // (the Odoo path today, which never sets `required`) both emit the
+        // bare wrapper type unchanged, so Odoo's emit output is bit-for-bit
+        // stable across this change (GAP-4, falsifier #1 gap-close).
+        let field_ty = if attr.options.required == Some(false) {
+            format!("Option<{base_ty}>")
+        } else {
+            base_ty.to_string()
+        };
         out.push_str(&format!(
-            "    pub {}: {},\n",
+            "    pub {}: {field_ty},\n",
             escape_ident(&attr.name, Lang::Rust),
-            og_scalar_type(attr.type_name.as_deref()),
         ));
     }
     for assoc in &cc.class.associations {
@@ -322,10 +359,11 @@ pub fn emit_csharp(cc: &CompiledClass) -> String {
     let mut out = String::new();
 
     out.push_str(&format!(
-        "/// <summary>Rail class <c>{}</c> — classid 0x{:08X} (concept 0x{:04X}).</summary>\n",
+        "/// <summary>Rail class <c>{}</c> — classid 0x{:08X} (concept 0x{:04X}, app 0x{:04X}).</summary>\n",
         cc.class.name,
         cc.facet.facet_classid(),
-        cc.facet.facet_classid() as u16,
+        concept_of(cc.facet.facet_classid()),
+        app_of(cc.facet.facet_classid()),
     ));
     out.push_str(&format!("public sealed record {ty}\n{{\n"));
     out.push_str(&format!(
@@ -380,10 +418,11 @@ pub fn emit_python(cc: &CompiledClass) -> String {
     out.push_str("@dataclass\n");
     out.push_str(&format!("class {ty}:\n"));
     out.push_str(&format!(
-        "    \"\"\"Rail class `{}` — classid 0x{:08X} (concept 0x{:04X}).\"\"\"\n",
+        "    \"\"\"Rail class `{}` — classid 0x{:08X} (concept 0x{:04X}, app 0x{:04X}).\"\"\"\n",
         cc.class.name,
         cc.facet.facet_classid(),
-        cc.facet.facet_classid() as u16,
+        concept_of(cc.facet.facet_classid()),
+        app_of(cc.facet.facet_classid()),
     ));
     out.push_str(&format!(
         "    CLASSID: ClassVar[int] = 0x{:08X}\n",
@@ -623,6 +662,117 @@ mod tests {
         // has_many, no class_name -> pascal_case(time_entries) = TimeEntries.
         assert!(
             rust.contains("pub time_entries: ToMany<TimeEntries>,"),
+            "got:\n{rust}"
+        );
+    }
+
+    // ───── D-AR-3.5 schema-stratum projection at emit time (falsifier #1 gap-close) ─────
+    //
+    // `Model::fields` (physical schema) is separate from the `attributes` /
+    // `associations` AR-DSL vectors exercised by `work_package_rail_graph`
+    // above. This fixture carries both, plus an FK column shadowed by a
+    // declared association, so the emit-level gap-close (GAP-3 type table +
+    // GAP-4 nullability wrapping) is proven end-to-end through
+    // `compile_graph_ruby` -> `emit_rust`, not just at the `lift_model`
+    // level (see `lib.rs`'s `lift_model_ruby_*` tests for the lift-level
+    // proof).
+
+    fn work_package_schema_graph() -> ModelGraph {
+        let mut m = Model::new("WorkPackage");
+        m.associations.push(AssocDecl {
+            kind: AssocKind::BelongsTo,
+            name: "project".to_string(),
+            options: vec![],
+        });
+        m.associations.push(AssocDecl {
+            kind: AssocKind::HasMany,
+            name: "time_entries".to_string(),
+            options: vec![],
+        });
+        m.fields.push(Field {
+            name: "id".to_string(),
+            field_type: Some("bigint".to_string()),
+            not_null: Some(true),
+            ..Default::default()
+        });
+        m.fields.push(Field {
+            name: "subject".to_string(),
+            field_type: Some("string".to_string()),
+            not_null: Some(true),
+            ..Default::default()
+        });
+        m.fields.push(Field {
+            name: "description".to_string(),
+            field_type: Some("text".to_string()),
+            not_null: None,
+            ..Default::default()
+        });
+        // Shadowed by the `project` association above — must NOT double-emit.
+        m.fields.push(Field {
+            name: "project_id".to_string(),
+            field_type: Some("bigint".to_string()),
+            not_null: Some(true),
+            ..Default::default()
+        });
+        let mut g = ModelGraph::new("openproject");
+        g.models.push(m);
+        g
+    }
+
+    /// **(c)** GAP-3 (Rails `bigint`/`string` reach the same `og_scalar_type`
+    /// table Odoo's `integer`/`char` do) + GAP-4 (`required == Some(false)`
+    /// wraps in `Option<...>`; `Some(true)` stays bare) + the FK-dedup from
+    /// GAP-1, all proven together through the real `compile_graph_ruby` ->
+    /// `emit_rust` path.
+    #[test]
+    fn emits_rust_struct_with_typed_and_optional_schema_fields_for_rails() {
+        use crate::mint::compile_graph_ruby;
+        use ogar_vocab::ports::OpenProjectPort;
+
+        let cc = &compile_graph_ruby::<OpenProjectPort>(&work_package_schema_graph())[0];
+        let rust = emit_rust(cc);
+
+        // bigint -> OgInt (GAP-3); not_null Some(true) -> required Some(true)
+        // -> bare type (GAP-4).
+        assert!(rust.contains("pub id: OgInt,"), "got:\n{rust}");
+        // string -> OgStr (GAP-3); not_null Some(true) -> bare type (GAP-4).
+        assert!(rust.contains("pub subject: OgStr,"), "got:\n{rust}");
+        // text -> OgStr; not_null None -> required Some(false) -> Option<...> (GAP-4).
+        assert!(
+            rust.contains("pub description: Option<OgStr>,"),
+            "got:\n{rust}"
+        );
+        // project_id is FK-deduped: the `project` association already
+        // carries the relation, so the scalar column must not double-emit.
+        assert!(
+            !rust.contains("project_id:"),
+            "project_id must be shadowed by the project association:\n{rust}"
+        );
+        assert!(
+            rust.contains("pub project: ToOne<Project>,"),
+            "got:\n{rust}"
+        );
+        assert!(
+            rust.contains("pub time_entries: ToMany<TimeEntries>,"),
+            "got:\n{rust}"
+        );
+    }
+
+    /// **(d)** cosmetic gap-close: the emitted doc line must print the TRUE
+    /// concept half (`0x0102`, the CANON high half since the 2026-07-02
+    /// canon-high flip) and the app half (`0x0001`, OpenProject's render
+    /// prefix) separately — not `facet_classid() as u16` (which reads the
+    /// LOW/app half and mislabels it "concept").
+    #[test]
+    fn emit_rust_doc_line_prints_concept_high_and_app_low() {
+        use crate::mint::compile_graph_ruby;
+        use ogar_vocab::ports::OpenProjectPort;
+
+        let cc = &compile_graph_ruby::<OpenProjectPort>(&work_package_schema_graph())[0];
+        let rust = emit_rust(cc);
+
+        assert!(
+            rust.contains("classid `0x01020001` (concept `0x0102`, app `0x0001`)"),
             "got:\n{rust}"
         );
     }
