@@ -288,28 +288,34 @@ fn main() {
             "pub mod {} {{\n    use super::{{Input, Output}};\n",
             rustify(part_of)
         ));
-        let mut seen = std::collections::HashSet::new();
+        // Distinct is_a rail keys can normalise to the SAME Rust fn name (`foo?`
+        // and `foo` both → `foo`). Group by the emitted name and MERGE their
+        // sources + labels into one fn, so no rail tile silently vanishes
+        // (a `continue` here dropped the collider — codex/Bugbot on the Python
+        // sibling #154; the Rust emitter had the same latent drop).
+        let mut by_fname: std::collections::BTreeMap<String, (Vec<String>, Vec<String>)> =
+            std::collections::BTreeMap::new();
         for (is_a, sources) in isas {
-            let fname = rustify(is_a);
-            if !seen.insert(fname.clone()) {
-                continue;
-            }
-            // All source controllers that collapse onto this canonical tile,
-            // deduped + sorted, cited so no route is lost from the docs.
-            let mut srcs: Vec<String> = sources
-                .iter()
-                .map(|(c, a)| format!("{c}#{a}"))
-                .collect();
+            let entry = by_fname.entry(rustify(is_a)).or_default();
+            entry.0.push(is_a.clone());
+            entry
+                .1
+                .extend(sources.iter().map(|(c, a)| format!("{c}#{a}")));
+        }
+        for (fname, (mut labels, mut srcs)) in by_fname {
+            labels.sort();
+            labels.dedup();
             srcs.sort();
             srcs.dedup();
-            let primary = &srcs[0];
+            let is_a_disp = labels.join(", ");
+            let primary = srcs[0].clone();
             let source_line = if srcs.len() == 1 {
                 format!("Source: `{primary}`.")
             } else {
                 format!("Sources (canonical tile): `{}`.", srcs.join("`, `"))
             };
             acts.push_str(&format!(
-                "    /// `{part_of}:{is_a}` — DO arm. {source_line}\n    \
+                "    /// `{part_of}:{is_a_disp}` — DO arm. {source_line}\n    \
                  pub fn {fname}(input: Input) -> Output {{\n        \
                  let _ = input;\n        todo!(\"port {primary}\")\n    }}\n"
             ));
