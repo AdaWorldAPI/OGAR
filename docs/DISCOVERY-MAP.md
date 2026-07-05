@@ -767,9 +767,9 @@ isolation. The map's job is to keep them visible.
   state }` (dropping field 1 `amount_total`), `fn new(name, state)`, and
   `fn action_post(&mut self)` with `CLASS_ID = 0x0202`. Closes the
   transpile chain with LEG 1 (ruff #40) + LEG 2 (D-OGAR-ODOO-INHERIT-MIXINS).
-- **D-CHAIN-CONSUMPTION-GROUPING (operator framing, OPEN ruling;
-  2026-07-03; ungraded — no grade until the operator rules; the SDK
-  must NOT freeze a chain-entry format before then):** the operator's
+- **D-CHAIN-CONSUMPTION-GROUPING (operator framing 2026-07-03;
+  RESOLVED 2026-07-05 — see D-CHAIN-GROUPING-RESOLVED-12SLOT below,
+  grade lives there; the SDK gate is lifted):** the operator's
   transpiler-substrate reminder names two consumption geometries for
   the substrate: *"to be consumed via part_of/is_a (rails) or triplets
   (4x (8:8:8), or (3x (8:8:8:8) (odoo ?)"* (verbatim, question mark
@@ -790,3 +790,23 @@ isolation. The map's job is to keep them visible.
   *view*, not a layout fork, IF entry width is settled. Gate: OGAR SDK
   chain-navigation API (see EPIPHANIES E-AR-DIRECT-SDK) blocks on this
   entry's ruling.
+
+- **D-CHAIN-GROUPING-RESOLVED-12SLOT (operator ruling + upstream
+  handover; 2026-07-05; [G]):** resolves D-CHAIN-CONSUMPTION-GROUPING
+  (above; status regraded in place): the grouping is not a layout fork
+  but the **shape-adaptive 12-slot factoring** of the V3 node —
+  `6·2 = 4·3 = 3·4 = 12`: AR/Rails → **6×(part_of : is_a)** (mereology ×
+  taxonomy), generic → **4× SPO triplets**, Odoo → **3× SPOG
+  quadruplets** — one substrate, the factoring chosen per source shape.
+  Odoo's SPOG lives in the lance-graph⟷OGAR **V3 substrate, NOT a
+  SurrealDB AST** (operator verbatim 2026-07-05: *"Odoo's spog lives now
+  in V3 substrate in lance-graph <>OGAR, not surrealdb AST"*);
+  consumption is the ERB **fieldview×classview** pattern rendered via
+  **askama (Rust) / jinja (Python)**, dispatched on the **classview
+  bitmask** (operator verbatim: *"you consume it with fieldview
+  /classview ERB pattern> askama (rust)/jinja (python) based on
+  classview bitmask"*). Consequence: the E-AR-DIRECT-SDK chain-API gate
+  is lifted — the SDK's navigation API implements the three factoring
+  VIEWS over one 12-slot field, never three layouts. Source of record:
+  openproject-nexgen-rs
+  `.claude/handovers/2026-07-05-ogar-v3-consumer-migration-plan.md` §2.

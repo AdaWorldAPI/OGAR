@@ -7,6 +7,22 @@
 
 ---
 
+## 2026-07-05 — E-VENDOR-DELTA-IS-THE-TRAINING-WHEEL — live ruff already subsumes C17a/b/c; the only vendor-unique capability is schema.rb→Field back-projection, which becomes harvest DATA, not a merge
+
+**Status:** FINDING (`[G]` — verified 2026-07-05 by direct inspection of live ruff main `b459ec3`: 13-variant `Declaration` enum at `crates/ruff_ruby_spo/src/lib.rs:80`, C17-breadth construct handling across `walk.rs`/`lib.rs`/`parse.rs`; and by the openproject-nexgen-rs consumer-migration handover).
+
+**Corrects E-VENDOR-SPLIT-BRAIN (2026-07-03, below; Status flipped to SUPERSEDED in place per the only-Status-mutable rule).** The "neither fork subsumes the other" claim was wrong: live ruff's `ruff_ruby_spo` natively carries the full C17a/b/c DSL breadth (concerns / enums / store_accessors / attributes / class-meta / scopes / default_scope / callbacks / STI / acts_as, routed through the 13-variant `Declaration` enum). The vendor fork is BEHIND, not ahead — except for exactly one capability: **db/schema.rb column→`Field` extraction** (vendor `scan.rs` + `fields.rs` C4 line-scanner; live `extract_fields` is a documented stub).
+
+**That one delta does NOT merge into live ruff.** Per the corrected architecture (openproject-nexgen-rs `.claude/handovers/2026-07-05-ogar-v3-consumer-migration-plan.md`): it is the D-AR-3.5 patch = the **ORM→AR back-projection training wheel**, and it becomes resolver CONFIG (data) in op-nexgen `.claude/harvest/` — "config is data; where data is insufficient, make ruff smarter — spec it, don't fake it". The reunification-merge phase planned under the superseded entry is CANCELLED; the un-vendor is a plain git-dep flip.
+
+**What survives from the superseded entry:** the fuse doctrine — any vendored tree gets a drift fuse or a deletion date; prose cites the fuse test's name, never restates the value it guards. That half stands unchanged.
+
+**Operator rulings, same arc (2026-07-05, verbatim):** *"Odoo's spog lives now in V3 substrate in lance-graph <>OGAR, not surrealdb AST. And you consume it with fieldview /classview ERB pattern> askama (rust)/jinja (python) based on classview bitmask."* This resolves `docs/DISCOVERY-MAP.md` D-CHAIN-CONSUMPTION-GROUPING — see D-CHAIN-GROUPING-RESOLVED-12SLOT there: the grouping is the **shape-adaptive 12-slot factoring** (`6·2 = 4·3 = 3·4 = 12`: AR/Rails → 6×(part_of:is_a); generic → 4× SPO triplets; Odoo → 3× SPOG quadruplets), carried natively by the lance-graph⟷OGAR V3 substrate; consumption is the ERB fieldview×classview kit rendered via askama (Rust) / jinja (Python), dispatched on the classview bitmask. No SurrealDB AST hosting anywhere. The E-AR-DIRECT-SDK chain-API gate is hereby lifted.
+
+**Cross-ref:** E-AR-DIRECT-SDK (2026-07-03, below — SDK pillars unchanged, gate lifted); E-VENDOR-SPLIT-BRAIN (superseded, below); openproject-nexgen-rs `.claude/handovers/2026-07-05-ogar-v3-consumer-migration-plan.md` (the corrected-architecture source of record, §2 the 12-slot factoring, §4 the training wheel).
+
+---
+
 ## 2026-07-03 — E-AR-DIRECT-SDK — consume the AR shape directly; OGAR serves ERP at the cost of an import; the DO shape lands on ActionHandler + unified adapters + constructor-shaping ClassViews
 
 **Status:** FRAMING (`[G]` for the operator rulings, quoted verbatim below; `[H]` for the SDK build + the OP retirement path, gated on parity witnesses).
@@ -31,7 +47,7 @@
 
 ## 2026-07-03 — E-VENDOR-SPLIT-BRAIN — openproject-nexgen-rs's vendored ruff crates are a FORK developed in place, not a stale snapshot; the planned re-vendor would have destroyed three sprints
 
-**Status:** FINDING (`[G]` — verified first-hand: vendor git history shows Sprints C17a/C17b/C17c landing inside `openproject-nexgen-rs/vendor/AdaWorldAPI-ruff/`, never flowed to `AdaWorldAPI/ruff`).
+**Status:** SUPERSEDED (2026-07-05 — the "neither subsumes the other" claim was WRONG: live ruff main already carries the C17 DSL breadth; the only vendor-unique capability is the schema.rb→Field back-projection, which becomes harvest DATA, not a merge. See E-VENDOR-DELTA-IS-THE-TRAINING-WHEEL above. The vendored-tree fuse-doctrine half of this entry stands.)
 
 **The finding.** The OP vendor tree and live ruff `ruff_ruby_spo` diverged in BOTH directions: the **vendor fork** carries C17a (lib-ruby-parser typed-AST class shape, 1469-line `parse.rs`) + C17b (concerns/enums/store_accessors/attributes/class-meta, gaps G8–G14) + C17c (ignored_columns/scopes/default_scope/callbacks/collection callbacks, G13/G15–G17/G19/G20) — on the OLD skinny IR (103-line `ir.rs`, no `AssocDecl`). The **live repo** carries the rich IR (742-line `ir.rs`: `AssocDecl`, `field_type`, validates→required, writes/calls #38) + `extract_app` engine-walking + class-reopen merging — without the C17 DSL breadth. Frontend breadth on one side, IR depth on the other; **neither subsumes the other**, and the version numbers lie (vendor claims 0.2.0, live says 0.1.0). The planned "re-vendor" (`rm -rf` + copy live→vendor) would have silently deleted ~1,900 LOC of unmerged sprint work.
 
