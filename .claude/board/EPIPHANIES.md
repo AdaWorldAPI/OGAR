@@ -7,6 +7,70 @@
 
 ---
 
+## 2026-07-05 — E-OGAR-CONVERGENCE-SHAPE — OGAR is the convergence shape: seven layers, one invocation grammar
+
+**Status:** FRAMING (operator-ruled 2026-07-05; per-layer grades inline; the three open seams and three falsifiers are named — comfort is declared WITH them, not despite them).
+
+**The ruling (operator, verbatim):** *"Are you comfortable now to make OGAR the convergence shape — Schema, ruff codegen, classview fieldmask, OGIT Ontology as a controller dto, Lance-graph V3 substrate and classview, reasoning vs controller methods as unified surface, ractor kanban as graph execution."* Answered YES, with grades.
+
+**The composed shape:**
+
+- **address** — classid (canon concept ‖ render skin) → GUID → the graph key. `[G]`
+- **substrate** — lance-graph V3: 512-B node, 2+14 tenants, the 12-slot factoring (6×(part_of:is_a) Rails · 4×SPO generic · 3×SPOG Odoo; D-CHAIN-GROUPING-RESOLVED-12SLOT). `[G]`
+- **shape** — the Schema stratum: the global schema WITH an address (ruff `8d6c31b`: `field_type`/`not_null`; the guesses live as harvest data). `[G]`
+- **behavior** — `ActionDef`+`KausalSpec` ← ruff writes/calls/callbacks facts. `[G]` facts / `[H]` lowering.
+- **render** — classview fieldmask → fieldview fold → askama/jinja (E-ONE-MASK-THREE-PORTS below). `[H]`
+- **membrane** — OGIT ontology as controller DTO: wire names from TTL, Auth > RBAC as mask algebra. `[H]`
+- **codegen** — ruff codegen: FromRow rows, DTOs, render contexts, constructors are all generated projections, never authored truth. `[G]`
+- **execution** — ractor mailbox-kanban: an action executing IS a kanban transition on a mailbox-owned board; scheduling is graph state. `[G]` machinery / `[H]` ERP wiring.
+- **cognition** — reasoning methods on the SAME surface: `StepDomain` already unifies Thinking/Query/Persistence/Inference in `UnifiedStep`; controller methods enter as one more port. `[H]`
+
+**One sentence:** `<port>::<path>(<shape>)` is the only invocation grammar — MySQL, askama, odoo/op/redmine, and the reasoning stack are all ports; the path is the facet address; the shape is a masked, typed projection.
+
+**Three open seams (the `[H]`s, named):** (1) the **view stratum** — mint fieldmasks from real views (OP/Redmine ERB, Odoo `ir.ui.view`), the mirror of D-AR-3.5; (2) the **ActionDef ↔ UnifiedStep mapping** — one contract PR joining the ERP action arm to the existing StepDomain union (and the kanban executor); (3) **OGIT TTL → controller-DTO lowering** — today woa-rs practice (wire names from `rdfs:label`), needs to become an OGAR-minted pipeline through `ogar-from-schema`.
+
+**Three falsifiers:** the WorkPackage parity witnesses (generated model/service vs the hand-port — kills the 85% if they can't approximate); a classview-mask round-trip on one real OP view; one action end-to-end (`op::work_package::update(shape)` → ActionHandler → kanban transition → Lance tombstone).
+
+**Cross-ref:** E-AR-DIRECT-SDK (2026-07-03), D-CHAIN-GROUPING-RESOLVED-12SLOT, E-ONE-MASK-THREE-PORTS + E-MIRROR-EXTERNALIZATION (below, same arc), openproject-nexgen-rs `.claude/handovers/2026-07-05-ogar-v3-consumer-migration-plan.md`.
+
+---
+
+## 2026-07-05 — E-ONE-MASK-THREE-PORTS — the invocation grammar; one classview bitmask projects three ways
+
+**Status:** FRAMING (`[G]` for the operator's action calculus, quoted verbatim; `[H]` for the projections until the mask round-trip falsifier runs).
+
+**The operator's action calculus (verbatim):** *"actions become reusable patterns — MySQL{shape: update} · askama {classview:render} · odoo::part_of::is_a(shape:input[type]) · op::part_of::is_a(shape:input[type]) · redmine::part_of::is_a(shape:input[type])"*. Read as one grammar: **`<port>::<path>(<shape>)`** — port ∈ {MySQL, askama, odoo, op, redmine, …}, path = the `part_of::is_a` facet navigation (the 12-slot factoring read per port), shape = verb + typed payload. Storage and render are not infrastructure: they are ports with closed verb sets.
+
+**One mask, three projections.** A classview bitmask over a class's fields, per mode, projects as: (1) the **askama context** (which fields render), (2) the **typed input constructor** (`shape:input[type]` — typed from the schema stratum: `field_type` → Rust type, `not_null` → Option-ness), (3) the **SQL column set** (`MySQL{shape: update}`). Today these drift independently in every ERP; one mask makes the drift a type error. This is what "classviews shape constructors reusable" cashes out to — constructors are GENERATED from classview masks; recipe-bitmask chaining (E-RECIPE-BITMASK-CHAIN) is their composition algebra.
+
+**What each ancestor teaches:** Redmine/OP ERB — render is a FOLD over the schema (one fieldview partial per column type × skin, ~22 of them, not one template per class); ancestry resolution is longest-prefix (app-specific fieldview, falling back to concept-canonical) — the codebook radix rule again. Odoo — views-as-data is production-proven (`ir.ui.view` records with inheritance = is_a on the render side); `widget=` is Odoo's fieldview selector (independent convergence on field-type→partial dispatch); field-level `groups=` shows **RBAC = mask algebra** (`effective_mask = classview_mask ∧ role_mask`); the closed ORM verb set (create/write/unlink/search) argues for **verb codebook rows** (Odoo `write` ≡ AR `update` ≡ SQL UPDATE — one concept, three spellings; mint question goes on the serialized allocation train, NOT decided here).
+
+**Next ruff stratum — the view stratum:** parse OP/Redmine ERB (`f.text_field :subject`, …) and Odoo view XML (`<field name="…"/>`) into mode-tagged `renders_field` facts → classview bitmasks get MINTED from the apps' real views, measured, not hand-authored. Same doctrine: mechanism in ruff, oracle-diff before shipping.
+
+**SDK consequence:** the generated module tree mirrors the `part_of` chain — `op::work_package::update(input)` is a real function whose module path IS the facet address ("the key prerenders nodes with zero value decode", projected into codegen); the one unified adapter is the port trait `invoke(path, shape) → shape`.
+
+**Cross-ref:** E-OGAR-CONVERGENCE-SHAPE (above), E-AR-DIRECT-SDK, E-RECIPE-BITMASK / E-RECIPE-BITMASK-CHAIN, D-CHAIN-GROUPING-RESOLVED-12SLOT.
+
+---
+
+## 2026-07-05 — E-MIRROR-EXTERNALIZATION — Rails externalizes schema, Odoo externalizes views; OGAR is the fixed point where both come home
+
+**Status:** FINDING (`[G]` for the mechanism receipts; the closure claim inherits E-OGAR-CONVERGENCE-SHAPE's grades).
+
+**The operator's question (verbatim):** *"I understand AR's weak side was global Schema, something that Openproject tried to hold on with its ORM training wheels?"* — Confirmed, and sharpened:
+
+**AR's weak side, precisely:** ActiveRecord models contain NO schema — behavior in code, shape runtime-reflected from the DB; `schema.rb` is a generated artifact. The global schema exists only as two half-truths AR never reconciles: the DB half (`null: false`, unique indexes — enforced, semantically mute) and the model half (`validates presence/uniqueness` — semantic, unenforced). **Receipts in our own pipeline:** live ruff's `extract_fields` stub was structurally honest (there ARE no fields in AR source — hence the D-AR-3.5 schema stratum as a second input), and the harvest rule `null_false_presence` is graded a GUESS because AR itself never linked the halves.
+
+**OpenProject's compensations, twice:** upstream Ruby OP bolted on Contracts, representers, and the API v3 **Schema endpoints** — literally serving per-resource schema documents at runtime, a schema service as prosthesis; the Rust port hand-typed the same compensation as `op-db` FromRow rows (9,009 LOC) + `op-api` row→DTO (8,592 LOC) — ~17K LOC that is the measurable cost of not having the compiler. The illegitimate training wheel (hand plumbing) retires; the legitimate one (`.claude/harvest/` back-projection, data, measured) is designed to retire.
+
+**The mirror:** Rails externalizes SCHEMA (DB-reflected) and keeps views in code (ERB); Odoo externalizes VIEWS/ACCESS (`ir.ui.view`, `ir.model.access` as DB records) and keeps schema in code (`fields.Char(...)`). Opposite halves, same motive (runtime flexibility), same cost (static analyzability of the externalized half), and every mature deployment grows prostheses for its missing half. **OGAR is the fixed point:** both halves come home as addressable graph data — schema stratum + model stratum merge into `Class`; views become graph rows (Odoo proved it in production); auth becomes mask algebra; code becomes generated projections.
+
+**One line:** AR's weakness wasn't missing schema — it was **schema without an address.** OGAR doesn't re-centralize the schema into code; it gives it an address (classid) and mints code from it.
+
+**Cross-ref:** E-OGAR-CONVERGENCE-SHAPE, E-ONE-MASK-THREE-PORTS (both above), E-KEEP-AR-REMOVE-ORM (2026-06-30 — the open-heart op this entry explains the WHY of), E-VENDOR-DELTA-IS-THE-TRAINING-WHEEL.
+
+---
+
 ## 2026-07-05 — E-VENDOR-DELTA-IS-THE-TRAINING-WHEEL — live ruff already subsumes C17a/b/c; the only vendor-unique capability is schema.rb→Field back-projection, which becomes harvest DATA, not a merge
 
 **Status:** FINDING (`[G]` — verified 2026-07-05 by direct inspection of live ruff main `b459ec3`: 13-variant `Declaration` enum at `crates/ruff_ruby_spo/src/lib.rs:80`, C17-breadth construct handling across `walk.rs`/`lib.rs`/`parse.rs`; and by the openproject-nexgen-rs consumer-migration handover).

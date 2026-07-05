@@ -810,3 +810,23 @@ isolation. The map's job is to keep them visible.
   VIEWS over one 12-slot field, never three layouts. Source of record:
   openproject-nexgen-rs
   `.claude/handovers/2026-07-05-ogar-v3-consumer-migration-plan.md` §2.
+
+- **D-OGAR-CONVERGENCE-SHAPE (operator ruling; 2026-07-05; [G] for the
+  declaration; per-layer grades in the EPIPHANIES twin):** OGAR is THE
+  convergence shape across seven layers — schema (the addressed global
+  schema), ruff codegen (all code = generated projections), classview
+  fieldmask (one mask → askama context / typed constructor / SQL column
+  set), OGIT ontology as controller DTO (wire membrane; Auth > RBAC as
+  mask algebra), lance-graph V3 substrate + classview rows, reasoning
+  vs controller methods as ONE invocation surface
+  (`<port>::<path>(<shape>)` — StepDomain already carries the union;
+  ERP actions join as one more port), ractor mailbox-kanban as graph
+  execution (an action executing IS a kanban transition). Canonical
+  text + per-layer grades + the three open seams (view stratum ·
+  ActionDef↔UnifiedStep mapping · TTL→DTO lowering) + the three
+  falsifiers (WorkPackage parity witnesses · classview-mask round-trip
+  · one action end-to-end): `.claude/board/EPIPHANIES.md`
+  E-OGAR-CONVERGENCE-SHAPE, with companions E-ONE-MASK-THREE-PORTS and
+  E-MIRROR-EXTERNALIZATION (same arc). Execution receipts feeding the
+  declaration: ruff `8d6c31b` (schema stratum upstreamed), op-nexgen
+  `4102eb0` (harvest config), the un-vendor arc (§5 steps 2-3).
