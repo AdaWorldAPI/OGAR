@@ -3,7 +3,7 @@ OSM domain models as dataclasses; associations become typed id fields.
 """
 from __future__ import annotations
 from dataclasses import dataclass, field
-from typing import Any, List, Optional
+from typing import Any, ClassVar, List, Optional
 
 @dataclass
 class Acl:
@@ -15,7 +15,7 @@ class ApplicationRecord:
 
 @dataclass
 class Changeset:
-    CLASS_ID: int = 0x0F04  # canonical concept `osm_changeset`
+    CLASS_ID: ClassVar[int] = 0x0F04  # canonical concept `osm_changeset`
     user: Optional[int] = None
     changeset_tags: List[int] = field(default_factory=list)
     nodes: List[int] = field(default_factory=list)
@@ -104,7 +104,7 @@ class ModerationZone:
 
 @dataclass
 class Node:
-    CLASS_ID: int = 0x0F01  # canonical concept `osm_node`
+    CLASS_ID: ClassVar[int] = 0x0F01  # canonical concept `osm_node`
     changeset: Optional[int] = None
     old_nodes: List[int] = field(default_factory=list)
     way_nodes: List[int] = field(default_factory=list)
@@ -117,12 +117,12 @@ class Node:
 
 @dataclass
 class NodeTag:
-    CLASS_ID: int = 0x0F05  # canonical concept `osm_element_tag`
+    CLASS_ID: ClassVar[int] = 0x0F05  # canonical concept `osm_element_tag`
     node: Optional[int] = None
 
 @dataclass
 class Note:
-    CLASS_ID: int = 0x0F08  # canonical concept `osm_note`
+    CLASS_ID: ClassVar[int] = 0x0F08  # canonical concept `osm_note`
     author: Optional[int] = None
     comments: List[int] = field(default_factory=list)
     all_comments: List[int] = field(default_factory=list)
@@ -145,7 +145,7 @@ class Oauth2Application:
 
 @dataclass
 class OldNode:
-    CLASS_ID: int = 0x0F01  # canonical concept `osm_node`
+    CLASS_ID: ClassVar[int] = 0x0F01  # canonical concept `osm_node`
     changeset: Optional[int] = None
     redaction: Optional[int] = None
     current_node: Optional[int] = None
@@ -153,12 +153,12 @@ class OldNode:
 
 @dataclass
 class OldNodeTag:
-    CLASS_ID: int = 0x0F05  # canonical concept `osm_element_tag`
+    CLASS_ID: ClassVar[int] = 0x0F05  # canonical concept `osm_element_tag`
     old_node: Optional[int] = None
 
 @dataclass
 class OldRelation:
-    CLASS_ID: int = 0x0F03  # canonical concept `osm_relation`
+    CLASS_ID: ClassVar[int] = 0x0F03  # canonical concept `osm_relation`
     changeset: Optional[int] = None
     redaction: Optional[int] = None
     current_relation: Optional[int] = None
@@ -167,18 +167,18 @@ class OldRelation:
 
 @dataclass
 class OldRelationMember:
-    CLASS_ID: int = 0x0F06  # canonical concept `osm_relation_member`
+    CLASS_ID: ClassVar[int] = 0x0F06  # canonical concept `osm_relation_member`
     old_relation: Optional[int] = None
     member: Optional[int] = None
 
 @dataclass
 class OldRelationTag:
-    CLASS_ID: int = 0x0F05  # canonical concept `osm_element_tag`
+    CLASS_ID: ClassVar[int] = 0x0F05  # canonical concept `osm_element_tag`
     old_relation: Optional[int] = None
 
 @dataclass
 class OldWay:
-    CLASS_ID: int = 0x0F02  # canonical concept `osm_way`
+    CLASS_ID: ClassVar[int] = 0x0F02  # canonical concept `osm_way`
     changeset: Optional[int] = None
     redaction: Optional[int] = None
     current_way: Optional[int] = None
@@ -187,14 +187,14 @@ class OldWay:
 
 @dataclass
 class OldWayNode:
-    CLASS_ID: int = 0x0F07  # canonical concept `osm_way_node`
+    CLASS_ID: ClassVar[int] = 0x0F07  # canonical concept `osm_way_node`
     old_way: Optional[int] = None
     node: Optional[int] = None
     way: Optional[int] = None
 
 @dataclass
 class OldWayTag:
-    CLASS_ID: int = 0x0F05  # canonical concept `osm_element_tag`
+    CLASS_ID: ClassVar[int] = 0x0F05  # canonical concept `osm_element_tag`
     old_way: Optional[int] = None
 
 @dataclass
@@ -206,7 +206,7 @@ class Redaction:
 
 @dataclass
 class Relation:
-    CLASS_ID: int = 0x0F03  # canonical concept `osm_relation`
+    CLASS_ID: ClassVar[int] = 0x0F03  # canonical concept `osm_relation`
     changeset: Optional[int] = None
     old_relations: List[int] = field(default_factory=list)
     relation_members: List[int] = field(default_factory=list)
@@ -216,13 +216,13 @@ class Relation:
 
 @dataclass
 class RelationMember:
-    CLASS_ID: int = 0x0F06  # canonical concept `osm_relation_member`
+    CLASS_ID: ClassVar[int] = 0x0F06  # canonical concept `osm_relation_member`
     relation: Optional[int] = None
     member: Optional[int] = None
 
 @dataclass
 class RelationTag:
-    CLASS_ID: int = 0x0F05  # canonical concept `osm_element_tag`
+    CLASS_ID: ClassVar[int] = 0x0F05  # canonical concept `osm_element_tag`
     relation: Optional[int] = None
 
 @dataclass
@@ -240,7 +240,7 @@ class SpammyPhrase:
 
 @dataclass
 class Trace:
-    CLASS_ID: int = 0x0F09  # canonical concept `osm_gpx_trace`
+    CLASS_ID: ClassVar[int] = 0x0F09  # canonical concept `osm_gpx_trace`
     user: Optional[int] = None
     tags: List[int] = field(default_factory=list)
     points: List[int] = field(default_factory=list)
@@ -255,7 +255,7 @@ class Tracetag:
 
 @dataclass
 class User:
-    CLASS_ID: int = 0x0F0A  # canonical concept `osm_user`
+    CLASS_ID: ClassVar[int] = 0x0F0A  # canonical concept `osm_user`
     traces: List[int] = field(default_factory=list)
     diary_entries: List[int] = field(default_factory=list)
     diary_comments: List[int] = field(default_factory=list)
@@ -315,7 +315,7 @@ class UserRole:
 
 @dataclass
 class Way:
-    CLASS_ID: int = 0x0F02  # canonical concept `osm_way`
+    CLASS_ID: ClassVar[int] = 0x0F02  # canonical concept `osm_way`
     changeset: Optional[int] = None
     old_ways: List[int] = field(default_factory=list)
     way_nodes: List[int] = field(default_factory=list)
@@ -326,12 +326,12 @@ class Way:
 
 @dataclass
 class WayNode:
-    CLASS_ID: int = 0x0F07  # canonical concept `osm_way_node`
+    CLASS_ID: ClassVar[int] = 0x0F07  # canonical concept `osm_way_node`
     way: Optional[int] = None
     node: Optional[int] = None
 
 @dataclass
 class WayTag:
-    CLASS_ID: int = 0x0F05  # canonical concept `osm_element_tag`
+    CLASS_ID: ClassVar[int] = 0x0F05  # canonical concept `osm_element_tag`
     way: Optional[int] = None
 
