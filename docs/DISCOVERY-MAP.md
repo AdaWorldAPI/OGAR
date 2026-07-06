@@ -1036,3 +1036,26 @@ isolation. The map's job is to keep them visible.
   Mongo (only on real blob need). Precedent:
   ogar-adapter-clickhouse-ddl. Cross-ref D-PARITY-PROBE-WOA-1,
   E-PYTHON-SUBSTRATE-MIRROR.
+
+- **D-PARITY-PROBE-WOA-1 — Nachtrag/Regrade 2026-07-06 (Batch-1 Item 1):**
+  the `emit_python` Optional-nullability gap listed as remaining DRIFT in the
+  original entry is **CLOSED**: `emit_python` now wraps `required==Some(false)`
+  attributes in `Optional[…]` (mirror of `emit_rust`'s `Option<…>`) and emits
+  its wrapper-contract imports via `emit_python_prelude()` → `from ogar_runtime
+  import …` (design option (a); reference
+  `crates/ogar-from-ruff/python/ogar_runtime.py` shipped). The `wrap_module`
+  probe crutch is deleted; the emitted `@dataclass` module py_compiles AND
+  imports standalone. `created_at` now emits `Optional[OgDateTime]`. Remaining
+  drift on this fixture = the `WoaPort` classid-alias convergence pin
+  (`0x0103_0003`) only.
+
+- **D-PARITY-PROBE-WOA-1 — Nachtrag 2026-07-06 (Batch-1 Item 2):** the lockstep
+  FK-dedup copy in `ogar-from-ruff/src/sqlalchemy.rs` (its own
+  `is_fk_shadowed_by_association` + `project_sqlalchemy_fields` body, flagged
+  "any change MUST land in the other") is **consolidated**: both the Rails
+  (Ruby) and SQLAlchemy (Python) producers now route through the single
+  `pub(crate) project_total_schema_fields` / `is_fk_shadowed_by_association` in
+  `lib.rs`. New test `both_producers_share_explicit_foreign_key_dedup` proves
+  identical dedup (explicit `foreign_key`, PR #156 finding (b)) across both
+  paths from one implementation. Behavior-preserving; `classify_woa_domain`
+  lockstep left as a separate, named follow-up.
