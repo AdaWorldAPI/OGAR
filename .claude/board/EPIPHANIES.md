@@ -7,6 +7,20 @@
 
 ---
 
+## 2026-07-05 — E-F17-PREREQ-VERIFIED — gap-ledger verification: writes/calls capture is SHIPPED in ruff; the true remaining gaps are the routes.rb stratum + the recipe-concept codebook
+
+**Status:** FINDING (code-verified this session on the consumed branch; corrects item (a) of E-RECIPE-REUNION-ORDER's gap ledger below, which had propagated a stale RAILS-COVERAGE-KIT §6 claim — the second staleness this arc, same lesson: verify the ledger against code before restating it).
+
+- **CLOSED — (a) writes/calls.** `ruff_spo_triplet::ir::Function::{writes, calls}` exist (`ir.rs:264-284`; `writes` = Authoritative `self.<field> = …` setter targets, `calls` = lifecycle-mutator dispatches); the Ruby walker populates both (`ruff_ruby_spo/src/functions.rs:283/:286/:303`, op-assign + local memoization deliberately excluded, tested incl. `save`/`save!`/`order.update`); `expand()` emits `Predicate::WritesField` (`expand.rs:271`) + `Predicate::Calls` (`:282`) with truth values. **The F17 body-triage fact prerequisite is DONE.** RAILS-COVERAGE-KIT §6's "captures reads/raises/traverses — NOT writes" is stale (written 2026-06-30, pre-ruff#38); dated note added in place there.
+- **HALF-CLOSED — (b) route discriminants.** The controller DO-arm harvest is live: `extract_tree_with` (ruff #42) walks `app/controllers`; #43 filters to public actions (Rails visibility-aware); actions land in `Model::functions` → `ogar_from_ruff::lift_actions` → `Vec<ActionDef>` (`ogar-from-ruff/src/lib.rs:495`, facts-only by design — no kausal from `reads`, correctly). **MISSING: the `routes.rb` stratum** — HTTP verb, member/collection routes, return-shape (collection|item) — the one remaining fact source for Action-kind classification.
+- **OPEN — (c) recipe-concept codebook.** Confirmed unminted: no `RecipeConceptId` / LIFECYCLE_ / GUARD_ / ACTION_ concept ids anywhere in `ogar-vocab`; `KausalSpec::LifecycleTrigger { event: String }` still carries the raw surface string (`lib.rs:565-568`) — exactly RAILS-COVERAGE-KIT §5's "mint accordingly" TODO. Until it lands, the recipe bitmask stays per-consumer (the zoo).
+
+**Consequence:** the Action-kind classifier's inputs are closer than the ledger claimed — method names + writes/calls + public controller actions are harvestable TODAY; `routes.rb` is the single missing fact source, and the §5 codebook mint (on the serialized-allocation train) is the single biggest lever. Both stay upstream (ruff / OGAR), never op-side.
+
+**Cross-ref:** E-RECIPE-REUNION-ORDER (below — gap ledger item (a) corrected by this entry); op-nexgen RAILS-COVERAGE-KIT §5/§6 (dated staleness note added in place); F17 / `PROBE-OGAR-BODY-TRIAGE`; ruff #42/#43 (`extract_tree_with` + visibility filter).
+
+---
+
 ## 2026-07-05 (correction) — E-RECIPE-REUNION-ORDER — the AR-shape reunion is an OPERATOR ORDER; route/action dedup IS the SoC + recipe-codebook doctrine (canon since 2026-06-29/06-30), NOT a rhyme. Corrects E-ROUTE-KIND-VERB-STRATA.
 
 **Status:** FINDING (operator ruling, 2026-07-05 — verbatim: *"The reunion is an order. We only use ORM for Schema and actions. We keep AR and rails/ruby. Redmine teaches us the ancestry. ERB redmine fieldview teaches us to translate into askama classview fieldmask."*). SUPERSEDES E-ROUTE-KIND-VERB-STRATA (below, regraded SUPERSEDED in place): its council REJECTED as `[S]` mere-rhyme a unification the operator had ALREADY canonized a week earlier. The rejection was an artifact of a **mis-framed council** — grounded only in `soc.rs` + `op-codegen-bucket`, never pointed at the 2026-06-29 / 06-30 rulings — i.e. a shallow read on the ORCHESTRATOR's part, not a savant failure.
