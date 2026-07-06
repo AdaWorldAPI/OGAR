@@ -37,8 +37,8 @@
 //! below and called out explicitly in the printed DRIFT list. This is a
 //! verified, reported deviation, not an invented workaround.
 
+use ogar_from_ruff::emit::{emit_python, emit_python_prelude};
 use ogar_from_ruff::mint::compile_graph_sqlalchemy;
-use ogar_from_ruff::emit::emit_python;
 use ogar_vocab::ports::WoaPort;
 use ruff_spo_triplet::{AssocDecl, AssocKind, Field, Model, ModelGraph};
 
@@ -104,7 +104,7 @@ const EXPECTED_LINES: &[&str] = &[
     EXPECTED_CLASSID_LINE,
     "    id: OgInt",
     "    beschreibung: OgStr",
-    "    created_at: OgDateTime",
+    "    created_at: Optional[OgDateTime]",
     "    timesheet: ToOne[\"TimeSheet\"]",
 ];
 
@@ -178,10 +178,11 @@ fn woa_parity_probe_prints_the_d_parity_probe_wp_1_metric() {
          in ogar-vocab/src/ports.rs (see src/mint.rs doc)",
         cc.facet.facet_classid()
     );
-    let emit_nullability_drift = "emit_python rendert options.required nicht — \
-nullable created_at wird als pflichtiges @dataclass-Feld emittiert (kein Optional[]); \
-vorbestehende emit.rs-Luecke, Follow-up"
-        .to_string();
+    let emit_nullability_drift =
+        "emit_python Optional[]-Nullability: GESCHLOSSEN (Batch-1 Item 1) — \
+created_at wird als Optional[OgDateTime] emittiert; options.required==Some(false) → Optional[…], \
+sonst bare (Spiegel emit_rust)"
+            .to_string();
     let drift_list = [classid_drift, emit_nullability_drift];
 
     let metric = format!(
@@ -228,55 +229,29 @@ vorbestehende emit.rs-Luecke, Follow-up"
 // (Operator §6 / E-PYTHON-SUBSTRATE-MIRROR). Prove it is real, importable
 // Python: py_compile it, then instantiate it with dummy values.
 
-/// Wrap the raw `emit_python` output with the imports/type-alias stand-ins
-/// it references (`dataclass`/`ClassVar`, and `OgInt`/`OgStr`/`OgDateTime`/
-/// `ToOne` as lightweight `object`-alias stand-ins for the real consumer
-/// wrapper-contract — SPEC-5 Part D step 1) so the module imports cleanly.
-fn wrap_module(body: &str) -> String {
-    format!(
-        "from dataclasses import dataclass\n\
-         from typing import ClassVar, Generic, TypeVar\n\
-         \n\
-         _T = TypeVar(\"_T\")\n\
-         \n\
-         \n\
-         class ToOne(Generic[_T]):\n    \
-             \"\"\"Stand-in wrapper-contract type (real consumer supplies this).\"\"\"\n\
-         \n\
-         \n\
-         class ToMany(Generic[_T]):\n    \
-             \"\"\"Stand-in wrapper-contract type (real consumer supplies this).\"\"\"\n\
-         \n\
-         \n\
-         OgScalar = object\n\
-         OgInt = int\n\
-         OgStr = str\n\
-         OgFloat = float\n\
-         OgBool = bool\n\
-         OgMoney = object\n\
-         OgDate = object\n\
-         OgDateTime = object\n\
-         OgBytes = bytes\n\
-         OgSelection = object\n\
-         OgJson = object\n\
-         \n\
-         \n\
-         {body}"
-    )
-}
-
 #[test]
 fn woa_dataclass_py_compiles_and_instantiates() {
     let graph = timesheet_activity_graph();
     let compiled = compile_graph_sqlalchemy::<WoaPort>(&graph);
-    let py_body = emit_python(&compiled[0]);
-    let module_src = wrap_module(&py_body);
+    // The emitted module pulls its wrapper-contract types via a single
+    // `from ogar_runtime import (...)` block (design option (a) — see
+    // `emit.rs`'s module doc); it is NOT inlined into every emitted file.
+    let module_src = format!("{}\n{}", emit_python_prelude(), emit_python(&compiled[0]));
 
     let tmp_dir = std::env::var("CARGO_TARGET_TMPDIR")
         .unwrap_or_else(|_| std::env::temp_dir().to_string_lossy().to_string());
     std::fs::create_dir_all(&tmp_dir).expect("tmp dir");
     let py_path = std::path::Path::new(&tmp_dir).join("woa_timesheet_activity.py");
     std::fs::write(&py_path, &module_src).expect("write emitted module");
+
+    // Copy the shipped reference `ogar_runtime.py` next to the emitted
+    // module (same dir on `sys.path`) so `from ogar_runtime import …`
+    // resolves — the consumer pulls the contract, it is not re-minted.
+    std::fs::copy(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("python/ogar_runtime.py"),
+        std::path::Path::new(&tmp_dir).join("ogar_runtime.py"),
+    )
+    .expect("copy ogar_runtime.py next to the emitted module");
 
     // Gate 1: valid Python (py_compile, exit 0).
     let compile_status = std::process::Command::new("python3")

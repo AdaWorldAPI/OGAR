@@ -46,6 +46,22 @@
 //! Odoo field named `type` / `ref` becomes `r#type` / `r#ref` in Rust and
 //! `@type` / `@ref` in C#. Python source field names cannot be keywords (the
 //! Odoo source would not parse), so Python emit needs no escaping.
+//!
+//! **DESIGN DECISION — the Python wrapper-contract pivot (Batch-1 Item 1).**
+//! [`emit_python`] mirrors [`emit_rust`]'s `Option<...>` rule exactly:
+//! `required == Some(false)` wraps the attribute in `Optional[...]`, any other
+//! value (`Some(true)`, `None`) stays bare. The emitted module does **not**
+//! inline `OgStr`/`ToOne`/etc — those are pulled from a single
+//! `from ogar_runtime import (...)` block, emitted once per module by
+//! [`emit_python_prelude`] (not per class — the harvest driver concatenates
+//! many classes into one module). A shipped reference
+//! `crates/ogar-from-ruff/python/ogar_runtime.py` supplies the wrapper types
+//! so the emitted module `py_compile`s and imports standalone. This is option
+//! (a) of three considered: (b) inlining the aliases into every emitted class
+//! was rejected — it re-mints a parallel schema truth per file, violating
+//! "pull, never re-mint"; (c) a `try/except import *` shim was rejected — it
+//! masks import errors and pollutes the namespace. The "cost of an import"
+//! (above) is made literal as exactly one import block per module.
 
 use ogar_vocab::app::{app_of, concept_of};
 use ogar_vocab::{Association, AssociationKind};
@@ -402,6 +418,23 @@ pub fn emit_csharp(cc: &CompiledClass) -> String {
     out
 }
 
+/// Emit the module-level wrapper-contract import block for [`emit_python`]
+/// output — once per module (the harvest driver concatenates many classes;
+/// this is NOT prepended inside [`emit_python`] itself, callers compose it).
+/// Pulls the wrapper types from `ogar_runtime` (see the module-doc DESIGN
+/// DECISION above) rather than inlining them, mirroring "pull, never re-mint".
+#[must_use]
+pub fn emit_python_prelude() -> &'static str {
+    "from __future__ import annotations\n\
+     from dataclasses import dataclass\n\
+     from typing import ClassVar, Optional\n\
+     from ogar_runtime import (\n    \
+         OgScalar, OgStr, OgInt, OgFloat, OgMoney, OgBool,\n    \
+         OgDate, OgDateTime, OgBytes, OgSelection, OgJson,\n    \
+         ToOne, ToMany,\n\
+     )\n"
+}
+
 /// Emit a [`CompiledClass`] as **Python** source: a `@dataclass` whose
 /// annotations use the Python SDK's wrapper-contract types (`OgScalar` /
 /// `ToOne[T]` / `ToMany[T]`), with the rail `classid` as a `ClassVar[int]`.
@@ -410,6 +443,11 @@ pub fn emit_csharp(cc: &CompiledClass) -> String {
 /// trailing comments (the 15 % adapter). This is the codegen mode of the Python
 /// SDK (substrate doc §1.6); CPython compiles the emitted module to bytecode on
 /// import — the "cost of an import" made literal.
+///
+/// An attribute whose `AttributeOptions::required == Some(false)` emits
+/// wrapped in `Optional[...]`, mirroring [`emit_rust`]'s `Option<...>` rule
+/// exactly (`Some(true)`/`None` both emit the bare wrapper type — see the
+/// module-doc DESIGN DECISION above).
 #[must_use]
 pub fn emit_python(cc: &CompiledClass) -> String {
     let ty = pascal_case(&cc.class.name);
@@ -429,10 +467,18 @@ pub fn emit_python(cc: &CompiledClass) -> String {
         cc.facet.facet_classid(),
     ));
     for attr in &cc.class.attributes {
+        let base_ty = og_scalar_type(attr.type_name.as_deref());
+        // `required == Some(false)` is the ONLY nullability signal that
+        // wraps in `Optional[...]` — mirrors `emit_rust`'s `Option<...>`
+        // rule exactly (GAP-4 mirror, Batch-1 Item 1).
+        let field_ty = if attr.options.required == Some(false) {
+            format!("Optional[{base_ty}]")
+        } else {
+            base_ty.to_string()
+        };
         out.push_str(&format!(
-            "    {}: {}\n",
+            "    {}: {field_ty}\n",
             escape_ident(&attr.name, Lang::Python),
-            og_scalar_type(attr.type_name.as_deref()),
         ));
     }
     for assoc in &cc.class.associations {
@@ -862,6 +908,51 @@ mod tests {
             py.contains("# computed: amount_total <- _compute_amount(line_ids.balance)"),
             "got:\n{py}"
         );
+    }
+
+    #[test]
+    fn emit_python_wraps_nullable_in_optional_bare_otherwise() {
+        use crate::mint::compile_graph_ruby;
+        use ogar_vocab::ports::OpenProjectPort;
+
+        // required == Some(false): the Rails schema-stratum fixture's
+        // `description` is `not_null: None` -> `required: Some(false)` ->
+        // Optional[...] (GAP-4 mirror, Batch-1 Item 1).
+        // required == Some(true): the same fixture's `id`/`subject` are
+        // `not_null: Some(true)` -> bare.
+        let cc = &compile_graph_ruby::<OpenProjectPort>(&work_package_schema_graph())[0];
+        let py = emit_python(cc);
+        assert!(py.contains("    id: OgInt"), "got:\n{py}");
+        assert!(py.contains("    subject: OgStr"), "got:\n{py}");
+        assert!(
+            py.contains("    description: Optional[OgStr]"),
+            "got:\n{py}"
+        );
+
+        // required == None: `project_odoo_fields` never sets `required`
+        // (lib.rs's `lift_model_python_never_sets_required_zero_drift`), so
+        // the Odoo-lifted fixture's `name`/`narration` stay bare too — the
+        // Optional[...] change must be additive, not a regression on Odoo.
+        let odoo_cc = &compile_graph_python::<OdooPort>(&account_move_graph())[0];
+        let odoo_py = emit_python(odoo_cc);
+        assert!(odoo_py.contains("    name: OgStr"), "got:\n{odoo_py}");
+        assert!(
+            odoo_py.contains("    narration: OgScalar"),
+            "got:\n{odoo_py}"
+        );
+    }
+
+    #[test]
+    fn emit_python_prelude_imports_from_ogar_runtime() {
+        let prelude = emit_python_prelude();
+        assert!(
+            prelude.contains("from ogar_runtime import ("),
+            "got:\n{prelude}"
+        );
+        assert!(prelude.contains("ToOne"), "got:\n{prelude}");
+        assert!(prelude.contains("ToMany"), "got:\n{prelude}");
+        assert!(prelude.contains("Optional"), "got:\n{prelude}");
+        assert!(prelude.contains("dataclass"), "got:\n{prelude}");
     }
 
     #[test]

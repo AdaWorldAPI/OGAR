@@ -12,6 +12,7 @@ exit, surfaced by the calling Rust test.
 """
 import dataclasses
 import importlib.util
+import os
 import sys
 
 
@@ -21,9 +22,20 @@ def main() -> int:
         return 2
     module_path = sys.argv[1]
 
+    # The emitted module does `from ogar_runtime import (...)` — make its
+    # directory importable so that resolves (the copied reference
+    # `ogar_runtime.py` lives next to it; see woa_parity_probe.rs).
+    sys.path.insert(0, os.path.dirname(os.path.abspath(module_path)))
+
     spec = importlib.util.spec_from_file_location("woa_timesheet_activity", module_path)
     assert spec is not None and spec.loader is not None, "module spec must load"
     module = importlib.util.module_from_spec(spec)
+    # Register in sys.modules BEFORE exec: the prelude's
+    # `from __future__ import annotations` (PEP 563) makes every dataclass
+    # annotation a string, and `dataclasses` resolves ClassVar/InitVar by
+    # looking the module up via `sys.modules[cls.__module__]` — which is
+    # None (AttributeError) unless the module is registered first.
+    sys.modules[spec.name] = module
     spec.loader.exec_module(module)
 
     cls = module.TimesheetActivity
