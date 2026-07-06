@@ -45,10 +45,11 @@
 //! - `Model::functions` IS now lifted — by [`lift_actions`] (the DO-arm)
 //!   to a standalone `Vec<ActionDef>`, not onto `Class` (the OGAR `Class`
 //!   is the THING/THINK shape; actions register on the DO-arm
-//!   separately). Each method's `reads` / `raises` / `traverses` edges
-//!   stay on the narrow / SPO arm as triples — `lift_actions` does not
-//!   duplicate them, nor claim a reactive dependency plain Rails methods
-//!   don't declare.
+//!   separately). Each method's `reads` / `writes` / `calls` / `raises`
+//!   edges ride `ActionDef` as effect annotations; `traverses` still has
+//!   no `ActionDef` slot and stays on the narrow / SPO arm as triples only
+//!   — `lift_actions` does not duplicate it, nor claim a reactive
+//!   dependency plain Rails methods don't declare.
 //! - `Model::delegations`, `Model::dsl_calls`, `Model::gem_dsl`,
 //!   `Model::dynamic_methods`, `Model::refinements` — ruff's
 //!   long-tail. OGAR doesn't model them yet; can land as
@@ -70,9 +71,11 @@ pub mod emit;
 pub mod mint;
 pub mod sqlalchemy; // WS-G-D
 
+use std::collections::HashMap;
+
 use ogar_vocab::{
     canonical_concept, ActionDef, Association, AssociationKind, Attribute, Callback, Class,
-    ComputedField, EnumDecl, EnumSource, Inheritance, Language, Scope, Validation,
+    ComputedField, EnumDecl, EnumSource, Inheritance, KausalSpec, Language, Scope, Validation,
 };
 use ruff_spo_triplet::{
     AssocDecl, AssocKind, AttrDecl, AttrKind, Callback as RuffCallback, ConcernKind, Model,
@@ -517,11 +520,15 @@ pub fn project_canonical_roles(class: &Class) -> std::collections::HashSet<&'sta
 ///
 /// This is a **facts-only** lift: it sets the action's `identity`,
 /// `predicate` (the method name — already snake_case on the Rails side),
-/// `object_class` (the model name), and the `reads` / `writes` / `calls`
+/// `object_class` (the model name), the `reads` / `writes` / `calls` / `raises`
 /// effect annotations verbatim from [`ruff_spo_triplet::Function`] (OGAR-AS-IR
 /// §3 test 2 — "each `ActionDef` declares what it reads, what it writes, what
-/// side effects it has… pure-vs-effectful is a type, not a comment"). It
-/// deliberately does **not**:
+/// side effects it has… pure-vs-effectful is a type, not a comment"), and
+/// (SPEC-ATC2-OGAR Arm A) `kausal` — but ONLY when the method is a
+/// [`Model::fields`] compute target (`Field::emitted_by == Some(f.name)`),
+/// in which case `kausal` becomes `Some(KausalSpec::Depends { paths })`
+/// sourced from that field's `Field::depends_on` (the `@api.depends(...)`
+/// fact). It deliberately does **not**:
 ///
 /// - set any execution policy (the vocab [`ActionDef`] has no `exec` slot;
 ///   backend routing is consumer-private — see the OP-arm plan §5.2),
@@ -530,16 +537,28 @@ pub fn project_canonical_roles(class: &Class) -> std::collections::HashSet<&'sta
 /// - populate `kausal` from [`ruff_spo_triplet::Function`]`::reads` — a
 ///   plain Rails method reading a field is **not** a reactive
 ///   `@api.depends`-style trigger, so claiming one would leak method-body
-///   description into causal semantics. `reads` (and `writes` / `calls`) now
-///   ride `ActionDef` as **effect annotations** (see above) — that is a
-///   distinct, weaker claim than a `KausalSpec::Depends` reactive trigger,
-///   which stays `None` here. `raises` / `traverses` have no `ActionDef`
-///   slot yet and still ride the narrow / SPO arm as triples only.
+///   description into causal semantics. `reads` (and `writes` / `calls`) ride
+///   `ActionDef` as **effect annotations** (see above) — that is a distinct,
+///   weaker claim than a `KausalSpec::Depends` reactive trigger, which stays
+///   `None` for any method that isn't a known compute target. `traverses`
+///   still has no `ActionDef` slot and rides the narrow / SPO arm as triples
+///   only.
 ///
 /// The result is registry-ready: guard / RBAC / `exec` enrichment happens
 /// downstream at registration, not in the producer.
 #[must_use]
 pub fn lift_actions(model: &Model) -> Vec<ActionDef> {
+    // SPEC-ATC2-OGAR Arm A: compute-method name -> its field's @api.depends
+    // paths. Built from `Model::fields` (Field::emitted_by / depends_on),
+    // NOT from `reads` — the only provenance-honest source of a reactive
+    // `KausalSpec::Depends` trigger (see the doc comment above).
+    let depends_by_method: HashMap<&str, &Vec<String>> = model
+        .fields
+        .iter()
+        .filter_map(|field| field.emitted_by.as_deref().map(|m| (m, &field.depends_on)))
+        .filter(|(_, paths)| !paths.is_empty())
+        .collect();
+
     // Public actions AND non-public helpers (AT-CARRY-1b, review on #164):
     // since ruff #45 the Ruby walker splits private/protected defs into
     // `Model::helpers` — and Rails lifecycle hook targets are conventionally
@@ -562,6 +581,10 @@ pub fn lift_actions(model: &Model) -> Vec<ActionDef> {
             a.reads = f.reads.clone();
             a.writes = f.writes.clone();
             a.calls = f.calls.clone();
+            a.raises = f.raises.clone();
+            if let Some(paths) = depends_by_method.get(f.name.as_str()) {
+                a.kausal = Some(KausalSpec::depends((*paths).clone()));
+            }
             a
         })
         .collect()
@@ -1805,6 +1828,78 @@ mod tests {
         assert!(acts[0].reads.is_empty());
         assert!(acts[0].writes.is_empty());
         assert!(acts[0].calls.is_empty());
+    }
+
+    /// SPEC-ATC2-OGAR Arm A: a method that IS a `Model::fields` compute
+    /// target (`Field::emitted_by == Some(method_name)`) gets its `kausal`
+    /// populated from that field's `@api.depends` paths
+    /// (`Field::depends_on`) — the only provenance-honest source for a
+    /// reactive `KausalSpec::Depends` trigger.
+    #[test]
+    fn lift_actions_depends_field_yields_kausal_depends() {
+        let mut m = Model::new("SaleOrder");
+        m.functions.push(Function {
+            name: "_compute_total".to_string(),
+            ..Default::default()
+        });
+        m.fields.push(Field {
+            name: "amount_total".to_string(),
+            emitted_by: Some("_compute_total".to_string()),
+            depends_on: vec!["qty".to_string(), "price".to_string()],
+            ..Default::default()
+        });
+        let acts = lift_actions(&m);
+        assert_eq!(acts.len(), 1);
+        assert_eq!(
+            acts[0].kausal,
+            Some(KausalSpec::depends(vec!["qty".to_string(), "price".to_string()])),
+        );
+    }
+
+    /// SPEC-ATC2-OGAR Arm A regression (sharpens `lift_actions_is_facts_only`):
+    /// a method that merely READS fields, without being a compute target
+    /// (`Field::emitted_by`), must NOT get a fabricated `kausal` — `reads`
+    /// is an effect annotation, never a causal-dependency source
+    /// (Provenance-Ehrlichkeit).
+    #[test]
+    fn lift_actions_plain_read_still_no_kausal() {
+        let mut m = Model::new("SaleOrder");
+        m.functions.push(Function {
+            name: "log_access".to_string(),
+            reads: vec!["amount_total".to_string()],
+            ..Default::default()
+        });
+        // `amount_total` exists as a field but is NOT computed by
+        // `log_access` (no `emitted_by` link to this method), so the read
+        // must stay a plain effect annotation.
+        m.fields.push(Field {
+            name: "amount_total".to_string(),
+            emitted_by: Some("_compute_total".to_string()),
+            depends_on: vec!["qty".to_string()],
+            ..Default::default()
+        });
+        let acts = lift_actions(&m);
+        assert_eq!(acts.len(), 1);
+        assert_eq!(acts[0].reads, vec!["amount_total".to_string()]);
+        assert!(
+            acts[0].kausal.is_none(),
+            "a plain field read must not fabricate a KausalSpec::Depends"
+        );
+    }
+
+    /// SPEC-ATC2-OGAR Arm C: `Function::raises` (already populated by ruff,
+    /// core-7) now rides the new additive `ActionDef::raises` slot.
+    #[test]
+    fn lift_actions_raises_carried_on_actiondef() {
+        let mut m = Model::new("SaleOrder");
+        m.functions.push(Function {
+            name: "action_confirm".to_string(),
+            raises: vec!["UserError".to_string()],
+            ..Default::default()
+        });
+        let acts = lift_actions(&m);
+        assert_eq!(acts.len(), 1);
+        assert_eq!(acts[0].raises, vec!["UserError".to_string()]);
     }
 
     /// Regression: adding the effect-annotation fields must not disturb the
