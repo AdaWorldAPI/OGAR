@@ -384,7 +384,7 @@ pub struct ActionDef {
     /// Decorator names that drove the extraction (Odoo `@api.depends`,
     /// Rails callback macro name).
     pub decorators: Vec<String>,
-    /// Fields this action READS (authoritative name-level facts from the
+    /// Fields this action READS (name-level effect facts (writes: authoritative; reads: inferred — ruff classification) from the
     /// frontend — `ruff_spo_triplet::Function::reads`). Effect annotation
     /// per OGAR-AS-IR §3 test 2; NOT a reactive `@api.depends` claim (a plain
     /// method read is not a recomputation trigger — see `lift_actions`).
