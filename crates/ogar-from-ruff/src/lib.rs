@@ -68,6 +68,7 @@
 
 pub mod emit;
 pub mod mint;
+pub mod sqlalchemy; // WS-G-D
 
 use ogar_vocab::{
     canonical_concept, ActionDef, Association, AssociationKind, Attribute, Callback, Class,
