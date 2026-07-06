@@ -81,7 +81,12 @@ pub fn compile_graph_python<P: PortSpec>(graph: &ModelGraph) -> Vec<CompiledClas
     // The lift maps `graph.models` 1:1 in declaration order (member-level
     // filter_maps only), so zipping recovers each class's source `Model` —
     // the carrier `lift_actions` needs (AT-CARRY-1).
-    debug_assert_eq!(classes.len(), graph.models.len());
+    assert_eq!(
+        classes.len(),
+        graph.models.len(),
+        "lift must map graph.models 1:1 in declaration order — a model-level \
+         filter would silently mis-zip actions onto the wrong class"
+    );
     classes
         .into_iter()
         .zip(&graph.models)
@@ -134,7 +139,12 @@ pub fn compile_graph_sqlalchemy<P: PortSpec>(graph: &ModelGraph) -> Vec<Compiled
     let mint = mint_graph::<P>(graph);
     let classes = lift_model_graph_sqlalchemy(graph);
     // 1:1 with `graph.models` in declaration order (see compile_graph_python).
-    debug_assert_eq!(classes.len(), graph.models.len());
+    assert_eq!(
+        classes.len(),
+        graph.models.len(),
+        "lift must map graph.models 1:1 in declaration order — a model-level \
+         filter would silently mis-zip actions onto the wrong class"
+    );
     classes
         .into_iter()
         .zip(&graph.models)
@@ -164,7 +174,12 @@ pub fn compile_graph_ruby<P: PortSpec>(graph: &ModelGraph) -> Vec<CompiledClass>
     let mint = mint_graph::<P>(graph);
     let classes = lift_model_graph(graph);
     // 1:1 with `graph.models` in declaration order (see compile_graph_python).
-    debug_assert_eq!(classes.len(), graph.models.len());
+    assert_eq!(
+        classes.len(),
+        graph.models.len(),
+        "lift must map graph.models 1:1 in declaration order — a model-level \
+         filter would silently mis-zip actions onto the wrong class"
+    );
     classes
         .into_iter()
         .zip(&graph.models)
