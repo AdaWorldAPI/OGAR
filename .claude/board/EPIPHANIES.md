@@ -7,6 +7,32 @@
 
 ---
 
+## 2026-07-05 — E-RECIPE-CODEBOOK-MINTED-P1 — the recipe-concept codebook + lift-time predicate resolver SHIPPED in `ogar-vocab`; gap (c) half-closes
+
+**Status:** FINDING (shipped this session — code + 13 tests + 3 doctests green, clippy clean, `-p ogar-vocab` scoped). Phase 1 of the E-GRAMMAR-IS-THE-RECIPE-SHAPE deliverable: the codebook + the resolver exist; the lift-wiring is Phase 2.
+
+**What shipped — `crates/ogar-vocab/src/recipe.rs` (new module, `pub mod recipe`):**
+
+- **`RecipeConceptId(u16)`** — a **typed newtype**, deliberately NOT bare `u16` like `class_ids`: a recipe id `0x0101` and the class id `0x0101` (`project`) are numerically equal but different address spaces; the newtype makes mixing them a compile error (the noun-vs-verb-port guardrail from E-GRAMMAR-IS-THE-RECIPE-SHAPE, enforced in the type system).
+- **`RecipeFamily`** (`Lifecycle 0x01` / `Guard 0x02` / `Relation 0x03` / `Action 0x04`) — the VERB-axis counterpart of `ConceptDomain`, resolved O(1) from the high byte; the four RAILS-COVERAGE-KIT §5 families.
+- **`recipe_ids::*`** — 27 promoted concepts as named consts (7 lifecycle · 7 guard · 5 relation · 9 action), RESERVE-DON'T-RECLAIM.
+- **`RECIPE_CODEBOOK`** + **`recipe_concept_id` / `recipe_concept_name`** — the forward/reverse registry, exact siblings of `canonical_concept_id`/`_name`; drift-gate tests mirror `class_ids` (`constants_match_codebook`, uniqueness, round-trip).
+- **`recipe_concept_from_surface(surface, lang)`** — **THE lift-time predicate resolver**: `Triple.p: String × RecipeLang → RecipeConceptId`, the string kept as the per-language `LabelDto` skin. This is the seam E-GRAMMAR-IS-THE-RECIPE-SHAPE named.
+
+**The verb-side convergence pin, machine-checked** (`relation_verbs_converge_across_ruby_and_python`): Rails `belongs_to` (Ruby) and Odoo `Many2one` (Python) resolve to the **same** `REL_MANY_TO_ONE` — the verb-side twin of `WorkPackage ≡ Issue ≡ 0x0102`. Same for `has_many ≡ One2many`, `has_and_belongs_to_many ≡ Many2many`.
+
+**Gap ledger update** (from E-F17-PREREQ-VERIFIED / E-GRAMMAR-IS-THE-RECIPE-SHAPE): gap (c) "recipe-concept codebook unminted" → **HALF-CLOSED** — the codebook + resolver now exist. What remains:
+
+- **Phase 2 (not done, by design):** WIRE the resolver into `ogar-from-ruff` lift (stamp `RecipeConceptId` onto `ActionDef` / the Class recipe facets / the emitted triples). This pass adds ZERO output-shape change — the resolver is callable but no existing lift path calls it yet. Kept separate so the codebook lands reviewable on its own.
+- Odoo body-pattern surfaces (`_check_*`, `_compute_*`) deliberately NOT seeded — they need the F17 body triage, not a lexical alias.
+- The `routes.rb` stratum (gap (b)) is still open — Action-kind surfaces are seeded from the `HandlerKind` names, not yet harvested per-route.
+
+**Operator-adjustable window (honest):** no recipe id is persisted to Lance/wire yet (Phase 1 is a pure in-memory resolver), so the family-byte allocation stays adjustable until Phase 2 wires persistence — RESERVE-DON'T-RECLAIM applies from the first persisted use, not before.
+
+**Cross-ref:** E-GRAMMAR-IS-THE-RECIPE-SHAPE (the predicate leg this fills), E-F17-PREREQ-VERIFIED (gap (c)), E-RECIPE-REUNION-ORDER (the reunion this serves), RAILS-COVERAGE-KIT §5 (the four families + `RecipeConceptId` + `LabelDto` spec this implements); `class_ids` / `CODEBOOK` (the sibling it mirrors).
+
+---
+
 ## 2026-07-05 — E-GRAMMAR-IS-THE-RECIPE-SHAPE — the `<port>::<path>(<shape>)` grammar IS the reusable recipe landing shape for ruff: a canonicalized SPO triple, not the per-consumer zoo
 
 **Status:** FINDING (operator insight, 2026-07-05 — verbatim: *"it's also the reusable recipe shape to land on with ruff, not the individual zoo"*). Unifies E-ONE-MASK-THREE-PORTS (the invocation grammar) with RAILS-COVERAGE-KIT §5 (the recipe-concept codebook / no-zoo doctrine): they are ONE thing.
