@@ -257,6 +257,11 @@ fn project_odoo_fields(class: &mut Class, model: &Model) {
         if let Some(compute_method) = &field.emitted_by {
             let mut computed = ComputedField::new(&field.name, compute_method);
             computed.depends = field.depends_on.clone();
+            // SPEC-ATC2-OGAR Arm D: `store=` kwarg fact (ruff main,
+            // `Field::stored: Option<bool>`). `None` (no `store=` kwarg) and
+            // `Some(false)` both mean "not stored" (Odoo's own default for
+            // computed fields); only `Some(true)` sets it.
+            computed.stored = field.stored.unwrap_or(false);
             class.computed_fields.push(computed);
         }
     }
@@ -341,6 +346,9 @@ pub(crate) fn project_total_schema_fields(class: &mut Class, model: &Model) {
         if let Some(compute_method) = &field.emitted_by {
             let mut computed = ComputedField::new(&field.name, compute_method);
             computed.depends = field.depends_on.clone();
+            // SPEC-ATC2-OGAR Arm D — same `store=` wiring as
+            // `project_odoo_fields` above.
+            computed.stored = field.stored.unwrap_or(false);
             class.computed_fields.push(computed);
         }
     }
@@ -528,7 +536,13 @@ pub fn project_canonical_roles(class: &Class) -> std::collections::HashSet<&'sta
 /// [`Model::fields`] compute target (`Field::emitted_by == Some(f.name)`),
 /// in which case `kausal` becomes `Some(KausalSpec::Depends { paths })`
 /// sourced from that field's `Field::depends_on` (the `@api.depends(...)`
-/// fact). It deliberately does **not**:
+/// fact). Failing that (Arm B, `ruff` main): `@api.constrains(...)` /
+/// `@api.onchange(...)` decorator facts (`Function::constrains` /
+/// `Function::onchange`) become `KausalSpec::Constrains` / `KausalSpec::
+/// Onchange` respectively — a validation / UI-recompute trigger, never
+/// conflated with the persisted `Depends` recompute trigger — and the
+/// matching decorator name (`"api.constrains"` / `"api.onchange"`) is
+/// recorded on `decorators`. It deliberately does **not**:
 ///
 /// - set any execution policy (the vocab [`ActionDef`] has no `exec` slot;
 ///   backend routing is consumer-private — see the OP-arm plan §5.2),
@@ -584,6 +598,27 @@ pub fn lift_actions(model: &Model) -> Vec<ActionDef> {
             a.raises = f.raises.clone();
             if let Some(paths) = depends_by_method.get(f.name.as_str()) {
                 a.kausal = Some(KausalSpec::depends((*paths).clone()));
+            }
+            // SPEC-ATC2-OGAR Arm B: `@api.constrains` / `@api.onchange`
+            // decorator facts (`Function::constrains` / `Function::onchange`,
+            // ruff main). Only applied when Arm A left `kausal` unset — a
+            // persisted `@api.depends` recompute trigger outranks a
+            // validation/UI-recompute trigger on the same method (the spec's
+            // conflict rule; a method cannot be two kinds of trigger at once
+            // in this sum type, and `Depends` is the stronger/persisted
+            // claim). `constrains` is checked before `onchange` so a method
+            // that (unusually) carries both decorators keeps the validation
+            // reading, which is the narrower/more consequential of the two.
+            if a.kausal.is_none() && !f.constrains.is_empty() {
+                a.kausal = Some(KausalSpec::Constrains {
+                    paths: f.constrains.clone(),
+                });
+                a.decorators.push("api.constrains".to_string());
+            } else if a.kausal.is_none() && !f.onchange.is_empty() {
+                a.kausal = Some(KausalSpec::Onchange {
+                    paths: f.onchange.clone(),
+                });
+                a.decorators.push("api.onchange".to_string());
             }
             a
         })
@@ -1054,6 +1089,46 @@ mod tests {
         assert_eq!(computed.field, "amount_total");
         assert_eq!(computed.compute_method, "_compute_amount");
         assert_eq!(computed.depends, vec!["line_ids.balance".to_string()]);
+        // `mk_odoo_model`'s `amount_total` field carries no `Field::stored`
+        // fact (`None`) — Arm D maps that to `false` (Odoo's own default for
+        // computed fields), same as the other two cases below.
+        assert!(!computed.stored);
+    }
+
+    /// SPEC-ATC2-OGAR Arm D: `Field::stored` (ruff main, `Option<bool>`)
+    /// wires onto `ComputedField.stored` at both construction sites
+    /// (`project_odoo_fields` and `project_total_schema_fields`).
+    /// `None` (no `store=` kwarg) and `Some(false)` both mean "not stored"
+    /// (Odoo's own default for computed fields); only `Some(true)` sets it.
+    #[test]
+    fn computed_field_stored_wired_from_ruff() {
+        for (stored, expected) in [(None, false), (Some(false), false), (Some(true), true)] {
+            let mut m = Model::new("account_move");
+            m.fields.push(Field {
+                name: "amount_total".to_string(),
+                emitted_by: Some("_compute_amount".to_string()),
+                depends_on: vec!["line_ids.balance".to_string()],
+                stored,
+                ..Default::default()
+            });
+
+            // Odoo path (`project_odoo_fields`, via `lift_model_python`).
+            let class = lift_model_python(&m);
+            assert_eq!(class.computed_fields.len(), 1);
+            assert_eq!(
+                class.computed_fields[0].stored, expected,
+                "project_odoo_fields: stored={stored:?} must wire to {expected}"
+            );
+
+            // Rails/schema path (`project_total_schema_fields`).
+            let mut rails_class = Class::new("WorkPackage");
+            project_total_schema_fields(&mut rails_class, &m);
+            assert_eq!(rails_class.computed_fields.len(), 1);
+            assert_eq!(
+                rails_class.computed_fields[0].stored, expected,
+                "project_total_schema_fields: stored={stored:?} must wire to {expected}"
+            );
+        }
     }
 
     /// A Rails-shape model carrying BOTH the AR-DSL `associations` vector
@@ -1900,6 +1975,133 @@ mod tests {
         let acts = lift_actions(&m);
         assert_eq!(acts.len(), 1);
         assert_eq!(acts[0].raises, vec!["UserError".to_string()]);
+    }
+
+    /// SPEC-ATC2-OGAR Arm B: `@api.constrains('state')` (`Function::constrains`,
+    /// ruff main) becomes `KausalSpec::Constrains` — a validation trigger,
+    /// distinct from the persisted `Depends` recompute trigger — and the
+    /// decorator name rides `ActionDef::decorators` for extraction provenance.
+    #[test]
+    fn lift_actions_constrains_yields_kausal_constrains() {
+        let mut m = Model::new("SaleOrder");
+        m.functions.push(Function {
+            name: "_check_state".to_string(),
+            constrains: vec!["state".to_string()],
+            ..Default::default()
+        });
+        let acts = lift_actions(&m);
+        assert_eq!(acts.len(), 1);
+        assert_eq!(
+            acts[0].kausal,
+            Some(KausalSpec::Constrains {
+                paths: vec!["state".to_string()]
+            }),
+        );
+        assert_eq!(acts[0].decorators, vec!["api.constrains".to_string()]);
+    }
+
+    /// SPEC-ATC2-OGAR Arm B: `@api.onchange('amount')` (`Function::onchange`,
+    /// ruff main) becomes `KausalSpec::Onchange` — a UI-side recompute
+    /// trigger, distinct from the persisted `Depends` trigger.
+    #[test]
+    fn lift_actions_onchange_yields_kausal_onchange() {
+        let mut m = Model::new("SaleOrder");
+        m.functions.push(Function {
+            name: "_onchange_amount".to_string(),
+            onchange: vec!["amount".to_string()],
+            ..Default::default()
+        });
+        let acts = lift_actions(&m);
+        assert_eq!(acts.len(), 1);
+        assert_eq!(
+            acts[0].kausal,
+            Some(KausalSpec::Onchange {
+                paths: vec!["amount".to_string()]
+            }),
+        );
+        assert_eq!(acts[0].decorators, vec!["api.onchange".to_string()]);
+    }
+
+    /// SPEC-ATC2-OGAR Arm B conflict rule: a method that is BOTH a
+    /// `Model::fields` compute target (Arm A) AND carries `@api.constrains`
+    /// / `@api.onchange` decorator facts (Arm B) keeps the Arm A `Depends`
+    /// reading — the spec wires Arm B's checks as `if a.kausal.is_none()`,
+    /// i.e. strictly after Arm A, so the persisted recompute trigger always
+    /// outranks a validation/UI-recompute trigger on the same method.
+    #[test]
+    fn lift_actions_depends_wins_over_constrains_and_onchange() {
+        let mut m = Model::new("SaleOrder");
+        m.functions.push(Function {
+            name: "_compute_total".to_string(),
+            constrains: vec!["state".to_string()],
+            onchange: vec!["amount".to_string()],
+            ..Default::default()
+        });
+        m.fields.push(Field {
+            name: "amount_total".to_string(),
+            emitted_by: Some("_compute_total".to_string()),
+            depends_on: vec!["qty".to_string()],
+            ..Default::default()
+        });
+        let acts = lift_actions(&m);
+        assert_eq!(acts.len(), 1);
+        assert_eq!(
+            acts[0].kausal,
+            Some(KausalSpec::depends(vec!["qty".to_string()])),
+            "Arm A (Depends) must win over Arm B (Constrains/Onchange) per the spec's `kausal.is_none()` gate"
+        );
+        // Arm B's decorator push is gated by the same `kausal.is_none()`
+        // check, so it must not fire once Arm A has already claimed `kausal`.
+        assert!(acts[0].decorators.is_empty());
+    }
+
+    /// SPEC-ATC2-OGAR Arm B conflict rule (constrains vs onchange): when a
+    /// single method carries both decorator facts, `constrains` is checked
+    /// first, so it wins.
+    #[test]
+    fn lift_actions_constrains_wins_over_onchange() {
+        let mut m = Model::new("SaleOrder");
+        m.functions.push(Function {
+            name: "_check_and_onchange".to_string(),
+            constrains: vec!["state".to_string()],
+            onchange: vec!["amount".to_string()],
+            ..Default::default()
+        });
+        let acts = lift_actions(&m);
+        assert_eq!(acts.len(), 1);
+        assert_eq!(
+            acts[0].kausal,
+            Some(KausalSpec::Constrains {
+                paths: vec!["state".to_string()]
+            }),
+        );
+        assert_eq!(acts[0].decorators, vec!["api.constrains".to_string()]);
+    }
+
+    /// SPEC-ATC2-OGAR Arm A regression: the pre-existing compute-depends
+    /// lift must keep working unchanged now that Arm B's checks ride the
+    /// same `.map(|f| …)` closure — a compute method with NO `constrains`/
+    /// `onchange` facts (the common case) still yields plain `Depends`.
+    #[test]
+    fn lift_actions_depends_arm_a_regression_unaffected_by_arm_b() {
+        let mut m = Model::new("SaleOrder");
+        m.functions.push(Function {
+            name: "_compute_amount".to_string(),
+            ..Default::default()
+        });
+        m.fields.push(Field {
+            name: "amount_total".to_string(),
+            emitted_by: Some("_compute_amount".to_string()),
+            depends_on: vec!["line_ids.balance".to_string()],
+            ..Default::default()
+        });
+        let acts = lift_actions(&m);
+        assert_eq!(acts.len(), 1);
+        assert_eq!(
+            acts[0].kausal,
+            Some(KausalSpec::depends(vec!["line_ids.balance".to_string()])),
+        );
+        assert!(acts[0].decorators.is_empty());
     }
 
     /// Regression: adding the effect-annotation fields must not disturb the
