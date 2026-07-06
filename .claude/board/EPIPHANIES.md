@@ -159,6 +159,19 @@ _[Original REJECTED verdict retained below, append-only, as the cautionary recor
 **GATE (mint fence):** no verb-codebook row is allocated until the kind/verb A/B falsifier is green; **naming a stratum is never mint authorization** (E-VENDOR-DELTA doctrine: spec it, don't fake it). If a route classifier is ever built, it is built in **ruff** on newly-harvested discriminant facts (spec-to-ruff wishlist: HTTP verb / writes / return-shape), phase-named per OGAR-AS-IR — classifier = front-end analysis pass, verb rows = symbol-table entries, recipes = lowering passes — never op-side.
 
 **Cross-ref:** `docs/DISCOVERY-MAP.md` D-ROUTE-KIND-VERB-STRATA (twin); E-ONE-MASK-THREE-PORTS (verb rows argued-for, mint parked); E-AR-DIRECT-SDK (DO-arm landing zone: ActionHandler + unified adapters — placement unchanged by this entry); E-OGAR-CONVERGENCE-SHAPE open seam #2 (ActionDef↔UnifiedStep); op-nexgen `.claude/handovers/2026-07-05-CAPSTONE-ar-shape-convergence.md` C5 + `2026-07-05-ogar-v3-consumer-migration-plan.md` §1/§6; op-nexgen `crates/ruff_python_dto_check/README.md` (the parked sqlx delta).
+## 2026-07-06 — E-BODY-TRIAGE-ODOO-CONTROL-1 — F17 Odoo control leg measured: 94.9% order-free recoverable
+
+**Status:** FINDING (measured; drift-fused in the odoo-rs probe)
+
+**The measurement** (2026-07-06, `odoo-rs crates/od-ontology/tests/body_triage_probe.rs`, default build, slice_2 corpus, run verified green; the headline numbers are pinned as drift-fuses inside the probe): 393 lifecycle hooks triaged into verb-classes — guard-pure 44, compute-pure 298, self-feedback 30, write+raise 2, read-only 15, no-facts 4. Headline over the behavioural arm (guards + computes: 357 hooks, 354 resolved): **PASS 336 (94.9%)** — accidentally imperative, order-free recoverable — vs **FAIL 18 (5.1%)**, the order-dependent tail; 3 unresolved (no facts captured) excluded.
+
+**The tail decomposes** into self-feedback (read-modify-write inside one hook) + write+raise (partial-write escape order). **Conservative-bound caveat:** the self-feedback bucket includes `@api.depends` extractor artifacts, so the true order-dependent tail is ≤ the measured 5.1%. Context: onchange 15/17 resolved FAIL — cooperative loops are the genuinely order-dependent shape, as predicted. Cross-hook order is NOT counted here; recompute-DAG Kahn-orderability is re-asserted inside the probe.
+
+**Method:** static order-signature from harvested facts — writes = inverted `emitted_by` (Odoo's declarative `compute=` target; the F17 ledger note "Python frontend leaves writes/calls empty" is exactly why the declarative target is used), reads = `reads_field`, raise = `raises`.
+
+**What it means for F17:** the Odoo CONTROL leg is measured and behaves as a control should — 94.9% recoverable is consistent with "already declarative". D‑ACCIDENTAL‑IMPERATIVE stays **[H]** until the Rails TEST leg (`before_*`/`after_*` via `ruff_ruby_spo` writes/calls) runs — that is the remaining [H] gate.
+
+**Cross-ref:** INTEGRATION-MAP F17 row (amended in place with the Odoo control-leg RUN annotation, same session), F15/F16 Odoo RUNs (recipe collapse / chaining collapse — the sibling probes on the same corpus).
 
 ---
 
