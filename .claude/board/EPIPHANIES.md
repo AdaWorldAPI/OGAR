@@ -7,6 +7,30 @@
 
 ---
 
+## 2026-07-05 — E-GRAMMAR-IS-THE-RECIPE-SHAPE — the `<port>::<path>(<shape>)` grammar IS the reusable recipe landing shape for ruff: a canonicalized SPO triple, not the per-consumer zoo
+
+**Status:** FINDING (operator insight, 2026-07-05 — verbatim: *"it's also the reusable recipe shape to land on with ruff, not the individual zoo"*). Unifies E-ONE-MASK-THREE-PORTS (the invocation grammar) with RAILS-COVERAGE-KIT §5 (the recipe-concept codebook / no-zoo doctrine): they are ONE thing.
+
+**The identity — a recipe IS a canonicalized SPO triple; the grammar's three positions ARE the triple's three legs:**
+
+| grammar | SPO leg | canonicalized by | status |
+|---|---|---|---|
+| `<path>` = `part_of::is_a` | **subject** — class facet → classid | `ruff_spo_address::mint` (noun codebook) | **shipped** |
+| `<shape>`'s **verb** | **predicate** — the recipe | a `RecipeConceptId` (the VERB codebook) | **OPEN — the one leg** |
+| `<shape>`'s `input[type]` | **object** — typed payload | schema/association stratum (`field_type`→type, `not_null`→Option) | **shipped** |
+
+**The zoo is the un-canonicalized predicate leg.** ruff already emits the triples via `expand()` — `writes_field`, `calls`, `validates_constraint`(+`validation_kind`/`validation_param`), `has_callback` (`"<phase>:<target>"`), `inherits_from`, the association predicates — but `Triple.p` is a **`String`** (the surface predicate). That string IS the zoo, one level down: `"before_save"` (Rails) vs Odoo before-persist, `AjaxJson`/`ListForTenant` (HandlerKind), `presence`/`uniqueness` (ValidationKind) — per-consumer surface, un-shared. The four recipe families (Lifecycle / Guard / Relation / **Action**, §5) are just *which verb-codebook the predicate's `RecipeConceptId` comes from* — **one grammar, four verb families, zero per-consumer enums**.
+
+**So the grammar names gap (c) exactly** (E-F17-PREREQ-VERIFIED): "mint the recipe-concept codebook" = **canonicalize the SPO predicate at lift** — `Triple.p: String → RecipeConceptId` (keeping the string as the per-language `LabelDto` skin). Subject is already a classid; object is already typed; the predicate is the last un-canonicalized leg. When it lands, `(WorkPackage, writes_field, state)` becomes `op::part_of::is_a(WRITE : state)` — the grammar row and the triple row are the same, and OP's `writes_field`, Redmine's, and Odoo's `_compute_*` write all land on ONE predicate concept, per-consumer skins.
+
+**Consequence for ruff:** the harvest already produces the right STRUCTURE (SPO triples = the grammar); the remaining work is a **resolver at lift** (surface predicate string → `RecipeConceptId`) + the OGAR verb codebook it resolves against — NOT a new extractor, NOT a per-consumer enum. "Land on the grammar, not the zoo" = mint the predicate codebook; the rest is already the grammar.
+
+**Guardrail (don't dilute the noun vs medium port distinction — E-ONE-MASK-THREE-PORTS):** `<port>` carries two roles — a **domain/noun port** (`op`/`redmine`/`odoo` = `ogar_vocab::ports::PortSpec`, resolves the classid) vs a **medium port** (`MySQL`/`Render`/askama = closed verb set + emitter; `ogar-adapter-*` / `ogar-render-askama`). Both are canon in the grammar; typing them as ONE undifferentiated `Port` enum is the dilution to avoid — two traits under one grammar, not one enum.
+
+**Cross-ref:** E-ONE-MASK-THREE-PORTS (the grammar), RAILS-COVERAGE-KIT §5 (four families + `RecipeConceptId` + `LabelDto`, "mint accordingly"), E-F17-PREREQ-VERIFIED (gap (c) = this predicate leg; harvest + object-typing shipped), E-RECIPE-REUNION-ORDER (the reunion this serves); `docs/UNIFIED-VERB-FACADE-v1.md` (the six-verb façade = the closed predicate vocab, one axis of the codebook); `docs/VERB-AS-CLASS-TEMPLATE.md` (a verb-as-`rdfs:Class` = a typed shape slot list — the render side of the same predicate).
+
+---
+
 ## 2026-07-05 — E-F17-PREREQ-VERIFIED — gap-ledger verification: writes/calls capture is SHIPPED in ruff; the true remaining gaps are the routes.rb stratum + the recipe-concept codebook
 
 **Status:** FINDING (code-verified this session on the consumed branch; corrects item (a) of E-RECIPE-REUNION-ORDER's gap ledger below, which had propagated a stale RAILS-COVERAGE-KIT §6 claim — the second staleness this arc, same lesson: verify the ledger against code before restating it).
