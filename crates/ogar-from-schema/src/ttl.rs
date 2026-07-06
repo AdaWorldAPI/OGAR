@@ -76,7 +76,7 @@ pub(crate) fn find_subject_curie(src: &str) -> Option<String> {
     None
 }
 
-fn local_name_from_curie(curie: &str) -> String {
+pub(crate) fn local_name_from_curie(curie: &str) -> String {
     // `ogit.MARS:Machine` → `Machine`
     // `ogit.MARS.Application:class` → `class`
     curie.rsplit(':').next().unwrap_or(curie).trim().to_owned()
