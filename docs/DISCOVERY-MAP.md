@@ -852,3 +852,43 @@ isolation. The map's job is to keep them visible.
   lock_version→guard (the ActionDef seam), services. Cross-ref:
   E-OGAR-CONVERGENCE-SHAPE falsifier #1, E-ONE-MASK-THREE-PORTS,
   E-KEEP-AR-REMOVE-ORM.
+
+- **D-ROUTE-KIND-VERB-STRATA (5+3 council verdict; 2026-07-05; [S] for
+  the rejected unification, [G] receipts, [H] probe):** the proposed
+  "route dedup = the SoC lint's DO-arm" was council-REJECTED as mere
+  rhyme: `soc` is a harvested-relation, byte-capped (`u8::MAX` = the
+  SoA cascade rank), `law_holds`-falsifiable lint; route kinds are a
+  human-curated recipe taxonomy with no cap, no law, and (today) no
+  harvested discriminant facts (HTTP verb / writes / return-shape are
+  not in ruff's predicate set). The shared "N siblings → K
+  representatives + residual" shape is the workspace's universal
+  quotient primitive (palette / CAM-PQ / centroid tiles) — true and
+  vacuous. What lands instead: (a) the carve — a `HandlerKind` is
+  **verb × transport × persistence-shape**; the stripped `is_a` verb is
+  the only codebook candidate and resolves through the same
+  canonical-verb rail as `ActionDef`, never a parallel vocabulary;
+  recipes are adapter-side; (b) one independent `[H]` probe — the
+  OP⇄Redmine route-surface kind A/B with a pre-registered KILL
+  threshold, DISTINCT from capstone C5's verb A/B; (c) the mint fence —
+  no verb-row allocation until that A/B is green. Canonical text +
+  grounds + receipts: `.claude/board/EPIPHANIES.md`
+  E-ROUTE-KIND-VERB-STRATA. Consumer-side artifact: op-nexgen
+  `crates/ruff_python_dto_check/` regraded to a PARKED un-upstreamed
+  sqlx-target delta against live ruff's `ruff_python_dto_check` (see
+  its README).
+  **⊘ CORRECTED IN PLACE (2026-07-05, same day — operator ruling;
+  regraded: convergence `[G]`, coverage `[H]`):** the `[S]` rejection
+  above is WRONG and SUPERSEDED by `E-RECIPE-REUNION-ORDER`. Route/
+  fieldview dedup IS the SoC doctrine by operator canon
+  (`CLASSVIEW-FIELDVIEW-ASKAMA-BITMASK`, 2026-06-29:
+  `FIELD_MASK_CAP = MAX_SIBLINGS_PER_TIER`, ONE cap — the field-view
+  mask cap and the soc sibling cap are the same constant), and
+  `HandlerKind` is the canon Action-kind recipe family
+  (RAILS-COVERAGE-KIT §5, 2026-06-30 — mint as `RecipeConceptId`,
+  converges like class concepts). The reunion (Redmine ⇄ OpenProject at
+  the AR shape) is an ORDER, not a conjecture. What survives from the
+  rejected pass is only the factual gap ledger (unharvested writes/calls
+  per F17; the recipe-concept codebook unminted) — queued work, upstream
+  in ruff + OGAR, never op-side. `ruff_python_dto_check` re-framed as the
+  ERB-fieldview → askama render recipes + Action-kind corpus that seeds
+  the `ogar-render-askama` kit and the recipe codebook, not dead weight.
