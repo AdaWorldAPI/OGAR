@@ -58,6 +58,9 @@ fn document_info_record_lowers_to_controller_dto_with_expected_wire_names() {
         "documentPartId",
         "documentVersion",
     ] {
-        assert!(names.contains(wire), "missing wire name `{wire}` in DTO: {names:?}");
+        assert!(
+            names.contains(wire),
+            "missing wire name `{wire}` in DTO: {names:?}"
+        );
     }
 }
