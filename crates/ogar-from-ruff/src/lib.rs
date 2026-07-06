@@ -540,9 +540,19 @@ pub fn project_canonical_roles(class: &Class) -> std::collections::HashSet<&'sta
 /// downstream at registration, not in the producer.
 #[must_use]
 pub fn lift_actions(model: &Model) -> Vec<ActionDef> {
+    // Public actions AND non-public helpers (AT-CARRY-1b, review on #164):
+    // since ruff #45 the Ruby walker splits private/protected defs into
+    // `Model::helpers` — and Rails lifecycle hook targets are conventionally
+    // private (Redmine measurement: 67/84 hook targets live there). The W3.3
+    // delete-blocking rows ARE those hook bodies, so the DO-arm must carry
+    // both. Consistent with this fn's contract: the producer emits effect
+    // annotations; routability / guard / RBAC enrichment happens downstream
+    // at registration (a registrar can re-join `Model::callbacks` by name to
+    // tell hook targets from routable actions).
     model
         .functions
         .iter()
+        .chain(model.helpers.iter())
         .map(|f| {
             let mut a = ActionDef::new(
                 format!("{}::action_def::{}", model.name, f.name),
@@ -1820,5 +1830,33 @@ mod tests {
         assert_eq!(strip_ruby_literal_markers("User"), "User");
         // Mismatched / partial — pass-through.
         assert_eq!(strip_ruby_literal_markers("\"User"), "\"User");
+    }
+
+    #[test]
+    fn lift_actions_carries_private_helper_hook_bodies() {
+        // AT-CARRY-1b (review on #164): Rails lifecycle hook targets are
+        // conventionally private -> `Model::helpers` (ruff #45). The DO-arm
+        // must carry their body facts, or the W3.3 delete-blocking rows
+        // never reach a consumer.
+        let mut m = Model::new("Issue");
+        m.functions.push(ruff_spo_triplet::Function {
+            name: "public_action".to_string(),
+            ..Default::default()
+        });
+        m.helpers.push(ruff_spo_triplet::Function {
+            name: "update_closed_on".to_string(),
+            writes: vec!["closed_on".to_string()],
+            reads: vec!["updated_on".to_string()],
+            ..Default::default()
+        });
+        let actions = lift_actions(&m);
+        assert_eq!(actions.len(), 2, "public action + private hook body");
+        let hook = actions
+            .iter()
+            .find(|a| a.predicate == "update_closed_on")
+            .expect("private hook body must arrive in the DO-arm");
+        assert_eq!(hook.identity, "Issue::action_def::update_closed_on");
+        assert_eq!(hook.writes, vec!["closed_on".to_string()]);
+        assert_eq!(hook.reads, vec!["updated_on".to_string()]);
     }
 }
