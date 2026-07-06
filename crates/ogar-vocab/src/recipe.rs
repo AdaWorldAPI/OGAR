@@ -20,8 +20,9 @@
 //! *zoo*. [`recipe_concept_from_surface`] is the **lift-time resolver**
 //! that maps a surface string to the shared canonical id, keeping the
 //! string as the per-language label skin. Rails `belongs_to` and Odoo
-//! `Many2one` resolve to the **same** [`recipe_ids::REL_MANY_TO_ONE`] —
-//! the verb-side twin of `WorkPackage ≡ Issue ≡ 0x0102`.
+//! `many2one` (the lowercased `relation_kind` token ruff emits) resolve to
+//! the **same** [`recipe_ids::REL_MANY_TO_ONE`] — the verb-side twin of
+//! `WorkPackage ≡ Issue ≡ 0x0102`.
 //!
 //! Per RAILS-COVERAGE-KIT §5 the recipe vocabulary MUST converge the same
 //! way class concepts do, or the behavioural arm fragments back into the
@@ -37,7 +38,7 @@
 //! |---|---|---|
 //! | `0x01` | [`RecipeFamily::Lifecycle`] | `before_save` / `after_commit` ‖ `@api.constrains` / `@depends` |
 //! | `0x02` | [`RecipeFamily::Guard`] | `validates presence:/uniqueness:` ‖ `_check_*` |
-//! | `0x03` | [`RecipeFamily::Relation`] | `belongs_to`/`has_many` ‖ `Many2one`/`One2many` |
+//! | `0x03` | [`RecipeFamily::Relation`] | `belongs_to`/`has_many` ‖ `many2one`/`one2many` |
 //! | `0x04` | [`RecipeFamily::Action`] | controller `HandlerKind` ‖ `action_*` |
 //!
 //! Ids are stable forever: they only ARRIVE (append a new low byte / a new
@@ -276,7 +277,7 @@ pub const RECIPE_CODEBOOK: &[(&str, RecipeConceptId)] = &[
 /// Per-language **label DTO** table — `(id, lang, surface)`. The surface
 /// string is render-only and per-language; the id is the truth. Multiple
 /// surfaces (across languages) map to one id — that IS the cross-consumer
-/// convergence (Rails `belongs_to` ≡ Odoo `Many2one` → `rel_many_to_one`).
+/// convergence (Rails `belongs_to` ≡ Odoo `many2one` → `rel_many_to_one`).
 ///
 /// Append only; a new surface for an existing concept adds a row, mints
 /// nothing (`RAILS-COVERAGE-KIT` §5 rule 2). Fuzzy Odoo body-pattern
@@ -347,13 +348,18 @@ const RECIPE_LABELS: &[(RecipeConceptId, RecipeLang, &str)] = &[
     ),
     (recipe_ids::REL_ONE_TO_ONE, RecipeLang::Ruby, "has_one"),
     (recipe_ids::REL_THROUGH, RecipeLang::Ruby, "through"),
-    // Relation — Python/Odoo field kinds (the convergence pins).
-    (recipe_ids::REL_MANY_TO_ONE, RecipeLang::Python, "Many2one"),
-    (recipe_ids::REL_ONE_TO_MANY, RecipeLang::Python, "One2many"),
+    // Relation — Python/Odoo field kinds (the convergence pins). The
+    // surface is the LOWERCASED `relation_kind` token ruff emits (Odoo's
+    // `fields.Many2one(...)` constructor lowercased at harvest —
+    // `ruff_python_spo::walk` `kind.to_lowercase()`, `ruff_spo_triplet`
+    // `ir.rs` Field::relation_kind, `ogar_from_ruff::odoo_relation_kind`),
+    // NOT the capitalized source constructor. Match the emitted token.
+    (recipe_ids::REL_MANY_TO_ONE, RecipeLang::Python, "many2one"),
+    (recipe_ids::REL_ONE_TO_MANY, RecipeLang::Python, "one2many"),
     (
         recipe_ids::REL_MANY_TO_MANY,
         RecipeLang::Python,
-        "Many2many",
+        "many2many",
     ),
     // Action — controller HandlerKind surfaces (framework-neutral ids;
     // tagged Ruby as the harvest frontend that produces them today).
@@ -426,7 +432,7 @@ pub fn recipe_concept_name(id: RecipeConceptId) -> Option<&'static str> {
 /// // resolve to ONE canonical concept.
 /// assert_eq!(
 ///     recipe_concept_from_surface("belongs_to", RecipeLang::Ruby),
-///     recipe_concept_from_surface("Many2one", RecipeLang::Python),
+///     recipe_concept_from_surface("many2one", RecipeLang::Python),
 /// );
 /// assert_eq!(
 ///     recipe_concept_from_surface("belongs_to", RecipeLang::Ruby),
@@ -568,12 +574,15 @@ mod tests {
     /// relation surfaces resolve to ONE canonical recipe concept.
     #[test]
     fn relation_verbs_converge_across_ruby_and_python() {
+        // The Python surface is the lowercased `relation_kind` token ruff
+        // emits (`ruff_python_spo` lowercases the `fields.Many2one(...)`
+        // constructor at harvest), NOT the capitalized source name.
         let pairs = [
-            ("belongs_to", "Many2one", recipe_ids::REL_MANY_TO_ONE),
-            ("has_many", "One2many", recipe_ids::REL_ONE_TO_MANY),
+            ("belongs_to", "many2one", recipe_ids::REL_MANY_TO_ONE),
+            ("has_many", "one2many", recipe_ids::REL_ONE_TO_MANY),
             (
                 "has_and_belongs_to_many",
-                "Many2many",
+                "many2many",
                 recipe_ids::REL_MANY_TO_MANY,
             ),
         ];
