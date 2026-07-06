@@ -1,0 +1,2 @@
+{% for f in fields %}{% if (mask // (2 ** loop.index0)) % 2 == 1 %}{{ f }}
+{% endif %}{% endfor %}

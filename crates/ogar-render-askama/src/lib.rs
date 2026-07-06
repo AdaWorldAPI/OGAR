@@ -81,7 +81,7 @@ pub use artifact_kinds::{
 };
 pub use form_view::{default_input_kind_for, InputKind};
 pub use list_view::{default_kind_for, ColumnKind, RenderColumn, SortOrder};
-pub use rust_class::render_class_with_methods;
+pub use rust_class::{render_class_with_methods, RenderError};
 pub use spec::{ArtifactKind, ArtifactSpec};
 
 use ogar_vocab::Class;

@@ -1,0 +1,6 @@
+{
+  "class_name": "commercial_document",
+  "fields": ["name", "state", "amount_total", "partner_id", "currency_id", "date_invoice", "reference"],
+  "mask": 45,
+  "expected_present": ["name", "amount_total", "partner_id", "date_invoice"]
+}
