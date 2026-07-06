@@ -178,7 +178,11 @@ fn woa_parity_probe_prints_the_d_parity_probe_wp_1_metric() {
          in ogar-vocab/src/ports.rs (see src/mint.rs doc)",
         cc.facet.facet_classid()
     );
-    let drift_list = [classid_drift];
+    let emit_nullability_drift = "emit_python rendert options.required nicht — \
+nullable created_at wird als pflichtiges @dataclass-Feld emittiert (kein Optional[]); \
+vorbestehende emit.rs-Luecke, Follow-up"
+        .to_string();
+    let drift_list = [classid_drift, emit_nullability_drift];
 
     let metric = format!(
         "WoA parity probe — TimesheetActivity\n  \
