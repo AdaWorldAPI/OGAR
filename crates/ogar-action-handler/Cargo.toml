@@ -25,4 +25,5 @@ serde_json = "1.0"
 # (harvest arm) rather than a hand-written capability, so the probe
 # witnesses lift -> dispatch. Not a runtime dependency of this crate.
 ogar-from-ruff = { path = "../ogar-from-ruff" }
+# Flips to branch = "main" with the other ruff pins (O-2 de-pin); keep in lockstep with ogar-from-ruff.
 ruff_spo_triplet = { git = "https://github.com/AdaWorldAPI/ruff", branch = "claude/odoo-rs-transcode-lf8ya5" }
