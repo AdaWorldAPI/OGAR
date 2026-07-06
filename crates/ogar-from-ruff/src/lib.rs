@@ -37,7 +37,7 @@
 //! | `sti.inherits_from`    | `parent`                      | STI parent — matches `Class.parent` slot    |
 //! | `inherits`             | `mixins` (appended)           | Odoo `_inherit` multi-parent mixin composition — the vocab's `mixins` doc names `_inherit`; the `inheritance` axis excludes mixins. Frontend-agnostic field, populated only by the Odoo frontend |
 //! | `functions`            | `Vec<ActionDef>` (DO-arm)     | [`lift_actions`] — one `ActionDef` per method; standalone, not on `Class` |
-//! | `fields`               | `attributes` / `associations` / `computed_fields` | the D-AR-3.5 physical schema stratum (migration-DSL columns for Rails via [`project_rails_fields`]; `fields.X(...)` declarations for Odoo via [`project_odoo_fields`]); `not_null` wires `AttributeOptions::required` (Rails only); a Rails `<name>_id` FK column is skipped when the model also declares an association named `<name>` (double-strata dedup) |
+//! | `fields`               | `attributes` / `associations` / `computed_fields` | the D-AR-3.5 physical schema stratum (migration-DSL columns for Rails, and `db.Column(...)` for Flask-SQLAlchemy, both via [`project_total_schema_fields`]; `fields.X(...)` declarations for Odoo via [`project_odoo_fields`]); `not_null` wires `AttributeOptions::required` (Rails/SQLAlchemy only); a `<name>_id` FK column is skipped when the model also declares an association named `<name>` (double-strata dedup) |
 //!
 //! Fields NOT lifted today (no equivalent on the ruff side OR no clean
 //! semantic mapping):
@@ -204,13 +204,14 @@ fn lift_model_with_language(model: &Model, language: Language) -> Class {
     // columns via `ruff_ruby_spo::extract_app_with_schema`; Odoo: the same
     // vector doubles as the declared schema since Odoo has no separate
     // AR-DSL). So each language gets its own field-projection pass —
-    // `project_odoo_fields` for Python (Codex P1, PR #131), and
-    // `project_rails_fields` for Ruby (falsifier #1 gap-close,
-    // D-PARITY-PROBE-WP-1) — so neither producer silently drops the schema
+    // `project_odoo_fields` for Python/Odoo (Codex P1, PR #131), and
+    // `project_total_schema_fields` for Ruby (falsifier #1 gap-close,
+    // D-PARITY-PROBE-WP-1; also shared by the SQLAlchemy producer, see
+    // `sqlalchemy.rs`) — so neither producer silently drops the schema
     // stratum lifted by its frontend.
     match language {
         Language::Python => project_odoo_fields(&mut class, model),
-        Language::Ruby => project_rails_fields(&mut class, model),
+        Language::Ruby => project_total_schema_fields(&mut class, model),
         _ => {}
     }
     class
@@ -258,17 +259,24 @@ fn project_odoo_fields(class: &mut Class, model: &Model) {
     }
 }
 
-/// Project a Rails model's D-AR-3.5 schema stratum — the PHYSICAL DB columns
-/// in `Model::fields`, populated by `ruff_ruby_spo::extract_app_with_schema`
-/// from the `db/migrate/tables/*.rb` migration DSL — onto the schema-carrying
-/// [`Class`] columns. Ruby-only counterpart of [`project_odoo_fields`]: the
-/// AR-DSL vectors (`attributes` / `associations`, from `attribute :x, :type`
-/// / `belongs_to :y`) carry the *declared* schema and are lifted separately,
-/// earlier in [`lift_model_with_language`]; `fields` carries the *physical*
-/// schema (what the migration actually created). Both strata are real and
-/// both must reach the [`Class`], or the Rails lift silently drops the
-/// physical column set the way the pre-fix Python-only gate did (falsifier
-/// #1 / D-PARITY-PROBE-WP-1).
+/// Project a total-nullability model's D-AR-3.5 schema stratum — the
+/// PHYSICAL DB columns in `Model::fields` — onto the schema-carrying
+/// [`Class`] columns. Shared by two producers:
+/// - **Rails** (Ruby): populated by `ruff_ruby_spo::extract_app_with_schema`
+///   from the `db/migrate/tables/*.rb` migration DSL. Counterpart of
+///   [`project_odoo_fields`]: the AR-DSL vectors (`attributes` /
+///   `associations`, from `attribute :x, :type` / `belongs_to :y`) carry the
+///   *declared* schema and are lifted separately, earlier in
+///   [`lift_model_with_language`]; `fields` carries the *physical* schema
+///   (what the migration actually created). Both strata are real and both
+///   must reach the [`Class`], or the Rails lift silently drops the physical
+///   column set the way the pre-fix Python-only gate did (falsifier #1 /
+///   D-PARITY-PROBE-WP-1).
+/// - **Flask-SQLAlchemy** (Python/WoA): populated via
+///   [`crate::sqlalchemy::lift_model_sqlalchemy`]'s `db.Column(...)`
+///   declarations, which are likewise total (every column's nullability is a
+///   declared fact) — see that module's doc for why it routes `Language::Python`
+///   through this helper instead of [`project_odoo_fields`].
 ///
 /// Per-field mapping (mirrors [`project_odoo_fields`]):
 /// - relational field (`target` set) → [`Association`]; same shape as the
@@ -298,7 +306,7 @@ fn project_odoo_fields(class: &mut Class, model: &Model) {
 /// - compute field (`emitted_by` set — the D-AR-3.5 compute-linkage pass,
 ///   `ruff_ruby_spo::schema::link_computed_fields`) → [`ComputedField`],
 ///   same as the Odoo path.
-fn project_rails_fields(class: &mut Class, model: &Model) {
+pub(crate) fn project_total_schema_fields(class: &mut Class, model: &Model) {
     for field in &model.fields {
         if let Some(comodel) = &field.target {
             let kind = odoo_relation_kind(field.relation_kind.as_deref(), field.inverse_name.is_some());
@@ -335,8 +343,8 @@ fn project_rails_fields(class: &mut Class, model: &Model) {
     }
 }
 
-/// FK-dedup predicate for [`project_rails_fields`]. Two independent shadow
-/// rules, checked in order:
+/// FK-dedup predicate for [`project_total_schema_fields`]. Two independent
+/// shadow rules, checked in order:
 ///
 /// 1. **Explicit `foreign_key:`** — `class` carries an [`Association`] whose
 ///    declared `foreign_key` equals `field_name` verbatim (e.g.
@@ -352,7 +360,7 @@ fn project_rails_fields(class: &mut Class, model: &Model) {
 ///    `"_id"`-suffixed prefix of its own, and no real corpus association
 ///    declares `foreign_key: "id"` — and is always kept as a scalar
 ///    attribute.
-fn is_fk_shadowed_by_association(field_name: &str, class: &Class) -> bool {
+pub(crate) fn is_fk_shadowed_by_association(field_name: &str, class: &Class) -> bool {
     if class
         .associations
         .iter()
@@ -1145,13 +1153,14 @@ mod tests {
 
     /// PR #156 finding (c): a physical column whose name already matches an
     /// AR-DSL-declared attribute (`attribute :foo, :string`) must not be
-    /// projected a second time — `project_rails_fields` previously pushed
-    /// unconditionally, producing two `foo` entries in `class.attributes`
-    /// (an invalid duplicate struct field in the generated code).
+    /// projected a second time — `project_total_schema_fields` previously
+    /// pushed unconditionally, producing two `foo` entries in
+    /// `class.attributes` (an invalid duplicate struct field in the
+    /// generated code).
     ///
     /// **Red-before-fix:** on unpatched `main`, the count is 2 (the AR-DSL
     /// lift populates one `foo` attribute earlier in
-    /// `lift_model_with_language`, and `project_rails_fields` pushes a
+    /// `lift_model_with_language`, and `project_total_schema_fields` pushes a
     /// second, unguarded, for the physical `foo` column).
     #[test]
     fn lift_model_ruby_physical_column_does_not_duplicate_declared_attribute() {
