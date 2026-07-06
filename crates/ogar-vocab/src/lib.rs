@@ -600,6 +600,22 @@ pub enum KausalSpec {
         /// Field paths that trigger this action's recomputation.
         paths: Vec<String>,
     },
+    /// `@api.constrains('a','b')` validation trigger — the method
+    /// re-validates when any listed field changes. Semantically a
+    /// VALIDATION, not a recompute (SPEC-ATC2-OGAR Arm B) — kept distinct
+    /// from `Depends` so a downstream `kausal`-variant dispatch doesn't
+    /// mistake a validation trigger for a persisted recompute trigger.
+    Constrains {
+        /// Field paths that trigger this action's (re-)validation.
+        paths: Vec<String>,
+    },
+    /// `@api.onchange('a')` UI form recompute — fires client-side in the
+    /// form view when a field changes (distinct from persisted `Depends`;
+    /// SPEC-ATC2-OGAR Arm B).
+    Onchange {
+        /// Field paths that trigger this action's UI-side recompute.
+        paths: Vec<String>,
+    },
     /// `@api.depends_context` env-context keys.
     ContextDepends {
         /// Context keys that trigger recomputation.
@@ -6061,6 +6077,12 @@ mod tests {
             KausalSpec::Depends {
                 paths: vec!["a.b".into()],
             },
+            KausalSpec::Constrains {
+                paths: vec!["state".into()],
+            },
+            KausalSpec::Onchange {
+                paths: vec!["amount".into()],
+            },
             KausalSpec::ContextDepends {
                 keys: vec!["lang".into()],
             },
@@ -6071,6 +6093,8 @@ mod tests {
                 KausalSpec::StateGuard { .. } => {}
                 KausalSpec::LifecycleTrigger { .. } => {}
                 KausalSpec::Depends { .. } => {}
+                KausalSpec::Constrains { .. } => {}
+                KausalSpec::Onchange { .. } => {}
                 KausalSpec::ContextDepends { .. } => {}
                 KausalSpec::External => {}
             }
