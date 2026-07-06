@@ -26,6 +26,14 @@
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
+/// Recipe-concept codebook — the VERB axis (predicates), sibling to the
+/// class-concept codebook ([`class_ids`] / [`CODEBOOK`]). The lift-time
+/// resolver `recipe::recipe_concept_from_surface` canonicalizes a
+/// producer-emitted predicate string (`"belongs_to"`, `"before_save"`, …)
+/// into a shared [`recipe::RecipeConceptId`] — the predicate leg of the
+/// `<port>::<path>(<shape>)` grammar (`E-GRAMMAR-IS-THE-RECIPE-SHAPE`).
+pub mod recipe;
+
 /// Source language hint — discriminates the producer for traceability
 /// and for emitter dispatch on Ruby/Python-specific extension shapes
 /// (e.g. Odoo `ComputedField`). Not a hard schema discriminator: a class
@@ -4312,10 +4320,7 @@ pub fn osm_way_node() -> Class {
     let mut c = Class::new("WayNode");
     c.language = Language::Unknown;
     c.canonical_concept = Some("osm_way_node".to_string());
-    c.associations = vec![
-        family_edge("way", "Way"),
-        family_edge("node", "Node"),
-    ];
+    c.associations = vec![family_edge("way", "Way"), family_edge("node", "Node")];
     c
 }
 

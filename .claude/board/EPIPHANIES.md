@@ -28,6 +28,137 @@ Falsifier #2 (the classview-mask round-trip named in E-OGAR-CONVERGENCE-SHAPE) R
 **Status:** FRAMING (`[G]` for the py_compile+instantiate gate on the synthetic WoA class; `[H]` for the persistence adapter).
 
 Operator §6: identical data model in both languages via Classes/ClassView, never a parallel schema truth. Realised: `emit_python` renders the same `CompiledClass` the Rust emitters render, and the emitted `TimesheetActivity` `@dataclass` both **py_compiles and instantiates** (D-PARITY-PROBE-WOA-1). Two findings sharpen the mirror rather than decorate it: the class does not sit on bootstrap classid 0 as the spec assumed — it converges through `WOA_ALIASES` onto `BILLABLE_WORK_ENTRY` (`0x0103_0003`), pinned by test, so the "Python mirror" is an *addressed* mirror, not an anonymous one; and `emit_python` still omits `options.required`, a named emitter follow-up (the mirror is structurally 1:1 on fields / types / associations, honestly short one nullability annotation). The DB format (Operator §4) stays a documented decision — Option C now (dataclass mirror), Option B (SQLAlchemy/SQLite reusable adapter) and the PG facet table (D-PY-PERSIST-PG-FACET) next, Option A (lancedb bindings) as the native substrate. Cross-ref D-PARITY-PROBE-WOA-1, D-PY-PERSIST-PG-FACET, E-ONE-MASK-TWO-ENGINES.
+## 2026-07-05 — E-RECIPE-FAMILIES-MINT-ON-EMIT — Scope-kind / Concern-kind are RESERVED (bytes 0x05 / 0x06) but minted ON EMIT, not speculatively
+
+**Status:** FINDING (operator rule, 2026-07-05 — verbatim: *"add scope-kind concern-kind when you see the code wants to emit it (eg ruff dto ast for duplicated routes, or god object split)"*). Recorded in `recipe.rs` module doc (§ Reserved-but-unminted families); no `RecipeFamily` variant, no concept, no codebook row minted — bytes `0x05`/`0x06` resolve to `RecipeFamily::Unassigned` until the emit seam exists.
+
+- **`0x05` Scope** — mint when the ruff **DTO-AST route-dedup** path emits a named filtered view (Rails `scope` / `default_scope`, or a `ClassView` fieldmask standing in for N routes — `CLASSVIEW-FIELDVIEW-ASKAMA-BITMASK`: "N routes = one ClassView + N masks"; a scope IS a mask over a class).
+- **`0x06` Concern** — mint when the **god-object split** emits it (the `ruff_spo_address::soc` `Conflation` verdict → split data+behaviour under one parent into sub-ClassViews; Rails `concerns`/mixins are the split unit).
+
+This is RESERVE-DON'T-RECLAIM applied to families: reserving the byte (a doc note) costs nothing; minting the family before its producer emits one is the speculative mint the discipline forbids. When either seam lands: append the variant, extend `RecipeConceptId::family`'s match, add concepts + labels + a codebook row, let the drift gates bind them.
+
+**Cross-ref:** E-RECIPE-CODEBOOK-MINTED-P1 (the four families this reserves alongside), E-GRAMMAR-IS-THE-RECIPE-SHAPE, RAILS-COVERAGE-KIT §5; the emit seams — `ruff_python_dto_check` (route-dedup DTO AST) + `ruff_spo_address::soc` (the split verdict).
+
+---
+
+## 2026-07-05 — E-RECIPE-CODEBOOK-MINTED-P1 — the recipe-concept codebook + lift-time predicate resolver SHIPPED in `ogar-vocab`; gap (c) half-closes
+
+**Status:** FINDING (shipped this session — code + 13 tests + 3 doctests green, clippy clean, `-p ogar-vocab` scoped). Phase 1 of the E-GRAMMAR-IS-THE-RECIPE-SHAPE deliverable: the codebook + the resolver exist; the lift-wiring is Phase 2.
+
+**What shipped — `crates/ogar-vocab/src/recipe.rs` (new module, `pub mod recipe`):**
+
+- **`RecipeConceptId(u16)`** — a **typed newtype**, deliberately NOT bare `u16` like `class_ids`: a recipe id `0x0101` and the class id `0x0101` (`project`) are numerically equal but different address spaces; the newtype makes mixing them a compile error (the noun-vs-verb-port guardrail from E-GRAMMAR-IS-THE-RECIPE-SHAPE, enforced in the type system).
+- **`RecipeFamily`** (`Lifecycle 0x01` / `Guard 0x02` / `Relation 0x03` / `Action 0x04`) — the VERB-axis counterpart of `ConceptDomain`, resolved O(1) from the high byte; the four RAILS-COVERAGE-KIT §5 families.
+- **`recipe_ids::*`** — 27 promoted concepts as named consts (7 lifecycle · 7 guard · 5 relation · 9 action), RESERVE-DON'T-RECLAIM.
+- **`RECIPE_CODEBOOK`** + **`recipe_concept_id` / `recipe_concept_name`** — the forward/reverse registry, exact siblings of `canonical_concept_id`/`_name`; drift-gate tests mirror `class_ids` (`constants_match_codebook`, uniqueness, round-trip).
+- **`recipe_concept_from_surface(surface, lang)`** — **THE lift-time predicate resolver**: `Triple.p: String × RecipeLang → RecipeConceptId`, the string kept as the per-language `LabelDto` skin. This is the seam E-GRAMMAR-IS-THE-RECIPE-SHAPE named.
+
+**The verb-side convergence pin, machine-checked** (`relation_verbs_converge_across_ruby_and_python`): Rails `belongs_to` (Ruby) and Odoo `Many2one` (Python) resolve to the **same** `REL_MANY_TO_ONE` — the verb-side twin of `WorkPackage ≡ Issue ≡ 0x0102`. Same for `has_many ≡ One2many`, `has_and_belongs_to_many ≡ Many2many`.
+
+**Gap ledger update** (from E-F17-PREREQ-VERIFIED / E-GRAMMAR-IS-THE-RECIPE-SHAPE): gap (c) "recipe-concept codebook unminted" → **HALF-CLOSED** — the codebook + resolver now exist. What remains:
+
+- **Phase 2 (not done, by design):** WIRE the resolver into `ogar-from-ruff` lift (stamp `RecipeConceptId` onto `ActionDef` / the Class recipe facets / the emitted triples). This pass adds ZERO output-shape change — the resolver is callable but no existing lift path calls it yet. Kept separate so the codebook lands reviewable on its own.
+- Odoo body-pattern surfaces (`_check_*`, `_compute_*`) deliberately NOT seeded — they need the F17 body triage, not a lexical alias.
+- The `routes.rb` stratum (gap (b)) is still open — Action-kind surfaces are seeded from the `HandlerKind` names, not yet harvested per-route.
+
+**Operator-adjustable window (honest):** no recipe id is persisted to Lance/wire yet (Phase 1 is a pure in-memory resolver), so the family-byte allocation stays adjustable until Phase 2 wires persistence — RESERVE-DON'T-RECLAIM applies from the first persisted use, not before.
+
+**Cross-ref:** E-GRAMMAR-IS-THE-RECIPE-SHAPE (the predicate leg this fills), E-F17-PREREQ-VERIFIED (gap (c)), E-RECIPE-REUNION-ORDER (the reunion this serves), RAILS-COVERAGE-KIT §5 (the four families + `RecipeConceptId` + `LabelDto` spec this implements); `class_ids` / `CODEBOOK` (the sibling it mirrors).
+
+---
+
+## 2026-07-05 — E-GRAMMAR-IS-THE-RECIPE-SHAPE — the `<port>::<path>(<shape>)` grammar IS the reusable recipe landing shape for ruff: a canonicalized SPO triple, not the per-consumer zoo
+
+**Status:** FINDING (operator insight, 2026-07-05 — verbatim: *"it's also the reusable recipe shape to land on with ruff, not the individual zoo"*). Unifies E-ONE-MASK-THREE-PORTS (the invocation grammar) with RAILS-COVERAGE-KIT §5 (the recipe-concept codebook / no-zoo doctrine): they are ONE thing.
+
+**The identity — a recipe IS a canonicalized SPO triple; the grammar's three positions ARE the triple's three legs:**
+
+| grammar | SPO leg | canonicalized by | status |
+|---|---|---|---|
+| `<path>` = `part_of::is_a` | **subject** — class facet → classid | `ruff_spo_address::mint` (noun codebook) | **shipped** |
+| `<shape>`'s **verb** | **predicate** — the recipe | a `RecipeConceptId` (the VERB codebook) | **OPEN — the one leg** |
+| `<shape>`'s `input[type]` | **object** — typed payload | schema/association stratum (`field_type`→type, `not_null`→Option) | **shipped** |
+
+**The zoo is the un-canonicalized predicate leg.** ruff already emits the triples via `expand()` — `writes_field`, `calls`, `validates_constraint`(+`validation_kind`/`validation_param`), `has_callback` (`"<phase>:<target>"`), `inherits_from`, the association predicates — but `Triple.p` is a **`String`** (the surface predicate). That string IS the zoo, one level down: `"before_save"` (Rails) vs Odoo before-persist, `AjaxJson`/`ListForTenant` (HandlerKind), `presence`/`uniqueness` (ValidationKind) — per-consumer surface, un-shared. The four recipe families (Lifecycle / Guard / Relation / **Action**, §5) are just *which verb-codebook the predicate's `RecipeConceptId` comes from* — **one grammar, four verb families, zero per-consumer enums**.
+
+**So the grammar names gap (c) exactly** (E-F17-PREREQ-VERIFIED): "mint the recipe-concept codebook" = **canonicalize the SPO predicate at lift** — `Triple.p: String → RecipeConceptId` (keeping the string as the per-language `LabelDto` skin). Subject is already a classid; object is already typed; the predicate is the last un-canonicalized leg. When it lands, `(WorkPackage, writes_field, state)` becomes `op::part_of::is_a(WRITE : state)` — the grammar row and the triple row are the same, and OP's `writes_field`, Redmine's, and Odoo's `_compute_*` write all land on ONE predicate concept, per-consumer skins.
+
+**Consequence for ruff:** the harvest already produces the right STRUCTURE (SPO triples = the grammar); the remaining work is a **resolver at lift** (surface predicate string → `RecipeConceptId`) + the OGAR verb codebook it resolves against — NOT a new extractor, NOT a per-consumer enum. "Land on the grammar, not the zoo" = mint the predicate codebook; the rest is already the grammar.
+
+**Guardrail (don't dilute the noun vs medium port distinction — E-ONE-MASK-THREE-PORTS):** `<port>` carries two roles — a **domain/noun port** (`op`/`redmine`/`odoo` = `ogar_vocab::ports::PortSpec`, resolves the classid) vs a **medium port** (`MySQL`/`Render`/askama = closed verb set + emitter; `ogar-adapter-*` / `ogar-render-askama`). Both are canon in the grammar; typing them as ONE undifferentiated `Port` enum is the dilution to avoid — two traits under one grammar, not one enum.
+
+**Cross-ref:** E-ONE-MASK-THREE-PORTS (the grammar), RAILS-COVERAGE-KIT §5 (four families + `RecipeConceptId` + `LabelDto`, "mint accordingly"), E-F17-PREREQ-VERIFIED (gap (c) = this predicate leg; harvest + object-typing shipped), E-RECIPE-REUNION-ORDER (the reunion this serves); `docs/UNIFIED-VERB-FACADE-v1.md` (the six-verb façade = the closed predicate vocab, one axis of the codebook); `docs/VERB-AS-CLASS-TEMPLATE.md` (a verb-as-`rdfs:Class` = a typed shape slot list — the render side of the same predicate).
+
+---
+
+## 2026-07-05 — E-F17-PREREQ-VERIFIED — gap-ledger verification: writes/calls capture is SHIPPED in ruff; the true remaining gaps are the routes.rb stratum + the recipe-concept codebook
+
+**Status:** FINDING (code-verified this session on the consumed branch; corrects item (a) of E-RECIPE-REUNION-ORDER's gap ledger below, which had propagated a stale RAILS-COVERAGE-KIT §6 claim — the second staleness this arc, same lesson: verify the ledger against code before restating it).
+
+- **CLOSED — (a) writes/calls.** `ruff_spo_triplet::ir::Function::{writes, calls}` exist (`ir.rs:264-284`; `writes` = Authoritative `self.<field> = …` setter targets, `calls` = lifecycle-mutator dispatches); the Ruby walker populates both (`ruff_ruby_spo/src/functions.rs:283/:286/:303`, op-assign + local memoization deliberately excluded, tested incl. `save`/`save!`/`order.update`); `expand()` emits `Predicate::WritesField` (`expand.rs:271`) + `Predicate::Calls` (`:282`) with truth values. **The F17 body-triage fact prerequisite is DONE.** RAILS-COVERAGE-KIT §6's "captures reads/raises/traverses — NOT writes" is stale (written 2026-06-30, pre-ruff#38); dated note added in place there.
+- **HALF-CLOSED — (b) route discriminants.** The controller DO-arm harvest is live: `extract_tree_with` (ruff #42) walks `app/controllers`; #43 filters to public actions (Rails visibility-aware); actions land in `Model::functions` → `ogar_from_ruff::lift_actions` → `Vec<ActionDef>` (`ogar-from-ruff/src/lib.rs:495`, facts-only by design — no kausal from `reads`, correctly). **MISSING: the `routes.rb` stratum** — HTTP verb, member/collection routes, return-shape (collection|item) — the one remaining fact source for Action-kind classification.
+- **OPEN — (c) recipe-concept codebook.** Confirmed unminted: no `RecipeConceptId` / LIFECYCLE_ / GUARD_ / ACTION_ concept ids anywhere in `ogar-vocab`; `KausalSpec::LifecycleTrigger { event: String }` still carries the raw surface string (`lib.rs:565-568`) — exactly RAILS-COVERAGE-KIT §5's "mint accordingly" TODO. Until it lands, the recipe bitmask stays per-consumer (the zoo).
+
+**Consequence:** the Action-kind classifier's inputs are closer than the ledger claimed — method names + writes/calls + public controller actions are harvestable TODAY; `routes.rb` is the single missing fact source, and the §5 codebook mint (on the serialized-allocation train) is the single biggest lever. Both stay upstream (ruff / OGAR), never op-side.
+
+**Cross-ref:** E-RECIPE-REUNION-ORDER (below — gap ledger item (a) corrected by this entry); op-nexgen RAILS-COVERAGE-KIT §5/§6 (dated staleness note added in place); F17 / `PROBE-OGAR-BODY-TRIAGE`; ruff #42/#43 (`extract_tree_with` + visibility filter).
+
+---
+
+## 2026-07-05 (correction) — E-RECIPE-REUNION-ORDER — the AR-shape reunion is an OPERATOR ORDER; route/action dedup IS the SoC + recipe-codebook doctrine (canon since 2026-06-29/06-30), NOT a rhyme. Corrects E-ROUTE-KIND-VERB-STRATA.
+
+**Status:** FINDING (operator ruling, 2026-07-05 — verbatim: *"The reunion is an order. We only use ORM for Schema and actions. We keep AR and rails/ruby. Redmine teaches us the ancestry. ERB redmine fieldview teaches us to translate into askama classview fieldmask."*). SUPERSEDES E-ROUTE-KIND-VERB-STRATA (below, regraded SUPERSEDED in place): its council REJECTED as `[S]` mere-rhyme a unification the operator had ALREADY canonized a week earlier. The rejection was an artifact of a **mis-framed council** — grounded only in `soc.rs` + `op-codegen-bucket`, never pointed at the 2026-06-29 / 06-30 rulings — i.e. a shallow read on the ORCHESTRATOR's part, not a savant failure.
+
+**The order, in five clauses (each already has a canon home):**
+
+1. **The reunion is an order.** Redmine ⇄ OpenProject converge at the AR/Rails/Ruby shape, keyed by the shared codebook classid (`WorkPackage ≡ Issue ≡ 0x0102`). Redmine → ChiliProject → OpenProject is a fork lineage — the same object graph with drift. Source: op-nexgen `2026-07-05-redmine-op-ar-shape-convergence-plan.md` §0. **Not a conjecture — the ask.**
+
+2. **ORM only for Schema and actions.** The ORM/column shape is the *bridge*: it TYPES the AR fields (the D-AR-3.5 `field_type`/`column_not_null` stratum) and AIDS behaviour/action reconstruction (the `(verb, criteria)` body triage, F17). Never the identity, never the wire. Source: `TWO-SHAPES-COMPILED-NOT-PARSED` §2, RAILS-COVERAGE-KIT §6.
+
+3. **Keep AR and Rails/Ruby.** The class-body declarative AST (`ogar_vocab::Class`: associations/validations/callbacks/scopes/concerns/STI) is the canonical identity — "the wings." Flattening to columns cuts them. Source: TWO-SHAPES §2.
+
+4. **Redmine teaches the ancestry.** STI / `inherits_from` chaining collapse IS the coverage: Redmine 53.8%, OpenProject 71.7% (monotonic with inheritance density). The ancestor's preserved names are the lever for the action table (7 of 9 `Issue`↔`WorkPackage` associations identical; `tracker→type`, `fixed_version→version` the only drift). Source: RAILS-COVERAGE-KIT §0, redmine-op plan §3.
+
+5. **ERB fieldview → askama classview fieldmask.** Redmine's ERB field partial (loop `available_columns` filtered to `column_names`) IS a `ClassView` + a field bitmask; the compiled askama port is one dumb loop over a mask-filtered `FieldDesc[]`, zero per-field `if`s. **This is where route dedup IS SoC:** *"N routes that are the same record, different visible fields are ONE templated ClassView render with N masks — route proliferation is usually an un-applied mask"*; `< 256` maskable, `≥ 256` is the god-object split — *"the same SoC the `ruff_spo_address::soc` lint flags"*, `FIELD_MASK_CAP = MAX_SIBLINGS_PER_TIER` (ONE cap, operator 2026-06-29). Source: `docs/CLASSVIEW-FIELDVIEW-ASKAMA-BITMASK.md`, TWO-SHAPES §4.
+
+**Where the council was exactly inverted:** it argued the soc byte-cap is "layout-motivated and does not transfer to route kinds." The canon says the opposite, in code: the field-view mask cap and the soc sibling cap are the SAME constant (`FIELD_MASK_CAP = MAX_SIBLINGS_PER_TIER`, tested in `ruff_spo_address::soc`). Route/fieldview dedup is not analogous to SoC; it is an INSTANCE of it.
+
+**`HandlerKind` is a named canon recipe family, not a rejected enum.** RAILS-COVERAGE-KIT §5 lists FOUR shared recipe families to mint as content-addressable `RecipeConceptId`s (surface strings = per-language `LabelDto`s): Lifecycle-hook, Guard-kind, Relation-kind, and **Action-kind** (`ACTION_LIST_FOR_TENANT`/`_SOFT_DELETE`/`_TOGGLE_BOOL`/… ← controller `HandlerKind`). The convergence mechanism is IDENTICAL to class-concept convergence (canonical id + skin): *"the recipe vocabulary must converge the same way, or the behavioural arm fragments back into the zoo the structural arm escaped."* That sentence is the order; the superseded entry's "verb × transport × persistence-shape" carve was a worse re-derivation of the Action-kind family already canonized here (`HandlerKind` DOES factor into an `is_a` verb × a render/transport skin — but that factoring is the RecipeConceptId + LabelDto split, canon, not grounds to reject).
+
+**What survives from E-ROUTE-KIND-VERB-STRATA — the GAP LEDGER, not the verdict.** The council's factual observations are true and are the *implementation gap*, repurposed: (a) ruff does not yet capture writes/calls per function (the F17 prerequisite — RAILS-COVERAGE-KIT §6); (b) HTTP-verb/return-shape route discriminants aren't harvested; (c) `HandlerKind`/`OpHandlerKind` stay per-consumer enums *until the OGAR recipe-concept codebook is minted* (RAILS-COVERAGE-KIT §5: "until that lands, the bitmask is per-consumer (the zoo)"). Queued work — upstream in ruff + OGAR, never op-side.
+
+**Measurement discipline retained — as a coverage gate, not an existence test.** The OP⇄Redmine action A/B (redmine-op plan C5) and the F17 body-triage falsifier measure the *coverage %* of a canonized convergence; do not ship claimed coverage unmeasured. Grades: the convergence is `[G]` (operator-ruled); its coverage % is `[H]` (unmeasured); the recipe-concept-codebook mirror of the class codebook is `[G]` declared, unbuilt.
+
+**`ruff_python_dto_check` re-framed** (op-nexgen README rewritten this commit): NOT a "parked parallel-model to retire" but the un-upstreamed **ERB-fieldview → askama render recipes + the Action-kind `HandlerKind` corpus** — teaching material seeding (a) the `ogar-render-askama` classview-fieldmask kit and (b) the OGAR recipe-concept codebook's Action family. Migration is upstream-ward (E-VENDOR-DELTA); it stays a non-member; its CONTENT is doctrine input, not dead weight.
+
+**Cross-ref:** SUPERSEDES E-ROUTE-KIND-VERB-STRATA (below); `docs/CLASSVIEW-FIELDVIEW-ASKAMA-BITMASK.md` (operator 2026-06-29 — route-dedup = SoC + `FIELD_MASK_CAP`); op-nexgen `.claude/knowledge/RAILS-COVERAGE-KIT.md` §0/§5/§6 (STI collapse · the four recipe families · F17), `TWO-SHAPES-COMPILED-NOT-PARSED.md` §2/§4, `2026-07-05-redmine-op-ar-shape-convergence-plan.md`; E-ONE-MASK-THREE-PORTS, E-RECIPE-BITMASK / E-RECIPE-BITMASK-CHAIN, E-AR-DIRECT-SDK, E-OGAR-CONVERGENCE-SHAPE; DISCOVERY-MAP D-ROUTE-KIND-VERB-STRATA (regraded in place).
+
+---
+
+## 2026-07-05 — E-ROUTE-KIND-VERB-STRATA — route-kind dedup is NOT the SoC lint's DO-arm (council-rejected rhyme); what survives: the verb ≠ route-recipe carve + one pre-registered OP⇄Redmine kind A/B
+
+**Status:** SUPERSEDED (2026-07-05, same day — by E-RECIPE-REUNION-ORDER above, on operator ruling. The council's `[S]` rejection of the route-dedup ↔ SoC unification was WRONG: the unification was already operator-canon — `CLASSVIEW-FIELDVIEW-ASKAMA-BITMASK` (2026-06-29): route dedup IS the soc lint's doctrine, `FIELD_MASK_CAP = MAX_SIBLINGS_PER_TIER`; RAILS-COVERAGE-KIT §5 (2026-06-30): `HandlerKind` is the canon Action-kind recipe family. The council was mis-framed — never pointed at those rulings — a shallow read on the orchestrator's part, not a savant failure. What survives is the FACTUAL gap ledger inside this entry (ruff lacks writes/calls capture per F17; the recipe-concept codebook isn't minted), repurposed by the superseding entry from "grounds for rejection" to "the queued implementation gap." The `[G]` receipts below remain correct.)
+
+_[Original REJECTED verdict retained below, append-only, as the cautionary record of the mis-framed pass.]_
+**Status (original):** FINDING (5+3 council pass, 2026-07-05 — 5 research savants + 3 brutally-honest reviewers. The proposed unification — "route deduplication is the DO-arm mirror of `ruff_spo_address::soc`" — was interrogated and **REJECTED at `[S]` mere-rhyme**. Receipts `[G]`, 16/16 verified CODED. The surviving carve is doctrine; the surviving probe is `[H]` with pre-registration required.)
+
+**The proposal (rejected):** that the SoC lint's Duplication arm (over-cap sibling fields → mask by classid into a `ClassView`) and route-kind bucketing (N controller routes → K handler kinds + per-route skin) are one collapse operation on the two arms of the IR, making `HandlerKind` a verb-codebook stratum.
+
+**Why rejected — three grounds (cross-domain + theorem passes):**
+
+1. **detect ≠ curate, a two-level gap.** `soc_findings()` computes its equivalence relation from a HARVESTED predicate (`field_type`) under a layout-motivated cap (`MAX_SIBLINGS_PER_TIER = u8::MAX`, the SoA cascade-rank byte) with a falsifier (`law_holds()`). The kind taxonomy is human-curated recipe classification; ruff does not harvest the discriminant facts a route classifier would need (HTTP verb, writes-vs-reads, return-shape collection|item), and no classifier exists. Unharvested facts → unbuilt classifier: no shared mechanism today.
+2. **discard ≠ retain.** soc Duplication is reclamation — `duplicate_rows = typed − distinct` are DROPPED. Route bucketing retains every skin (route id, tenant column, model mapping); nothing is droppable. That is DRY templating / dictionary-encoding — the dual of deduplication, described as a sameness.
+3. **the vacuity trap.** "N siblings → K representatives + residual" is this workspace's UNIVERSAL quotient primitive (palette codebooks, CAM-PQ, 256×256 centroid tiles, interning). What is distinctive about soc — harvested relation + byte-cap + `law_holds` — is exactly what does NOT transfer.
+
+**Receipts `[G]` (all verified against shipped code, archaeologist pass):** `ruff_spo_address::soc` — `soc_findings()` `soc.rs:86`, `law_holds()` `soc.rs:156`, verdicts `soc.rs:48-55`; `lance-graph-contract::codegen_spine` — `RouteBucket` `:343`, `RouteBucketTyped` `:404`; op-nexgen `op-codegen-bucket::OpHandlerKind` impl of the typed spine (kind-set distinctness owned by its `op_kinds_are_distinct` test — the count is deliberately not restated here, fuse doctrine); op-nexgen `crates/ruff_python_dto_check/` = the un-upstreamed **sqlx-target delta** against live ruff's `ruff_python_dto_check` (upstream carries `contract.rs` + seaorm codegen, no `sqlx_emit`) — PARKED, see its README.
+
+**The carve that survives (load-bearing; sentinel + doctrine passes):** a `HandlerKind` is NOT a verb — it is **verb × transport × persistence-shape** (a route RECIPE: `soft_delete` and `toggle_bool_field` are both `is_a` update; `detail_for_tenant` and `ajax_json` are both `is_a` read). The verb codebook (E-ONE-MASK-THREE-PORTS: Odoo `write` ≡ AR `update` ≡ SQL UPDATE; the **mint question** stays parked on the serialized-allocation train) is the stripped `is_a` concept, resolving through the SAME canonical-verb rail as `ActionDef` (capstone C5 operator ruling: actions are `part_of`/`is_a`) — never a parallel behaviour vocabulary beside it. **The verb projected OUT OF a kind is the codebook candidate; the kind itself is adapter-side** (recipes → `ogar-adapter-*` / the render kit). Two strata, two falsifiers.
+
+**The probe that survives `[H]` (an INDEPENDENT convergence probe — NOT `law_holds`'s mirror; it falsifies a curated relation, not a harvested one):** classify BOTH the OpenProject and Redmine route surfaces into the kind taxonomy; denominator = one port's full route surface, numerator = routes whose kind also appears in the other port's kind set; **KILL threshold (collapse-rate %) pre-registered before the run.** This is a DISTINCT measurement from capstone C5's verb A/B (route-recipe stratum vs verb stratum); neither stands in for the other. Precedent honesty: the noun-side C3 convergence (26/26) is **asserted**, not measured — only the WorkPackage oracle-diff row is measured — so the kind side cannot claim a measured precedent. Literature (grounder pass): parameterized-clone abstraction (Baker, SIAM J. Comput. 26(5), 1997) and Rails' own K=7 canonical actions make collapse PLAUSIBLE — `[G]` for the general mechanism; no coverage study of real route surfaces exists, so this A/B would be a first measurement.
+
+**GATE (mint fence):** no verb-codebook row is allocated until the kind/verb A/B falsifier is green; **naming a stratum is never mint authorization** (E-VENDOR-DELTA doctrine: spec it, don't fake it). If a route classifier is ever built, it is built in **ruff** on newly-harvested discriminant facts (spec-to-ruff wishlist: HTTP verb / writes / return-shape), phase-named per OGAR-AS-IR — classifier = front-end analysis pass, verb rows = symbol-table entries, recipes = lowering passes — never op-side.
+
+**Cross-ref:** `docs/DISCOVERY-MAP.md` D-ROUTE-KIND-VERB-STRATA (twin); E-ONE-MASK-THREE-PORTS (verb rows argued-for, mint parked); E-AR-DIRECT-SDK (DO-arm landing zone: ActionHandler + unified adapters — placement unchanged by this entry); E-OGAR-CONVERGENCE-SHAPE open seam #2 (ActionDef↔UnifiedStep); op-nexgen `.claude/handovers/2026-07-05-CAPSTONE-ar-shape-convergence.md` C5 + `2026-07-05-ogar-v3-consumer-migration-plan.md` §1/§6; op-nexgen `crates/ruff_python_dto_check/README.md` (the parked sqlx delta).
 
 ---
 
