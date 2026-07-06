@@ -7,9 +7,42 @@
 
 ---
 
+## 2026-07-05 (correction) — E-RECIPE-REUNION-ORDER — the AR-shape reunion is an OPERATOR ORDER; route/action dedup IS the SoC + recipe-codebook doctrine (canon since 2026-06-29/06-30), NOT a rhyme. Corrects E-ROUTE-KIND-VERB-STRATA.
+
+**Status:** FINDING (operator ruling, 2026-07-05 — verbatim: *"The reunion is an order. We only use ORM for Schema and actions. We keep AR and rails/ruby. Redmine teaches us the ancestry. ERB redmine fieldview teaches us to translate into askama classview fieldmask."*). SUPERSEDES E-ROUTE-KIND-VERB-STRATA (below, regraded SUPERSEDED in place): its council REJECTED as `[S]` mere-rhyme a unification the operator had ALREADY canonized a week earlier. The rejection was an artifact of a **mis-framed council** — grounded only in `soc.rs` + `op-codegen-bucket`, never pointed at the 2026-06-29 / 06-30 rulings — i.e. a shallow read on the ORCHESTRATOR's part, not a savant failure.
+
+**The order, in five clauses (each already has a canon home):**
+
+1. **The reunion is an order.** Redmine ⇄ OpenProject converge at the AR/Rails/Ruby shape, keyed by the shared codebook classid (`WorkPackage ≡ Issue ≡ 0x0102`). Redmine → ChiliProject → OpenProject is a fork lineage — the same object graph with drift. Source: op-nexgen `2026-07-05-redmine-op-ar-shape-convergence-plan.md` §0. **Not a conjecture — the ask.**
+
+2. **ORM only for Schema and actions.** The ORM/column shape is the *bridge*: it TYPES the AR fields (the D-AR-3.5 `field_type`/`column_not_null` stratum) and AIDS behaviour/action reconstruction (the `(verb, criteria)` body triage, F17). Never the identity, never the wire. Source: `TWO-SHAPES-COMPILED-NOT-PARSED` §2, RAILS-COVERAGE-KIT §6.
+
+3. **Keep AR and Rails/Ruby.** The class-body declarative AST (`ogar_vocab::Class`: associations/validations/callbacks/scopes/concerns/STI) is the canonical identity — "the wings." Flattening to columns cuts them. Source: TWO-SHAPES §2.
+
+4. **Redmine teaches the ancestry.** STI / `inherits_from` chaining collapse IS the coverage: Redmine 53.8%, OpenProject 71.7% (monotonic with inheritance density). The ancestor's preserved names are the lever for the action table (7 of 9 `Issue`↔`WorkPackage` associations identical; `tracker→type`, `fixed_version→version` the only drift). Source: RAILS-COVERAGE-KIT §0, redmine-op plan §3.
+
+5. **ERB fieldview → askama classview fieldmask.** Redmine's ERB field partial (loop `available_columns` filtered to `column_names`) IS a `ClassView` + a field bitmask; the compiled askama port is one dumb loop over a mask-filtered `FieldDesc[]`, zero per-field `if`s. **This is where route dedup IS SoC:** *"N routes that are the same record, different visible fields are ONE templated ClassView render with N masks — route proliferation is usually an un-applied mask"*; `< 256` maskable, `≥ 256` is the god-object split — *"the same SoC the `ruff_spo_address::soc` lint flags"*, `FIELD_MASK_CAP = MAX_SIBLINGS_PER_TIER` (ONE cap, operator 2026-06-29). Source: `docs/CLASSVIEW-FIELDVIEW-ASKAMA-BITMASK.md`, TWO-SHAPES §4.
+
+**Where the council was exactly inverted:** it argued the soc byte-cap is "layout-motivated and does not transfer to route kinds." The canon says the opposite, in code: the field-view mask cap and the soc sibling cap are the SAME constant (`FIELD_MASK_CAP = MAX_SIBLINGS_PER_TIER`, tested in `ruff_spo_address::soc`). Route/fieldview dedup is not analogous to SoC; it is an INSTANCE of it.
+
+**`HandlerKind` is a named canon recipe family, not a rejected enum.** RAILS-COVERAGE-KIT §5 lists FOUR shared recipe families to mint as content-addressable `RecipeConceptId`s (surface strings = per-language `LabelDto`s): Lifecycle-hook, Guard-kind, Relation-kind, and **Action-kind** (`ACTION_LIST_FOR_TENANT`/`_SOFT_DELETE`/`_TOGGLE_BOOL`/… ← controller `HandlerKind`). The convergence mechanism is IDENTICAL to class-concept convergence (canonical id + skin): *"the recipe vocabulary must converge the same way, or the behavioural arm fragments back into the zoo the structural arm escaped."* That sentence is the order; the superseded entry's "verb × transport × persistence-shape" carve was a worse re-derivation of the Action-kind family already canonized here (`HandlerKind` DOES factor into an `is_a` verb × a render/transport skin — but that factoring is the RecipeConceptId + LabelDto split, canon, not grounds to reject).
+
+**What survives from E-ROUTE-KIND-VERB-STRATA — the GAP LEDGER, not the verdict.** The council's factual observations are true and are the *implementation gap*, repurposed: (a) ruff does not yet capture writes/calls per function (the F17 prerequisite — RAILS-COVERAGE-KIT §6); (b) HTTP-verb/return-shape route discriminants aren't harvested; (c) `HandlerKind`/`OpHandlerKind` stay per-consumer enums *until the OGAR recipe-concept codebook is minted* (RAILS-COVERAGE-KIT §5: "until that lands, the bitmask is per-consumer (the zoo)"). Queued work — upstream in ruff + OGAR, never op-side.
+
+**Measurement discipline retained — as a coverage gate, not an existence test.** The OP⇄Redmine action A/B (redmine-op plan C5) and the F17 body-triage falsifier measure the *coverage %* of a canonized convergence; do not ship claimed coverage unmeasured. Grades: the convergence is `[G]` (operator-ruled); its coverage % is `[H]` (unmeasured); the recipe-concept-codebook mirror of the class codebook is `[G]` declared, unbuilt.
+
+**`ruff_python_dto_check` re-framed** (op-nexgen README rewritten this commit): NOT a "parked parallel-model to retire" but the un-upstreamed **ERB-fieldview → askama render recipes + the Action-kind `HandlerKind` corpus** — teaching material seeding (a) the `ogar-render-askama` classview-fieldmask kit and (b) the OGAR recipe-concept codebook's Action family. Migration is upstream-ward (E-VENDOR-DELTA); it stays a non-member; its CONTENT is doctrine input, not dead weight.
+
+**Cross-ref:** SUPERSEDES E-ROUTE-KIND-VERB-STRATA (below); `docs/CLASSVIEW-FIELDVIEW-ASKAMA-BITMASK.md` (operator 2026-06-29 — route-dedup = SoC + `FIELD_MASK_CAP`); op-nexgen `.claude/knowledge/RAILS-COVERAGE-KIT.md` §0/§5/§6 (STI collapse · the four recipe families · F17), `TWO-SHAPES-COMPILED-NOT-PARSED.md` §2/§4, `2026-07-05-redmine-op-ar-shape-convergence-plan.md`; E-ONE-MASK-THREE-PORTS, E-RECIPE-BITMASK / E-RECIPE-BITMASK-CHAIN, E-AR-DIRECT-SDK, E-OGAR-CONVERGENCE-SHAPE; DISCOVERY-MAP D-ROUTE-KIND-VERB-STRATA (regraded in place).
+
+---
+
 ## 2026-07-05 — E-ROUTE-KIND-VERB-STRATA — route-kind dedup is NOT the SoC lint's DO-arm (council-rejected rhyme); what survives: the verb ≠ route-recipe carve + one pre-registered OP⇄Redmine kind A/B
 
-**Status:** FINDING (5+3 council pass, 2026-07-05 — 5 research savants + 3 brutally-honest reviewers. The proposed unification — "route deduplication is the DO-arm mirror of `ruff_spo_address::soc`" — was interrogated and **REJECTED at `[S]` mere-rhyme**. Receipts `[G]`, 16/16 verified CODED. The surviving carve is doctrine; the surviving probe is `[H]` with pre-registration required.)
+**Status:** SUPERSEDED (2026-07-05, same day — by E-RECIPE-REUNION-ORDER above, on operator ruling. The council's `[S]` rejection of the route-dedup ↔ SoC unification was WRONG: the unification was already operator-canon — `CLASSVIEW-FIELDVIEW-ASKAMA-BITMASK` (2026-06-29): route dedup IS the soc lint's doctrine, `FIELD_MASK_CAP = MAX_SIBLINGS_PER_TIER`; RAILS-COVERAGE-KIT §5 (2026-06-30): `HandlerKind` is the canon Action-kind recipe family. The council was mis-framed — never pointed at those rulings — a shallow read on the orchestrator's part, not a savant failure. What survives is the FACTUAL gap ledger inside this entry (ruff lacks writes/calls capture per F17; the recipe-concept codebook isn't minted), repurposed by the superseding entry from "grounds for rejection" to "the queued implementation gap." The `[G]` receipts below remain correct.)
+
+_[Original REJECTED verdict retained below, append-only, as the cautionary record of the mis-framed pass.]_
+**Status (original):** FINDING (5+3 council pass, 2026-07-05 — 5 research savants + 3 brutally-honest reviewers. The proposed unification — "route deduplication is the DO-arm mirror of `ruff_spo_address::soc`" — was interrogated and **REJECTED at `[S]` mere-rhyme**. Receipts `[G]`, 16/16 verified CODED. The surviving carve is doctrine; the surviving probe is `[H]` with pre-registration required.)
 
 **The proposal (rejected):** that the SoC lint's Duplication arm (over-cap sibling fields → mask by classid into a `ClassView`) and route-kind bucketing (N controller routes → K handler kinds + per-route skin) are one collapse operation on the two arms of the IR, making `HandlerKind` a verb-codebook stratum.
 

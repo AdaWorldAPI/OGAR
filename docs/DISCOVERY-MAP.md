@@ -876,3 +876,19 @@ isolation. The map's job is to keep them visible.
   `crates/ruff_python_dto_check/` regraded to a PARKED un-upstreamed
   sqlx-target delta against live ruff's `ruff_python_dto_check` (see
   its README).
+  **⊘ CORRECTED IN PLACE (2026-07-05, same day — operator ruling;
+  regraded: convergence `[G]`, coverage `[H]`):** the `[S]` rejection
+  above is WRONG and SUPERSEDED by `E-RECIPE-REUNION-ORDER`. Route/
+  fieldview dedup IS the SoC doctrine by operator canon
+  (`CLASSVIEW-FIELDVIEW-ASKAMA-BITMASK`, 2026-06-29:
+  `FIELD_MASK_CAP = MAX_SIBLINGS_PER_TIER`, ONE cap — the field-view
+  mask cap and the soc sibling cap are the same constant), and
+  `HandlerKind` is the canon Action-kind recipe family
+  (RAILS-COVERAGE-KIT §5, 2026-06-30 — mint as `RecipeConceptId`,
+  converges like class concepts). The reunion (Redmine ⇄ OpenProject at
+  the AR shape) is an ORDER, not a conjecture. What survives from the
+  rejected pass is only the factual gap ledger (unharvested writes/calls
+  per F17; the recipe-concept codebook unminted) — queued work, upstream
+  in ruff + OGAR, never op-side. `ruff_python_dto_check` re-framed as the
+  ERB-fieldview → askama render recipes + Action-kind corpus that seeds
+  the `ogar-render-askama` kit and the recipe codebook, not dead weight.
