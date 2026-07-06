@@ -405,6 +405,11 @@ pub struct ActionDef {
     /// Lifecycle-mutator dispatch CALLS (`Function::calls`, `<receiver>.<method>`).
     /// Effect annotation for call-graph analysis; no body is captured.
     pub calls: Vec<String>,
+    /// Exception/error type names this action may RAISE (`ruff_spo_triplet::
+    /// Function::raises`, e.g. `UserError`, `ValidationError`). Effect
+    /// annotation against the `exc:` namespace; Authoritative (the `raise`
+    /// statement names the type). Name-level only — no message/condition.
+    pub raises: Vec<String>,
 
     // ── Rubicon statem carriers (OGAR-AST-CONTRACT §6) ──
     // The three semantics that don't survive Action-flattening; each lowers
@@ -6003,6 +6008,58 @@ mod tests {
         a.on_enter = Some(EnterEffect::transition("state", "sale"));
         assert_eq!(a.on_enter.as_ref().unwrap().field, "state");
         assert_eq!(a.on_enter.as_ref().unwrap().to_value, "sale");
+    }
+
+    #[test]
+    fn action_def_raises_slot_is_additive_and_defaults_empty() {
+        // SPEC-ATC2-OGAR Arm C: `raises` is a new additive slot on
+        // `ActionDef`, mirroring the existing `calls` effect annotation.
+        // Existing `..Default::default()` construction sites (and
+        // `ActionDef::new`) must keep compiling with an empty `raises`.
+        let a = ActionDef::default();
+        assert!(a.raises.is_empty());
+        let mut b = ActionDef::new("id", "predicate", "object_class");
+        assert!(b.raises.is_empty());
+        b.raises = vec!["UserError".to_string()];
+        assert_eq!(b.raises, vec!["UserError".to_string()]);
+    }
+
+    #[test]
+    fn kausal_spec_match_is_exhaustive() {
+        // SPEC-ATC2-OGAR §7 governance test: an exhaustive match (no
+        // wildcard arm) over every `KausalSpec` variant. `KausalSpec` is
+        // `#[non_exhaustive]` for DOWNSTREAM crates only — within the
+        // defining crate a wildcard-free match is still exhaustiveness
+        // checked by rustc, so this test fails to COMPILE the moment a
+        // new variant (e.g. `Constrains` / `Onchange` from Arm B) is added
+        // without a matching arm here. That loud compile break is the
+        // COUNT_FUSE substitute the doctrine asks for in place of leaning
+        // on `#[non_exhaustive]` alone.
+        let specs = vec![
+            KausalSpec::StateGuard {
+                guard_field: "state".into(),
+                guard_values: vec!["draft".into()],
+            },
+            KausalSpec::LifecycleTrigger {
+                event: "before_save".into(),
+            },
+            KausalSpec::Depends {
+                paths: vec!["a.b".into()],
+            },
+            KausalSpec::ContextDepends {
+                keys: vec!["lang".into()],
+            },
+            KausalSpec::External,
+        ];
+        for spec in specs {
+            match spec {
+                KausalSpec::StateGuard { .. } => {}
+                KausalSpec::LifecycleTrigger { .. } => {}
+                KausalSpec::Depends { .. } => {}
+                KausalSpec::ContextDepends { .. } => {}
+                KausalSpec::External => {}
+            }
+        }
     }
 
     // ── all_promoted_classes() — enumerator pinned to class_ids::ALL ──
