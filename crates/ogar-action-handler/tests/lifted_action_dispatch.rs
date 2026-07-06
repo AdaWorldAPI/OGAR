@@ -35,6 +35,7 @@ fn lifted_action_dispatches_through_native_executor() {
         calls: vec![],
         raises: vec![],
         traverses: vec![],
+        ..Default::default()
     });
     let actions = lift_actions(&m);
     let action = actions

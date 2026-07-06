@@ -1750,6 +1750,7 @@ mod tests {
             calls: vec!["self.touch".to_string()],
             raises: Vec::new(),
             traverses: Vec::new(),
+            ..Default::default()
         });
         let acts = lift_actions(&m);
         assert_eq!(acts.len(), 1);
@@ -1778,6 +1779,7 @@ mod tests {
             calls: Vec::new(),
             raises: Vec::new(),
             traverses: Vec::new(),
+            ..Default::default()
         });
         let acts = lift_actions(&m);
         assert_eq!(acts.len(), 1);
