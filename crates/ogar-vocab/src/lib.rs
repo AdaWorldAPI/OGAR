@@ -384,6 +384,19 @@ pub struct ActionDef {
     /// Decorator names that drove the extraction (Odoo `@api.depends`,
     /// Rails callback macro name).
     pub decorators: Vec<String>,
+    /// Fields this action READS (authoritative name-level facts from the
+    /// frontend — `ruff_spo_triplet::Function::reads`). Effect annotation
+    /// per OGAR-AS-IR §3 test 2; NOT a reactive `@api.depends` claim (a plain
+    /// method read is not a recomputation trigger — see `lift_actions`).
+    pub reads: Vec<String>,
+    /// Fields this action WRITES (`Function::writes` — `self.<field> = …`
+    /// setter targets, Authoritative). Effect annotation; the *value* written
+    /// is not captured by today's frontend, so this is name-level only and
+    /// does NOT auto-build an `on_enter` `EnterEffect`.
+    pub writes: Vec<String>,
+    /// Lifecycle-mutator dispatch CALLS (`Function::calls`, `<receiver>.<method>`).
+    /// Effect annotation for call-graph analysis; no body is captured.
+    pub calls: Vec<String>,
 
     // ── Rubicon statem carriers (OGAR-AST-CONTRACT §6) ──
     // The three semantics that don't survive Action-flattening; each lowers

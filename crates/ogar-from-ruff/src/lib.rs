@@ -508,7 +508,11 @@ pub fn project_canonical_roles(class: &Class) -> std::collections::HashSet<&'sta
 ///
 /// This is a **facts-only** lift: it sets the action's `identity`,
 /// `predicate` (the method name — already snake_case on the Rails side),
-/// and `object_class` (the model name). It deliberately does **not**:
+/// `object_class` (the model name), and the `reads` / `writes` / `calls`
+/// effect annotations verbatim from [`ruff_spo_triplet::Function`] (OGAR-AS-IR
+/// §3 test 2 — "each `ActionDef` declares what it reads, what it writes, what
+/// side effects it has… pure-vs-effectful is a type, not a comment"). It
+/// deliberately does **not**:
 ///
 /// - set any execution policy (the vocab [`ActionDef`] has no `exec` slot;
 ///   backend routing is consumer-private — see the OP-arm plan §5.2),
@@ -517,8 +521,11 @@ pub fn project_canonical_roles(class: &Class) -> std::collections::HashSet<&'sta
 /// - populate `kausal` from [`ruff_spo_triplet::Function`]`::reads` — a
 ///   plain Rails method reading a field is **not** a reactive
 ///   `@api.depends`-style trigger, so claiming one would leak method-body
-///   description into causal semantics. Those `reads` / `raises` /
-///   `traverses` edges already ride the narrow / SPO arm as triples.
+///   description into causal semantics. `reads` (and `writes` / `calls`) now
+///   ride `ActionDef` as **effect annotations** (see above) — that is a
+///   distinct, weaker claim than a `KausalSpec::Depends` reactive trigger,
+///   which stays `None` here. `raises` / `traverses` have no `ActionDef`
+///   slot yet and still ride the narrow / SPO arm as triples only.
 ///
 /// The result is registry-ready: guard / RBAC / `exec` enrichment happens
 /// downstream at registration, not in the producer.
@@ -528,11 +535,15 @@ pub fn lift_actions(model: &Model) -> Vec<ActionDef> {
         .functions
         .iter()
         .map(|f| {
-            ActionDef::new(
+            let mut a = ActionDef::new(
                 format!("{}::action_def::{}", model.name, f.name),
                 &f.name,
                 &model.name,
-            )
+            );
+            a.reads = f.reads.clone();
+            a.writes = f.writes.clone();
+            a.calls = f.calls.clone();
+            a
         })
         .collect()
 }
@@ -1720,6 +1731,73 @@ mod tests {
     #[test]
     fn lift_actions_empty_functions_yields_empty() {
         assert!(lift_actions(&Model::new("Empty")).is_empty());
+    }
+
+    /// SPEC-1(i): `reads` / `writes` / `calls` now ride `ActionDef` as
+    /// first-class effect annotations (OGAR-AS-IR §3 test 2), sourced
+    /// verbatim from `ruff_spo_triplet::Function`. Crucially, this must NOT
+    /// fabricate a reactive `kausal` trigger from a plain method read — a
+    /// Rails method reading a field is not an `@api.depends`-style
+    /// recomputation trigger, so `kausal` stays `None`.
+    #[test]
+    fn lift_actions_carries_read_write_call_effect_facts() {
+        let mut m = Model::new("SaleOrder");
+        m.functions.push(Function {
+            name: "recompute_total".to_string(),
+            reads: vec!["quantity".to_string(), "price".to_string()],
+            writes: vec!["total".to_string()],
+            calls: vec!["self.touch".to_string()],
+            raises: Vec::new(),
+            traverses: Vec::new(),
+        });
+        let acts = lift_actions(&m);
+        assert_eq!(acts.len(), 1);
+        let a = &acts[0];
+        assert_eq!(a.reads, vec!["quantity".to_string(), "price".to_string()]);
+        assert_eq!(a.writes, vec!["total".to_string()]);
+        assert_eq!(a.calls, vec!["self.touch".to_string()]);
+        assert!(
+            a.kausal.is_none(),
+            "reads/writes/calls are effect annotations, not a fabricated reactive trigger"
+        );
+    }
+
+    /// A `Function` with all-empty fact vectors must lift to empty `Vec`s on
+    /// `ActionDef` — not `None`-like phantom entries. `reads` / `writes` /
+    /// `calls` are `Vec<String>`, so "empty" and "absent" are the same zero
+    /// value; this pins that the lift never invents entries when ruff saw
+    /// none.
+    #[test]
+    fn lift_actions_empty_facts_stay_empty_not_none() {
+        let mut m = Model::new("Bare");
+        m.functions.push(Function {
+            name: "noop".to_string(),
+            reads: Vec::new(),
+            writes: Vec::new(),
+            calls: Vec::new(),
+            raises: Vec::new(),
+            traverses: Vec::new(),
+        });
+        let acts = lift_actions(&m);
+        assert_eq!(acts.len(), 1);
+        assert!(acts[0].reads.is_empty());
+        assert!(acts[0].writes.is_empty());
+        assert!(acts[0].calls.is_empty());
+    }
+
+    /// Regression: adding the effect-annotation fields must not disturb the
+    /// pre-existing identity / predicate / object_class shape — same
+    /// assertions as `lift_actions_predicate_object_class_and_identity`,
+    /// kept as an explicit named regression per SPEC-1(i).
+    #[test]
+    fn lift_actions_identity_predicate_object_unchanged() {
+        let acts = lift_actions(&mk_model_with_functions());
+        assert_eq!(acts[0].predicate, "set_status");
+        assert_eq!(acts[0].object_class, "WorkPackage");
+        assert_eq!(acts[0].identity, "WorkPackage::action_def::set_status");
+        assert_eq!(acts[1].predicate, "close!");
+        assert_eq!(acts[1].object_class, "WorkPackage");
+        assert_eq!(acts[1].identity, "WorkPackage::action_def::close!");
     }
 
     #[test]
