@@ -305,7 +305,20 @@ fn project_rails_fields(class: &mut Class, model: &Model) {
             assoc.class_name = Some(comodel.clone());
             assoc.inverse_of = field.inverse_name.clone();
             class.associations.push(assoc);
-        } else if !is_fk_shadowed_by_association(&field.name, class) {
+        } else if !is_fk_shadowed_by_association(&field.name, class)
+            && !class.attributes.iter().any(|a| a.name == field.name)
+        {
+            // The second guard (no already-lifted attribute of the same
+            // name) closes PR #156 finding (c): a model that both declares
+            // `attribute :foo, :string` (AR-DSL, lifted earlier in
+            // `lift_model_with_language`) AND has a physical `foo` column
+            // must not end up with two `foo` struct fields. On collision,
+            // the AR-DSL declaration wins (it is the declared truth; the
+            // physical column is the same field seen from the migration) —
+            // we skip the physical duplicate rather than merge/overwrite,
+            // since overwriting would change `type_name` provenance and
+            // risk drift. Type reconciliation on collision is a follow-up,
+            // not done here.
             let mut attr = Attribute::new(&field.name);
             attr.type_name = field.field_type.clone();
             // Schema stratum is total: null:false -> required; the Rails
@@ -321,13 +334,31 @@ fn project_rails_fields(class: &mut Class, model: &Model) {
     }
 }
 
-/// FK-dedup predicate for [`project_rails_fields`]: true when `field_name`
-/// has the shape `<name>_id` for a non-empty `<name>`, AND `class` already
-/// carries an [`Association`] named `<name>` (from the AR-DSL vector, lifted
-/// before this function runs in [`lift_model_with_language`]). The bare `id`
-/// primary key column never matches — `"id"` has no `"_id"`-suffixed prefix
-/// of its own — and is always kept as a scalar attribute.
+/// FK-dedup predicate for [`project_rails_fields`]. Two independent shadow
+/// rules, checked in order:
+///
+/// 1. **Explicit `foreign_key:`** — `class` carries an [`Association`] whose
+///    declared `foreign_key` equals `field_name` verbatim (e.g.
+///    `belongs_to :author, foreign_key: "user_id"` shadows the physical
+///    `user_id` column even though the association's own name is `author`,
+///    not `user`). This is the authoritative signal (PR #156 finding (b)) —
+///    checked first.
+/// 2. **`<name>_id` naming convention** — `field_name` has the shape
+///    `<name>_id` for a non-empty `<name>`, AND `class` already carries an
+///    [`Association`] named `<name>` (from the AR-DSL vector, lifted before
+///    this function runs in [`lift_model_with_language`]). The bare `id`
+///    primary key column never matches either rule — `"id"` has no
+///    `"_id"`-suffixed prefix of its own, and no real corpus association
+///    declares `foreign_key: "id"` — and is always kept as a scalar
+///    attribute.
 fn is_fk_shadowed_by_association(field_name: &str, class: &Class) -> bool {
+    if class
+        .associations
+        .iter()
+        .any(|a| a.foreign_key.as_deref() == Some(field_name))
+    {
+        return true;
+    }
     field_name
         .strip_suffix("_id")
         .filter(|prefix| !prefix.is_empty())
@@ -1063,6 +1094,73 @@ mod tests {
             "the literal id column is never FK-deduped"
         );
         assert!(lifted.associations.iter().any(|a| a.name == "project"));
+    }
+
+    /// PR #156 finding (b): `is_fk_shadowed_by_association` must also honour
+    /// an association's *explicit* `foreign_key:` option, not just the
+    /// `<name>_id` naming convention. `belongs_to :author, foreign_key:
+    /// "user_id"` names the association `author` (not `user`), so the
+    /// naming-convention rule alone would miss it and double-project
+    /// `user_id: OgInt` alongside `author: ToOne<...>`.
+    ///
+    /// **Red-before-fix:** on unpatched `main`, `user_id` survives as an
+    /// attribute (the naming-convention check only strips `_id` and compares
+    /// the stem `"user"` to association names, never finding `"author"`) —
+    /// this assertion fails until `is_fk_shadowed_by_association` also
+    /// checks `Association::foreign_key`.
+    #[test]
+    fn lift_model_ruby_fk_deduped_by_explicit_foreign_key() {
+        let mut m = Model::new("Comment");
+        m.associations.push(AssocDecl {
+            kind: AssocKind::BelongsTo,
+            name: "author".to_string(),
+            options: vec![("foreign_key".to_string(), "\"user_id\"".to_string())],
+        });
+        m.fields.push(Field {
+            name: "user_id".to_string(),
+            field_type: Some("bigint".to_string()),
+            not_null: Some(true),
+            ..Default::default()
+        });
+        let lifted = lift_model(&m);
+        assert!(
+            !lifted.attributes.iter().any(|a| a.name == "user_id"),
+            "user_id must be shadowed by author's explicit foreign_key: {:?}",
+            lifted.attributes,
+        );
+        assert!(lifted.associations.iter().any(|a| a.name == "author"));
+    }
+
+    /// PR #156 finding (c): a physical column whose name already matches an
+    /// AR-DSL-declared attribute (`attribute :foo, :string`) must not be
+    /// projected a second time — `project_rails_fields` previously pushed
+    /// unconditionally, producing two `foo` entries in `class.attributes`
+    /// (an invalid duplicate struct field in the generated code).
+    ///
+    /// **Red-before-fix:** on unpatched `main`, the count is 2 (the AR-DSL
+    /// lift populates one `foo` attribute earlier in
+    /// `lift_model_with_language`, and `project_rails_fields` pushes a
+    /// second, unguarded, for the physical `foo` column).
+    #[test]
+    fn lift_model_ruby_physical_column_does_not_duplicate_declared_attribute() {
+        let mut m = Model::new("Widget");
+        m.attributes.push(AttrDecl {
+            kind: AttrKind::Attribute,
+            name: "foo".to_string(),
+            options: vec![("type".to_string(), "string".to_string())],
+        });
+        m.fields.push(Field {
+            name: "foo".to_string(),
+            field_type: Some("string".to_string()),
+            ..Default::default()
+        });
+        let lifted = lift_model(&m);
+        assert_eq!(
+            lifted.attributes.iter().filter(|a| a.name == "foo").count(),
+            1,
+            "foo must appear exactly once, not once per schema stratum: {:?}",
+            lifted.attributes,
+        );
     }
 
     /// **(c)** GAP-1 required wiring: `Field::not_null` maps onto
