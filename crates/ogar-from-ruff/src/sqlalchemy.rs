@@ -2,31 +2,23 @@
 //!
 //! `lift_model_with_language` (in `lib.rs`) routes `Language::Python` through
 //! [`super::project_odoo_fields`], which never wires `not_null -> required`
-//! (only the Rails path, `super::project_rails_fields`, does that). WoA's
-//! Flask-SQLAlchemy schema is **total** — every column's nullability is a
-//! declared fact (`nullable=True/False`), exactly like a Rails migration
-//! column — so it needs the Rails-style wiring (FK-dedup +
-//! `not_null -> required` + the attribute-dup guard), NOT the Odoo wiring,
-//! on a path that still stamps [`Language::Python`] (WoA is Python source).
+//! (only the total-schema path does that). WoA's Flask-SQLAlchemy schema is
+//! **total** — every column's nullability is a declared fact
+//! (`nullable=True/False`), exactly like a Rails migration column — so it
+//! needs the total-schema-style wiring (FK-dedup + `not_null -> required` +
+//! the attribute-dup guard), NOT the Odoo wiring, on a path that still stamps
+//! [`Language::Python`] (WoA is Python source).
 //!
-//! # Why this module does not share code with `project_rails_fields`
+//! # Consolidation onto `project_total_schema_fields` (landed)
 //!
-//! SPEC-5 Part B (design note 1) prefers ONE shared
-//! `project_total_schema_fields(class, model)` helper called by both
-//! `project_rails_fields` and this module's [`project_sqlalchemy_fields`],
-//! with `lib.rs` threading an internal `FieldProjection` selector through
-//! `lift_model_with_language`.
-//!
-//! **This session's operator constraint overrides that design note:** a
-//! sibling grind agent (G-A) is editing `lib.rs` concurrently on unrelated
-//! functions, and the merge contract for this workstream is "new module
-//! file(s) + at most one `mod` line in `lib.rs`, otherwise `lib.rs`
-//! untouched." So the FK-dedup predicate and the total-nullability wiring
-//! are **duplicated** here rather than threaded through `lib.rs`'s private
-//! `is_fk_shadowed_by_association` / `project_rails_fields`. This is a named,
-//! reported trade-off (see the mission report), not a silent divergence —
-//! once G-A's `lib.rs` changes land, a follow-up should consolidate onto the
-//! spec's preferred `project_total_schema_fields` shared helper.
+//! SPEC-5 Part B (design note 1) named ONE shared
+//! `project_total_schema_fields(class, model)` helper, called by both the
+//! Rails (Ruby) and this module's SQLAlchemy (Python) producers, as the
+//! target design. That consolidation has **landed**: [`project_sqlalchemy_fields`]
+//! is now a thin wrapper around [`crate::project_total_schema_fields`], and
+//! the FK-dedup predicate (`crate::is_fk_shadowed_by_association`) is no
+//! longer duplicated here — both producers route through the single
+//! `lib.rs` implementation (Batch-1 Item 2, D-PARITY-PROBE-WOA-1 Nachtrag).
 //!
 //! Consequently [`lift_model_sqlalchemy`] / [`lift_model_graph_sqlalchemy`]
 //! are deliberately narrower than [`super::lift_model`] /
@@ -39,7 +31,7 @@
 //! empty state — a Flask-SQLAlchemy model has no such DSL to lift, so this
 //! is the honest empty state for this producer, not a dropped fact.
 
-use ogar_vocab::{Association, AssociationKind, Attribute, Class, ComputedField, Language};
+use ogar_vocab::{Class, Language};
 use ruff_spo_triplet::{Model, ModelGraph};
 
 use crate::lift_association;
@@ -49,82 +41,13 @@ use crate::lift_association;
 /// the not-yet-built `ruff_sqlalchemy_spo` frontend's harvest) onto the
 /// schema-carrying [`Class`] columns.
 ///
-/// Mirrors `ogar-from-ruff::project_rails_fields` (SPEC-5 Part B, design
-/// note 1) field-for-field:
-/// - a relational field (`target` set) -> [`Association`]; dormant for the
-///   WoA fixture (associations arrive via `Model::associations` — see
-///   [`lift_model_sqlalchemy`] — not via a relational `Model::fields`
-///   entry), kept for shape-parity with the Odoo/Rails paths.
-/// - a scalar field named `<name>_id` whose model ALSO declares an
-///   association named `<name>` (SQLAlchemy `db.relationship`, already
-///   lifted onto `class.associations` before this function runs) ->
-///   **skipped** ([`is_fk_shadowed_by_association`]). The physical FK
-///   column and the declared `db.relationship` are the SAME relation seen
-///   twice; the ORM spelling (`timesheet_id: OgInt`) is dropped in favour
-///   of the AR-ish spelling (`timesheet: ToOne<TimeSheet>`).
-/// - any other scalar field -> [`Attribute`], `type_name` from
-///   `Field::field_type`, `AttributeOptions::required` wired from
-///   `Field::not_null`: `Some(true)` (`nullable=False`) stays `Some(true)`;
-///   `None` (`nullable=True` or absent — SQLAlchemy's column default, per
-///   SPEC-5 Part A's mapping table) becomes the EXPLICIT `Some(false)` — the
-///   schema stratum is total knowledge, so absence of `nullable=False` IS a
-///   positive "nullable" fact, not "unknown".
-/// - a compute field (`emitted_by` set) -> [`ComputedField`] — dormant for
-///   WoA today (no `@property`/compute-linkage pass exists yet), kept for
-///   shape-parity.
+/// WoA/Flask-SQLAlchemy schema-stratum projection — the Python producer's
+/// named entry point onto the shared total-schema logic (FK-dedup +
+/// not_null->required + attribute-dup guard). One implementation, two
+/// producers: this and `ogar-from-ruff::project_total_schema_fields`
+/// (Rails), which this function delegates to entirely.
 fn project_sqlalchemy_fields(class: &mut Class, model: &Model) {
-    for field in &model.fields {
-        if let Some(comodel) = &field.target {
-            let kind = if field.relation_kind.as_deref() == Some("one2many") || field.inverse_name.is_some()
-            {
-                AssociationKind::HasMany
-            } else {
-                AssociationKind::BelongsTo
-            };
-            let mut assoc = Association::new(kind, &field.name);
-            assoc.class_name = Some(comodel.clone());
-            assoc.inverse_of = field.inverse_name.clone();
-            class.associations.push(assoc);
-        } else if !is_fk_shadowed_by_association(&field.name, class)
-            && !class.attributes.iter().any(|a| a.name == field.name)
-        {
-            let mut attr = Attribute::new(&field.name);
-            attr.type_name = field.field_type.clone();
-            attr.options.required = Some(field.not_null.unwrap_or(false));
-            class.attributes.push(attr);
-        }
-        if let Some(compute_method) = &field.emitted_by {
-            let mut computed = ComputedField::new(&field.name, compute_method);
-            computed.depends = field.depends_on.clone();
-            class.computed_fields.push(computed);
-        }
-    }
-}
-
-/// FK-dedup predicate for [`project_sqlalchemy_fields`] — duplicated from
-/// `ogar-from-ruff::is_fk_shadowed_by_association` (kept `lib.rs`-private,
-/// see the module doc for why this file cannot call it directly). Same
-/// contract: `<name>_id` is shadowed when `class` already carries an
-/// [`Association`] named `<name>`; the bare `id` primary key never matches
-/// (no `_id`-suffixed prefix of its own).
-fn is_fk_shadowed_by_association(field_name: &str, class: &Class) -> bool {
-    // Kept in lockstep with lib.rs::is_fk_shadowed_by_association (SPEC-0(b)):
-    // an explicit `foreign_key` on the association is authoritative and is
-    // checked FIRST; the `<name>_id` convention is the fallback. Follow-up:
-    // consolidate both copies onto a shared project_total_schema_fields helper
-    // (named trade-off in the module doc) — until then, any semantic change
-    // to one copy MUST land in the other.
-    if class
-        .associations
-        .iter()
-        .any(|a| a.foreign_key.as_deref() == Some(field_name))
-    {
-        return true;
-    }
-    field_name
-        .strip_suffix("_id")
-        .filter(|prefix| !prefix.is_empty())
-        .is_some_and(|prefix| class.associations.iter().any(|a| a.name == prefix))
+    crate::project_total_schema_fields(class, model);
 }
 
 /// Lift one WoA/SQLAlchemy [`Model`] to an OGAR [`Class`] stamped
@@ -171,11 +94,13 @@ pub fn lift_model_graph_sqlalchemy(graph: &ModelGraph) -> Vec<Class> {
 }
 
 /// The WoA/SMB slice of `lib.rs`'s private `classify_domain` — duplicated
-/// here for the same merge-constraint reason as
-/// [`is_fk_shadowed_by_association`]. Only the branch relevant to a
-/// SQLAlchemy producer (WoA / SMB, both Flask-SQLAlchemy German-ERP
-/// consumers) is reproduced; the OpenProject/Redmine/Odoo branches don't
-/// apply to this producer.
+/// here as a separate, named follow-up (the FK-dedup lockstep copy this
+/// module used to carry, `is_fk_shadowed_by_association`, is now
+/// consolidated onto `crate::is_fk_shadowed_by_association`; this one is
+/// deliberately left as-is, out of scope for that consolidation). Only the
+/// branch relevant to a SQLAlchemy producer (WoA / SMB, both
+/// Flask-SQLAlchemy German-ERP consumers) is reproduced; the
+/// OpenProject/Redmine/Odoo branches don't apply to this producer.
 fn classify_woa_domain(namespace: &str) -> Option<String> {
     let ns = namespace.to_ascii_lowercase();
     if ns.contains("woa") || ns.contains("smb") {
@@ -271,5 +196,74 @@ mod tests {
         assert_eq!(classes[1].name, "Reminder");
         assert_eq!(classes[0].source_domain.as_deref(), Some("german-erp"));
         assert_eq!(classes[0].source_curator.as_deref(), Some("woa"));
+    }
+
+    /// PR #156 finding (b), cross-producer: the explicit-`foreign_key` FK-dedup
+    /// rule must fire identically for the Rails (Ruby) and SQLAlchemy (Python)
+    /// producers, since Batch-1 Item 2 routes both through the single
+    /// `crate::project_total_schema_fields` / `crate::is_fk_shadowed_by_association`
+    /// implementation. `author`'s association name does NOT match the
+    /// `<name>_id` convention for `user_id` (that would require an association
+    /// named `user`) — only the explicit `foreign_key: "user_id"` shadows it.
+    #[test]
+    fn both_producers_share_explicit_foreign_key_dedup() {
+        let mut m = Model::new("Post");
+        m.associations.push(AssocDecl {
+            kind: AssocKind::BelongsTo,
+            name: "author".to_string(),
+            options: vec![
+                ("class_name".to_string(), "User".to_string()),
+                ("foreign_key".to_string(), "user_id".to_string()),
+            ],
+        });
+        m.fields.push(Field {
+            name: "user_id".to_string(),
+            field_type: Some("integer".to_string()),
+            not_null: Some(true),
+            ..Default::default()
+        });
+        m.fields.push(Field {
+            name: "title".to_string(),
+            field_type: Some("string".to_string()),
+            not_null: Some(true),
+            ..Default::default()
+        });
+
+        let mut graph = ModelGraph::new("");
+        graph.models.push(m);
+
+        let ruby_classes = crate::lift_model_graph(&graph);
+        let sqlalchemy_classes = lift_model_graph_sqlalchemy(&graph);
+
+        for class in [&ruby_classes[0], &sqlalchemy_classes[0]] {
+            assert!(
+                !class.attributes.iter().any(|a| a.name == "user_id"),
+                "user_id must be FK-shadowed by author's explicit foreign_key, not the \
+                 <name>_id convention (association is named `author`, not `user`): {:?}",
+                class.attributes,
+            );
+            let author = class
+                .associations
+                .iter()
+                .find(|a| a.name == "author")
+                .expect("author association present");
+            assert_eq!(author.kind, AssociationKind::BelongsTo);
+            let title = class
+                .attributes
+                .iter()
+                .find(|a| a.name == "title")
+                .expect("title attribute present");
+            assert_eq!(title.options.required, Some(true));
+        }
+
+        let ruby_names: std::collections::BTreeSet<_> =
+            ruby_classes[0].attributes.iter().map(|a| a.name.clone()).collect();
+        let sqlalchemy_names: std::collections::BTreeSet<_> =
+            sqlalchemy_classes[0].attributes.iter().map(|a| a.name.clone()).collect();
+        assert_eq!(
+            ruby_names, sqlalchemy_names,
+            "both producers must project the identical attribute name set, proving shared \
+             FK-dedup semantics from one implementation"
+        );
     }
 }
