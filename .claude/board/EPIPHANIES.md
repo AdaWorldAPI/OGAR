@@ -1,11 +1,17 @@
 # EPIPHANIES.md — findings log for OGAR
 
 > **APPEND-ONLY.** Newest at top. Each entry is a dated insight with a
-> `**Status:**` line (FINDING / CONJECTURE / FRAMING / SUPERSEDED). Only
-> the Status line is mutable — body and date are immutable. Corrections
-> append as new dated entries citing the original.
+> `**Status:**` line (FINDING / CONJECTURE / FRAMING / SUPERSEDED /
+> RULING). Only the Status line is mutable — body and date are immutable.
+> Corrections append as new dated entries citing the original.
 
 ---
+
+## 2026-07-06 — E-NEVER-PIN-BUMP — float-on-main is doctrine; non_exhaustive rejected
+
+**Status:** RULING (`[G]`, operator 2026-07-06).
+
+Operator, verbatim: *"wir machen NIEMALS pin bump."* Float-on-main is not a convenience, it is the doctrine: an upstream additive field breaking a downstream build *now* is the FEATURE (immediate surfacing, fix-forward in minutes — ruff #45 → OGAR #162 proved it twice in one day), not a defect to engineer away. Rejected on this basis: `#[non_exhaustive]` on `ruff_spo_triplet::{Function, Model}` (the #45-audit nit) — a permanent org-wide ergonomics tax and signal loss, bought against a break class that costs minutes. Guard-rails that remain: COUNT_FUSE-style fuses, workspace sweeps, the `..Default::default()` fixture convention. Meta-Lehre: **audit nits are candidates, not decisions** — the trade-off analysis belongs BEFORE the decision point; this one reached implementation-planning before the analysis caught up, and the operator caught it.
 
 ## 2026-07-06 — E-BEHAVIOR-AT-COMPILE-TIME — behavior facts are substrate, not runtime beiwerk
 
