@@ -108,6 +108,19 @@ fn project_sqlalchemy_fields(class: &mut Class, model: &Model) {
 /// [`Association`] named `<name>`; the bare `id` primary key never matches
 /// (no `_id`-suffixed prefix of its own).
 fn is_fk_shadowed_by_association(field_name: &str, class: &Class) -> bool {
+    // Kept in lockstep with lib.rs::is_fk_shadowed_by_association (SPEC-0(b)):
+    // an explicit `foreign_key` on the association is authoritative and is
+    // checked FIRST; the `<name>_id` convention is the fallback. Follow-up:
+    // consolidate both copies onto a shared project_total_schema_fields helper
+    // (named trade-off in the module doc) — until then, any semantic change
+    // to one copy MUST land in the other.
+    if class
+        .associations
+        .iter()
+        .any(|a| a.foreign_key.as_deref() == Some(field_name))
+    {
+        return true;
+    }
     field_name
         .strip_suffix("_id")
         .filter(|prefix| !prefix.is_empty())

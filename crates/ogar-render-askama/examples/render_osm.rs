@@ -1,5 +1,6 @@
 //! Render the OSM Rails harvest → Rust structs (ClassView × FieldMask → struct
-//! + `ActionDef` methods), one file per class.
+//! plus `ActionDef` methods), one file per class.
+//!
 //! `cargo run -p ogar-render-askama --example render_osm -- <osm-root> <out-dir>`
 use lance_graph_contract::class_view::FieldMask;
 use ogar_render_askama::render_class_with_methods;
