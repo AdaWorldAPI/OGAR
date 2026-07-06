@@ -29,14 +29,14 @@
 //! [`OpenProjectPort`](ogar_vocab::ports::OpenProjectPort) — different render
 //! skins, the same conceptual identity where they converge.
 
-use ogar_vocab::Class;
+use ogar_vocab::{ActionDef, Class};
 use ogar_vocab::app::render_classid_for;
 use ogar_vocab::ports::PortSpec;
 use ruff_spo_address::{Facet, Mint, mint_with_classid};
 use ruff_spo_triplet::{ModelGraph, expand};
 
 use crate::sqlalchemy::lift_model_graph_sqlalchemy;
-use crate::{lift_model_graph, lift_model_graph_python};
+use crate::{lift_actions, lift_model_graph, lift_model_graph_python};
 
 /// A class compiled to its rail-shaped, language-agnostic form: the lifted
 /// schema ([`Class`]) plus its 16-byte address ([`Facet`]). This is what a
@@ -50,6 +50,13 @@ pub struct CompiledClass {
     /// The 16-byte rail facet: render classid + the `part_of` / `is_a`
     /// tier chains.
     pub facet: Facet,
+    /// The lifted DO-arm: one [`ActionDef`] per harvested method, carrying
+    /// the post-O-1 body facts (`reads` / `writes` / `calls`). AT-CARRY-1 of
+    /// the W3.3 delete gate (odoo-rs `docs/W3.3-DELETE-GATE-MATRIX.md`):
+    /// [`crate::lift_actions`] existed but was dropped here, so consumers
+    /// never saw the behaviour arm — the THINK arm (`class`) and the DO arm
+    /// (`actions`) now travel together, addressed by the same `facet`.
+    pub actions: Vec<ActionDef>,
 }
 
 /// Mint the rail facet for every node in `graph`, resolving each node's
@@ -70,9 +77,15 @@ pub fn mint_graph<P: PortSpec>(graph: &ModelGraph) -> Mint {
 #[must_use]
 pub fn compile_graph_python<P: PortSpec>(graph: &ModelGraph) -> Vec<CompiledClass> {
     let mint = mint_graph::<P>(graph);
-    lift_model_graph_python(graph)
+    let classes = lift_model_graph_python(graph);
+    // The lift maps `graph.models` 1:1 in declaration order (member-level
+    // filter_maps only), so zipping recovers each class's source `Model` —
+    // the carrier `lift_actions` needs (AT-CARRY-1).
+    debug_assert_eq!(classes.len(), graph.models.len());
+    classes
         .into_iter()
-        .map(|class| {
+        .zip(&graph.models)
+        .map(|(class, model)| {
             let node = format!("{}:{}", graph.namespace, class.name);
             // A model always appears as a subject node (`rdf:type ObjectType`),
             // so it mints; the fallback covers a degenerate graph by stamping
@@ -80,7 +93,7 @@ pub fn compile_graph_python<P: PortSpec>(graph: &ModelGraph) -> Vec<CompiledClas
             let facet = mint
                 .facet(&node)
                 .unwrap_or_else(|| Facet::from_parts(classid_for_node::<P>(&node), [0; 6], [0; 6]));
-            CompiledClass { class, facet }
+            CompiledClass { class, facet, actions: lift_actions(model) }
         })
         .collect()
 }
@@ -119,14 +132,18 @@ pub fn compile_graph_python<P: PortSpec>(graph: &ModelGraph) -> Vec<CompiledClas
 #[must_use]
 pub fn compile_graph_sqlalchemy<P: PortSpec>(graph: &ModelGraph) -> Vec<CompiledClass> {
     let mint = mint_graph::<P>(graph);
-    lift_model_graph_sqlalchemy(graph)
+    let classes = lift_model_graph_sqlalchemy(graph);
+    // 1:1 with `graph.models` in declaration order (see compile_graph_python).
+    debug_assert_eq!(classes.len(), graph.models.len());
+    classes
         .into_iter()
-        .map(|class| {
+        .zip(&graph.models)
+        .map(|(class, model)| {
             let node = format!("{}:{}", graph.namespace, class.name);
             let facet = mint
                 .facet(&node)
                 .unwrap_or_else(|| Facet::from_parts(classid_for_node::<P>(&node), [0; 6], [0; 6]));
-            CompiledClass { class, facet }
+            CompiledClass { class, facet, actions: lift_actions(model) }
         })
         .collect()
 }
@@ -145,14 +162,18 @@ pub fn compile_graph_sqlalchemy<P: PortSpec>(graph: &ModelGraph) -> Vec<Compiled
 #[must_use]
 pub fn compile_graph_ruby<P: PortSpec>(graph: &ModelGraph) -> Vec<CompiledClass> {
     let mint = mint_graph::<P>(graph);
-    lift_model_graph(graph)
+    let classes = lift_model_graph(graph);
+    // 1:1 with `graph.models` in declaration order (see compile_graph_python).
+    debug_assert_eq!(classes.len(), graph.models.len());
+    classes
         .into_iter()
-        .map(|class| {
+        .zip(&graph.models)
+        .map(|(class, model)| {
             let node = format!("{}:{}", graph.namespace, class.name);
             let facet = mint
                 .facet(&node)
                 .unwrap_or_else(|| Facet::from_parts(classid_for_node::<P>(&node), [0; 6], [0; 6]));
-            CompiledClass { class, facet }
+            CompiledClass { class, facet, actions: lift_actions(model) }
         })
         .collect()
 }
@@ -219,7 +240,8 @@ mod tests {
         });
         m.functions.push(Function {
             name: "_compute_amount".to_string(),
-            reads: Vec::new(),
+            reads: vec!["line_ids.balance".to_string()],
+            writes: vec!["amount_total".to_string()],
             raises: Vec::new(),
             traverses: Vec::new(),
             ..Default::default()
@@ -261,6 +283,19 @@ mod tests {
             OdooPort::APP_PREFIX,
             "Odoo render prefix",
         );
+
+        // AT-CARRY-1 (W3.3 delete gate, odoo-rs docs/W3.3-DELETE-GATE-MATRIX.md):
+        // the DO-arm travels WITH the compiled class — one ActionDef per
+        // harvested method, body facts intact. Before this field, lift_actions
+        // existed but compile_graph_* dropped it and no consumer ever saw the
+        // behaviour arm.
+        assert_eq!(cc.actions.len(), 1, "one ActionDef per harvested method");
+        let act = &cc.actions[0];
+        assert_eq!(act.predicate, "_compute_amount");
+        assert_eq!(act.identity, "account_move::action_def::_compute_amount");
+        assert_eq!(act.object_class, "account_move");
+        assert_eq!(act.reads, vec!["line_ids.balance".to_string()]);
+        assert_eq!(act.writes, vec!["amount_total".to_string()]);
     }
 
     #[test]
