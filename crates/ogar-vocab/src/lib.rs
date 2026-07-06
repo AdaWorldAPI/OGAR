@@ -409,6 +409,8 @@ pub struct ActionDef {
     /// Function::raises`, e.g. `UserError`, `ValidationError`). Effect
     /// annotation against the `exc:` namespace; Authoritative (the `raise`
     /// statement names the type). Name-level only — no message/condition.
+    /// `serde(default)`: additive field, pre-`raises` material deserializes.
+    #[cfg_attr(feature = "serde", serde(default))]
     pub raises: Vec<String>,
 
     // ── Rubicon statem carriers (OGAR-AST-CONTRACT §6) ──
@@ -6022,6 +6024,19 @@ mod tests {
         assert!(b.raises.is_empty());
         b.raises = vec!["UserError".to_string()];
         assert_eq!(b.raises, vec!["UserError".to_string()]);
+    }
+
+    /// `serde(default)` guard: pre-`raises` JSON (no `raises` key) must
+    /// still deserialize — the additive-field convention the vocab uses
+    /// for every migration-cycle field.
+    #[cfg(feature = "serde")]
+    #[test]
+    fn action_def_raises_missing_key_deserializes() {
+        let a = ActionDef::new("id", "predicate", "object_class");
+        let mut json: serde_json::Value = serde_json::to_value(&a).unwrap();
+        json.as_object_mut().unwrap().remove("raises");
+        let back: ActionDef = serde_json::from_value(json).unwrap();
+        assert!(back.raises.is_empty());
     }
 
     #[test]

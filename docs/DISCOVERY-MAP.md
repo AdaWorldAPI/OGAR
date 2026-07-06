@@ -1061,3 +1061,25 @@ isolation. The map's job is to keep them visible.
   lockstep left as a separate, named follow-up.
 
 - **D-NEVER-PIN-BUMP** — 2026-07-06 operator ruling `[G]`: *"wir machen NIEMALS pin bump."* Every cross-repo dep floats on `branch = "main"`; the drift protection is loud compile breaks + fuses + fix-forward (proven same-day: ruff #45 `guarded_writes` → OGAR #162 within minutes, twice). Consequently the #45-post-merge-audit nit "make `ruff_spo_triplet::{Function, Model}` `#[non_exhaustive]`" is **REJECTED by ruling** — it would erase the loud-break signal and tax every construction site org-wide forever (non_exhaustive forbids struct literals even with `..Default::default()` outside the defining crate, including ruff's own frontend crates). The standing pattern stays: downstream fixtures construct with `..Default::default()` (established in #162); a rustdoc note on `ruff_spo_triplet::{Function, Model}` documenting this construction convention is a named follow-up (no companion PR yet).
+
+- **D-ATC2-KAUSAL-AUTARK** — 2026-07-06 `[G]`: AT-CARRY-2 arms A+C landed
+  self-contained (no ruff prerequisite). Arm A: `lift_actions` populates
+  `kausal = KausalSpec::Depends` from the `Field::emitted_by →
+  Field::depends_on` index ONLY — never fabricated from `reads`
+  (provenance honesty, regression `lift_actions_plain_read_still_no_kausal`
+  proves a read of a computed field does not leak kausal onto the reader).
+  Arm C: additive `ActionDef.raises` slot (`Function::raises`,
+  Authoritative), `serde(default)` per the vocab's additive-field
+  convention + missing-key round-trip test. The odoo-rs triangulation
+  claimed the whole KausalSpec chain was ruff-gated; primary-source
+  verification narrowed it: only arms B (constrains/onchange variants)
+  + D (`computed.stored`) need ruff — landing there as ruff #49, OGAR
+  follow-up wires them AFTER ruff main carries the fields (float-on-main,
+  D-NEVER-PIN-BUMP; the interim loud break is the design). Guard:
+  `kausal_spec_match_is_exhaustive` — a wildcard-free intra-crate match
+  that fails to COMPILE when arm B adds variants without updating
+  consumers. Named assumption (untested, spec-conform): two fields
+  sharing one `emitted_by` compute method resolve last-wins in the
+  index — safe under Odoo semantics (`@api.depends` is method-level,
+  co-computed fields carry identical `depends_on`), revisit if a
+  frontend ever emits divergent `depends_on` per co-computed field.
