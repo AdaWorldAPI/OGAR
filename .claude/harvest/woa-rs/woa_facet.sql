@@ -1,4 +1,4 @@
--- WoA sink-in substrate v1 — PostgreSQL DDL, generated, do not hand-edit.
+-- WoA sink-in substrate v2 — PostgreSQL DDL, generated, do not hand-edit.
 -- facet table: classid(4) + 12-byte payload (V3 sink-in System-of-Record)
 
 CREATE TABLE facet (
@@ -2408,5 +2408,234 @@ CREATE TABLE RentedServerEvent (
     level TEXT,
     message TEXT,
     payload TEXT
+);
+
+CREATE TABLE ShopProduct (
+    id INTEGER NOT NULL,
+    tenant_id INTEGER,
+    sku TEXT,
+    name TEXT NOT NULL,
+    slug TEXT NOT NULL,
+    short_desc TEXT,
+    long_desc TEXT,
+    product_type TEXT NOT NULL,
+    price_cents INTEGER NOT NULL,
+    currency TEXT NOT NULL,
+    vat_rate NUMERIC NOT NULL,
+    stock_qty INTEGER NOT NULL,
+    weight_grams INTEGER,
+    saas_meta_json TEXT,
+    digital_path TEXT,
+    image_path TEXT,
+    gallery_json TEXT,
+    status TEXT NOT NULL,
+    sort INTEGER NOT NULL,
+    meta_title TEXT,
+    meta_description TEXT,
+    created_at TIMESTAMP,
+    updated_at TIMESTAMP
+);
+
+CREATE TABLE ShopCategory (
+    id INTEGER NOT NULL,
+    tenant_id INTEGER,
+    name TEXT NOT NULL,
+    slug TEXT NOT NULL,
+    description TEXT,
+    parent_id INTEGER,
+    sort INTEGER NOT NULL,
+    image_path TEXT,
+    status TEXT NOT NULL,
+    created_at TIMESTAMP
+);
+
+CREATE TABLE ShopOrder (
+    id INTEGER NOT NULL,
+    tenant_id INTEGER,
+    order_number TEXT NOT NULL,
+    confirmation_token TEXT NOT NULL,
+    customer_email TEXT NOT NULL,
+    customer_name TEXT NOT NULL,
+    customer_phone TEXT,
+    woa_customer_id INTEGER,
+    billing_address_json TEXT NOT NULL,
+    shipping_address_json TEXT,
+    has_shipping BOOLEAN NOT NULL,
+    subtotal_cents INTEGER NOT NULL,
+    vat_cents INTEGER NOT NULL,
+    shipping_cost_cents INTEGER NOT NULL,
+    total_cents INTEGER NOT NULL,
+    currency TEXT NOT NULL,
+    payment_provider TEXT NOT NULL,
+    payment_status TEXT NOT NULL,
+    payment_provider_ref TEXT,
+    payment_meta_json TEXT,
+    order_status TEXT NOT NULL,
+    notes_customer TEXT,
+    notes_internal TEXT,
+    created_at TIMESTAMP,
+    updated_at TIMESTAMP,
+    paid_at TIMESTAMP,
+    shipped_at TIMESTAMP
+);
+
+CREATE TABLE ShopOrderItem (
+    id INTEGER NOT NULL,
+    order_id INTEGER NOT NULL,
+    sku TEXT,
+    name TEXT NOT NULL,
+    product_type TEXT NOT NULL,
+    qty INTEGER NOT NULL,
+    unit_price_cents INTEGER NOT NULL,
+    vat_rate NUMERIC NOT NULL,
+    line_total_cents INTEGER NOT NULL,
+    meta_json TEXT
+);
+
+CREATE TABLE ShopCartSession (
+    id INTEGER NOT NULL,
+    cart_key TEXT NOT NULL,
+    tenant_id INTEGER,
+    items_json TEXT,
+    customer_email TEXT,
+    expires_at TIMESTAMP NOT NULL,
+    created_at TIMESTAMP,
+    updated_at TIMESTAMP
+);
+
+CREATE TABLE ShopPage (
+    id INTEGER NOT NULL,
+    tenant_id INTEGER,
+    slug TEXT NOT NULL,
+    title TEXT NOT NULL,
+    content_html TEXT,
+    meta_title TEXT,
+    meta_description TEXT,
+    status TEXT NOT NULL,
+    sort INTEGER NOT NULL,
+    is_system BOOLEAN NOT NULL,
+    show_in_footer BOOLEAN NOT NULL,
+    show_in_header BOOLEAN NOT NULL,
+    created_at TIMESTAMP,
+    updated_at TIMESTAMP
+);
+
+CREATE TABLE ShopShippingMethod (
+    id INTEGER NOT NULL,
+    tenant_id INTEGER,
+    code TEXT NOT NULL,
+    name TEXT NOT NULL,
+    description TEXT,
+    icon TEXT,
+    price_cents INTEGER NOT NULL,
+    free_threshold_cents INTEGER,
+    weight_max_grams INTEGER,
+    delivery_time_min_days INTEGER,
+    delivery_time_max_days INTEGER,
+    countries_allowed TEXT,
+    active BOOLEAN NOT NULL,
+    sort INTEGER NOT NULL,
+    created_at TIMESTAMP
+);
+
+CREATE TABLE ShopPaymentMethod (
+    id INTEGER NOT NULL,
+    tenant_id INTEGER,
+    code TEXT NOT NULL,
+    label TEXT NOT NULL,
+    description TEXT,
+    icon TEXT,
+    fee_cents INTEGER NOT NULL,
+    fee_percent NUMERIC NOT NULL,
+    provider TEXT NOT NULL,
+    min_total_cents INTEGER,
+    max_total_cents INTEGER,
+    requires_address BOOLEAN NOT NULL,
+    active BOOLEAN NOT NULL,
+    is_default BOOLEAN NOT NULL,
+    sort INTEGER NOT NULL,
+    created_at TIMESTAMP
+);
+
+CREATE TABLE ShopCustomer (
+    id INTEGER NOT NULL,
+    tenant_id INTEGER,
+    email TEXT NOT NULL,
+    password_hash TEXT NOT NULL,
+    first_name TEXT,
+    last_name TEXT,
+    company TEXT,
+    phone TEXT,
+    vat_id TEXT,
+    billing_address_json TEXT,
+    shipping_address_json TEXT,
+    is_b2b BOOLEAN NOT NULL,
+    status TEXT NOT NULL,
+    email_verified BOOLEAN NOT NULL,
+    verify_token TEXT,
+    verify_token_expires TIMESTAMP,
+    reset_token TEXT,
+    reset_token_expires TIMESTAMP,
+    failed_attempts INTEGER NOT NULL,
+    locked_until TIMESTAMP,
+    last_login_at TIMESTAMP,
+    last_login_ip TEXT,
+    accepts_marketing BOOLEAN NOT NULL,
+    created_at TIMESTAMP,
+    updated_at TIMESTAMP
+);
+
+CREATE TABLE ShopPaymentConfig (
+    id INTEGER NOT NULL,
+    tenant_id INTEGER,
+    provider TEXT NOT NULL,
+    mode TEXT NOT NULL,
+    public_key TEXT,
+    secret_key TEXT,
+    webhook_secret TEXT,
+    extra_json TEXT,
+    active BOOLEAN NOT NULL,
+    created_at TIMESTAMP,
+    updated_at TIMESTAMP
+);
+
+CREATE TABLE ShopSaasConfig (
+    id INTEGER NOT NULL,
+    tenant_id INTEGER,
+    order_item_id INTEGER,
+    article_id INTEGER NOT NULL,
+    dns_mode TEXT NOT NULL,
+    dns_notes TEXT,
+    extra_users INTEGER NOT NULL,
+    extra_users_price_cents_each INTEGER NOT NULL,
+    addon_article_ids TEXT,
+    wants_training BOOLEAN NOT NULL,
+    wants_test_data BOOLEAN NOT NULL,
+    seed_articles BOOLEAN NOT NULL,
+    branche TEXT,
+    desired_slug TEXT,
+    admin_username TEXT,
+    notes_for_admin TEXT,
+    setup_service BOOLEAN NOT NULL,
+    setup_data_json TEXT,
+    chosen_billing_period TEXT,
+    payment_mode TEXT NOT NULL,
+    payment_iban TEXT,
+    payment_bic TEXT,
+    payment_holder TEXT,
+    created_at TIMESTAMP,
+    updated_at TIMESTAMP
+);
+
+CREATE TABLE ShopProductReview (
+    id INTEGER NOT NULL,
+    tenant_id INTEGER,
+    article_id INTEGER NOT NULL,
+    rating INTEGER NOT NULL,
+    title TEXT,
+    comment TEXT,
+    status TEXT NOT NULL,
+    created_at TIMESTAMP,
+    updated_at TIMESTAMP
 );
 
