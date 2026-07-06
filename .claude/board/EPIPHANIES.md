@@ -7,6 +7,19 @@
 
 ---
 
+## 2026-07-05 — E-RECIPE-FAMILIES-MINT-ON-EMIT — Scope-kind / Concern-kind are RESERVED (bytes 0x05 / 0x06) but minted ON EMIT, not speculatively
+
+**Status:** FINDING (operator rule, 2026-07-05 — verbatim: *"add scope-kind concern-kind when you see the code wants to emit it (eg ruff dto ast for duplicated routes, or god object split)"*). Recorded in `recipe.rs` module doc (§ Reserved-but-unminted families); no `RecipeFamily` variant, no concept, no codebook row minted — bytes `0x05`/`0x06` resolve to `RecipeFamily::Unassigned` until the emit seam exists.
+
+- **`0x05` Scope** — mint when the ruff **DTO-AST route-dedup** path emits a named filtered view (Rails `scope` / `default_scope`, or a `ClassView` fieldmask standing in for N routes — `CLASSVIEW-FIELDVIEW-ASKAMA-BITMASK`: "N routes = one ClassView + N masks"; a scope IS a mask over a class).
+- **`0x06` Concern** — mint when the **god-object split** emits it (the `ruff_spo_address::soc` `Conflation` verdict → split data+behaviour under one parent into sub-ClassViews; Rails `concerns`/mixins are the split unit).
+
+This is RESERVE-DON'T-RECLAIM applied to families: reserving the byte (a doc note) costs nothing; minting the family before its producer emits one is the speculative mint the discipline forbids. When either seam lands: append the variant, extend `RecipeConceptId::family`'s match, add concepts + labels + a codebook row, let the drift gates bind them.
+
+**Cross-ref:** E-RECIPE-CODEBOOK-MINTED-P1 (the four families this reserves alongside), E-GRAMMAR-IS-THE-RECIPE-SHAPE, RAILS-COVERAGE-KIT §5; the emit seams — `ruff_python_dto_check` (route-dedup DTO AST) + `ruff_spo_address::soc` (the split verdict).
+
+---
+
 ## 2026-07-05 — E-RECIPE-CODEBOOK-MINTED-P1 — the recipe-concept codebook + lift-time predicate resolver SHIPPED in `ogar-vocab`; gap (c) half-closes
 
 **Status:** FINDING (shipped this session — code + 13 tests + 3 doctests green, clippy clean, `-p ogar-vocab` scoped). Phase 1 of the E-GRAMMAR-IS-THE-RECIPE-SHAPE deliverable: the codebook + the resolver exist; the lift-wiring is Phase 2.

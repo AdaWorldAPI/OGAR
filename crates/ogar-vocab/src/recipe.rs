@@ -44,6 +44,25 @@
 //! family), never move, never get repurposed. Enforced by the drift-gate
 //! tests below, exactly like `class_ids`.
 //!
+//! ## Reserved-but-unminted families — mint ON EMIT, not speculatively
+//!
+//! Two more families are foreseen but deliberately NOT minted here (no
+//! [`RecipeFamily`] variant, no concept, no codebook row) — they resolve
+//! to [`RecipeFamily::Unassigned`] until the producer code actually emits
+//! one. Operator rule (2026-07-05): *"add scope-kind / concern-kind when
+//! you see the code wants to emit it."* Adding a family before its emit
+//! seam exists is the speculative mint the RESERVE-DON'T-RECLAIM discipline
+//! forbids.
+//!
+//! | byte (reserved) | family | mint trigger — the seam that emits it |
+//! |---|---|---|
+//! | `0x05` | **Scope** | the ruff DTO-AST **route-dedup** path emits a named filtered view — Rails `scope` / `default_scope`, or a `ClassView` fieldmask standing in for N routes (`CLASSVIEW-FIELDVIEW-ASKAMA-BITMASK`: "N routes = one ClassView + N masks"). A scope IS a mask over a class. |
+//! | `0x06` | **Concern** | the **god-object split** emits it — the `ruff_spo_address::soc` `Conflation` verdict splitting data+behaviour under one parent into sub-ClassViews; Rails `concerns`/mixins are the split unit. |
+//!
+//! When either seam lands: append the `RecipeFamily` variant, extend
+//! [`RecipeConceptId::family`]'s match, add the concepts + labels + a
+//! codebook row, and let the drift-gate tests bind them. Not before.
+//!
 //! # Type safety over the class codebook
 //!
 //! Unlike `class_ids` (bare `u16`), recipe ids are wrapped in
