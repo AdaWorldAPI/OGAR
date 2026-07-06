@@ -83,8 +83,9 @@ pub enum ParityDrift {
 /// alerts rather than silently tolerating drift.
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct ParityReport {
-    /// Every divergence found, in attribute-name order (sink-in-only
-    /// fields first, then legacy-only, matched by iteration order below).
+    /// Every divergence found, in legacy-declaration order (missing-in-
+    /// sink-in / type / nullability first), then sink-in-only fields
+    /// (missing-in-legacy) last. Iteration order, not sorted by name.
     pub drifts: Vec<ParityDrift>,
 }
 

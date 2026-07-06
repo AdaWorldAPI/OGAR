@@ -109,12 +109,19 @@ pub fn emit_facet_table_ddl(table_name: &str) -> String {
     out.push('\n');
     out.push_str(");\n");
 
+    // Index names must stay bare identifiers even for a dotted/quoted
+    // table_name (`sale.order_p0_idx` would be invalid DDL) — derive a
+    // sanitized stem instead of interpolating the raw name.
+    let stem: String = table_name
+        .chars()
+        .map(|c| if c.is_ascii_alphanumeric() { c } else { '_' })
+        .collect();
     out.push_str(&format!(
-        "CREATE INDEX {table_name}_classid_idx ON {table} (classid);\n"
+        "CREATE INDEX {stem}_classid_idx ON {table} (classid);\n"
     ));
     for i in 0..PAYLOAD_COLUMNS {
         out.push_str(&format!(
-            "CREATE INDEX {table_name}_p{i}_idx ON {table} (p{i});\n"
+            "CREATE INDEX {stem}_p{i}_idx ON {table} (p{i});\n"
         ));
     }
     out
