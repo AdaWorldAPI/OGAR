@@ -35,6 +35,7 @@ use ogar_vocab::ports::PortSpec;
 use ruff_spo_address::{Facet, Mint, mint_with_classid};
 use ruff_spo_triplet::{ModelGraph, expand};
 
+use crate::sqlalchemy::lift_model_graph_sqlalchemy;
 use crate::{lift_model_graph, lift_model_graph_python};
 
 /// A class compiled to its rail-shaped, language-agnostic form: the lifted
@@ -76,6 +77,52 @@ pub fn compile_graph_python<P: PortSpec>(graph: &ModelGraph) -> Vec<CompiledClas
             // A model always appears as a subject node (`rdf:type ObjectType`),
             // so it mints; the fallback covers a degenerate graph by stamping
             // the classid with empty tier chains (still a valid rail address).
+            let facet = mint
+                .facet(&node)
+                .unwrap_or_else(|| Facet::from_parts(classid_for_node::<P>(&node), [0; 6], [0; 6]));
+            CompiledClass { class, facet }
+        })
+        .collect()
+}
+
+/// Compile a WoA/Flask-SQLAlchemy [`ModelGraph`] into rail-shaped
+/// [`CompiledClass`]es (SPEC-5 Part B): lift each model's schema via
+/// [`lift_model_graph_sqlalchemy`] (stamps [`Language::Python`], routes
+/// nullability + FK-dedup through the SQLAlchemy projection rather than the
+/// Odoo one — see `crate::sqlalchemy`'s module doc) and pair it with its
+/// minted facet, classid via port `P`. Declaration order preserved, mirroring
+/// [`compile_graph_python`] / [`compile_graph_ruby`].
+///
+/// **Classid caveat (named, not hidden):** SPEC-5 expected an *unmapped*
+/// WoA model name (e.g. `TimesheetActivity`) to resolve to the bootstrap
+/// classid `0x0000_0003` via [`WoaPort`](ogar_vocab::ports::WoaPort), on the
+/// premise that `WOA_ALIASES` is a "coarse CRM-concept table" that doesn't
+/// carry WoA's own model names. That premise does not hold for this exact
+/// fixture: `WOA_ALIASES` already maps `"TimesheetActivity"` (and
+/// `"Stundenzettel"`) to `class_ids::BILLABLE_WORK_ENTRY` (`0x0103`) as a
+/// **deliberate convergence pin** (`ports.rs` doc: "WoA's `Stundenzettel`
+/// and `TimesheetActivity` resolve to the same id
+/// `OpenProjectPort::TimeEntry` / `RedminePort::TimeEntry` resolve to").
+/// So `compile_graph_sqlalchemy::<WoaPort>` on a `TimesheetActivity` model
+/// yields facet classid `0x0103_0003` (concept `0x0103` | WoA app prefix
+/// `0x0003`), NOT `0x0000_0003`. This is reported as a SPEC-5 vs. codebase-
+/// reality deviation (verified independently against `ports.rs` and
+/// `RECON.md` R8, which already named this alias) rather than silently
+/// "fixed" by editing the spec's expectation — see the mission report.
+///
+/// A second, independent inaccuracy in the same spec passage: even for a
+/// genuinely *unmapped* model, [`classid_for_node`] resolves to the literal
+/// `0` (its `.map_or(0, render_classid_for::<P>)` short-circuits on `None`
+/// without composing the app prefix — see the pre-existing
+/// `unmapped_model_mints_the_bootstrap_address_not_a_wrong_classid` test in
+/// this file), not the composed `0x0000_0003` SPEC-5 describes.
+#[must_use]
+pub fn compile_graph_sqlalchemy<P: PortSpec>(graph: &ModelGraph) -> Vec<CompiledClass> {
+    let mint = mint_graph::<P>(graph);
+    lift_model_graph_sqlalchemy(graph)
+        .into_iter()
+        .map(|class| {
+            let node = format!("{}:{}", graph.namespace, class.name);
             let facet = mint
                 .facet(&node)
                 .unwrap_or_else(|| Facet::from_parts(classid_for_node::<P>(&node), [0; 6], [0; 6]));
@@ -352,5 +399,114 @@ mod tests {
         );
         assert_eq!(app_of(op_id), OpenProjectPort::APP_PREFIX);
         assert_eq!(app_of(rm_id), RedminePort::APP_PREFIX);
+    }
+
+    // ───── compile_graph_sqlalchemy (SPEC-5 Part B: WoA convergence path) ─────
+
+    fn timesheet_activity_graph() -> ModelGraph {
+        let mut m = Model::new("TimesheetActivity");
+        m.associations.push(AssocDecl {
+            kind: AssocKind::BelongsTo,
+            name: "timesheet".to_string(),
+            options: vec![("class_name".to_string(), "TimeSheet".to_string())],
+        });
+        m.fields.push(Field {
+            name: "id".to_string(),
+            field_type: Some("integer".to_string()),
+            not_null: Some(true),
+            ..Default::default()
+        });
+        m.fields.push(Field {
+            name: "timesheet_id".to_string(),
+            field_type: Some("integer".to_string()),
+            not_null: Some(true),
+            ..Default::default()
+        });
+        m.fields.push(Field {
+            name: "beschreibung".to_string(),
+            field_type: Some("string".to_string()),
+            not_null: Some(true),
+            ..Default::default()
+        });
+        m.fields.push(Field {
+            name: "created_at".to_string(),
+            field_type: Some("datetime".to_string()),
+            not_null: None,
+            ..Default::default()
+        });
+        let mut g = ModelGraph::new("woa");
+        g.models.push(m);
+        g
+    }
+
+    #[test]
+    fn compile_graph_sqlalchemy_stamps_python_language_and_projects_schema() {
+        use ogar_vocab::ports::WoaPort;
+
+        let compiled = compile_graph_sqlalchemy::<WoaPort>(&timesheet_activity_graph());
+        assert_eq!(compiled.len(), 1);
+        let cc = &compiled[0];
+        assert_eq!(cc.class.name, "TimesheetActivity");
+        assert!(matches!(cc.class.language, Language::Python));
+        assert!(!cc.class.attributes.iter().any(|a| a.name == "timesheet_id"));
+        assert!(cc.class.associations.iter().any(|a| a.name == "timesheet"));
+    }
+
+    /// **Named SPEC-5 deviation (verified, not invented):** SPEC-5 expected
+    /// an *unmapped* WoA model name to resolve to the bootstrap classid
+    /// `0x0000_0003` through `WoaPort` (premise: `WOA_ALIASES` is a coarse
+    /// CRM-concept table that doesn't know WoA's actual model names). That
+    /// premise is FALSE for `TimesheetActivity` specifically:
+    /// `ogar-vocab/src/ports.rs`'s `WOA_ALIASES` (and RECON.md R8, written
+    /// before this spec) already lists `("TimesheetActivity",
+    /// class_ids::BILLABLE_WORK_ENTRY)` as the deliberate planner/ERP
+    /// convergence pin. So the REAL classid is `0x0103_0003` (concept
+    /// `0x0103` = `BILLABLE_WORK_ENTRY`, app `0x0003` = WoA), not
+    /// `0x0000_0003`. This test pins the TRUE behaviour rather than a
+    /// fabricated bootstrap value; see the module doc on
+    /// `compile_graph_sqlalchemy` and the mission report for the full
+    /// writeup.
+    #[test]
+    fn compile_graph_sqlalchemy_timesheet_activity_converges_via_alias_not_bootstrap() {
+        use ogar_vocab::ports::WoaPort;
+
+        let compiled = compile_graph_sqlalchemy::<WoaPort>(&timesheet_activity_graph());
+        let cc = &compiled[0];
+        assert_eq!(
+            cc.facet.facet_classid(),
+            0x0103_0003,
+            "TimesheetActivity is an aliased convergence pin (BILLABLE_WORK_ENTRY | WoA), \
+             not the bootstrap address SPEC-5 assumed"
+        );
+        assert_eq!(ogar_vocab::app::concept_of(cc.facet.facet_classid()), 0x0103);
+        assert_eq!(
+            ogar_vocab::app::app_of(cc.facet.facet_classid()),
+            WoaPort::APP_PREFIX
+        );
+    }
+
+    /// The bootstrap mechanism itself works for a genuinely unaliased WoA
+    /// model name (e.g. `Reminder`, not in `WOA_ALIASES`) — but the actual
+    /// bootstrap value is the literal `0` (`classid_for_node`'s
+    /// `.map_or(0, render_classid_for::<P>)` short-circuits to plain `0`
+    /// on `None`, never composing the app prefix), matching the SAME-file
+    /// `unmapped_model_mints_the_bootstrap_address_not_a_wrong_classid`
+    /// test above for `OdooPort`/`odoo:ir_cron`. SPEC-5's stated bootstrap
+    /// value `0x0000_0003` (concept `0`, app `0x0003` composed) does NOT
+    /// match this code path either — a second, independent inaccuracy in
+    /// the same fixture description, reported alongside the alias-pin
+    /// finding above.
+    #[test]
+    fn compile_graph_sqlalchemy_unaliased_model_mints_the_bootstrap_address() {
+        use ogar_vocab::ports::WoaPort;
+
+        let mut g = ModelGraph::new("woa");
+        g.models.push(Model::new("Reminder"));
+        let compiled = compile_graph_sqlalchemy::<WoaPort>(&g);
+        assert_eq!(
+            compiled[0].facet.facet_classid(),
+            0,
+            "unmapped WoA model -> literal bootstrap 0, not 0x0000_0003"
+        );
     }
 }

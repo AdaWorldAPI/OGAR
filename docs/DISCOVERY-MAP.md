@@ -892,3 +892,147 @@ isolation. The map's job is to keep them visible.
   in ruff + OGAR, never op-side. `ruff_python_dto_check` re-framed as the
   ERB-fieldview → askama render recipes + Action-kind corpus that seeds
   the `ogar-render-askama` kit and the recipe codebook, not dead weight.
+- **D-156-CORRECTNESS-FIXES (2026-07-06; [G]):** the three PR-#156
+  open findings closed with red-before-green regression tests —
+  (a) `ogar-from-rails::extract_app*` now routes through
+  `ruff_ruby_spo::extract_app_with_schema`, so the physical schema
+  stratum reaches `Class` on the shipped mainline API (not only a
+  direct `lift_model` call); (b) `is_fk_shadowed_by_association` now
+  honours an association's explicit `foreign_key:` (not just the
+  `<name>_id` naming convention), killing the `user_id`+`author`
+  double projection; (c) `project_rails_fields` skips a physical
+  column whose name already exists as a lifted AR-DSL attribute,
+  ending the duplicate-struct-field bug (the dup-guard). WS-V gate
+  honoured: each fix hunk was stashed individually and its paired
+  test confirmed RED, then GREEN — a test that passed both ways would
+  not have shipped. Physical-vs-declared type reconciliation on
+  collision noted as a follow-up, not taken. Drive-by: the
+  `ogar-class-view` "68" doc fuse corrected to 79. Cross-ref
+  D-PARITY-PROBE-WOA-1 (the parity this unblocks on the mainline
+  path).
+
+- **D-BEHAVIOR-ACTION-EDGES (2026-07-06; [G] facts / [H] lowering;
+  commit 789c7ed):** `lift_actions` now carries ruff's
+  `Function.reads/writes/calls` onto `ActionDef` as first-class
+  effect annotations — the IR surface signed off against OGAR-AS-IR
+  §3 (test 2) — making behavior part of the compile-time substrate
+  (Operator §3) without fabricating reactive `kausal` from plain
+  reads. Effect provenance is kept honest rather than flattened:
+  **writes/calls are authoritative** (assignment + call targets the
+  extractor sees directly) while **reads are inferred** (name
+  references, an over-approximation), annotated as such. Full body
+  lowering (`body_source`, params, value-carrying `on_enter`) stays
+  blocked on a named `ruff_spo_triplet::Function` extension — the
+  render crate emits honest `// TODO: port` stubs until then.
+  Cross-ref E-BEHAVIOR-AT-COMPILE-TIME.
+
+- **D-FIELDMASK-LOUD-FAIL (2026-07-06; [G]):** the single-`u64`
+  `FieldMask` 64-field ceiling is now loud, not silent — a >64-field
+  class under a non-FULL mask returns
+  `RenderError::TooManyFieldsForMask` from
+  `render_class_with_methods` instead of dropping fields 64+ (this
+  loud-fail guard replaces the old silent-drop; the FULL sentinel
+  still emits all). A pin test documents the pre-fix silent drop.
+  **Falsifier #2 RAN and is GREEN** for the ≤64 case: one
+  ClassView×FieldMask projection at **mask=45** yields the identical
+  field-name set through askama (Rust) and jinja2 (Python) — the
+  dual-target render proof (Operator §5). Caveat pinned: the FULL
+  sentinel *aliases* every genuine all-ones mask, so FULL-vs-
+  explicit-full is indistinguishable at the u64 tier — documented,
+  not papered over (it is why the widening carries a canonical form).
+  This is the INTERIM OGAR-side guard; the authorized real fix is
+  D-FIELDMASK-WIDENING (Ruling c). Cross-ref D-FIELDMASK-WIDENING,
+  E-ONE-MASK-TWO-ENGINES.
+
+- **D-FIELDMASK-WIDENING (2026-07-06; [G] — cross-repo lance-graph
+  PR):** the authorized backward-compatible `FieldMask` widening
+  (Ruling c) lives as a lance-graph-contract PR: a `WideFieldMask`
+  carrying a **canonical form** (trailing all-zero chunks trimmed) so
+  a ≤64-position mask and its wide spelling compare equal —
+  **repr-independent Eq/Hash**, the non-footgun invariant. Every
+  existing `FieldMask(u64)` constructor/semantic stays exact;
+  positions 64+ become representable without moving bits 0..63 (N3
+  stability). A review-found P0 (**V-L-P0**: the first cut hashed the
+  raw repr, so `Small(x)` and `Wide([x])` hashed differently while
+  comparing equal — a broken Eq/Hash contract) was caught and FIXED
+  **before merge** via the canonical-form normaliser plus
+  cross-tier Eq/Hash-agreement tests. `account.move` (109 fields,
+  Odoo) is the motivating >64 case; WoA parity uses ≤64-field
+  classes. No classid version split needed. Cross-ref
+  D-FIELDMASK-LOUD-FAIL.
+
+- **D-MEMBRANE-TTL-DTO (2026-07-06; [G] shape):** the membrane now
+  has a named pipeline — `ogar_from_schema::lift_ogit_entity` lowers
+  an OGIT entity TTL + its attribute TTLs into the canonical `Class`
+  (controller-DTO wire shape), pinned by a wire-name test on the
+  `DocumentInfoRecord` fixture (documentNumber / Type / PartId /
+  Version). Key correction to the mission's `vocab/ogar.ttl` pointer:
+  that file is `owl:Class` meta-vocab that the current `rdfs:Class`
+  walker **deliberately does not recognise** — the OGIT NTO corpus is
+  the real entity-fixture family, not the meta-vocab. Remaining
+  `[H]`: label→wire-name late resolution, owl:Class walker support,
+  and a dedicated Facet-bearing DTO-emit pass. Cross-ref
+  E-OGAR-CONVERGENCE-SHAPE membrane layer.
+
+- **D-EXEC-ONE-ACTION (2026-07-06; [G] machinery / [H] ERP-wiring):**
+  one lifted `ActionDef` now punches end-to-end through the reference
+  `NativeCommandExecutor` (`lift_actions → ActionDef →
+  NativeCommandExecutor → result`), the executable half of Falsifier
+  #3. The remainder — kanban transition + Lance tombstone — needs the
+  lance-graph ractor runtime (outside `/workspace/ogar`) and is
+  documented as the named gap, staying `[H]`. On the cognition side a
+  fuse pins that `ActionDef` lowers onto the `UnifiedStep` shape while
+  `StepDomain` carries **no** ERP/controller variant yet: the
+  exhaustive `match` **breaks loud at compile time** the moment the
+  ERP arm is added (the named ActionDef↔UnifiedStep seam). Cross-ref
+  E-OGAR-CONVERGENCE-SHAPE falsifier #3 + cognition layer,
+  E-ONE-MASK-THREE-PORTS.
+
+- **D-PARITY-PROBE-WOA-1 (2026-07-06; [G] for the OGAR half):** WoA
+  `TimesheetActivity` (`models.py:1746`, transcribed as a synthetic
+  `ModelGraph` standing in for the not-yet-built
+  `ruff_sqlalchemy_spo` frontend) lifts through the new
+  `project_sqlalchemy_fields` / `compile_graph_sqlalchemy`
+  (`WoaPort`) path and emits via `emit_python` to a structurally 1:1
+  `@dataclass` — **classes 1/1, columns typed 3/3, nullability 3/3,
+  associations 1/1** (FK `timesheet_id` deduped to the `timesheet`
+  BelongsTo); the emitted Python **py_compiles AND instantiates**
+  (the language mirror, DP-(b) Option C). **The spec's "unaliased
+  bootstrap" assumption is REFUTED and pinned by test:** the class
+  does not sit on classid 0 — it converges to **`0x0103_0003`** via a
+  `WOA_ALIASES` pin onto the `BILLABLE_WORK_ENTRY` canonical concept
+  (`0x0103` high ‖ WoA app `0x0003` low). Bootstrap 0 is the literal
+  *pre-alias* value; the alias table maps it, so the test pins the
+  aliased id, not 0 — and no new codebook mint is introduced (the pin
+  reuses an existing concept). **Honest drift:** `emit_python` does
+  not render `options.required`, so nullability annotations are
+  absent from the emitted text — a real emitter gap, logged as a
+  follow-up, not hand-edited. The FK-dedup logic from
+  D-156-CORRECTNESS-FIXES has a **copy in `sqlalchemy.rs`, synced in
+  lockstep** here; a consolidation follow-up (one shared dedup
+  helper) is named. **Remaining producer gap (named):** ruff has no
+  SQLAlchemy frontend — Part A (`ruff_sqlalchemy_spo`, an ruff-side
+  harvest brick) is the follow-up that turns the synthetic graph into
+  a real harvest of all ~151 WoA models. Methodology re-derived from
+  D-PARITY-PROBE-WP-1 (original probe dir gone, RECON R8). Cross-ref
+  E-PYTHON-SUBSTRATE-MIRROR, E-OGAR-CONVERGENCE-SHAPE falsifier #1.
+
+- **D-PY-PERSIST-PG-FACET (2026-07-06; [G]):** the Ruling-(b)
+  persistence core landed minimal: `ogar-adapter-postgres-ddl` emits
+  PostgreSQL DDL from the ClassView — the V3 **facet table**
+  (`classid` + **12 axis-indexed SMALLINT** payload columns, each
+  axis independently indexable) alongside a per-class typed+nullable
+  `CREATE TABLE`, the transactional System-of-Record shape. Role
+  split pinned in the DDL doctrine: **PG = System-of-Record**
+  (Writes / ACID / GoBD), **lance-graph = zero-copy read hot-path**
+  (never the sole booking store); **moka caches ONLY the PG side**
+  (rows are materialised there — a cache in front of lance would copy
+  Arrow buffers into owned entries and break zero-copy). A
+  `check_parity` drift-fuse **skeleton** (COUNT_FUSE pattern) compares
+  sink-in vs legacy-ORM `Class` shapes and screams on divergence,
+  seeding the legacy-parity revival mode. Follow-ups named (not
+  built): transactional-outbox / dual-write, CDC, PostgreSQL-ORM full
+  adapter, lance-graph Python hot-path bindings, moka↔moka-py tier,
+  Mongo (only on real blob need). Precedent:
+  ogar-adapter-clickhouse-ddl. Cross-ref D-PARITY-PROBE-WOA-1,
+  E-PYTHON-SUBSTRATE-MIRROR.

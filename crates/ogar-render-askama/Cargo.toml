@@ -13,3 +13,7 @@ askama = "0.12"
 [dev-dependencies]
 # harvest driver for examples/render_osm.rs (Rails app/models → Class → Rust)
 ogar-from-rails = { path = "../ogar-from-rails" }
+# shared (fields, mask) fixture for the askama<->jinja dual-target
+# round-trip (tests/mask_dual_target.rs + tests/jinja/test_mask_roundtrip.py)
+serde = { workspace = true }
+serde_json = "1.0"

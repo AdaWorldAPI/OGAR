@@ -68,6 +68,7 @@
 
 pub mod emit;
 pub mod mint;
+pub mod sqlalchemy; // WS-G-D
 
 use ogar_vocab::{
     canonical_concept, ActionDef, Association, AssociationKind, Attribute, Callback, Class,
@@ -305,7 +306,20 @@ fn project_rails_fields(class: &mut Class, model: &Model) {
             assoc.class_name = Some(comodel.clone());
             assoc.inverse_of = field.inverse_name.clone();
             class.associations.push(assoc);
-        } else if !is_fk_shadowed_by_association(&field.name, class) {
+        } else if !is_fk_shadowed_by_association(&field.name, class)
+            && !class.attributes.iter().any(|a| a.name == field.name)
+        {
+            // The second guard (no already-lifted attribute of the same
+            // name) closes PR #156 finding (c): a model that both declares
+            // `attribute :foo, :string` (AR-DSL, lifted earlier in
+            // `lift_model_with_language`) AND has a physical `foo` column
+            // must not end up with two `foo` struct fields. On collision,
+            // the AR-DSL declaration wins (it is the declared truth; the
+            // physical column is the same field seen from the migration) —
+            // we skip the physical duplicate rather than merge/overwrite,
+            // since overwriting would change `type_name` provenance and
+            // risk drift. Type reconciliation on collision is a follow-up,
+            // not done here.
             let mut attr = Attribute::new(&field.name);
             attr.type_name = field.field_type.clone();
             // Schema stratum is total: null:false -> required; the Rails
@@ -321,13 +335,31 @@ fn project_rails_fields(class: &mut Class, model: &Model) {
     }
 }
 
-/// FK-dedup predicate for [`project_rails_fields`]: true when `field_name`
-/// has the shape `<name>_id` for a non-empty `<name>`, AND `class` already
-/// carries an [`Association`] named `<name>` (from the AR-DSL vector, lifted
-/// before this function runs in [`lift_model_with_language`]). The bare `id`
-/// primary key column never matches — `"id"` has no `"_id"`-suffixed prefix
-/// of its own — and is always kept as a scalar attribute.
+/// FK-dedup predicate for [`project_rails_fields`]. Two independent shadow
+/// rules, checked in order:
+///
+/// 1. **Explicit `foreign_key:`** — `class` carries an [`Association`] whose
+///    declared `foreign_key` equals `field_name` verbatim (e.g.
+///    `belongs_to :author, foreign_key: "user_id"` shadows the physical
+///    `user_id` column even though the association's own name is `author`,
+///    not `user`). This is the authoritative signal (PR #156 finding (b)) —
+///    checked first.
+/// 2. **`<name>_id` naming convention** — `field_name` has the shape
+///    `<name>_id` for a non-empty `<name>`, AND `class` already carries an
+///    [`Association`] named `<name>` (from the AR-DSL vector, lifted before
+///    this function runs in [`lift_model_with_language`]). The bare `id`
+///    primary key column never matches either rule — `"id"` has no
+///    `"_id"`-suffixed prefix of its own, and no real corpus association
+///    declares `foreign_key: "id"` — and is always kept as a scalar
+///    attribute.
 fn is_fk_shadowed_by_association(field_name: &str, class: &Class) -> bool {
+    if class
+        .associations
+        .iter()
+        .any(|a| a.foreign_key.as_deref() == Some(field_name))
+    {
+        return true;
+    }
     field_name
         .strip_suffix("_id")
         .filter(|prefix| !prefix.is_empty())
@@ -477,7 +509,11 @@ pub fn project_canonical_roles(class: &Class) -> std::collections::HashSet<&'sta
 ///
 /// This is a **facts-only** lift: it sets the action's `identity`,
 /// `predicate` (the method name — already snake_case on the Rails side),
-/// and `object_class` (the model name). It deliberately does **not**:
+/// `object_class` (the model name), and the `reads` / `writes` / `calls`
+/// effect annotations verbatim from [`ruff_spo_triplet::Function`] (OGAR-AS-IR
+/// §3 test 2 — "each `ActionDef` declares what it reads, what it writes, what
+/// side effects it has… pure-vs-effectful is a type, not a comment"). It
+/// deliberately does **not**:
 ///
 /// - set any execution policy (the vocab [`ActionDef`] has no `exec` slot;
 ///   backend routing is consumer-private — see the OP-arm plan §5.2),
@@ -486,8 +522,11 @@ pub fn project_canonical_roles(class: &Class) -> std::collections::HashSet<&'sta
 /// - populate `kausal` from [`ruff_spo_triplet::Function`]`::reads` — a
 ///   plain Rails method reading a field is **not** a reactive
 ///   `@api.depends`-style trigger, so claiming one would leak method-body
-///   description into causal semantics. Those `reads` / `raises` /
-///   `traverses` edges already ride the narrow / SPO arm as triples.
+///   description into causal semantics. `reads` (and `writes` / `calls`) now
+///   ride `ActionDef` as **effect annotations** (see above) — that is a
+///   distinct, weaker claim than a `KausalSpec::Depends` reactive trigger,
+///   which stays `None` here. `raises` / `traverses` have no `ActionDef`
+///   slot yet and still ride the narrow / SPO arm as triples only.
 ///
 /// The result is registry-ready: guard / RBAC / `exec` enrichment happens
 /// downstream at registration, not in the producer.
@@ -497,11 +536,15 @@ pub fn lift_actions(model: &Model) -> Vec<ActionDef> {
         .functions
         .iter()
         .map(|f| {
-            ActionDef::new(
+            let mut a = ActionDef::new(
                 format!("{}::action_def::{}", model.name, f.name),
                 &f.name,
                 &model.name,
-            )
+            );
+            a.reads = f.reads.clone();
+            a.writes = f.writes.clone();
+            a.calls = f.calls.clone();
+            a
         })
         .collect()
 }
@@ -1065,6 +1108,73 @@ mod tests {
         assert!(lifted.associations.iter().any(|a| a.name == "project"));
     }
 
+    /// PR #156 finding (b): `is_fk_shadowed_by_association` must also honour
+    /// an association's *explicit* `foreign_key:` option, not just the
+    /// `<name>_id` naming convention. `belongs_to :author, foreign_key:
+    /// "user_id"` names the association `author` (not `user`), so the
+    /// naming-convention rule alone would miss it and double-project
+    /// `user_id: OgInt` alongside `author: ToOne<...>`.
+    ///
+    /// **Red-before-fix:** on unpatched `main`, `user_id` survives as an
+    /// attribute (the naming-convention check only strips `_id` and compares
+    /// the stem `"user"` to association names, never finding `"author"`) —
+    /// this assertion fails until `is_fk_shadowed_by_association` also
+    /// checks `Association::foreign_key`.
+    #[test]
+    fn lift_model_ruby_fk_deduped_by_explicit_foreign_key() {
+        let mut m = Model::new("Comment");
+        m.associations.push(AssocDecl {
+            kind: AssocKind::BelongsTo,
+            name: "author".to_string(),
+            options: vec![("foreign_key".to_string(), "\"user_id\"".to_string())],
+        });
+        m.fields.push(Field {
+            name: "user_id".to_string(),
+            field_type: Some("bigint".to_string()),
+            not_null: Some(true),
+            ..Default::default()
+        });
+        let lifted = lift_model(&m);
+        assert!(
+            !lifted.attributes.iter().any(|a| a.name == "user_id"),
+            "user_id must be shadowed by author's explicit foreign_key: {:?}",
+            lifted.attributes,
+        );
+        assert!(lifted.associations.iter().any(|a| a.name == "author"));
+    }
+
+    /// PR #156 finding (c): a physical column whose name already matches an
+    /// AR-DSL-declared attribute (`attribute :foo, :string`) must not be
+    /// projected a second time — `project_rails_fields` previously pushed
+    /// unconditionally, producing two `foo` entries in `class.attributes`
+    /// (an invalid duplicate struct field in the generated code).
+    ///
+    /// **Red-before-fix:** on unpatched `main`, the count is 2 (the AR-DSL
+    /// lift populates one `foo` attribute earlier in
+    /// `lift_model_with_language`, and `project_rails_fields` pushes a
+    /// second, unguarded, for the physical `foo` column).
+    #[test]
+    fn lift_model_ruby_physical_column_does_not_duplicate_declared_attribute() {
+        let mut m = Model::new("Widget");
+        m.attributes.push(AttrDecl {
+            kind: AttrKind::Attribute,
+            name: "foo".to_string(),
+            options: vec![("type".to_string(), "string".to_string())],
+        });
+        m.fields.push(Field {
+            name: "foo".to_string(),
+            field_type: Some("string".to_string()),
+            ..Default::default()
+        });
+        let lifted = lift_model(&m);
+        assert_eq!(
+            lifted.attributes.iter().filter(|a| a.name == "foo").count(),
+            1,
+            "foo must appear exactly once, not once per schema stratum: {:?}",
+            lifted.attributes,
+        );
+    }
+
     /// **(c)** GAP-1 required wiring: `Field::not_null` maps onto
     /// `AttributeOptions::required` — `Some(true)` (`null: false`) stays
     /// `Some(true)`; `None` (Rails' nullable default) becomes the EXPLICIT
@@ -1622,6 +1732,73 @@ mod tests {
     #[test]
     fn lift_actions_empty_functions_yields_empty() {
         assert!(lift_actions(&Model::new("Empty")).is_empty());
+    }
+
+    /// SPEC-1(i): `reads` / `writes` / `calls` now ride `ActionDef` as
+    /// first-class effect annotations (OGAR-AS-IR §3 test 2), sourced
+    /// verbatim from `ruff_spo_triplet::Function`. Crucially, this must NOT
+    /// fabricate a reactive `kausal` trigger from a plain method read — a
+    /// Rails method reading a field is not an `@api.depends`-style
+    /// recomputation trigger, so `kausal` stays `None`.
+    #[test]
+    fn lift_actions_carries_read_write_call_effect_facts() {
+        let mut m = Model::new("SaleOrder");
+        m.functions.push(Function {
+            name: "recompute_total".to_string(),
+            reads: vec!["quantity".to_string(), "price".to_string()],
+            writes: vec!["total".to_string()],
+            calls: vec!["self.touch".to_string()],
+            raises: Vec::new(),
+            traverses: Vec::new(),
+        });
+        let acts = lift_actions(&m);
+        assert_eq!(acts.len(), 1);
+        let a = &acts[0];
+        assert_eq!(a.reads, vec!["quantity".to_string(), "price".to_string()]);
+        assert_eq!(a.writes, vec!["total".to_string()]);
+        assert_eq!(a.calls, vec!["self.touch".to_string()]);
+        assert!(
+            a.kausal.is_none(),
+            "reads/writes/calls are effect annotations, not a fabricated reactive trigger"
+        );
+    }
+
+    /// A `Function` with all-empty fact vectors must lift to empty `Vec`s on
+    /// `ActionDef` — not `None`-like phantom entries. `reads` / `writes` /
+    /// `calls` are `Vec<String>`, so "empty" and "absent" are the same zero
+    /// value; this pins that the lift never invents entries when ruff saw
+    /// none.
+    #[test]
+    fn lift_actions_empty_facts_stay_empty_not_none() {
+        let mut m = Model::new("Bare");
+        m.functions.push(Function {
+            name: "noop".to_string(),
+            reads: Vec::new(),
+            writes: Vec::new(),
+            calls: Vec::new(),
+            raises: Vec::new(),
+            traverses: Vec::new(),
+        });
+        let acts = lift_actions(&m);
+        assert_eq!(acts.len(), 1);
+        assert!(acts[0].reads.is_empty());
+        assert!(acts[0].writes.is_empty());
+        assert!(acts[0].calls.is_empty());
+    }
+
+    /// Regression: adding the effect-annotation fields must not disturb the
+    /// pre-existing identity / predicate / object_class shape — same
+    /// assertions as `lift_actions_predicate_object_class_and_identity`,
+    /// kept as an explicit named regression per SPEC-1(i).
+    #[test]
+    fn lift_actions_identity_predicate_object_unchanged() {
+        let acts = lift_actions(&mk_model_with_functions());
+        assert_eq!(acts[0].predicate, "set_status");
+        assert_eq!(acts[0].object_class, "WorkPackage");
+        assert_eq!(acts[0].identity, "WorkPackage::action_def::set_status");
+        assert_eq!(acts[1].predicate, "close!");
+        assert_eq!(acts[1].object_class, "WorkPackage");
+        assert_eq!(acts[1].identity, "WorkPackage::action_def::close!");
     }
 
     #[test]

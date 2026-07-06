@@ -8,9 +8,9 @@
 //! Emits, under `<out-dir>/osm/`:
 //! - `__init__.py`  — package marker; re-exports the models + `CLASS_IDS`.
 //! - `models.py`    — one `@dataclass` per THINK class (associations → typed
-//!                    id fields), each carrying its `CLASS_ID`.
+//!   id fields), each carrying its `CLASS_ID`.
 //! - `<part_of>.py` — the DO arm: one module per container, `def <is_a>(inp)`
-//!                    free functions (`osm.node.show(inp)`), NOT methods.
+//!   free functions (`osm.node.show(inp)`), NOT methods.
 //!
 //! and, one level up, `ogar_sdk.py` — the thin substrate-pull SDK: the codebook
 //! as a dict + `class_id(concept)` / `render_classid(concept, app_prefix)`, the
@@ -133,13 +133,13 @@ fn main() {
     for c in &classes {
         let cls = c.name.replace("::", "_");
         models.push_str(&format!("@dataclass\nclass {cls}:\n"));
-        if let Some(concept) = &c.canonical_concept {
-            if let Some(id) = canonical_concept_id(concept) {
-                models.push_str(&format!(
-                    "    CLASS_ID: ClassVar[int] = 0x{id:04X}  # canonical concept `{concept}`\n"
-                ));
-                class_ids.push((cls.clone(), id));
-            }
+        if let Some(concept) = &c.canonical_concept
+            && let Some(id) = canonical_concept_id(concept)
+        {
+            models.push_str(&format!(
+                "    CLASS_ID: ClassVar[int] = 0x{id:04X}  # canonical concept `{concept}`\n"
+            ));
+            class_ids.push((cls.clone(), id));
         }
         let mut wrote = false;
         for a in &c.attributes {

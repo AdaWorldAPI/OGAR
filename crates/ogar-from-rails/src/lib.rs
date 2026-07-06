@@ -84,26 +84,42 @@ pub fn extract_with(source_tree: &Path, curator: &str) -> Vec<Class> {
 /// core `app/models` *plus* every mounted engine's `app/models`
 /// (`modules/*/app/models`, `engines/*/app/models`).
 ///
-/// Threads through [`ruff_ruby_spo::extract_app_with`] (added in
-/// AdaWorldAPI/ruff#28). OpenProject keeps a large share of its domain in
-/// `modules/*` engines (e.g. `TimeEntry` lives in
-/// `modules/costs/app/models`), invisible to the core-only [`extract`] /
-/// [`extract_with`]; this entry point closes that gap so the canonical
-/// layer sees the full corpus.
+/// Threads through [`ruff_ruby_spo::extract_app_with_schema`] — the
+/// schema-aware extractor (PR #156 finding (a)). Before this fix this
+/// function called the schema-*blind* [`ruff_ruby_spo::extract_app_with`],
+/// so `Model::fields` (the physical `db/migrate/tables/*.rb` column stratum)
+/// never reached the shipped API — `project_rails_fields` had nothing to
+/// project, and the "18/18" field parity only held on a direct `lift_model`
+/// call with a hand-built `fields` vector (as the unit tests do), never on
+/// this public entry point. `extract_app_with_schema` still walks core +
+/// engines exactly as `extract_app_with` did; the `SchemaReport` (match
+/// counts, skipped files) is discarded here — callers who need it should go
+/// straight to `ruff_ruby_spo::extract_app_with_schema`.
 ///
-/// Plain [`extract`] / [`extract_with`] stay core-only for backward
-/// compatibility; engines are opt-in via this entry point.
+/// OpenProject keeps a large share of its domain in `modules/*` engines
+/// (e.g. `TimeEntry` lives in `modules/costs/app/models`), invisible to the
+/// core-only [`extract`] / [`extract_with`]; this entry point closes that
+/// gap so the canonical layer sees the full corpus.
+///
+/// Plain [`extract`] / [`extract_with`] stay core-only (and schema-blind)
+/// for backward compatibility; engines + schema are opt-in via this entry
+/// point.
 #[must_use]
 pub fn extract_app_with(source_tree: &Path, curator: &str) -> Vec<Class> {
-    let graph = ruff_ruby_spo::extract_app_with(source_tree, curator);
+    let (graph, _report) = ruff_ruby_spo::extract_app_with_schema(source_tree, curator);
     ogar_from_ruff::lift_model_graph(&graph)
 }
 
-/// Whole-application extraction (core + engines), defaulting the curator
-/// namespace to `"openproject"`. Thin wrapper over [`extract_app_with`].
+/// Whole-application extraction (core + engines, schema-aware), defaulting
+/// the curator namespace to [`ruff_ruby_spo::NAMESPACE`] (`"openproject"`).
+/// Routes through the same schema-aware extractor as [`extract_app_with`]
+/// (PR #156 finding (a)) rather than delegating to it, mirroring how
+/// [`ruff_ruby_spo::extract_app`] itself is a thin default-namespace wrapper
+/// over `extract_app_with` on the ruff side.
 #[must_use]
 pub fn extract_app(source_tree: &Path) -> Vec<Class> {
-    let graph = ruff_ruby_spo::extract_app(source_tree);
+    let (graph, _report) =
+        ruff_ruby_spo::extract_app_with_schema(source_tree, ruff_ruby_spo::NAMESPACE);
     ogar_from_ruff::lift_model_graph(&graph)
 }
 
@@ -379,6 +395,55 @@ mod tests {
             !core.iter().any(|c| c.name == "TimeEntry"),
             "core-only extract must NOT see modules/costs/TimeEntry",
         );
+    }
+
+    /// PR #156 finding (a): the mainline `extract_app` / `extract_app_with`
+    /// must route through `ruff_ruby_spo::extract_app_with_schema`, so the
+    /// physical `db/migrate/tables/*.rb` schema stratum reaches
+    /// `Class.attributes` on the SHIPPED API — not only via a direct
+    /// `lift_model` call with a hand-built `fields` vector (as the
+    /// `ogar-from-ruff` unit tests do). Before this fix, `extract_app_with`
+    /// called the schema-*blind* `ruff_ruby_spo::extract_app_with`, so
+    /// `model.fields` was always empty and `project_rails_fields` had
+    /// nothing to project on this path.
+    ///
+    /// Gated behind `#[ignore]` on a real Rails checkout (mirrors the
+    /// `REDMINE_SRC` / `/home/user/openproject` pattern used by the other
+    /// real-corpus tests in this module) — set `REDMINE_SRC` or place an
+    /// OpenProject checkout at `/home/user/openproject` to run it locally.
+    /// Being `#[ignore]`, it documents the schema-aware wiring without
+    /// gating CI on a checkout being present.
+    #[test]
+    #[ignore = "requires a Rails source tree with db/migrate/tables (REDMINE_SRC or /home/user/openproject)"]
+    fn mainline_extract_app_routes_through_schema_aware_extractor() {
+        let src = std::env::var("REDMINE_SRC").unwrap_or_else(|_| "/home/user/openproject".to_string());
+        let path = PathBuf::from(&src);
+        if !path.exists() {
+            eprintln!("skipping: {} not present", path.display());
+            return;
+        }
+        let classes = extract_app_with(&path, "openproject");
+        assert!(
+            classes.iter().any(|c| {
+                c.attributes
+                    .iter()
+                    .any(|a| !a.name.is_empty() && a.type_name.is_some())
+            }),
+            "at least one lifted Class must carry a physical-schema-typed \
+             attribute via the mainline extract_app_with — proves \
+             model.fields reached the Class, not just a direct lift_model call",
+        );
+    }
+
+    /// **Compile-level pin for PR #156 finding (a).** If the `ruff_ruby_spo`
+    /// dependency ever drops (or renames) `extract_app_with_schema`, this
+    /// reference fails to compile — CI fails loudly at build time instead of
+    /// silently reverting `extract_app` / `extract_app_with` to the
+    /// schema-blind extractor. Not `#[ignore]`d: it needs no source tree,
+    /// only the symbol to exist.
+    #[test]
+    fn extract_app_uses_schema_aware_symbol() {
+        let _pin = ruff_ruby_spo::extract_app_with_schema;
     }
 
     /// **Per-curator namespace tagging** on real source (the ruff#27

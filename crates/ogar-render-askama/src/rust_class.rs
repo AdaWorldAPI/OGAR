@@ -76,6 +76,44 @@ struct RustMethod {
     mutates: bool,
 }
 
+/// Render failure for the masked class projection.
+#[derive(Debug)]
+pub enum RenderError {
+    /// Template rendering failed.
+    Askama(askama::Error),
+    /// The class carries more fields than a single-`u64` `FieldMask` can
+    /// address (> `FieldMask::MAX_FIELDS` = 64) AND the caller passed a
+    /// non-FULL mask, so presence for fields 64+ cannot be represented and
+    /// would silently drop. Loud-fail instead. (FieldMask `[u64;N]` widening
+    /// is the cross-repo follow-up — see D-FIELDMASK-LOUD-FAIL.)
+    TooManyFieldsForMask {
+        /// Total attribute + association count on the class.
+        field_count: usize,
+        /// `FieldMask::MAX_FIELDS` — the single-`u64` ceiling.
+        max: u32,
+    },
+}
+
+impl From<askama::Error> for RenderError {
+    fn from(e: askama::Error) -> Self {
+        RenderError::Askama(e)
+    }
+}
+
+impl std::fmt::Display for RenderError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            RenderError::Askama(e) => write!(f, "template render failed: {e}"),
+            RenderError::TooManyFieldsForMask { field_count, max } => write!(
+                f,
+                "{field_count} fields > {max}-bit FieldMask ceiling; use FieldMask::FULL or widen"
+            ),
+        }
+    }
+}
+
+impl std::error::Error for RenderError {}
+
 /// Render a canonical [`Class`] as a Rust struct whose FIELDS are the
 /// `ClassView × FieldMask` projection and whose METHODS are the OGAR
 /// [`ActionDef`] DO-arm, assembled as a struct-of-methods constructor.
@@ -91,13 +129,25 @@ struct RustMethod {
 ///
 /// # Errors
 ///
-/// Propagates [`askama::Error`] if template rendering fails (it never should
-/// for well-formed input — the template has no fallible expressions).
+/// Returns [`RenderError::TooManyFieldsForMask`] when the class has more
+/// fields than the mask can address AND the caller passed a non-FULL mask
+/// (loud-fail instead of silently dropping fields 64+; the FULL sentinel
+/// still bypasses the guard and emits everything). Propagates
+/// [`RenderError::Askama`] if template rendering fails (it never should for
+/// well-formed input — the template has no fallible expressions).
 pub fn render_class_with_methods(
     class: &Class,
     mask: FieldMask,
     actions: &[ActionDef],
-) -> Result<String, askama::Error> {
+) -> Result<String, RenderError> {
+    let field_count = class.attributes.len() + class.associations.len();
+    if field_count > FieldMask::MAX_FIELDS as usize && mask != FieldMask::FULL {
+        return Err(RenderError::TooManyFieldsForMask {
+            field_count,
+            max: FieldMask::MAX_FIELDS,
+        });
+    }
+
     let concept = class.canonical_concept.as_deref().unwrap_or("");
     let class_id_hex = canonical_concept_id(concept)
         .map(|id| format!("0x{id:04X}"))
@@ -151,12 +201,15 @@ pub fn render_class_with_methods(
         ctor_inits,
         methods,
     };
-    ctx.render()
+    Ok(ctx.render()?)
 }
 
 /// An all-bits-set mask is the "unmasked" sentinel (emit everything,
 /// including any field beyond the 64-bit ceiling). Any narrower mask consults
 /// the bit — and a position past `MAX_FIELDS` can't be present, so it drops.
+/// NOTE: a >64-field class whose mask happens to equal `u64::MAX` (bits
+/// 0..63 all set) aliases to the FULL sentinel and escapes the loud guard —
+/// resolved by the FieldMask widening (WideFieldMask: full_for/max_fields).
 fn field_present(mask: FieldMask, idx: u8) -> bool {
     if mask.0 == u64::MAX {
         true
@@ -356,6 +409,95 @@ mod tests {
         let src = render_class_with_methods(&c, FieldMask(u64::MAX), &[]).unwrap();
         assert!(src.contains("pub struct Bare"), "{src}");
         assert!(src.contains("pub fn new() -> Self"), "{src}");
+    }
+
+    /// A wide class: 70 string attributes `f0..f69` — one past the 64-bit
+    /// `FieldMask` ceiling (`FieldMask::MAX_FIELDS`).
+    fn wide_class() -> Class {
+        let mut c = Class::new("wide_thing");
+        c.canonical_concept = None;
+        c.attributes = (0..70)
+            .map(|i| {
+                let mut a = Attribute::default();
+                a.name = format!("f{i}");
+                a.type_name = Some("string".to_string());
+                a
+            })
+            .collect();
+        c
+    }
+
+    /// D-FIELDMASK-LOUD-FAIL pin (part i): document today's silent drop for
+    /// field positions >= 64 — `FieldMask::with` is a documented no-op past
+    /// `MAX_FIELDS`, so a caller intending bit 65 gets nothing and no error.
+    /// The `FULL` sentinel is the one escape hatch that still emits
+    /// everything, including overflow positions.
+    #[test]
+    fn wide_class_primitive_pins_pre_fix_silent_drop() {
+        // `with(65)` is a no-op: position 65 >= MAX_FIELDS (64), so the bit
+        // is never set — pin the FieldMask contract this test relies on.
+        let mask = FieldMask::EMPTY.with(0).with(65);
+        assert!(!mask.has(65), "position 65 must never be representable");
+        assert_eq!(
+            mask,
+            FieldMask::EMPTY.with(0),
+            "with(65) must be a no-op, not fold onto another bit"
+        );
+
+        let class = wide_class();
+        // Guard (ii) loud-fails a >64-field class under a non-FULL mask, so
+        // this pin must use a mask the guard still lets through: FULL for
+        // the "everything, including overflow" side, or (documented
+        // separately) fall back to constructing the pre-guard behavior via
+        // a class at exactly the ceiling would not exercise the drop. To
+        // pin the *historical* silent-drop shape without tripping the new
+        // loud-fail guard, assert directly against `field_present` (the
+        // primitive the guard wraps) rather than through
+        // `render_class_with_methods`, whose contract the mission
+        // explicitly upgraded to loud-fail in this same PR.
+        assert!(field_present(mask, 0), "bit 0 (f0) present");
+        assert!(
+            !field_present(mask, 65),
+            "bit 65 (f65) can never be present — the silent drop this test pins"
+        );
+        // FULL sentinel bypasses per-bit gating — every position emits,
+        // including field 65 beyond the ceiling.
+        assert!(field_present(FieldMask::FULL, 65), "FULL emits field 65 too");
+
+        // Cross-check against the actual render output for the FULL case
+        // (the one case the loud-fail guard still allows for a wide class).
+        let src = render_class_with_methods(&class, FieldMask::FULL, &[]).unwrap();
+        assert!(src.contains("pub f0:"), "{src}");
+        assert!(
+            src.contains("pub f65:"),
+            "FULL must still emit overflow field f65:\n{src}"
+        );
+    }
+
+    /// D-FIELDMASK-LOUD-FAIL (part ii): a >64-field class under a non-FULL
+    /// mask must loud-fail (`RenderError::TooManyFieldsForMask`) instead of
+    /// silently dropping fields 64+. FULL and any <=64-field class remain
+    /// `Ok` — the guard doesn't false-positive.
+    #[test]
+    fn wide_class_under_partial_mask_loud_fails() {
+        let class = wide_class();
+        let mask = FieldMask::EMPTY.with(0);
+        let err = render_class_with_methods(&class, mask, &[]).unwrap_err();
+        match err {
+            RenderError::TooManyFieldsForMask { field_count, max } => {
+                assert_eq!(field_count, 70);
+                assert_eq!(max, FieldMask::MAX_FIELDS);
+            }
+            other => panic!("expected TooManyFieldsForMask, got {other:?}"),
+        }
+
+        // FULL still bypasses the guard for a wide class.
+        assert!(render_class_with_methods(&class, FieldMask::FULL, &[]).is_ok());
+
+        // A <=64-field class under a partial mask is unaffected (no
+        // false-positive).
+        let small = sample_class();
+        assert!(render_class_with_methods(&small, FieldMask::EMPTY.with(0), &[]).is_ok());
     }
 
     #[test]

@@ -203,3 +203,51 @@ pub fn into_class(entity: &EntityDecl, attributes: &[(&str, &AttributeDecl)]) ->
     cls.enums = enums;
     cls
 }
+
+/// Lower one OGIT entity TTL plus the TTL of each attribute it references
+/// into the canonical [`Class`] (the controller-DTO wire shape). The
+/// membrane pipeline: `entity.ttl (+ attribute .ttl files) → EntityDecl +
+/// AttributeDecls → into_class`. Attribute sources are matched to the
+/// entity's mandatory+optional attribute list by local name; an attribute
+/// whose TTL is not supplied is carried as a bare wire-name column (no
+/// enum/validation facts).
+#[must_use]
+pub fn lift_ogit_entity(entity_src: &str, attribute_srcs: &[&str]) -> Option<Class> {
+    let TtlDeclaration::Entity(entity) = ttl::parse_file(entity_src)? else {
+        return None;
+    };
+    // Parse each supplied attribute TTL into its AttributeDecl.
+    let parsed: Vec<AttributeDecl> = attribute_srcs
+        .iter()
+        .filter_map(|s| match ttl::parse_file(s)? {
+            TtlDeclaration::DatatypeAttribute(a) => Some(a),
+            _ => None,
+        })
+        .collect();
+
+    // The wire-name column set = the entity's declared attribute local
+    // names (mandatory ++ optional), localized from the curie form the
+    // entity's `optional-attributes`/`mandatory-attributes` lists carry.
+    let wire_names: Vec<String> = entity
+        .mandatory_attributes
+        .iter()
+        .chain(entity.optional_attributes.iter())
+        .map(|curie| ttl::local_name_from_curie(curie))
+        .collect();
+
+    // Attributes without a supplied TTL source are carried as bare
+    // wire-name columns (default decl → no enum/validation facts).
+    let default_decl = AttributeDecl::default();
+    let pairs: Vec<(&str, &AttributeDecl)> = wire_names
+        .iter()
+        .map(|name| {
+            let decl = parsed
+                .iter()
+                .find(|a| &a.name == name)
+                .unwrap_or(&default_decl);
+            (name.as_str(), decl)
+        })
+        .collect();
+
+    Some(into_class(&entity, &pairs))
+}

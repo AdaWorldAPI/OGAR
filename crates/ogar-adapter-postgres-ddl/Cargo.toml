@@ -1,0 +1,17 @@
+[package]
+name = "ogar-adapter-postgres-ddl"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+description = "PostgreSQL DDL adapter for OGAR — realizes Operator Ruling (b, refined): PostgreSQL is the transactional System-of-Record (writes, GoBD/audit, ACID); lance-graph is the read-optimized hot-path (zero-copy ClassView x FieldMask projections), never the sole booking store. emit_postgres_ddl(&[Class]) renders per-class CREATE TABLE (typed + nullable from the schema stratum); emit_facet_table_ddl renders the V3 facet table (classid + 12 axis-indexable payload columns) that the sink-in writes land in. Emit-only: no parser, no DB driver, no network. Precedent: ogar-adapter-clickhouse-ddl. Also carries the parity-checker skeleton (`parity` module) — the legacy-parity revival drift-fuse (COUNT_FUSE pattern) that screams when the sink-in projected shape diverges from the legacy ORM shape."
+
+[features]
+default = []
+serde = ["dep:serde", "ogar-vocab/serde"]
+
+[dependencies]
+ogar-vocab = { path = "../ogar-vocab" }
+serde = { workspace = true, optional = true }

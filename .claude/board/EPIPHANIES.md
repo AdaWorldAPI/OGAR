@@ -7,6 +7,27 @@
 
 ---
 
+## 2026-07-06 — E-BEHAVIOR-AT-COMPILE-TIME — behavior facts are substrate, not runtime beiwerk
+
+**Status:** FRAMING (`[G]` for the effect-annotation facts now wired; `[H]` for source-body lowering).
+
+Operator §3: the sink-in GUID substrate is compile-time-available INCLUDING behavior. Realised minimally in commit `789c7ed` — ruff's `Function.reads/writes/calls` now ride `ActionDef` at lift time, the IR surface signed off against OGAR-AS-IR §3 (test 2). Provenance is kept honest rather than flattened: **writes/calls are authoritative** (the extractor sees assignment and call targets directly), **reads are inferred** (name references, an over-approximation); the annotation records which is which, so no downstream consumer mistakes an inferred read for a proven effect, and no reactive `kausal` is fabricated from a plain read. The remaining `[H]` is source-body lowering (`body_source`, params, value-carrying `on_enter`), gated on a named `ruff_spo_triplet::Function` extension (SPEC-1 Part A — a follow-up). Cross-ref D-BEHAVIOR-ACTION-EDGES, E-OGAR-CONVERGENCE-SHAPE behavior layer ("[G] facts / [H] lowering").
+
+---
+
+## 2026-07-06 — E-ONE-MASK-TWO-ENGINES — one ClassView×FieldMask projection, askama and jinja agree
+
+**Status:** `[G]` on the pinned round-trip; `[H]`→retires the render layer's falsifier #2 for the ≤64-field case.
+
+Falsifier #2 (the classview-mask round-trip named in E-OGAR-CONVERGENCE-SHAPE) RAN and is GREEN: a single fixture's `(fields, mask)` at **mask=45** yields the identical field-name set through askama (Rust) and jinja2 (Python) — the dual-target render Operator §5 asks for, one projection driving both engines rather than two hand-kept templates. Two honesties are pinned alongside the green: (1) the `>64`-field case is **loud-failed** (`RenderError::TooManyFieldsForMask`, D-FIELDMASK-LOUD-FAIL), never silently round-tripped — a loud-fail guard replaced the old field-64+ silent drop; (2) the FULL sentinel **aliases** any genuine all-ones mask at the u64 tier, so "render everything" and "explicitly select all 64" are indistinguishable there — documented as a caveat, and the reason the widening (D-FIELDMASK-WIDENING) carries a canonical form. Companion to E-ONE-MASK-THREE-PORTS; realises Operator §5 (dual-target render) + §6 (identical data model both languages). Cross-ref D-FIELDMASK-LOUD-FAIL, D-FIELDMASK-WIDENING.
+
+---
+
+## 2026-07-06 — E-PYTHON-SUBSTRATE-MIRROR — the emit_python @dataclass IS the Python mirror of CompiledClass
+
+**Status:** FRAMING (`[G]` for the py_compile+instantiate gate on the synthetic WoA class; `[H]` for the persistence adapter).
+
+Operator §6: identical data model in both languages via Classes/ClassView, never a parallel schema truth. Realised: `emit_python` renders the same `CompiledClass` the Rust emitters render, and the emitted `TimesheetActivity` `@dataclass` both **py_compiles and instantiates** (D-PARITY-PROBE-WOA-1). Two findings sharpen the mirror rather than decorate it: the class does not sit on bootstrap classid 0 as the spec assumed — it converges through `WOA_ALIASES` onto `BILLABLE_WORK_ENTRY` (`0x0103_0003`), pinned by test, so the "Python mirror" is an *addressed* mirror, not an anonymous one; and `emit_python` still omits `options.required`, a named emitter follow-up (the mirror is structurally 1:1 on fields / types / associations, honestly short one nullability annotation). The DB format (Operator §4) stays a documented decision — Option C now (dataclass mirror), Option B (SQLAlchemy/SQLite reusable adapter) and the PG facet table (D-PY-PERSIST-PG-FACET) next, Option A (lancedb bindings) as the native substrate. Cross-ref D-PARITY-PROBE-WOA-1, D-PY-PERSIST-PG-FACET, E-ONE-MASK-TWO-ENGINES.
 ## 2026-07-05 — E-RECIPE-FAMILIES-MINT-ON-EMIT — Scope-kind / Concern-kind are RESERVED (bytes 0x05 / 0x06) but minted ON EMIT, not speculatively
 
 **Status:** FINDING (operator rule, 2026-07-05 — verbatim: *"add scope-kind concern-kind when you see the code wants to emit it (eg ruff dto ast for duplicated routes, or god object split)"*). Recorded in `recipe.rs` module doc (§ Reserved-but-unminted families); no `RecipeFamily` variant, no concept, no codebook row minted — bytes `0x05`/`0x06` resolve to `RecipeFamily::Unassigned` until the emit seam exists.

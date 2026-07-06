@@ -9,6 +9,7 @@ members = [
     "crates/ogar-adapter-surrealql",
     "crates/ogar-adapter-ttl",
     "crates/ogar-adapter-clickhouse-ddl",
+    "crates/ogar-adapter-postgres-ddl", # WS-G-E
     "crates/ogar-knowable-from",
     "crates/ogar-from-elixir",
     "crates/ogar-from-ruff",
