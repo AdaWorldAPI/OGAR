@@ -31,7 +31,7 @@
 //!    here — behaviour flows producer → OGAR `ActionDef` → Rust method.
 
 use askama::Template;
-use lance_graph_contract::class_view::FieldMask;
+use lance_graph_contract::class_view::{FieldMask, WideFieldMask};
 use ogar_vocab::{canonical_concept_id, ActionDef, AssociationKind, Class};
 
 use crate::artifact_kinds::rust_struct::{edge_rust_type, escape_rust_ident, rails_to_rust_type};
@@ -148,17 +148,61 @@ pub fn render_class_with_methods(
         });
     }
 
+    render_class_with_methods_via(class, |idx| field_present(mask, idx), actions)
+}
+
+/// Render a canonical [`Class`] as a Rust struct, gated by a [`WideFieldMask`]
+/// instead of the single-`u64` [`FieldMask`] — the additive entry point for
+/// classes whose field count may exceed [`FieldMask::MAX_FIELDS`] (64).
+///
+/// Unlike [`render_class_with_methods`], there is no `TooManyFieldsForMask`
+/// loud-fail here: `WideFieldMask` addresses every field position natively
+/// (promoting `Small` → `Wide` past 64 on demand — see [`WideFieldMask::with`]),
+/// so there is no ceiling to guard against. The caller passes
+/// [`WideFieldMask::full_for`]`(field_count)` for the "unmasked, emit
+/// everything" sentinel — the wide-tier sibling of [`FieldMask::FULL`].
+///
+/// Same projection, same template, same DO-arm lifting as
+/// [`render_class_with_methods`] — the two entry points share
+/// [`render_class_with_methods_via`] and differ only in which mask type
+/// answers presence.
+///
+/// # Errors
+///
+/// Propagates [`RenderError::Askama`] if template rendering fails (it never
+/// should for well-formed input — the template has no fallible expressions).
+pub fn render_class_with_methods_wide(
+    class: &Class,
+    mask: &WideFieldMask,
+    actions: &[ActionDef],
+) -> Result<String, RenderError> {
+    render_class_with_methods_via(class, |idx| mask.has(idx), actions)
+}
+
+/// Shared ctx-build core for both [`render_class_with_methods`] (narrow,
+/// [`FieldMask`]) and [`render_class_with_methods_wide`] (wide,
+/// [`WideFieldMask`]). `field_present` answers "is field position `idx`
+/// populated" — the only axis the two public entry points differ on; the
+/// projection, constructor synthesis, DO-arm lifting, and template render are
+/// identical for both. The ceiling guard (`TooManyFieldsForMask`) is NOT
+/// here — it is [`render_class_with_methods`]'s narrow-mask-only concern, so
+/// this helper never rejects a wide class.
+fn render_class_with_methods_via(
+    class: &Class,
+    field_present: impl Fn(u8) -> bool,
+    actions: &[ActionDef],
+) -> Result<String, RenderError> {
     let concept = class.canonical_concept.as_deref().unwrap_or("");
     let class_id_hex = canonical_concept_id(concept)
         .map(|id| format!("0x{id:04X}"))
         .unwrap_or_default();
 
     // ObjectView N3 order: attributes, then associations. `idx` walks the
-    // combined sequence; the mask gates each position.
+    // combined sequence; `field_present` gates each position.
     let mut fields = Vec::new();
     let mut idx: u8 = 0;
     for a in &class.attributes {
-        if field_present(mask, idx) {
+        if field_present(idx) {
             fields.push(RustField {
                 snake_name: escape_rust_ident(&a.name),
                 rust_type: rails_to_rust_type(a.type_name.as_deref()),
@@ -168,7 +212,7 @@ pub fn render_class_with_methods(
         idx = idx.saturating_add(1);
     }
     for e in &class.associations {
-        if field_present(mask, idx) {
+        if field_present(idx) {
             fields.push(RustField {
                 snake_name: escape_rust_ident(&e.name),
                 rust_type: edge_rust_type(e),
@@ -498,6 +542,124 @@ mod tests {
         // false-positive).
         let small = sample_class();
         assert!(render_class_with_methods(&small, FieldMask::EMPTY.with(0), &[]).is_ok());
+    }
+
+    /// Minimal replica of `tests/mask_dual_target.rs::present_field_names` —
+    /// test-local there (a separate integration-test binary), so it is not
+    /// reachable from this unit-test module; re-implemented here rather than
+    /// imported.
+    fn present_field_names(src: &str) -> std::collections::BTreeSet<String> {
+        src.lines()
+            .filter_map(|line| {
+                let trimmed = line.trim();
+                let rest = trimmed.strip_prefix("pub ")?;
+                if !trimmed.ends_with(',') || rest.starts_with("const ") || rest.starts_with("fn ")
+                {
+                    return None;
+                }
+                let ident = rest.split(':').next()?;
+                Some(ident.trim().to_string())
+            })
+            .collect()
+    }
+
+    /// (a) A wide class (70 fields, one past the 64-bit `FieldMask` ceiling)
+    /// under a partial `WideFieldMask` emits EXACTLY the masked fields —
+    /// including a position past the ceiling (`f65`), which `FieldMask`
+    /// cannot represent at all.
+    #[test]
+    fn wide_mask_gates_which_fields_emit_on_a_wide_class() {
+        let class = wide_class();
+        let mask = WideFieldMask::from_positions(&[0, 65]);
+        let src = render_class_with_methods_wide(&class, &mask, &[]).unwrap();
+
+        let present = present_field_names(&src);
+        let expected: std::collections::BTreeSet<String> =
+            ["f0".to_string(), "f65".to_string()].into_iter().collect();
+        assert_eq!(
+            present, expected,
+            "only the masked positions (f0, f65) should be present:\n{src}"
+        );
+        // Spot-check a few explicitly absent positions.
+        assert!(!src.contains("pub f1:"), "{src}");
+        assert!(!src.contains("pub f64:"), "{src}");
+        assert!(!src.contains("pub f69:"), "{src}");
+    }
+
+    /// (b) A wide class under `WideFieldMask::full_for(field_count)` emits
+    /// every field, including every position past the 64-bit ceiling.
+    #[test]
+    fn wide_mask_full_for_emits_all_fields_on_a_wide_class() {
+        let class = wide_class();
+        let mask = WideFieldMask::full_for(class.attributes.len());
+        let src = render_class_with_methods_wide(&class, &mask, &[]).unwrap();
+
+        let present = present_field_names(&src);
+        assert_eq!(present.len(), 70, "all 70 fields must be present:\n{src}");
+        for i in 0..70 {
+            assert!(
+                src.contains(&format!("pub f{i}:")),
+                "field f{i} missing under full_for:\n{src}"
+            );
+        }
+    }
+
+    /// (c) For a narrow (<=64-field) class, the wide entry point must emit
+    /// BYTE-IDENTICAL output to the narrow entry point, both for the "emit
+    /// everything" sentinel and for a partial mask — proving the shared
+    /// `render_class_with_methods_via` refactor changed no behaviour.
+    #[test]
+    fn wide_entry_matches_narrow_entry_byte_identical_for_narrow_class() {
+        let class = sample_class();
+        let actions = sample_actions();
+
+        // "Emit everything" sentinel, both sides.
+        let narrow_full = render_class_with_methods(&class, FieldMask::FULL, &actions).unwrap();
+        let wide_full = render_class_with_methods_wide(
+            &class,
+            &WideFieldMask::full_for(class.attributes.len()),
+            &actions,
+        )
+        .unwrap();
+        assert_eq!(
+            narrow_full, wide_full,
+            "FULL narrow vs full_for wide must render byte-identical output"
+        );
+
+        // A partial mask (only field 0 present), both sides.
+        let narrow_partial =
+            render_class_with_methods(&class, FieldMask::EMPTY.with(0), &[]).unwrap();
+        let wide_partial =
+            render_class_with_methods_wide(&class, &WideFieldMask::from_positions(&[0]), &[])
+                .unwrap();
+        assert_eq!(
+            narrow_partial, wide_partial,
+            "partial narrow mask vs equivalent wide mask must render byte-identical output"
+        );
+    }
+
+    /// (d) Regression: the narrow entry's >64 loud-fail guard is untouched by
+    /// this refactor — a wide class under a partial `FieldMask` still errors
+    /// via `render_class_with_methods` — while the wide entry, which has no
+    /// such ceiling, succeeds on the very same class under the equivalent
+    /// partial `WideFieldMask`.
+    #[test]
+    fn narrow_entry_still_loud_fails_over_64_while_wide_entry_succeeds() {
+        let class = wide_class();
+
+        let err = render_class_with_methods(&class, FieldMask::EMPTY.with(0), &[]).unwrap_err();
+        assert!(
+            matches!(err, RenderError::TooManyFieldsForMask { field_count: 70, max } if max == FieldMask::MAX_FIELDS),
+            "narrow entry must still loud-fail on a wide class under a partial mask: {err:?}"
+        );
+
+        // The wide entry has no ceiling to guard: the same class, an
+        // equivalent partial mask, succeeds.
+        assert!(
+            render_class_with_methods_wide(&class, &WideFieldMask::from_positions(&[0]), &[])
+                .is_ok(),
+            "wide entry must not loud-fail — WideFieldMask has no 64-field ceiling"
+        );
     }
 
     #[test]
