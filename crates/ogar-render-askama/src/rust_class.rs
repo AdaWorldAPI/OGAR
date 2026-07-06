@@ -207,6 +207,9 @@ pub fn render_class_with_methods(
 /// An all-bits-set mask is the "unmasked" sentinel (emit everything,
 /// including any field beyond the 64-bit ceiling). Any narrower mask consults
 /// the bit — and a position past `MAX_FIELDS` can't be present, so it drops.
+/// NOTE: a >64-field class whose mask happens to equal `u64::MAX` (bits
+/// 0..63 all set) aliases to the FULL sentinel and escapes the loud guard —
+/// resolved by the FieldMask widening (WideFieldMask: full_for/max_fields).
 fn field_present(mask: FieldMask, idx: u8) -> bool {
     if mask.0 == u64::MAX {
         true
@@ -430,7 +433,7 @@ mod tests {
     /// The `FULL` sentinel is the one escape hatch that still emits
     /// everything, including overflow positions.
     #[test]
-    fn wide_class_beyond_64_fields_silently_drops_under_partial_mask() {
+    fn wide_class_primitive_pins_pre_fix_silent_drop() {
         // `with(65)` is a no-op: position 65 >= MAX_FIELDS (64), so the bit
         // is never set — pin the FieldMask contract this test relies on.
         let mask = FieldMask::EMPTY.with(0).with(65);
