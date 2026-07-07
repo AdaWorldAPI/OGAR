@@ -177,21 +177,53 @@ pub fn domain_tables() -> Vec<DomainTable> {
     }]
 }
 
-fn ocr_entries() -> Vec<(String, u16)> {
-    crate::ocr_actions::ocr_actions()
-        .into_iter()
-        .map(|spec| {
-            let concept = spec
-                .def
-                .object_class
-                .rsplit('/')
-                .next()
-                .unwrap_or_default()
-                .to_string();
-            let id = crate::canonical_concept_id(&concept).unwrap_or_default();
-            (spec.def.predicate, id)
+/// Derive a domain's `(capability, subject classid)` join rows GENERICALLY
+/// from any `[ActionDef]` — the output of `ogar-from-ruff::lift_actions`
+/// for ANY language frontend (Ruby/Rails, Python/Odoo, C#/Roslyn,
+/// C++/libclang). This is the **"config becomes data" seam**: a consumer
+/// registers a domain by handing over its harvested `ActionDef`s, never by
+/// hand-writing a bespoke `entries` closure. The first, hand-authored
+/// table ([`crate::ocr_actions`]) routes through here too — so the
+/// hand-authored and harvested paths cannot diverge on what a row *is*,
+/// and every future consumer (medcare healthcare, thinking-styles, …)
+/// reuses one agnostic derive instead of copying this logic.
+///
+/// Each action's subject classid is resolved from its
+/// [`crate::ActionDef::object_class`] (`<prefix>/<concept>` — the concept
+/// is the last `/`-segment, so any prefix works: `ogit-ocr/…`,
+/// `medcare:…/…`, …) via [`crate::canonical_concept_id`]. An action whose
+/// concept is unminted maps to id `0` (the default-class sentinel) rather
+/// than being silently dropped: the row survives so the caller's
+/// [`resolve_hotplug`] / [`verify_registration`] fuse catches it as
+/// `UnknownClassid` / `Unminted`, keeping drift audible.
+///
+/// Effect-fact fields on the `ActionDef` (`reads`/`writes`/`calls`/
+/// `raises`) are irrelevant to the join — the hot-plug keys on the
+/// capability NAME (`predicate`) and the subject classid alone. So a
+/// name-only `ActionDef` (e.g. a C#-Roslyn lift before the harvester's
+/// method-body walk lands) derives a valid row; the effect facts are
+/// enrichment for projection/kausal/RBAC, not join inputs.
+#[must_use]
+pub fn entries_from_actions(actions: &[crate::ActionDef]) -> Vec<(String, u16)> {
+    actions
+        .iter()
+        .map(|def| {
+            let concept = def.object_class.rsplit('/').next().unwrap_or_default();
+            let id = crate::canonical_concept_id(concept).unwrap_or_default();
+            (def.predicate.clone(), id)
         })
         .collect()
+}
+
+/// OCR domain rows, derived through the generic [`entries_from_actions`]
+/// path — the hand-authored [`crate::ocr_actions`] table is just one data
+/// source feeding the agnostic derive.
+fn ocr_entries() -> Vec<(String, u16)> {
+    let defs: Vec<crate::ActionDef> = crate::ocr_actions::ocr_actions()
+        .into_iter()
+        .map(|spec| spec.def)
+        .collect();
+    entries_from_actions(&defs)
 }
 
 /// A green hot-plug resolution: the `(concept, classid)` vocab rows and the
@@ -321,5 +353,69 @@ mod hotplug_tests {
             resolve_hotplug("tesseract-ogar", OCR_IDS, &extra),
             Err(HotplugDrift::Undeclared(_))
         ));
+    }
+
+    /// The generic derive is prefix-agnostic: it keys on the last
+    /// `/`-segment of `object_class`, so an `ActionDef` lifted from ANY
+    /// frontend's namespace (not just `ogit-ocr/…`) derives a valid row.
+    /// This is the "config becomes data" guarantee — a harvested consumer
+    /// (medcare-via-Roslyn, a future thinking-styles table) reuses this one
+    /// derive instead of copying the OCR logic.
+    #[test]
+    fn entries_from_actions_is_prefix_agnostic() {
+        use crate::ActionDef;
+        // Non-OCR prefix, concept `textline` (a known mint). The derive
+        // must resolve it exactly as the OCR path does — prefix ignored.
+        let a = ActionDef::new(
+            "some-app:health/textline::action_def::foo",
+            "foo",
+            "some-app:health/textline",
+        );
+        assert_eq!(
+            entries_from_actions(&[a]),
+            vec![("foo".to_string(), crate::class_ids::TEXTLINE)],
+        );
+    }
+
+    /// A name-only `ActionDef` (empty effect facts — e.g. a C# lift before
+    /// the Roslyn harvester's method-body walk lands) still derives a valid
+    /// row: the join keys on `predicate` + subject classid, never the body.
+    #[test]
+    fn entries_from_actions_ignores_effect_facts() {
+        use crate::ActionDef;
+        let mut a = ActionDef::new("x", "recognize_line", "ogit-ocr/textline");
+        assert!(a.reads.is_empty() && a.writes.is_empty());
+        a.reads = vec!["grey_line".into()]; // enrichment present or absent…
+        let empty = ActionDef::new("y", "recognize_line", "ogit-ocr/textline");
+        // …yields the identical join row either way.
+        assert_eq!(entries_from_actions(&[a]), entries_from_actions(&[empty]));
+    }
+
+    /// An unminted concept survives as id 0 (the default-class sentinel)
+    /// rather than being silently dropped — so `resolve_hotplug`'s
+    /// `UnknownClassid` / `verify_registration`'s `Unminted` fuse still
+    /// fires. The derive never hides a bad row.
+    #[test]
+    fn entries_from_actions_keeps_unminted_rows_for_the_fuse() {
+        use crate::ActionDef;
+        let a = ActionDef::new("z", "bar", "any:ns/totally_not_a_concept");
+        assert_eq!(entries_from_actions(&[a]), vec![("bar".to_string(), 0)]);
+    }
+
+    /// The hand-authored OCR table, routed through the generic derive, is
+    /// byte-for-byte what it was before the refactor — the "config becomes
+    /// data" seam subsumes the bespoke path with zero behavior change.
+    #[test]
+    fn ocr_entries_still_derive_the_eight_known_rows() {
+        let ocr = ocr_entries();
+        assert_eq!(ocr.len(), 8);
+        assert!(
+            ocr.iter()
+                .any(|(cap, id)| cap == "recognize_line" && *id == crate::class_ids::TEXTLINE)
+        );
+        assert!(
+            ocr.iter()
+                .any(|(cap, id)| cap == "render_hocr" && *id == crate::class_ids::OCR_RENDERER)
+        );
     }
 }

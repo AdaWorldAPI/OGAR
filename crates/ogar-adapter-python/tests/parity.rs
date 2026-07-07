@@ -32,6 +32,25 @@ fn python3() -> Command {
     Command::new("python3")
 }
 
+/// Whether `python3` can be spawned. When it cannot, the parity tests
+/// skip with a printed notice rather than a hard panic — a bare sandbox
+/// without a Python interpreter should not report a false failure for a
+/// missing-toolchain condition, not a code defect.
+///
+/// Under CI (`CI` env var set) a missing `python3` is instead a HARD
+/// failure: the compile+run loop is this crate's whole coverage, so a
+/// runner without Python must break loudly rather than silently skip.
+fn python3_available() -> bool {
+    let present = python3().arg("--version").output().is_ok();
+    assert!(
+        present || std::env::var_os("CI").is_none(),
+        "`python3` not found but `CI` is set — the Python parity loop \
+         requires an interpreter on CI runners; provision it or unset CI \
+         to skip locally",
+    );
+    present
+}
+
 fn write_module(dir: &Path) -> PathBuf {
     let module_path = dir.join(format!("{MODULE_NAME}.py"));
     fs::write(&module_path, ogar_adapter_python::emit_python(MODULE_NAME))
@@ -41,6 +60,13 @@ fn write_module(dir: &Path) -> PathBuf {
 
 #[test]
 fn emitted_module_py_compiles_and_dump_matches_ground_truth() {
+    if !python3_available() {
+        eprintln!(
+            "SKIP emitted_module_py_compiles_and_dump_matches_ground_truth: \
+             `python3` not found"
+        );
+        return;
+    }
     let dir = unique_tmp_dir("compile-dump");
     let module_path = write_module(&dir);
 
@@ -89,6 +115,13 @@ fn emitted_module_py_compiles_and_dump_matches_ground_truth() {
 
 #[test]
 fn facet_bytes_built_in_rust_decode_correctly_in_python() {
+    if !python3_available() {
+        eprintln!(
+            "SKIP facet_bytes_built_in_rust_decode_correctly_in_python: \
+             `python3` not found"
+        );
+        return;
+    }
     let dir = unique_tmp_dir("facet");
     write_module(&dir);
 
