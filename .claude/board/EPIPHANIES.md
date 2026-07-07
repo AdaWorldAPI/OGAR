@@ -7,6 +7,31 @@
 
 ---
 
+## 2026-07-07 — E-HOTPLUG-GENERIC-1 — hot-plug is THE consumer migration pattern; OGAR is the authoritative store; migration doc is board discipline
+
+**Status:** RULING (operator 2026-07-07; shipped #174 `ocr_actions` + #175 `resolve_hotplug`; consumers: tesseract-rs #13/#14, socket+bridge lance-graph #658).
+
+The consumer tells OGAR **which classids are hot-plugged** and receives BOTH
+the vocab rows and the action surface for exactly those ids —
+`capability_registry::resolve_hotplug(consumer, classids, covered)`, domain
+tables registered append-only in `domain_tables()` (OCR first; thinking-styles
+is one entry away). Five named drift arms (`UnknownClassid` /
+`NoCapabilitiesFor` — "the table was forgotten" — / `UnexpectedConsumer` /
+`Uncovered` / `Undeclared`), each a test-time bang in the consumer's own
+binary. No serialization, no git pins (sibling path deps), no per-consumer
+plug crates; the classid low u16 is the APP render prefix, never a shape
+ordinal. lance-graph stays agnostic: wire mirror + roundtrip green light only,
+no ontology payload.
+
+**Board discipline:** `.claude/knowledge/hotplug-consumer-migration.md`
+(mirrored in lance-graph `.claude/knowledge/`) is MANDATORY READING before
+migrating any consumer, adding a domain table, or wiring capabilities
+cross-repo. It also carries the evaluated ruff synergies: ActionDef
+plug-and-play via `ogar-from-ruff::lift_actions` (+ the missing C++ arm as
+the natural fourth `ruff_cpp_spo` harvest arm), `walk_enums` param fidelity,
+and ontology plug-and-play over the `vocab/exports → OGIT → vocab/imports`
+tier (ontologies through that pipeline — harvests stay in consumer repos).
+
 ## 2026-07-06 — E-NEVER-PIN-BUMP — float-on-main is doctrine; non_exhaustive rejected
 
 **Status:** RULING (`[G]`, operator 2026-07-06).
