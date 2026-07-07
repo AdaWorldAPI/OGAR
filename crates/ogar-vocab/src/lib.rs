@@ -41,6 +41,7 @@ pub mod recipe;
 /// `extract_text_layer` / `extract_page_image` / `render_text` /
 /// `render_tsv` / `render_hocr` / `render_searchable_pdf`, each targeting a
 /// minted `0x08XX` [`class_ids`] concept.
+pub mod capability_registry;
 pub mod ocr_actions;
 
 /// Source language hint — discriminates the producer for traceability

@@ -316,6 +316,33 @@ pub fn ocr_actions() -> Vec<OcrActionSpec> {
     ]
 }
 
+/// The executors the authority EXPECTS to register against this table —
+/// "die Ontologie wurde nicht vergessen" has a name attached: an empty or
+/// stale list here is itself the drift signal a downstream fuse catches.
+pub const OCR_EXPECTED_EXECUTORS: &[&str] = &["tesseract-ogar"];
+
+/// The distinct subject classids this table binds (canon-high concept ids).
+/// A registering consumer must activate exactly this set — verified via
+/// [`crate::capability_registry::verify_registration`].
+pub const OCR_SUBJECT_CLASSIDS: &[u16] = &[
+    crate::class_ids::TEXTLINE,
+    crate::class_ids::PAGE_IMAGE,
+    crate::class_ids::OCR_RENDERER,
+];
+
+/// Convenience roundtrip for THIS table: verify a consumer registration
+/// against the OCR capability names, subjects and expected executors.
+pub fn verify_ocr_registration(
+    reg: &crate::capability_registry::CapabilityRegistration,
+) -> Result<(), crate::capability_registry::RegistrationDrift> {
+    crate::capability_registry::verify_registration(
+        reg,
+        OCR_ACTION_NAMES,
+        OCR_SUBJECT_CLASSIDS,
+        OCR_EXPECTED_EXECUTORS,
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
