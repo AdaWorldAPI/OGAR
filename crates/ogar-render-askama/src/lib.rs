@@ -75,13 +75,13 @@ pub mod rust_class;
 pub mod spec;
 
 pub use artifact_kinds::{
-    for_kind, render_detail, render_form, render_list, ArtifactEmitter, AttachmentEntryOwned,
-    CellData, CellSource, FormFieldSource, FormSource, GroupHeader, InputData,
-    RelationEntryOwned, RowSource, SelectOptionOwned, UserEntryOwned,
+    ArtifactEmitter, AttachmentEntryOwned, CellData, CellSource, FormFieldSource, FormSource,
+    GroupHeader, InputData, RelationEntryOwned, RowSource, SelectOptionOwned, UserEntryOwned,
+    for_kind, render_detail, render_form, render_list,
 };
-pub use form_view::{default_input_kind_for, InputKind};
-pub use list_view::{default_kind_for, ColumnKind, RenderColumn, SortOrder};
-pub use rust_class::{render_class_with_methods, render_class_with_methods_wide, RenderError};
+pub use form_view::{InputKind, default_input_kind_for};
+pub use list_view::{ColumnKind, RenderColumn, SortOrder, default_kind_for};
+pub use rust_class::{RenderError, render_class_with_methods, render_class_with_methods_wide};
 pub use spec::{ArtifactKind, ArtifactSpec};
 
 use ogar_vocab::Class;
@@ -228,10 +228,7 @@ mod tests {
             src.contains("data-class-id=\"0x0102\""),
             "expected data-class-id=\"0x0102\" in:\n{src}"
         );
-        assert!(
-            src.contains("data-concept=\"project_work_item\""),
-            "{src}"
-        );
+        assert!(src.contains("data-concept=\"project_work_item\""), "{src}");
         // Empty-state row appears when no rows are supplied.
         assert!(src.contains("No data."), "expected empty-state in:\n{src}");
     }
@@ -241,13 +238,14 @@ mod tests {
         // The substantive path: build columns + rows and assert the
         // spine template substitutes them correctly.
         let inline = vec![
-            RenderColumn::new("id", "#", ColumnKind::IdLink).sortable().frozen(),
+            RenderColumn::new("id", "#", ColumnKind::IdLink)
+                .sortable()
+                .frozen(),
             RenderColumn::new("subject", "Subject", ColumnKind::PrimaryLink).sortable(),
             RenderColumn::new("done_ratio", "% Done", ColumnKind::ProgressBar),
         ];
-        let block = vec![
-            RenderColumn::new("description", "Description", ColumnKind::RichText).block(),
-        ];
+        let block =
+            vec![RenderColumn::new("description", "Description", ColumnKind::RichText).block()];
 
         let row = RowSource {
             record_id: 42,
@@ -257,7 +255,10 @@ mod tests {
                 CellSource {
                     column: &inline[0],
                     css_classes: "num",
-                    data: CellData::IdLink { id: 42, href: "/issues/42" },
+                    data: CellData::IdLink {
+                        id: 42,
+                        href: "/issues/42",
+                    },
                 },
                 CellSource {
                     column: &inline[1],
@@ -295,10 +296,16 @@ mod tests {
         // Header + columns
         assert!(src.contains("<h2>Work items</h2>"), "{src}");
         assert!(src.contains("data-class-id=\"0x0102\""));
-        assert!(src.contains("Subject"), "expected `Subject` column header in:\n{src}");
+        assert!(
+            src.contains("Subject"),
+            "expected `Subject` column header in:\n{src}"
+        );
         assert!(src.contains("% Done"));
         // Inline row + cells
-        assert!(src.contains("id=\"record-42\""), "expected id=\"record-42\":\n{src}");
+        assert!(
+            src.contains("id=\"record-42\""),
+            "expected id=\"record-42\":\n{src}"
+        );
         assert!(src.contains("href=\"/issues/42\""), "{src}");
         assert!(src.contains("#42"), "id link body should be `#42`:\n{src}");
         assert!(src.contains("Fix the foo"), "{src}");
@@ -323,11 +330,17 @@ mod tests {
         let row = RowSource {
             record_id: 1,
             css_classes: "",
-            group: Some(GroupHeader { label: "Open", count: 5 }),
+            group: Some(GroupHeader {
+                label: "Open",
+                count: 5,
+            }),
             inline: vec![CellSource {
                 column: &col,
                 css_classes: "",
-                data: CellData::PrimaryLink { label: "T1", href: "/i/1" },
+                data: CellData::PrimaryLink {
+                    label: "T1",
+                    href: "/i/1",
+                },
             }],
             block: vec![],
         };
@@ -611,14 +624,23 @@ mod tests {
         // Smoke: the resolver lib.rs re-exports is the one consumers
         // call to pick cell kinds. Pin the contract.
         assert_eq!(default_kind_for("id", None), ColumnKind::IdLink);
-        assert_eq!(default_kind_for("subject", Some("string")), ColumnKind::PrimaryLink);
-        assert_eq!(default_kind_for("done_ratio", None), ColumnKind::ProgressBar);
+        assert_eq!(
+            default_kind_for("subject", Some("string")),
+            ColumnKind::PrimaryLink
+        );
+        assert_eq!(
+            default_kind_for("done_ratio", None),
+            ColumnKind::ProgressBar
+        );
         assert_eq!(default_kind_for("estimated_hours", None), ColumnKind::Hours);
         assert_eq!(
             default_kind_for("description", Some("text")),
             ColumnKind::RichText
         );
-        assert_eq!(default_kind_for("position", Some("integer")), ColumnKind::Plain);
+        assert_eq!(
+            default_kind_for("position", Some("integer")),
+            ColumnKind::Plain
+        );
     }
 
     // ── T4 (HtmlForm) tests ─────────────────────────────────────────
@@ -740,9 +762,18 @@ mod tests {
                     value: "2".to_string(),
                     required: false,
                     options: vec![
-                        SelectOptionOwned { value: "1".to_string(), label: "New".to_string() },
-                        SelectOptionOwned { value: "2".to_string(), label: "In Progress".to_string() },
-                        SelectOptionOwned { value: "3".to_string(), label: "Closed".to_string() },
+                        SelectOptionOwned {
+                            value: "1".to_string(),
+                            label: "New".to_string(),
+                        },
+                        SelectOptionOwned {
+                            value: "2".to_string(),
+                            label: "In Progress".to_string(),
+                        },
+                        SelectOptionOwned {
+                            value: "3".to_string(),
+                            label: "Closed".to_string(),
+                        },
                     ],
                 },
             },
@@ -776,31 +807,67 @@ mod tests {
         // Header attrs
         assert!(src.contains("method=\"patch\""), "{src}");
         assert!(src.contains("action=\"/issues/42\""), "{src}");
-        assert!(src.contains("name=\"authenticity_token\" value=\"xyz\""), "{src}");
+        assert!(
+            src.contains("name=\"authenticity_token\" value=\"xyz\""),
+            "{src}"
+        );
         // record_id hidden field for the edit form
-        assert!(src.contains("name=\"id\" value=\"42\""), "expected record-id hidden:\n{src}");
+        assert!(
+            src.contains("name=\"id\" value=\"42\""),
+            "expected record-id hidden:\n{src}"
+        );
         assert!(src.contains("<legend>Edit issue</legend>"), "{src}");
 
         // Each input kind fires its own sub-template:
-        assert!(src.contains("<input type=\"text\" name=\"subject\""), "{src}");
+        assert!(
+            src.contains("<input type=\"text\" name=\"subject\""),
+            "{src}"
+        );
         assert!(src.contains("placeholder=\"Enter a subject\""), "{src}");
         assert!(src.contains("<textarea name=\"description\""), "{src}");
         assert!(src.contains("rows=\"8\""), "{src}");
-        assert!(src.contains("<input type=\"number\" name=\"estimated_hours\""), "{src}");
+        assert!(
+            src.contains("<input type=\"number\" name=\"estimated_hours\""),
+            "{src}"
+        );
         assert!(src.contains("step=\"0.25\""), "{src}");
-        assert!(src.contains("<input type=\"range\" name=\"done_ratio\""), "{src}");
+        assert!(
+            src.contains("<input type=\"range\" name=\"done_ratio\""),
+            "{src}"
+        );
         assert!(src.contains("max=\"100\""), "{src}");
-        assert!(src.contains("<input type=\"checkbox\" name=\"is_private\""), "{src}");
+        assert!(
+            src.contains("<input type=\"checkbox\" name=\"is_private\""),
+            "{src}"
+        );
         // checkbox carries the hidden 0 sibling per Rails idiom
-        assert!(src.contains("<input type=\"hidden\" name=\"is_private\" value=\"0\""), "{src}");
-        assert!(src.contains("<input type=\"date\" name=\"start_date\""), "{src}");
-        assert!(src.contains("<input type=\"datetime-local\" name=\"updated_at\""), "{src}");
+        assert!(
+            src.contains("<input type=\"hidden\" name=\"is_private\" value=\"0\""),
+            "{src}"
+        );
+        assert!(
+            src.contains("<input type=\"date\" name=\"start_date\""),
+            "{src}"
+        );
+        assert!(
+            src.contains("<input type=\"datetime-local\" name=\"updated_at\""),
+            "{src}"
+        );
         assert!(src.contains("<select name=\"status_id\""), "{src}");
         // selected option pinned
-        assert!(src.contains("<option value=\"2\" selected>In Progress</option>"), "{src}");
+        assert!(
+            src.contains("<option value=\"2\" selected>In Progress</option>"),
+            "{src}"
+        );
         // hidden field has NO label wrapper; emitted bare
-        assert!(src.contains("<input type=\"hidden\" name=\"id\" value=\"42\""), "{src}");
-        assert!(!src.contains("form-field-id"), "hidden field should not have a wrapper:\n{src}");
+        assert!(
+            src.contains("<input type=\"hidden\" name=\"id\" value=\"42\""),
+            "{src}"
+        );
+        assert!(
+            !src.contains("form-field-id"),
+            "hidden field should not have a wrapper:\n{src}"
+        );
         // The Subject field's hint goes through
         assert!(src.contains("Short headline"), "{src}");
         // Cancel + submit buttons
@@ -850,11 +917,20 @@ mod tests {
         assert!(!src.contains("<bad-css>"), "css raw: {src}");
         assert!(!src.contains("<xss-value>"), "value raw: {src}");
         assert!(!src.contains("<xss-placeholder>"), "placeholder raw: {src}");
-        assert!(!src.contains("<script>alert('legend')"), "legend raw: {src}");
+        assert!(
+            !src.contains("<script>alert('legend')"),
+            "legend raw: {src}"
+        );
         assert!(!src.contains("<safe>Save</safe>"), "submit raw: {src}");
         // action attribute gets escaped (the `<` becomes `&lt;`)
-        assert!(!src.contains("action=\"/<bad-action>\""), "action raw: {src}");
-        assert!(src.contains("action=\"/&lt;bad-action&gt;\""), "expected escaped action:\n{src}");
+        assert!(
+            !src.contains("action=\"/<bad-action>\""),
+            "action raw: {src}"
+        );
+        assert!(
+            src.contains("action=\"/&lt;bad-action&gt;\""),
+            "expected escaped action:\n{src}"
+        );
     }
 
     #[test]
@@ -863,12 +939,30 @@ mod tests {
         // one consumers call to pick input controls.
         assert_eq!(default_input_kind_for("id", None), InputKind::Hidden);
         assert_eq!(default_input_kind_for("done_ratio", None), InputKind::Range);
-        assert_eq!(default_input_kind_for("description", Some("text")), InputKind::TextArea);
-        assert_eq!(default_input_kind_for("position", Some("integer")), InputKind::Number);
-        assert_eq!(default_input_kind_for("active", Some("boolean")), InputKind::Checkbox);
-        assert_eq!(default_input_kind_for("start_date", Some("date")), InputKind::Date);
-        assert_eq!(default_input_kind_for("updated_at", Some("datetime")), InputKind::DateTime);
-        assert_eq!(default_input_kind_for("subject", Some("string")), InputKind::Text);
+        assert_eq!(
+            default_input_kind_for("description", Some("text")),
+            InputKind::TextArea
+        );
+        assert_eq!(
+            default_input_kind_for("position", Some("integer")),
+            InputKind::Number
+        );
+        assert_eq!(
+            default_input_kind_for("active", Some("boolean")),
+            InputKind::Checkbox
+        );
+        assert_eq!(
+            default_input_kind_for("start_date", Some("date")),
+            InputKind::Date
+        );
+        assert_eq!(
+            default_input_kind_for("updated_at", Some("datetime")),
+            InputKind::DateTime
+        );
+        assert_eq!(
+            default_input_kind_for("subject", Some("string")),
+            InputKind::Text
+        );
     }
 
     // ── T5 (SurrealqlTable) tests ───────────────────────────────────
@@ -903,7 +997,10 @@ mod tests {
         // string, `position` integer, `permissions` text).
         let class = project_role();
         let src = render(&class, ArtifactKind::SurrealqlTable).unwrap();
-        assert!(src.contains("DEFINE FIELD name ON project_role TYPE string"), "{src}");
+        assert!(
+            src.contains("DEFINE FIELD name ON project_role TYPE string"),
+            "{src}"
+        );
         assert!(
             src.contains("DEFINE FIELD position ON project_role TYPE int"),
             "{src}"

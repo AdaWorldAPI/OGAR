@@ -16,7 +16,7 @@ use askama::Template;
 
 use super::ArtifactEmitter;
 use crate::spec::ArtifactSpec;
-use ogar_vocab::{canonical_concept_id, AssociationKind, Class};
+use ogar_vocab::{AssociationKind, Class, canonical_concept_id};
 
 #[derive(Template)]
 #[template(path = "dispatch/surrealql_table.askama", escape = "none")]
@@ -119,10 +119,37 @@ fn table_name_from(class: &Class, concept: &str) -> String {
 /// applying it only when needed keeps emission readable.
 fn escape_surql_ident(name: &str) -> String {
     const RESERVED: &[&str] = &[
-        "select", "from", "where", "create", "update", "delete", "let",
-        "if", "then", "else", "end", "in", "and", "or", "not", "true",
-        "false", "null", "none", "return", "begin", "commit", "transaction",
-        "define", "table", "field", "index", "type", "value", "for", "id",
+        "select",
+        "from",
+        "where",
+        "create",
+        "update",
+        "delete",
+        "let",
+        "if",
+        "then",
+        "else",
+        "end",
+        "in",
+        "and",
+        "or",
+        "not",
+        "true",
+        "false",
+        "null",
+        "none",
+        "return",
+        "begin",
+        "commit",
+        "transaction",
+        "define",
+        "table",
+        "field",
+        "index",
+        "type",
+        "value",
+        "for",
+        "id",
     ];
     if RESERVED.contains(&name) {
         format!("`{name}`")

@@ -32,7 +32,7 @@
 
 use askama::Template;
 use lance_graph_contract::class_view::{FieldMask, WideFieldMask};
-use ogar_vocab::{canonical_concept_id, ActionDef, AssociationKind, Class};
+use ogar_vocab::{ActionDef, AssociationKind, Class, canonical_concept_id};
 
 use crate::artifact_kinds::rust_struct::{edge_rust_type, escape_rust_ident, rails_to_rust_type};
 
@@ -287,7 +287,11 @@ fn lift_method(a: &ActionDef) -> RustMethod {
     };
     let body_comment = match &a.body_source {
         Some(b) if !b.trim().is_empty() => {
-            let first = b.lines().find(|l| !l.trim().is_empty()).unwrap_or("").trim();
+            let first = b
+                .lines()
+                .find(|l| !l.trim().is_empty())
+                .unwrap_or("")
+                .trim();
             format!("// ported from source: {}", one_line(first))
         }
         _ => format!("// TODO: port `{}` from {}", a.predicate, a.object_class),
@@ -437,12 +441,21 @@ mod tests {
         let actions = sample_actions();
         let src = render_class_with_methods(&class, FieldMask(u64::MAX), &actions).unwrap();
         // Each ActionDef → one method; the dotted predicate is sanitised.
-        assert!(src.contains("pub fn action_post(&mut self)"), "mutating action → &mut self:\n{src}");
-        assert!(src.contains("pub fn name_get(&self)"), "read action → &self, dotted name sanitised:\n{src}");
+        assert!(
+            src.contains("pub fn action_post(&mut self)"),
+            "mutating action → &mut self:\n{src}"
+        );
+        assert!(
+            src.contains("pub fn name_get(&self)"),
+            "read action → &self, dotted name sanitised:\n{src}"
+        );
         // Provenance: the api.depends decorator surfaces in the doc.
         assert!(src.contains("api.depends"), "{src}");
         // No SurrealQL DDL anywhere — behaviour is Rust methods only.
-        assert!(!src.contains("DEFINE EVENT"), "no SurrealQL AST adapter:\n{src}");
+        assert!(
+            !src.contains("DEFINE EVENT"),
+            "no SurrealQL AST adapter:\n{src}"
+        );
         assert!(!src.contains("DEFINE TABLE"), "{src}");
     }
 
@@ -506,7 +519,10 @@ mod tests {
         );
         // FULL sentinel bypasses per-bit gating — every position emits,
         // including field 65 beyond the ceiling.
-        assert!(field_present(FieldMask::FULL, 65), "FULL emits field 65 too");
+        assert!(
+            field_present(FieldMask::FULL, 65),
+            "FULL emits field 65 too"
+        );
 
         // Cross-check against the actual render output for the FULL case
         // (the one case the loud-fail guard still allows for a wide class).

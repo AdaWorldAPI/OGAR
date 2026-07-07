@@ -146,3 +146,180 @@ mod tests {
         ));
     }
 }
+
+// ─── Generic hot-plug resolution (operator, 2026-07-07) ─────────────────────
+//
+// The migration target for EVERY consumer: the consumer declares WHICH
+// classids it hot-plugs (plus the capabilities its executor covers), and the
+// authority resolves BOTH the vocab rows and the action surface for exactly
+// those ids — one generic path, no per-consumer plug crate, no per-domain
+// verify function. Domain tables register in [`domain_tables`]; the planned
+// thinking-styles best-practice table appends itself there and is instantly
+// hot-pluggable.
+
+/// One authoritative domain action table, registered for generic resolution.
+pub struct DomainTable {
+    /// Domain label (diagnostics only).
+    pub domain: &'static str,
+    /// Executors the authority expects for this table.
+    pub expected_executors: &'static [&'static str],
+    /// `(capability, subject classid)` rows — the join surface.
+    pub entries: fn() -> Vec<(String, u16)>,
+}
+
+/// Every registered authoritative domain table. Append-only: a new domain
+/// (thinking styles, …) adds one entry and is immediately resolvable.
+pub fn domain_tables() -> Vec<DomainTable> {
+    vec![DomainTable {
+        domain: "ocr",
+        expected_executors: crate::ocr_actions::OCR_EXPECTED_EXECUTORS,
+        entries: ocr_entries,
+    }]
+}
+
+fn ocr_entries() -> Vec<(String, u16)> {
+    crate::ocr_actions::ocr_actions()
+        .into_iter()
+        .map(|spec| {
+            let concept = spec
+                .def
+                .object_class
+                .rsplit('/')
+                .next()
+                .unwrap_or_default()
+                .to_string();
+            let id = crate::canonical_concept_id(&concept).unwrap_or_default();
+            (spec.def.predicate, id)
+        })
+        .collect()
+}
+
+/// A green hot-plug resolution: the `(concept, classid)` vocab rows and the
+/// sorted capability names for exactly the hot-plugged ids.
+pub type HotplugActivation = (Vec<(&'static str, u16)>, Vec<String>);
+
+/// Resolve a consumer hot-plug: verify and return `(vocab rows,
+/// capability names)` for exactly the hot-plugged classids.
+///
+/// Checks, in order: every id minted ([`HotplugDrift::UnknownClassid`]);
+/// every id contributes at least one capability
+/// ([`HotplugDrift::NoCapabilitiesFor`] — "the table was forgotten");
+/// the consumer is expected by every contributing table
+/// ([`HotplugDrift::UnexpectedConsumer`]); coverage both directions
+/// ([`HotplugDrift::Uncovered`] / [`HotplugDrift::Undeclared`]).
+pub fn resolve_hotplug(
+    consumer: &str,
+    classids: &[u16],
+    covered: &[&str],
+) -> Result<HotplugActivation, HotplugDrift> {
+    let mut concepts = Vec::new();
+    for &id in classids {
+        match crate::class_ids::ALL.iter().find(|&&(_, cid)| cid == id) {
+            Some(&(name, cid)) => concepts.push((name, cid)),
+            None => return Err(HotplugDrift::UnknownClassid(id)),
+        }
+    }
+    let mut capabilities: Vec<String> = Vec::new();
+    let mut contributed: std::collections::BTreeMap<u16, usize> =
+        classids.iter().map(|&id| (id, 0)).collect();
+    for table in domain_tables() {
+        let mut table_contributes = false;
+        for (cap, subject) in (table.entries)() {
+            if let Some(n) = contributed.get_mut(&subject) {
+                *n += 1;
+                table_contributes = true;
+                capabilities.push(cap);
+            }
+        }
+        if table_contributes && !table.expected_executors.contains(&consumer) {
+            return Err(HotplugDrift::UnexpectedConsumer(consumer.into()));
+        }
+    }
+    if let Some((&id, _)) = contributed.iter().find(|&(_, &n)| n == 0) {
+        return Err(HotplugDrift::NoCapabilitiesFor(id));
+    }
+    capabilities.sort_unstable();
+    capabilities.dedup();
+    for cap in &capabilities {
+        if !covered.contains(&cap.as_str()) {
+            return Err(HotplugDrift::Uncovered(cap.clone()));
+        }
+    }
+    for cap in covered {
+        if !capabilities.iter().any(|c| c == cap) {
+            return Err(HotplugDrift::Undeclared((*cap).into()));
+        }
+    }
+    Ok((concepts, capabilities))
+}
+
+/// Why a hot-plug resolution failed — the generic mirror of the
+/// per-registration [`RegistrationDrift`], keyed by classid join.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum HotplugDrift {
+    /// A hot-plugged classid is not minted in the codebook.
+    UnknownClassid(u16),
+    /// A hot-plugged classid resolves to no declared capability.
+    NoCapabilitiesFor(u16),
+    /// The consumer is not expected by a contributing table.
+    UnexpectedConsumer(String),
+    /// Declared capability without a consumer arm.
+    Uncovered(String),
+    /// Consumer arm without a declared capability.
+    Undeclared(String),
+}
+
+#[cfg(test)]
+mod hotplug_tests {
+    use super::*;
+
+    const OCR_IDS: &[u16] = &[0x0805, 0x0808, 0x0809];
+    const OCR_COVERED: &[&str] = &[
+        "extract_page_image",
+        "extract_text_layer",
+        "recognize_line",
+        "recognize_page",
+        "render_hocr",
+        "render_searchable_pdf",
+        "render_text",
+        "render_tsv",
+    ];
+
+    #[test]
+    fn ocr_hotplug_resolves_vocab_and_actions() {
+        let (concepts, caps) =
+            resolve_hotplug("tesseract-ogar", OCR_IDS, OCR_COVERED).expect("green");
+        assert_eq!(concepts.len(), 3);
+        assert!(concepts.contains(&("textline", 0x0805)));
+        assert_eq!(caps.len(), 8);
+    }
+
+    #[test]
+    fn each_drift_arm_bangs() {
+        assert!(matches!(
+            resolve_hotplug("tesseract-ogar", &[0xFFFE], &[]),
+            Err(HotplugDrift::UnknownClassid(0xFFFE))
+        ));
+        // patient (0x0901) is minted but has no action table yet.
+        assert!(matches!(
+            resolve_hotplug("tesseract-ogar", &[0x0901], &[]),
+            Err(HotplugDrift::NoCapabilitiesFor(0x0901))
+        ));
+        assert!(matches!(
+            resolve_hotplug("stranger", OCR_IDS, OCR_COVERED),
+            Err(HotplugDrift::UnexpectedConsumer(_))
+        ));
+        let mut missing = OCR_COVERED.to_vec();
+        missing.pop();
+        assert!(matches!(
+            resolve_hotplug("tesseract-ogar", OCR_IDS, &missing),
+            Err(HotplugDrift::Uncovered(_))
+        ));
+        let mut extra = OCR_COVERED.to_vec();
+        extra.push("does_not_exist");
+        assert!(matches!(
+            resolve_hotplug("tesseract-ogar", OCR_IDS, &extra),
+            Err(HotplugDrift::Undeclared(_))
+        ));
+    }
+}

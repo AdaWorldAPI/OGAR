@@ -12,7 +12,7 @@ use askama::Template;
 
 use super::ArtifactEmitter;
 use crate::spec::ArtifactSpec;
-use ogar_vocab::{canonical_concept_id, AssociationKind};
+use ogar_vocab::{AssociationKind, canonical_concept_id};
 
 /// askama-bound context for `templates/dispatch/rust_struct.askama`.
 ///
@@ -119,15 +119,14 @@ impl ArtifactEmitter for RustStructEmitter {
 pub(crate) fn escape_rust_ident(name: &str) -> String {
     const RESERVED: &[&str] = &[
         // Rust 2015+ strict keywords:
-        "as", "break", "const", "continue", "crate", "else", "enum", "extern",
-        "false", "fn", "for", "if", "impl", "in", "let", "loop", "match", "mod",
-        "move", "mut", "pub", "ref", "return", "self", "Self", "static", "struct",
-        "super", "trait", "true", "type", "unsafe", "use", "where", "while",
-        // Rust 2018+ strict keywords:
+        "as", "break", "const", "continue", "crate", "else", "enum", "extern", "false", "fn", "for",
+        "if", "impl", "in", "let", "loop", "match", "mod", "move", "mut", "pub", "ref", "return",
+        "self", "Self", "static", "struct", "super", "trait", "true", "type", "unsafe", "use",
+        "where", "while", // Rust 2018+ strict keywords:
         "async", "await", "dyn",
         // Reserved-future (lexable but unusable as raw idents anyway):
-        "abstract", "become", "box", "do", "final", "macro", "override", "priv",
-        "typeof", "unsized", "virtual", "yield", "try",
+        "abstract", "become", "box", "do", "final", "macro", "override", "priv", "typeof",
+        "unsized", "virtual", "yield", "try",
     ];
     if RESERVED.contains(&name) {
         format!("r#{name}")

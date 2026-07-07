@@ -16,7 +16,7 @@
 //! as a dict + `class_id(concept)` / `render_classid(concept, app_prefix)`, the
 //! Python mirror of the Rust `lance_graph_contract::ogar_codebook` contract. The
 //! same SDK pulls odoo (`0x02`) concepts — the shape is domain-agnostic.
-use ogar_vocab::{canonical_concept_id, AssociationKind};
+use ogar_vocab::{AssociationKind, canonical_concept_id};
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::Path;
@@ -29,8 +29,9 @@ fn ground(rails: &str) -> Option<&'static str> {
         "Way" | "OldWay" => "osm_way",
         "Relation" | "OldRelation" => "osm_relation",
         "Changeset" => "osm_changeset",
-        "NodeTag" | "WayTag" | "RelationTag" | "OldNodeTag" | "OldWayTag"
-        | "OldRelationTag" => "osm_element_tag",
+        "NodeTag" | "WayTag" | "RelationTag" | "OldNodeTag" | "OldWayTag" | "OldRelationTag" => {
+            "osm_element_tag"
+        }
         "RelationMember" | "OldRelationMember" => "osm_relation_member",
         "WayNode" | "OldWayNode" => "osm_way_node",
         "Note" => "osm_note",
@@ -59,11 +60,7 @@ fn snake(name: &str) -> String {
         }
     }
     let s = out.trim_matches('_').to_string();
-    if s.is_empty() {
-        "anon".into()
-    } else {
-        s
-    }
+    if s.is_empty() { "anon".into() } else { s }
 }
 
 /// A safe Python identifier: snake + escape the handful of keywords a container
@@ -103,9 +100,9 @@ fn main() {
     let src = args
         .next()
         .unwrap_or_else(|| "/home/user/_src-osm-website".into());
-    let out_arg = args.next().unwrap_or_else(|| {
-        "/home/user/OGAR/.claude/harvest/osm-website-rs/python".into()
-    });
+    let out_arg = args
+        .next()
+        .unwrap_or_else(|| "/home/user/OGAR/.claude/harvest/osm-website-rs/python".into());
     let out = Path::new(&out_arg);
     let pkg = out.join("osm");
     fs::create_dir_all(&pkg).unwrap();
@@ -181,7 +178,10 @@ fn main() {
     let rail_root: &Path = if src_path.join("app/controllers").is_dir() {
         src_path
     } else if src_path.ends_with("app/models") {
-        src_path.parent().and_then(|p| p.parent()).unwrap_or(src_path)
+        src_path
+            .parent()
+            .and_then(|p| p.parent())
+            .unwrap_or(src_path)
     } else {
         src_path
     };
@@ -215,7 +215,9 @@ fn main() {
         for (is_a, sources) in isas {
             let entry = by_fname.entry(pyify(is_a)).or_default();
             entry.0.push(is_a.clone());
-            entry.1.extend(sources.iter().map(|(c, a)| format!("{c}#{a}")));
+            entry
+                .1
+                .extend(sources.iter().map(|(c, a)| format!("{c}#{a}")));
         }
         for (fname, (mut labels, mut srcs)) in by_fname {
             labels.sort();

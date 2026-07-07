@@ -67,7 +67,10 @@ impl BTreeMapAdapter {
     /// Build a new empty adapter with the given name.
     #[must_use]
     pub fn new(name: &'static str) -> Self {
-        Self { name, leaves: BTreeMap::new() }
+        Self {
+            name,
+            leaves: BTreeMap::new(),
+        }
     }
 
     /// Insert a (canonical → target) leaf.
@@ -135,7 +138,10 @@ impl OdooAdapter {
         inner.insert("ogar/decorator/api.constrains", "odoo:@api.constrains");
         inner.insert("ogar/decorator/api.onchange", "odoo:@api.onchange");
         inner.insert("ogar/decorator/api.model", "odoo:@api.model");
-        inner.insert("ogar/decorator/api.model_create_multi", "odoo:@api.model_create_multi");
+        inner.insert(
+            "ogar/decorator/api.model_create_multi",
+            "odoo:@api.model_create_multi",
+        );
         Self { inner }
     }
 
@@ -188,7 +194,10 @@ mod tests {
         a.insert("ogit-erp/sale.order", "odoo:sale.order");
         a.insert("ogit-erp/sale.order.line", "odoo:sale.order.line");
         a.insert("ogit-erp/account.move", "odoo:account.move");
-        let under_sale: Vec<_> = a.iter_prefix("ogit-erp/sale").map(|(k, _)| k.as_str()).collect();
+        let under_sale: Vec<_> = a
+            .iter_prefix("ogit-erp/sale")
+            .map(|(k, _)| k.as_str())
+            .collect();
         assert_eq!(under_sale.len(), 2);
         assert!(under_sale.iter().all(|k| k.starts_with("ogit-erp/sale")));
     }
@@ -198,7 +207,10 @@ mod tests {
         let o = OdooAdapter::new();
         assert!(o.leaf_count() >= 10);
         assert_eq!(o.map("ogit-erp/move").as_deref(), Some("odoo:transport"));
-        assert_eq!(o.map("ogit-erp/sale.order").as_deref(), Some("odoo:sale.order"));
+        assert_eq!(
+            o.map("ogit-erp/sale.order").as_deref(),
+            Some("odoo:sale.order")
+        );
         assert_eq!(o.map("ogit-erp/missing"), None);
     }
 
@@ -208,7 +220,10 @@ mod tests {
         let before = o.leaf_count();
         o.register("ogit-erp/custom.thing", "odoo:custom.thing");
         assert_eq!(o.leaf_count(), before + 1);
-        assert_eq!(o.map("ogit-erp/custom.thing").as_deref(), Some("odoo:custom.thing"));
+        assert_eq!(
+            o.map("ogit-erp/custom.thing").as_deref(),
+            Some("odoo:custom.thing")
+        );
     }
 
     #[test]

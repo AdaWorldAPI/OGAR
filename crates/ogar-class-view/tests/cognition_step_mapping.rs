@@ -81,9 +81,8 @@ fn step_domain_has_no_erp_variant_yet() {
             | StepDomain::Ndarray
             | StepDomain::Smb
             | StepDomain::Medcare
-            | StepDomain::Kanban => {}
-            // no ERP arm today — when one is added, this match fails to
-            // compile, forcing an intentional update (the seam-closing PR).
+            | StepDomain::Kanban => {} // no ERP arm today — when one is added, this match fails to
+                                       // compile, forcing an intentional update (the seam-closing PR).
         }
     }
     let _ = assert_known;

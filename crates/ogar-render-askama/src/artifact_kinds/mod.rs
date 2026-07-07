@@ -41,11 +41,11 @@ pub mod rust_struct;
 pub mod stub;
 pub mod surrealql_table;
 
-pub use html_detail_view::{render_detail, HtmlDetailViewEmitter};
-pub use html_form::{render_form, FormFieldSource, FormSource, HtmlFormEmitter};
+pub use html_detail_view::{HtmlDetailViewEmitter, render_detail};
+pub use html_form::{FormFieldSource, FormSource, HtmlFormEmitter, render_form};
 pub use html_list_view::{
-    render_list, AttachmentEntryOwned, CellData, CellSource, GroupHeader, HtmlListViewEmitter,
-    RelationEntryOwned, RowSource, UserEntryOwned,
+    AttachmentEntryOwned, CellData, CellSource, GroupHeader, HtmlListViewEmitter,
+    RelationEntryOwned, RowSource, UserEntryOwned, render_list,
 };
 pub use inputs::{InputData, SelectOptionOwned};
 pub use surrealql_table::SurrealqlTableEmitter;

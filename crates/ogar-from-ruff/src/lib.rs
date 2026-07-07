@@ -74,8 +74,8 @@ pub mod sqlalchemy; // WS-G-D
 use std::collections::HashMap;
 
 use ogar_vocab::{
-    canonical_concept, ActionDef, Association, AssociationKind, Attribute, Callback, Class,
-    ComputedField, EnumDecl, EnumSource, Inheritance, KausalSpec, Language, Scope, Validation,
+    ActionDef, Association, AssociationKind, Attribute, Callback, Class, ComputedField, EnumDecl,
+    EnumSource, Inheritance, KausalSpec, Language, Scope, Validation, canonical_concept,
 };
 use ruff_spo_triplet::{
     AssocDecl, AssocKind, AttrDecl, AttrKind, Callback as RuffCallback, ConcernKind, Model,
@@ -102,7 +102,9 @@ pub fn lift_model_graph_python(graph: &ModelGraph) -> Vec<Class> {
 
 fn lift_model_graph_with_language(graph: &ModelGraph, language: Language) -> Vec<Class> {
     let domain = classify_domain(&graph.namespace);
-    let concept_domain = domain.as_deref().and_then(ogar_vocab::source_domain_concept);
+    let concept_domain = domain
+        .as_deref()
+        .and_then(ogar_vocab::source_domain_concept);
     // The harvest namespace IS the curator id (`"openproject"`,
     // `"redmine"`, `"odoo"`, …). `source_domain` is the coarse bucket it
     // maps to; `source_curator` keeps the specific product so two curators
@@ -127,8 +129,10 @@ fn lift_model_graph_with_language(graph: &ModelGraph, language: Language) -> Vec
             // `Role` in a non-project curator must stay `role`, not become
             // `project_role` (codex P2 on #72). Cross-domain bridges like
             // `billable_work_entry` are exempt and still converge.
-            class.canonical_concept =
-                Some(ogar_vocab::canonical_concept_in_domain(&m.name, concept_domain));
+            class.canonical_concept = Some(ogar_vocab::canonical_concept_in_domain(
+                &m.name,
+                concept_domain,
+            ));
             class
         })
         .collect()
@@ -181,7 +185,11 @@ fn lift_model_with_language(model: &Model, language: Language) -> Class {
     class.parent = model.sti.as_ref().and_then(sti_parent);
     class.inheritance = lift_inheritance(model);
     class.canonical_concept = Some(canonical_concept(&model.name));
-    class.associations = model.associations.iter().filter_map(lift_association).collect();
+    class.associations = model
+        .associations
+        .iter()
+        .filter_map(lift_association)
+        .collect();
     class.mixins = lift_mixins(model);
     // Odoo `_inherit` (multi-parent mixin composition) lands on the same
     // mixins shelf the vocab designates for it — `Class::mixins` doc names
@@ -197,7 +205,11 @@ fn lift_model_with_language(model: &Model, language: Language) -> Class {
     class.scopes = model.scopes.iter().filter_map(lift_scope).collect();
     class.scope_predeclarations = lift_scope_predeclarations(model);
     class.callbacks = model.callbacks.iter().map(lift_callback).collect();
-    class.validations = model.validations.iter().filter_map(lift_validation).collect();
+    class.validations = model
+        .validations
+        .iter()
+        .filter_map(lift_validation)
+        .collect();
     class.default_scope = lift_default_scope(model);
     // Rails carries its DECLARED schema in the AR-DSL vectors lifted above
     // (`attribute :x, :type`, `belongs_to :y`); an Odoo model instead
@@ -240,7 +252,8 @@ fn lift_model_with_language(model: &Model, language: Language) -> Class {
 fn project_odoo_fields(class: &mut Class, model: &Model) {
     for field in &model.fields {
         if let Some(comodel) = &field.target {
-            let kind = odoo_relation_kind(field.relation_kind.as_deref(), field.inverse_name.is_some());
+            let kind =
+                odoo_relation_kind(field.relation_kind.as_deref(), field.inverse_name.is_some());
             let mut assoc = Association::new(kind, &field.name);
             assoc.class_name = Some(comodel.clone());
             assoc.inverse_of = field.inverse_name.clone();
@@ -317,7 +330,8 @@ fn project_odoo_fields(class: &mut Class, model: &Model) {
 pub(crate) fn project_total_schema_fields(class: &mut Class, model: &Model) {
     for field in &model.fields {
         if let Some(comodel) = &field.target {
-            let kind = odoo_relation_kind(field.relation_kind.as_deref(), field.inverse_name.is_some());
+            let kind =
+                odoo_relation_kind(field.relation_kind.as_deref(), field.inverse_name.is_some());
             let mut assoc = Association::new(kind, &field.name);
             assoc.class_name = Some(comodel.clone());
             assoc.inverse_of = field.inverse_name.clone();
@@ -458,9 +472,7 @@ pub fn project_work_item_role_from_mixin(mixin: &str) -> Option<&'static str> {
 /// ([`project_work_item_role_from_mixin`]). Returns the empty set when
 /// the class has no project-work-item shape.
 #[must_use]
-pub fn project_work_item_canonical_roles(
-    class: &Class,
-) -> std::collections::HashSet<&'static str> {
+pub fn project_work_item_canonical_roles(class: &Class) -> std::collections::HashSet<&'static str> {
     let mut set = std::collections::HashSet::new();
     for a in &class.associations {
         if let Some(role) = project_work_item_role(&a.name) {
@@ -499,9 +511,7 @@ pub fn project_role(curator_name: &str) -> Option<&'static str> {
         // in both curators: members / memberships / users (Redmine + OP) /
         // member_principals / principals (OP only — OP adds the
         // through-Principal hop).
-        "members" | "memberships" | "users" | "member_principals" | "principals" => {
-            Some("members")
-        }
+        "members" | "memberships" | "users" | "member_principals" | "principals" => Some("members"),
         _ => None,
     }
 }
@@ -1362,7 +1372,9 @@ mod tests {
         let class = lift_model(&mk_model());
         assert_eq!(
             class.inheritance,
-            Inheritance::Concrete { parent: "Issue".to_string() },
+            Inheritance::Concrete {
+                parent: "Issue".to_string()
+            },
         );
     }
 
@@ -1386,11 +1398,16 @@ mod tests {
         });
         assert_eq!(
             lift_model(&r).inheritance,
-            Inheritance::RootedAt { root: "Principal".to_string() },
+            Inheritance::RootedAt {
+                root: "Principal".to_string()
+            },
         );
 
         // no STI info at all → Root.
-        assert_eq!(lift_model(&Model::new("Plain")).inheritance, Inheritance::Root);
+        assert_eq!(
+            lift_model(&Model::new("Plain")).inheritance,
+            Inheritance::Root
+        );
     }
 
     #[test]
@@ -1426,7 +1443,10 @@ mod tests {
         let class = lift_model(&mk_model());
         assert_eq!(class.callbacks.len(), 1);
         assert_eq!(class.callbacks[0].event, "before_save");
-        assert_eq!(class.callbacks[0].target_method.as_deref(), Some("set_status"));
+        assert_eq!(
+            class.callbacks[0].target_method.as_deref(),
+            Some("set_status")
+        );
     }
 
     #[test]
@@ -1568,11 +1588,17 @@ mod tests {
         // OpenProject → "project"
         let mut op = ModelGraph::new("openproject");
         op.models.push(Model::new("WorkPackage"));
-        assert_eq!(lift_model_graph(&op)[0].source_domain.as_deref(), Some("project"));
+        assert_eq!(
+            lift_model_graph(&op)[0].source_domain.as_deref(),
+            Some("project")
+        );
         // Odoo → "erp"
         let mut odoo = ModelGraph::new("odoo");
         odoo.models.push(Model::new("AccountMove"));
-        assert_eq!(lift_model_graph(&odoo)[0].source_domain.as_deref(), Some("erp"));
+        assert_eq!(
+            lift_model_graph(&odoo)[0].source_domain.as_deref(),
+            Some("erp")
+        );
         // Unrecognized → None (not guessed).
         let mut other = ModelGraph::new("mystery");
         other.models.push(Model::new("X"));
@@ -1600,7 +1626,10 @@ mod tests {
         assert_eq!(concept("odoo", "Role"), "role");
         // Cross-domain bridge survives the gate from any domain.
         assert_eq!(concept("openproject", "TimeEntry"), "billable_work_entry");
-        assert_eq!(concept("odoo", "account_analytic_line"), "billable_work_entry");
+        assert_eq!(
+            concept("odoo", "account_analytic_line"),
+            "billable_work_entry"
+        );
         // `lift_model` itself stays domain-blind (all-domains best guess).
         assert_eq!(
             lift_model(&Model::new("Role")).canonical_concept.as_deref(),
@@ -1683,8 +1712,15 @@ mod tests {
         let roles = project_work_item_canonical_roles(&redmine);
         assert_eq!(roles.len(), 9);
         for r in [
-            "project", "status", "type", "priority", "author", "assignee",
-            "journals", "relations", "time_entries",
+            "project",
+            "status",
+            "type",
+            "priority",
+            "author",
+            "assignee",
+            "journals",
+            "relations",
+            "time_entries",
         ] {
             assert!(roles.contains(r), "Redmine projection missing role {r}");
         }
@@ -1708,7 +1744,10 @@ mod tests {
             "WorkPackages::Relations".to_string(),
         ];
         let op_roles = project_work_item_canonical_roles(&op);
-        assert_eq!(op_roles, roles, "OP must project to the same canonical role set as Redmine");
+        assert_eq!(
+            op_roles, roles,
+            "OP must project to the same canonical role set as Redmine"
+        );
     }
 
     #[test]
@@ -1721,7 +1760,13 @@ mod tests {
         assert_eq!(project_role("work_packages"), Some("work_items"));
         // The through-association actor chain — both spellings + the OP
         // extra hops (member_principals, principals) land at `members`.
-        for src in ["members", "memberships", "users", "member_principals", "principals"] {
+        for src in [
+            "members",
+            "memberships",
+            "users",
+            "member_principals",
+            "principals",
+        ] {
             assert_eq!(project_role(src), Some("members"), "{src} -> members");
         }
         // Off-shape names return None (real but not yet promoted into the
@@ -1766,9 +1811,17 @@ mod tests {
         // a real cross-curator concept but lives behind mixins and is
         // not yet decoded (see ogar_vocab::project doc).
         let expected: std::collections::HashSet<&'static str> =
-            ["work_items", "time_entries", "members"].into_iter().collect();
-        assert_eq!(r_roles, expected, "Redmine projection must cover the 3-role canonical surface");
-        assert_eq!(o_roles, expected, "OP projection must cover the same surface");
+            ["work_items", "time_entries", "members"]
+                .into_iter()
+                .collect();
+        assert_eq!(
+            r_roles, expected,
+            "Redmine projection must cover the 3-role canonical surface"
+        );
+        assert_eq!(
+            o_roles, expected,
+            "OP projection must cover the same surface"
+        );
         assert_eq!(r_roles, o_roles, "lineage-transcode parity for Project");
     }
 
@@ -1776,24 +1829,32 @@ mod tests {
     fn lift_model_sets_canonical_concept_including_promoted_invariant() {
         // Plain class with no promoted invariant → lexical concept.
         assert_eq!(
-            lift_model(&Model::new("Account")).canonical_concept.as_deref(),
+            lift_model(&Model::new("Account"))
+                .canonical_concept
+                .as_deref(),
             Some("account"),
         );
         // Promoted ERP-bridge concept (BillableWorkEntry) — OpenProject
         // `TimeEntry` deterministically wired into the cross-domain bridge.
         assert_eq!(
-            lift_model(&Model::new("TimeEntry")).canonical_concept.as_deref(),
+            lift_model(&Model::new("TimeEntry"))
+                .canonical_concept
+                .as_deref(),
             Some("billable_work_entry"),
         );
         // Promoted project-domain concept (ProjectWorkItem) — Redmine
         // `Issue` and OpenProject `WorkPackage` both wire into the
         // same-domain work-item invariant.
         assert_eq!(
-            lift_model(&Model::new("Issue")).canonical_concept.as_deref(),
+            lift_model(&Model::new("Issue"))
+                .canonical_concept
+                .as_deref(),
             Some("project_work_item"),
         );
         assert_eq!(
-            lift_model(&Model::new("WorkPackage")).canonical_concept.as_deref(),
+            lift_model(&Model::new("WorkPackage"))
+                .canonical_concept
+                .as_deref(),
             Some("project_work_item"),
         );
     }
@@ -1841,7 +1902,10 @@ mod tests {
     fn lift_actions_is_facts_only() {
         let acts = lift_actions(&mk_model_with_functions());
         let a = &acts[0];
-        assert!(a.kausal.is_none(), "reads must NOT become a causal dependency");
+        assert!(
+            a.kausal.is_none(),
+            "reads must NOT become a causal dependency"
+        );
         assert!(a.body_source.is_none());
         assert!(a.decorators.is_empty());
     }
@@ -1927,7 +1991,10 @@ mod tests {
         assert_eq!(acts.len(), 1);
         assert_eq!(
             acts[0].kausal,
-            Some(KausalSpec::depends(vec!["qty".to_string(), "price".to_string()])),
+            Some(KausalSpec::depends(vec![
+                "qty".to_string(),
+                "price".to_string()
+            ])),
         );
     }
 

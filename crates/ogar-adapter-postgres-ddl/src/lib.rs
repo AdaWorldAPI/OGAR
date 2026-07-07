@@ -231,7 +231,10 @@ mod tests {
         // Nullable: no explicit `required=true` -> no NOT NULL suffix, and
         // no incidental match against the NOT NULL variant of the same
         // column name.
-        assert!(ddl.contains("note TEXT") && !ddl.contains("note TEXT NOT NULL"), "got: {ddl}");
+        assert!(
+            ddl.contains("note TEXT") && !ddl.contains("note TEXT NOT NULL"),
+            "got: {ddl}"
+        );
     }
 
     #[test]
@@ -246,7 +249,10 @@ mod tests {
         let ddl = emit_facet_table_ddl("facet");
         assert!(ddl.contains("classid INTEGER NOT NULL"), "got: {ddl}");
         for i in 0..12 {
-            assert!(ddl.contains(&format!("p{i} SMALLINT")), "missing p{i}: {ddl}");
+            assert!(
+                ddl.contains(&format!("p{i} SMALLINT")),
+                "missing p{i}: {ddl}"
+            );
             assert!(
                 ddl.contains(&format!("CREATE INDEX facet_p{i}_idx ON facet (p{i});")),
                 "missing index for p{i}: {ddl}"
@@ -290,6 +296,9 @@ mod tests {
         assert!(ddl.contains("beschreibung TEXT NOT NULL"), "got: {ddl}");
         assert!(ddl.contains("created_at TIMESTAMP"), "got: {ddl}");
         assert!(!ddl.contains("created_at TIMESTAMP NOT NULL"), "got: {ddl}");
-        assert!(!ddl.contains("timesheet_id"), "FK must be deduped upstream: {ddl}");
+        assert!(
+            !ddl.contains("timesheet_id"),
+            "FK must be deduped upstream: {ddl}"
+        );
     }
 }
