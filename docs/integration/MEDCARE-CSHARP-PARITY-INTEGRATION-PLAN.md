@@ -55,9 +55,26 @@ parity witness**: two independent renderings of one authority, diffed.
   never silently lost). Unverified in a bare sandbox; runs for real on a
   `net8.0`-provisioned CI image.
 
+### Progress this session (2026-07-07)
+- **Generic derive seam shipped** — `ogar_vocab::capability_registry::entries_from_actions(&[ActionDef])`
+  turns ANY frontend's lifted `ActionDef`s into the `(capability,
+  subject classid)` join rows. The hand-authored OCR table now routes
+  through it (behavior-unchanged; 4 new tests: prefix-agnostic,
+  effect-fact-independent, unminted-row-survives-for-the-fuse,
+  OCR-eight-rows). **This is the "config becomes data" core:** a new
+  consumer registers a domain by supplying harvested `ActionDef`s, never
+  by copying table logic. `healthcare_actions.rs` (P3) becomes a thin
+  data source over this seam, not a bespoke twin of `ocr_actions.rs`.
+- **The C++ DO-arm shipped upstream (ruff #57)** —
+  `ruff_cpp_spo::method_body_arm` (`clang_walker.rs:873`) now walks C++
+  method bodies into `writes`/`reads`/`raises`/`calls`, provenance-mapped
+  to `Function`, with tests. That **closes the doc's "missing C++ arm"**
+  and is the exact template the C# Roslyn arm must mirror (§ P6).
+
 ### Missing (this plan's work-list)
 1. **No healthcare action table** in `ogar-vocab` — the OCR table is the
-   only `domain_tables()` entry. (deficiency to fix)
+   only `domain_tables()` entry. (deficiency to fix; now a thin
+   `entries_from_actions` data source, not bespoke code.)
 2. **The C# pull-in chain EXISTS but harvests THINK-arm only.**
    (Corrected 2026-07-07 after reading the code — an earlier draft of
    this plan wrongly said "no C# frontend exists".) Every link ships:
@@ -180,7 +197,7 @@ before the table is auto-derived.
 | **P3** | Run the ALREADY-SHIPPING C# chain over MedCare (Roslyn THINK-arm harvest → `ruff_csharp_spo::load` → `reassemble` → `lift_actions`, yielding name-only ActionDefs) → shape into `healthcare_actions.rs` (capabilities = the `has_function` method names) + a `domain_tables()` entry + `HEALTHCARE_{SUBJECT_CLASSIDS,EXPECTED_EXECUTORS}` | `resolve_hotplug("medcare-…", HEALTHCARE_IDS, covered)` GREEN (KILL: `NoCapabilitiesFor`/`Uncovered`) | operator |
 | **P4** | `medcare-rs` `HOT_PLUG` const + activation test; executor arms | medcare activation test green against the sibling OGAR (KILL: any drift arm) | operator |
 | **P5** | Loop B extended to the **healthcare** domain: MedCareV2 (C#) vs medcare-rs (Rust) parity over the harvested table | both dumps == ground truth (KILL: cross-language divergence) | operator |
-| **P6** *(enrichment, orthogonal)* | Roslyn harvester **DO-arm method-body walk**: emit `reads_field`/`writes_field`/`raises`/`calls` (ruff-side, gated on `.claude/knowledge/fuzzy-recipe-codebook.md`) → the healthcare ActionDefs gain effect facts + `kausal` | a known MedCare method's effect facts land in its ActionDef (KILL: facts drop / vocab break) | operator |
+| **P6** *(enrichment, orthogonal)* | Roslyn harvester **DO-arm method-body walk**: emit `reads_field`/`writes_field`/`raises`/`calls` — **mirror `ruff_cpp_spo::method_body_arm` (clang_walker.rs:873), shipped in ruff #57** — gated on `.claude/knowledge/fuzzy-recipe-codebook.md` → the healthcare ActionDefs gain effect facts + `kausal`. (C++ arm already done; C# is the sole remaining harvester arm. **Blocked on ruff write access** — see the session note.) | a known MedCare method's effect facts land in its ActionDef (KILL: facts drop / vocab break) | operator |
 
 **Key correction (2026-07-07):** the whole C# pull-in chain already ships
 (§1 item 2). The minimal hot-plug table (P3) needs **no new harvest
