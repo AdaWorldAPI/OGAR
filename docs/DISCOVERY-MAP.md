@@ -1125,3 +1125,33 @@ isolation. The map's job is to keep them visible.
     + a kausal path predicate — a governed vocab mint, NOT done here).
   - Additive API gap closed: `KausalSpec::{constrains,onchange}` constructors
     added to mirror `depends()`/`lifecycle()` (consumers + the test need them).
+  - **DEBT RESOLVED (§6-Mint, 2026-07-07, 5+3-Council GO;
+    SPEC-MINT-ARM-B-TTL).** The P2 above is closed: `ogar-emitter::
+    kausal_triples` now carries `KausalSpec::{Constrains,Onchange}` arms
+    emitting `ogar:Constrains` / `ogar:Onchange` + `ogar:kausalConstrainsPath`
+    / `ogar:kausalOnchangePath` per field path (the `_ => ogar:Unknown`
+    wildcard still stands, now covering only genuine future variants).
+    `vocab/ogar.ttl` carries the matching registry in lockstep (two new
+    `ogar:KausalKind` instances + two new `rdf:Property` path predicates,
+    same pattern as the five pre-existing instances) — the Council-S3
+    "no separate registry" correction from this same entry, now actually
+    closed. Council-B1 nebenbefund folded in: `ogar:Unknown` is now ALSO
+    declared `a ogar:KausalKind` (it was only ever `a ogar:EnumSourceKind`;
+    the wildcard fallback was emitting an undeclared kind IRI all along —
+    a pre-existing declaration gap, not new behaviour). Dotted paths
+    (Council-S5: Odoo silently drops them in `@api.constrains` /
+    `@api.onchange`, `odoo/orm/decorators.py:106-108/213-215`) are
+    drop-with-no-triple for that path; the `kausalKind` triple still
+    stands, NOT `ogar:Unknown`. The characterization test
+    `kausal_constrains_onchange_currently_emit_unknown_pending_emitter_wiring`
+    flipped as designed — replaced by
+    `kausal_constrains_onchange_emit_declared_kinds_and_paths` (positive
+    kausalKind + path assertions, plus the Konflations-Fuse negative
+    guards: no `ogar:Unknown`, no `ogar:dependsPath`, no
+    `ogar:kausalDependsPath`) and
+    `kausal_constrains_onchange_drop_dotted_paths_without_triple`;
+    `kausal_spec_variants_emit_distinct_kinds` extended to cover both
+    variants. Roundtrip: `ogar-adapter-ttl` has no kausal-consumer/parser
+    (verified — its module doc lists `ActionDef` / `KausalSpec` under
+    "Not yet supported"), so TTL stays write-only for kausal; no
+    roundtrip case added, per the spec's documented fallback.
