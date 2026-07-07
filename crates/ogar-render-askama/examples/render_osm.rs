@@ -36,8 +36,9 @@ fn ground(rails: &str) -> Option<&'static str> {
         "Way" | "OldWay" => "osm_way",
         "Relation" | "OldRelation" => "osm_relation",
         "Changeset" => "osm_changeset",
-        "NodeTag" | "WayTag" | "RelationTag" | "OldNodeTag" | "OldWayTag"
-        | "OldRelationTag" => "osm_element_tag",
+        "NodeTag" | "WayTag" | "RelationTag" | "OldNodeTag" | "OldWayTag" | "OldRelationTag" => {
+            "osm_element_tag"
+        }
         "RelationMember" | "OldRelationMember" => "osm_relation_member",
         "WayNode" | "OldWayNode" => "osm_way_node",
         "Note" => "osm_note",
@@ -88,11 +89,7 @@ fn snake(name: &str) -> String {
         }
     }
     let s = out.trim_matches('_').to_string();
-    if s.is_empty() {
-        "anon".into()
-    } else {
-        s
-    }
+    if s.is_empty() { "anon".into() } else { s }
 }
 
 fn main() {
@@ -201,7 +198,10 @@ fn main() {
     let rail_root: &Path = if src_path.join("app/controllers").is_dir() {
         src_path
     } else if src_path.ends_with("app/models") {
-        src_path.parent().and_then(|p| p.parent()).unwrap_or(src_path)
+        src_path
+            .parent()
+            .and_then(|p| p.parent())
+            .unwrap_or(src_path)
     } else {
         src_path
     };

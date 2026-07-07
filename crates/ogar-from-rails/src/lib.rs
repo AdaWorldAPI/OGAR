@@ -416,7 +416,8 @@ mod tests {
     #[test]
     #[ignore = "requires a Rails source tree with db/migrate/tables (REDMINE_SRC or /home/user/openproject)"]
     fn mainline_extract_app_routes_through_schema_aware_extractor() {
-        let src = std::env::var("REDMINE_SRC").unwrap_or_else(|_| "/home/user/openproject".to_string());
+        let src =
+            std::env::var("REDMINE_SRC").unwrap_or_else(|_| "/home/user/openproject".to_string());
         let path = PathBuf::from(&src);
         if !path.exists() {
             eprintln!("skipping: {} not present", path.display());

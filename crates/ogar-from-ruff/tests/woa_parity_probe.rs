@@ -159,7 +159,11 @@ fn woa_parity_probe_prints_the_d_parity_probe_wp_1_metric() {
                 .any(|a| &a.name == *n && a.options.required.is_some())
         })
         .count();
-    assert_eq!(cc.class.attributes.len(), 3, "no extra/missing attributes (FK deduped, no dup)");
+    assert_eq!(
+        cc.class.attributes.len(),
+        3,
+        "no extra/missing attributes (FK deduped, no dup)"
+    );
 
     // ── associations axis ──
     let timesheet_assoc = cc.class.associations.iter().find(|a| a.name == "timesheet");
@@ -201,7 +205,11 @@ sonst bare (Spiegel emit_rust)"
         associations_axis.1,
         actions_axis.0,
         actions_axis.1,
-        if drift_list.is_empty() { "none".to_string() } else { drift_list.join("; ") },
+        if drift_list.is_empty() {
+            "none".to_string()
+        } else {
+            drift_list.join("; ")
+        },
     );
     println!("{metric}");
     println!("--- emitted Python ---\n{py}");
@@ -212,8 +220,14 @@ sonst bare (Spiegel emit_rust)"
     assert_eq!(classes_axis.0, classes_axis.1, "classes axis must be N/N");
     assert_eq!(typed, 3, "columns typed axis must be 3/3");
     assert_eq!(nullability_wired, 3, "nullability axis must be 3/3");
-    assert_eq!(associations_axis.0, associations_axis.1, "associations axis must be N/N");
-    assert_eq!(actions_axis.0, actions_axis.1, "action names axis must be N/N");
+    assert_eq!(
+        associations_axis.0, associations_axis.1,
+        "associations axis must be N/N"
+    );
+    assert_eq!(
+        actions_axis.0, actions_axis.1,
+        "action names axis must be N/N"
+    );
 
     assert!(metric.contains("classes:       1/1"));
     assert!(metric.contains("columns typed: 3/3"));
@@ -258,10 +272,14 @@ fn woa_dataclass_py_compiles_and_instantiates() {
         .args(["-m", "py_compile", py_path.to_str().unwrap()])
         .status()
         .expect("python3 available");
-    assert!(compile_status.success(), "py_compile must exit 0 on the emitted module");
+    assert!(
+        compile_status.success(),
+        "py_compile must exit 0 on the emitted module"
+    );
 
     // Gate 2: usable dataclass (instantiate_check.py imports + instantiates it).
-    let checker = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/py/instantiate_check.py");
+    let checker =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/py/instantiate_check.py");
     let check_status = std::process::Command::new("python3")
         .arg(&checker)
         .arg(&py_path)

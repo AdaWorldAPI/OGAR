@@ -12,9 +12,9 @@
 
 use askama::Template;
 
-use super::inputs::{render_input_body, InputData};
 use super::ArtifactEmitter;
-use crate::form_view::{default_input_kind_for, InputKind};
+use super::inputs::{InputData, render_input_body};
+use crate::form_view::{InputKind, default_input_kind_for};
 use crate::list_view::RenderColumn;
 use crate::spec::ArtifactSpec;
 use ogar_vocab::canonical_concept_id;
@@ -180,7 +180,7 @@ impl ArtifactEmitter for HtmlFormEmitter {
             .attributes
             .iter()
             .map(|attr| {
-                use crate::list_view::{default_kind_for, ColumnKind};
+                use crate::list_view::{ColumnKind, default_kind_for};
                 let kind = default_kind_for(&attr.name, attr.type_name.as_deref());
                 let col = RenderColumn::new(&attr.name, &attr.name, kind);
                 if matches!(kind, ColumnKind::RichText) {

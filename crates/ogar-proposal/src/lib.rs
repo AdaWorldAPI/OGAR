@@ -399,7 +399,10 @@ fn infer_semantic(attr: &Attribute) -> SemanticDraft {
 /// `Internal`. `company_dependent` does not itself imply a marking.
 fn infer_marking(attr: &Attribute, semantic: &SemanticDraft) -> MarkingDraft {
     match semantic {
-        SemanticDraft::Iban | SemanticDraft::Email | SemanticDraft::Phone | SemanticDraft::Address => {
+        SemanticDraft::Iban
+        | SemanticDraft::Email
+        | SemanticDraft::Phone
+        | SemanticDraft::Address => {
             return MarkingDraft::Pii;
         }
         SemanticDraft::TaxId => return MarkingDraft::Restricted,
@@ -545,8 +548,14 @@ mod tests {
     #[test]
     fn class_yields_one_entity_plus_one_edge_per_assoc() {
         let drafts = class_to_drafts(&work_package(), "ogit-op");
-        let entities = drafts.iter().filter(|d| matches!(d.kind, DraftKind::Entity { .. })).count();
-        let edges = drafts.iter().filter(|d| matches!(d.kind, DraftKind::Edge { .. })).count();
+        let entities = drafts
+            .iter()
+            .filter(|d| matches!(d.kind, DraftKind::Entity { .. }))
+            .count();
+        let edges = drafts
+            .iter()
+            .filter(|d| matches!(d.kind, DraftKind::Edge { .. }))
+            .count();
         assert_eq!(entities, 1);
         assert_eq!(edges, 2);
     }
@@ -554,10 +563,13 @@ mod tests {
     #[test]
     fn entity_schema_name_is_class_identity() {
         let drafts = class_to_drafts(&work_package(), "ogit-op");
-        let entity = drafts.iter().find_map(|d| match &d.kind {
-            DraftKind::Entity { schema } => Some(schema),
-            _ => None,
-        }).unwrap();
+        let entity = drafts
+            .iter()
+            .find_map(|d| match &d.kind {
+                DraftKind::Entity { schema } => Some(schema),
+                _ => None,
+            })
+            .unwrap();
         assert_eq!(entity.name, "ogit-op/WorkPackage");
         assert_eq!(entity.properties.len(), 3);
     }
@@ -565,11 +577,18 @@ mod tests {
     #[test]
     fn required_attribute_maps_to_required_passthrough() {
         let drafts = class_to_drafts(&work_package(), "ogit-op");
-        let entity = drafts.iter().find_map(|d| match &d.kind {
-            DraftKind::Entity { schema } => Some(schema),
-            _ => None,
-        }).unwrap();
-        let subject = entity.properties.iter().find(|p| p.predicate == "subject").unwrap();
+        let entity = drafts
+            .iter()
+            .find_map(|d| match &d.kind {
+                DraftKind::Entity { schema } => Some(schema),
+                _ => None,
+            })
+            .unwrap();
+        let subject = entity
+            .properties
+            .iter()
+            .find(|p| p.predicate == "subject")
+            .unwrap();
         assert_eq!(subject.kind, PropertyKindDraft::Required);
         assert_eq!(subject.codec_route, CodecRouteDraft::Passthrough);
     }
@@ -577,11 +596,18 @@ mod tests {
     #[test]
     fn email_field_infers_pii_marking() {
         let drafts = class_to_drafts(&work_package(), "ogit-op");
-        let entity = drafts.iter().find_map(|d| match &d.kind {
-            DraftKind::Entity { schema } => Some(schema),
-            _ => None,
-        }).unwrap();
-        let email = entity.properties.iter().find(|p| p.predicate == "author_email").unwrap();
+        let entity = drafts
+            .iter()
+            .find_map(|d| match &d.kind {
+                DraftKind::Entity { schema } => Some(schema),
+                _ => None,
+            })
+            .unwrap();
+        let email = entity
+            .properties
+            .iter()
+            .find(|p| p.predicate == "author_email")
+            .unwrap();
         assert_eq!(email.semantic, SemanticDraft::Email);
         assert_eq!(email.marking, MarkingDraft::Pii);
     }
@@ -589,11 +615,18 @@ mod tests {
     #[test]
     fn monetary_field_infers_currency_and_financial() {
         let drafts = class_to_drafts(&work_package(), "ogit-op");
-        let entity = drafts.iter().find_map(|d| match &d.kind {
-            DraftKind::Entity { schema } => Some(schema),
-            _ => None,
-        }).unwrap();
-        let total = entity.properties.iter().find(|p| p.predicate == "amount_total").unwrap();
+        let entity = drafts
+            .iter()
+            .find_map(|d| match &d.kind {
+                DraftKind::Entity { schema } => Some(schema),
+                _ => None,
+            })
+            .unwrap();
+        let total = entity
+            .properties
+            .iter()
+            .find(|p| p.predicate == "amount_total")
+            .unwrap();
         assert_eq!(total.semantic, SemanticDraft::Currency("EUR".into()));
         assert_eq!(total.marking, MarkingDraft::Financial);
     }
@@ -602,7 +635,10 @@ mod tests {
     fn heuristic_semantic_lowers_entity_confidence() {
         // work_package has email + monetary → heuristic semantics present.
         let drafts = class_to_drafts(&work_package(), "ogit-op");
-        let entity = drafts.iter().find(|d| matches!(d.kind, DraftKind::Entity { .. })).unwrap();
+        let entity = drafts
+            .iter()
+            .find(|d| matches!(d.kind, DraftKind::Entity { .. }))
+            .unwrap();
         assert!(entity.confidence < 1.0);
 
         // A plain class with only PlainText attributes stays at 1.0.
@@ -611,17 +647,23 @@ mod tests {
         n.type_name = Some("Char".into());
         plain.attributes.push(n);
         let plain_drafts = class_to_drafts(&plain, "ogit-op");
-        let plain_entity = plain_drafts.iter().find(|d| matches!(d.kind, DraftKind::Entity { .. })).unwrap();
+        let plain_entity = plain_drafts
+            .iter()
+            .find(|d| matches!(d.kind, DraftKind::Entity { .. }))
+            .unwrap();
         assert_eq!(plain_entity.confidence, 1.0);
     }
 
     #[test]
     fn belongs_to_maps_one_to_one_with_explicit_target() {
         let drafts = class_to_drafts(&work_package(), "ogit-op");
-        let link = drafts.iter().find_map(|d| match &d.kind {
-            DraftKind::Edge { link } if link.predicate == "project" => Some(link),
-            _ => None,
-        }).unwrap();
+        let link = drafts
+            .iter()
+            .find_map(|d| match &d.kind {
+                DraftKind::Edge { link } if link.predicate == "project" => Some(link),
+                _ => None,
+            })
+            .unwrap();
         assert_eq!(link.cardinality, CardinalityDraft::OneToOne);
         assert_eq!(link.subject_type, "ogit-op/WorkPackage");
         assert_eq!(link.object_type, "ogit-op/Project");
@@ -630,10 +672,13 @@ mod tests {
     #[test]
     fn has_many_maps_one_to_many_with_classified_target() {
         let drafts = class_to_drafts(&work_package(), "ogit-op");
-        let link = drafts.iter().find_map(|d| match &d.kind {
-            DraftKind::Edge { link } if link.predicate == "time_entries" => Some(link),
-            _ => None,
-        }).unwrap();
+        let link = drafts
+            .iter()
+            .find_map(|d| match &d.kind {
+                DraftKind::Edge { link } if link.predicate == "time_entries" => Some(link),
+                _ => None,
+            })
+            .unwrap();
         assert_eq!(link.cardinality, CardinalityDraft::OneToMany);
         // No class_name override → naive classify (singularize 's' +
         // capitalize). "time_entries" → "Time_entrie" — deliberately
@@ -650,10 +695,13 @@ mod tests {
         a.polymorphic = Some(true);
         c.associations.push(a);
         let drafts = class_to_drafts(&c, "ogit-op");
-        let link = drafts.iter().find_map(|d| match &d.kind {
-            DraftKind::Edge { link } => Some(link),
-            _ => None,
-        }).unwrap();
+        let link = drafts
+            .iter()
+            .find_map(|d| match &d.kind {
+                DraftKind::Edge { link } => Some(link),
+                _ => None,
+            })
+            .unwrap();
         assert_eq!(link.object_type, "<polymorphic>");
     }
 
@@ -676,6 +724,10 @@ mod tests {
     #[test]
     fn created_by_carries_language_tag() {
         let drafts = class_to_drafts(&work_package(), "ogit-op");
-        assert!(drafts.iter().all(|d| d.created_by == "ogar_producer_ruby_v1"));
+        assert!(
+            drafts
+                .iter()
+                .all(|d| d.created_by == "ogar_producer_ruby_v1")
+        );
     }
 }

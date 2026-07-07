@@ -213,9 +213,7 @@ pub fn parse_surrealql_ddl(_input: &str) -> Result<Vec<Class>, ParseError> {
 mod walk {
     use ogar_vocab::{Association, AssociationKind, Attribute, Class};
     use std::collections::HashMap;
-    use surrealdb_ast::{
-        Ast, Expr, NodeId, NodeListId, PrimeType, Query, TopLevelExpr, Type,
-    };
+    use surrealdb_ast::{Ast, Expr, NodeId, NodeListId, PrimeType, Query, TopLevelExpr, Type};
 
     pub(super) fn walk_query(ast: &Ast, query: Query) -> Vec<Class> {
         // Pass 1: visit DefineTable to register class order.
@@ -233,7 +231,10 @@ mod walk {
             }
         }
 
-        order.into_iter().filter_map(|n| by_name.remove(&n)).collect()
+        order
+            .into_iter()
+            .filter_map(|n| by_name.remove(&n))
+            .collect()
     }
 
     fn visit_define(
@@ -271,7 +272,10 @@ mod walk {
                 });
 
                 match lift_field_type(ast, df.ty) {
-                    FieldShape::Primitive { type_name, optional } => {
+                    FieldShape::Primitive {
+                        type_name,
+                        optional,
+                    } => {
                         let mut attr = Attribute::new(&field);
                         attr.type_name = Some(type_name);
                         if optional {
@@ -282,8 +286,7 @@ mod walk {
                         class.attributes.push(attr);
                     }
                     FieldShape::Record { target, optional } => {
-                        let mut assoc =
-                            Association::new(AssociationKind::BelongsTo, &field);
+                        let mut assoc = Association::new(AssociationKind::BelongsTo, &field);
                         assoc.class_name = Some(target);
                         if optional {
                             assoc.optional = Some(true);
@@ -360,10 +363,12 @@ mod walk {
             None => return FieldShape::Untyped,
         };
         let prime_list_id = match &ast[ty_id] {
-            Type::Any(_) => return FieldShape::Primitive {
-                type_name: "any".into(),
-                optional: false,
-            },
+            Type::Any(_) => {
+                return FieldShape::Primitive {
+                    type_name: "any".into(),
+                    optional: false,
+                };
+            }
             Type::Prime(list_id) => *list_id,
         };
 
@@ -371,8 +376,9 @@ mod walk {
         // PrimeType::None (see surrealdb/parser/src/parse/kind.rs at
         // the T![OPTION] arm). So a NodeList starting with None means
         // optional; the rest are the effective type(s).
-        let primes: Vec<&PrimeType> =
-            iter_node_list(ast, prime_list_id).map(|p| &ast[p]).collect();
+        let primes: Vec<&PrimeType> = iter_node_list(ast, prime_list_id)
+            .map(|p| &ast[p])
+            .collect();
         if primes.is_empty() {
             return FieldShape::Untyped;
         }
@@ -477,10 +483,11 @@ impl std::fmt::Display for ParseError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             ParseError::Parse(msg) => write!(f, "surrealql parse error: {msg}"),
-            ParseError::UnmappableField { table, field, reason } => write!(
-                f,
-                "unmappable field {field} on table {table}: {reason}"
-            ),
+            ParseError::UnmappableField {
+                table,
+                field,
+                reason,
+            } => write!(f, "unmappable field {field} on table {table}: {reason}"),
             ParseError::Unimplemented(msg) => write!(f, "not yet implemented: {msg}"),
         }
     }
@@ -622,7 +629,10 @@ fn emit_field_enum(table: &str, enum_decl: &EnumDecl, out: &mut String) {
                 "DEFINE FIELD {column_ident} ON {table} TYPE string ASSERT $value IN [{variants}];\n"
             ));
         }
-        ogar_vocab::EnumSource::Add { items, parent_selection } => {
+        ogar_vocab::EnumSource::Add {
+            items,
+            parent_selection,
+        } => {
             // Inherited enum: emit the added variants only; downstream
             // consumers reconcile against the parent via `parent_selection`.
             let variants = items
@@ -727,7 +737,10 @@ mod tests {
     fn emit_minimal_class_produces_define_table() {
         let c = Class::new("widget");
         let ddl = emit_surrealql_ddl(&[c]);
-        assert!(ddl.contains("DEFINE TABLE widget SCHEMAFULL;"), "got: {ddl}");
+        assert!(
+            ddl.contains("DEFINE TABLE widget SCHEMAFULL;"),
+            "got: {ddl}"
+        );
     }
 
     #[test]
@@ -738,7 +751,10 @@ mod tests {
         c.attributes.push(email);
         let ddl = emit_surrealql_ddl(&[c]);
         assert!(ddl.contains("DEFINE TABLE account SCHEMAFULL;"));
-        assert!(ddl.contains("DEFINE FIELD email ON account TYPE string;"), "got: {ddl}");
+        assert!(
+            ddl.contains("DEFINE FIELD email ON account TYPE string;"),
+            "got: {ddl}"
+        );
     }
 
     #[test]
@@ -806,7 +822,10 @@ mod tests {
             .push(Association::new(AssociationKind::HasOne, "lead"));
         let ddl = emit_surrealql_ddl(&[c]);
         assert!(!ddl.contains("DEFINE FIELD lead"), "got: {ddl}");
-        assert!(ddl.contains("(no DEFINE FIELD"), "expected non-owning comment, got: {ddl}");
+        assert!(
+            ddl.contains("(no DEFINE FIELD"),
+            "expected non-owning comment, got: {ddl}"
+        );
     }
 
     #[test]
@@ -820,7 +839,9 @@ mod tests {
         c.enums.push(status);
         let ddl = emit_surrealql_ddl(&[c]);
         assert!(
-            ddl.contains("DEFINE FIELD status ON ticket TYPE string ASSERT $value IN ['open', 'closed'];"),
+            ddl.contains(
+                "DEFINE FIELD status ON ticket TYPE string ASSERT $value IN ['open', 'closed'];"
+            ),
             "got: {ddl}"
         );
     }
@@ -846,9 +867,8 @@ mod tests {
     fn emit_class_with_computed_enum_emits_lambda_marker() {
         let mut c = Class::new("address");
         let mut country_enum = EnumDecl::new("country");
-        country_enum.source = ogar_vocab::EnumSource::Computed(
-            "lambda self: self.env[\'res.country\']...".into(),
-        );
+        country_enum.source =
+            ogar_vocab::EnumSource::Computed("lambda self: self.env[\'res.country\']...".into());
         c.enums.push(country_enum);
         let ddl = emit_surrealql_ddl(&[c]);
         assert!(
@@ -964,13 +984,19 @@ mod tests {
         assert_eq!(classes.len(), 1);
         let c = &classes[0];
         assert_eq!(c.name, "work_package");
-        assert!(c.attributes.is_empty(), "record<X> should NOT become an attribute");
+        assert!(
+            c.attributes.is_empty(),
+            "record<X> should NOT become an attribute"
+        );
         assert_eq!(c.associations.len(), 1);
         let a = &c.associations[0];
         assert_eq!(a.name, "owner");
         assert!(matches!(a.kind, AssociationKind::BelongsTo));
         assert_eq!(a.class_name.as_deref(), Some("user"));
-        assert!(a.optional.unwrap_or(false) == false, "non-optional record<X>");
+        assert!(
+            a.optional.unwrap_or(false) == false,
+            "non-optional record<X>"
+        );
     }
 
     #[cfg(feature = "surrealdb-parser")]

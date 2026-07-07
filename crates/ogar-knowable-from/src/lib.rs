@@ -257,7 +257,8 @@ pub fn register_class_knowable_from<S: KnowableFromStore>(
         return Err(KnowableFromError::MalformedClass(
             "class_identity is empty; pass an OGIT-prefixed canonical \
              identity such as \"ogit-erp/sale.order\" (see \
-             ogar_ontology::class_identity)".into(),
+             ogar_ontology::class_identity)"
+                .into(),
         ));
     }
     // The `schema_ddl_hint` parameter — `None` by default (lightweight
@@ -343,8 +344,8 @@ impl std::error::Error for KnowableFromError {}
 pub mod vart_backend {
     use super::{KnowableFromError, KnowableFromStore};
     use std::sync::Mutex;
-    use vart::art::Tree;
     use vart::VariableSizeKey;
+    use vart::art::Tree;
 
     /// `KnowableFromStore` impl backed by an in-memory versioned
     /// adaptive radix trie. Each [`register`] call advances the trie's
@@ -378,7 +379,9 @@ pub mod vart_backend {
         /// `version()` starts at `0` for an empty trie).
         #[must_use]
         pub fn new() -> Self {
-            Self { tree: Mutex::new(Tree::new()) }
+            Self {
+                tree: Mutex::new(Tree::new()),
+            }
         }
 
         /// Current max version across the trie. `0` if no `register`
@@ -413,9 +416,10 @@ pub mod vart_backend {
             class_identity: &str,
             _schema_ddl_hint: Option<&str>,
         ) -> Result<u64, KnowableFromError> {
-            let mut tree = self.tree.lock().map_err(|e| {
-                KnowableFromError::Backend(format!("vart mutex poisoned: {e}"))
-            })?;
+            let mut tree = self
+                .tree
+                .lock()
+                .map_err(|e| KnowableFromError::Backend(format!("vart mutex poisoned: {e}")))?;
             // Advance the trie's logical version monotonically — the new
             // version IS the knowable_from stamp we return. saturating_add
             // guards the theoretical wrap (registering 2^64 times).
@@ -426,9 +430,7 @@ pub mod vart_backend {
             // the runtime side's `inv.object_instance` trie-append also uses
             // — every commit is a new version of the entry).
             tree.insert_or_replace(&key, new_version, new_version, 0)
-                .map_err(|e| {
-                    KnowableFromError::Backend(format!("vart insert: {e:?}"))
-                })?;
+                .map_err(|e| KnowableFromError::Backend(format!("vart insert: {e:?}")))?;
             Ok(new_version)
         }
 
@@ -477,10 +479,10 @@ mod tests {
             class_identity: &str,
             schema_ddl_hint: Option<&str>,
         ) -> Result<u64, KnowableFromError> {
-            self.register_calls
-                .lock()
-                .unwrap()
-                .push((class_identity.to_string(), schema_ddl_hint.map(String::from)));
+            self.register_calls.lock().unwrap().push((
+                class_identity.to_string(),
+                schema_ddl_hint.map(String::from),
+            ));
             let mut next = self.next_version.lock().unwrap();
             let v = *next;
             *next = v + 1;
@@ -500,8 +502,7 @@ mod tests {
     fn register_simple_class_returns_store_version() {
         let c = Class::new("Account");
         let store = MockKnowableFromStore::new(42);
-        let v = register_class_knowable_from(&c, "ogit-erp/Account", &store)
-            .expect("register OK");
+        let v = register_class_knowable_from(&c, "ogit-erp/Account", &store).expect("register OK");
         assert_eq!(v, 42);
         let calls = store.register_calls.lock().unwrap();
         assert_eq!(calls.len(), 1);
@@ -536,17 +537,19 @@ mod tests {
         // conflate them; the new prefix-aware identity keeps them
         // distinct.
         let store = MockKnowableFromStore::new(50);
-        let v_op = register_class_knowable_from(
-            &Class::new("WorkPackage"),
-            "ogit-op/WorkPackage",
-            &store,
-        ).unwrap();
+        let v_op =
+            register_class_knowable_from(&Class::new("WorkPackage"), "ogit-op/WorkPackage", &store)
+                .unwrap();
         let v_erp = register_class_knowable_from(
             &Class::new("WorkPackage"),
             "ogit-erp/WorkPackage",
             &store,
-        ).unwrap();
-        assert_ne!(v_op, v_erp, "different prefixes must produce distinct versions");
+        )
+        .unwrap();
+        assert_ne!(
+            v_op, v_erp,
+            "different prefixes must produce distinct versions"
+        );
         assert_eq!(store.knowable_from("ogit-op/WorkPackage"), Some(v_op));
         assert_eq!(store.knowable_from("ogit-erp/WorkPackage"), Some(v_erp));
     }
@@ -557,7 +560,10 @@ mod tests {
         let store = MockKnowableFromStore::new(0);
         match register_class_knowable_from(&c, "ogit-erp/X", &store) {
             Err(KnowableFromError::MalformedClass(msg)) => {
-                assert!(msg.contains("Class.name"), "expected Class.name message, got: {msg}");
+                assert!(
+                    msg.contains("Class.name"),
+                    "expected Class.name message, got: {msg}"
+                );
             }
             other => panic!("expected MalformedClass, got: {other:?}"),
         }
@@ -571,8 +577,10 @@ mod tests {
         let store = MockKnowableFromStore::new(0);
         match register_class_knowable_from(&c, "", &store) {
             Err(KnowableFromError::MalformedClass(msg)) => {
-                assert!(msg.contains("class_identity"),
-                    "expected class_identity message, got: {msg}");
+                assert!(
+                    msg.contains("class_identity"),
+                    "expected class_identity message, got: {msg}"
+                );
             }
             other => panic!("expected MalformedClass, got: {other:?}"),
         }
@@ -583,11 +591,7 @@ mod tests {
     fn register_propagates_backend_errors() {
         struct FailingStore;
         impl KnowableFromStore for FailingStore {
-            fn register(
-                &self,
-                _: &str,
-                _: Option<&str>,
-            ) -> Result<u64, KnowableFromError> {
+            fn register(&self, _: &str, _: Option<&str>) -> Result<u64, KnowableFromError> {
                 Err(KnowableFromError::Backend("disk full".into()))
             }
             fn knowable_from(&self, _: &str) -> Option<u64> {
@@ -667,7 +671,10 @@ mod tests {
 
         let calls = store.register_calls.lock().unwrap();
         assert_eq!(calls.len(), 1);
-        let hint = calls[0].1.as_deref().expect("feature-on path must populate the hint");
+        let hint = calls[0]
+            .1
+            .as_deref()
+            .expect("feature-on path must populate the hint");
         // The DDL must mention the table and the field — the canonical
         // shape `emit_surrealql_ddl` produces.
         assert!(
@@ -756,16 +763,15 @@ mod tests {
         // VART-backed end-to-end through `register_class_knowable_from`.
         use ogar_vocab::Class;
         let store = crate::vart_backend::VartKnowableFromStore::new();
-        let v_op = register_class_knowable_from(
-            &Class::new("WorkPackage"),
-            "ogit-op/WorkPackage",
-            &store,
-        ).unwrap();
+        let v_op =
+            register_class_knowable_from(&Class::new("WorkPackage"), "ogit-op/WorkPackage", &store)
+                .unwrap();
         let v_erp = register_class_knowable_from(
             &Class::new("WorkPackage"),
             "ogit-erp/WorkPackage",
             &store,
-        ).unwrap();
+        )
+        .unwrap();
         assert_ne!(v_op, v_erp);
         assert_eq!(store.knowable_from("ogit-op/WorkPackage"), Some(v_op));
         assert_eq!(store.knowable_from("ogit-erp/WorkPackage"), Some(v_erp));

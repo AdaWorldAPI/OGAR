@@ -124,7 +124,11 @@ pub fn extract_action_defs(source_tree: &Path) -> Vec<ActionDef> {
             }
         }
         // gen_statem is conventionally `@behaviour :gen_statem`, not `use`.
-        if module.use_directives.iter().any(|u| u == ":gen_statem" || u == "GenStateMachine") {
+        if module
+            .use_directives
+            .iter()
+            .any(|u| u == ":gen_statem" || u == "GenStateMachine")
+        {
             defs.extend(extract_gen_statem_actions(module));
         }
     }
@@ -249,7 +253,9 @@ fn extract_gen_statem_actions(_module: &ElixirModule) -> Vec<ActionDef> {
 /// - LiveView `def handle_event(event, params, socket)` →
 ///   `ActionDef { default_subject: User }`
 fn extract_phoenix_actions(_module: &ElixirModule) -> Vec<ActionDef> {
-    todo!("extract controller / channel / liveview handlers per ELIXIR-HIRO-PREFETCH §2.2 Phoenix.* rows")
+    todo!(
+        "extract controller / channel / liveview handlers per ELIXIR-HIRO-PREFETCH §2.2 Phoenix.* rows"
+    )
 }
 
 /// Extract `ActionDef`s from `Oban.Worker.perform/1` definitions and
@@ -420,8 +426,14 @@ mod tests {
         // This test documents the recognized `use` / `@behaviour`
         // directives so a parser wiring change can't silently drop
         // dispatch keys.
-        let recognized_use = ["Ecto.Schema", "GenServer", "Phoenix.Controller",
-                              "Phoenix.Channel", "Phoenix.LiveView", "Oban.Worker"];
+        let recognized_use = [
+            "Ecto.Schema",
+            "GenServer",
+            "Phoenix.Controller",
+            "Phoenix.Channel",
+            "Phoenix.LiveView",
+            "Oban.Worker",
+        ];
         let recognized_behaviour = [":gen_statem", "GenStateMachine"];
         // Compile-time presence is the assertion; the list is the spec.
         assert_eq!(recognized_use.len(), 6);

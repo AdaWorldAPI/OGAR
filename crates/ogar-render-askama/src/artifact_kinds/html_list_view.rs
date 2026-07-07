@@ -110,7 +110,9 @@ pub enum CellData<'a> {
     /// Formatted duration (hours / decimal).
     Hours { hours: &'a str, href: &'a str },
     /// List of `project_attachment` refs.
-    AttachmentList { attachments: Vec<AttachmentEntryOwned> },
+    AttachmentList {
+        attachments: Vec<AttachmentEntryOwned>,
+    },
     /// List of `project_actor` refs (watchers, assignees, …).
     UserList { users: Vec<UserEntryOwned> },
 }

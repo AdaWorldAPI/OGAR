@@ -171,7 +171,10 @@ pub(crate) fn render_cell_body(data: &CellData<'_>) -> Result<String, askama::Er
                     href: a.href.as_str(),
                 })
                 .collect();
-            AttachmentListCell { attachments: mapped }.render()?
+            AttachmentListCell {
+                attachments: mapped,
+            }
+            .render()?
         }
         CellData::UserList { users } => {
             let mapped: Vec<UserEntry<'_>> = users

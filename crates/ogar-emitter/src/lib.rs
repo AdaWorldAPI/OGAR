@@ -63,7 +63,11 @@ pub struct Triple {
 impl Triple {
     /// Build a triple from string-like inputs.
     #[must_use]
-    pub fn new(subject: impl Into<String>, predicate: impl Into<String>, object: impl Into<String>) -> Self {
+    pub fn new(
+        subject: impl Into<String>,
+        predicate: impl Into<String>,
+        object: impl Into<String>,
+    ) -> Self {
         Self {
             subject: subject.into(),
             predicate: predicate.into(),
@@ -165,7 +169,11 @@ impl OgarEmitter for TripleEmitter {
         }
 
         if let Some(ref default_scope) = class.default_scope {
-            triples.push(Triple::new(&subject, "ogar:defaultScope", default_scope.clone()));
+            triples.push(Triple::new(
+                &subject,
+                "ogar:defaultScope",
+                default_scope.clone(),
+            ));
         }
 
         for col in &class.ignored_columns {
@@ -173,7 +181,11 @@ impl OgarEmitter for TripleEmitter {
         }
 
         for name in &class.scope_predeclarations {
-            triples.push(Triple::new(&subject, "ogar:scopePredeclaration", name.clone()));
+            triples.push(Triple::new(
+                &subject,
+                "ogar:scopePredeclaration",
+                name.clone(),
+            ));
         }
 
         if class.inheritance_column_disabled {
@@ -197,13 +209,21 @@ impl OgarEmitter for TripleEmitter {
             triples.push(Triple::new(&subject, "ogar:recName", rn.clone()));
         }
         if let Some(b) = class.check_company_auto {
-            triples.push(Triple::new(&subject, "ogar:checkCompanyAuto", bool_to_str(b)));
+            triples.push(Triple::new(
+                &subject,
+                "ogar:checkCompanyAuto",
+                bool_to_str(b),
+            ));
         }
         if let Some(b) = class.log_access {
             triples.push(Triple::new(&subject, "ogar:logAccess", bool_to_str(b)));
         }
         if let Some(b) = class.auto_create_table {
-            triples.push(Triple::new(&subject, "ogar:autoCreateTable", bool_to_str(b)));
+            triples.push(Triple::new(
+                &subject,
+                "ogar:autoCreateTable",
+                bool_to_str(b),
+            ));
         }
         if class.abstract_model {
             triples.push(Triple::new(&subject, "ogar:abstractModel", "true"));
@@ -222,7 +242,12 @@ impl OgarEmitter for TripleEmitter {
         }
 
         for (i, assoc) in class.associations.iter().enumerate() {
-            triples.extend(Self::emit_association_indexed(assoc, &class.name, prefix, i));
+            triples.extend(Self::emit_association_indexed(
+                assoc,
+                &class.name,
+                prefix,
+                i,
+            ));
         }
 
         for (i, enum_decl) in class.enums.iter().enumerate() {
@@ -230,7 +255,12 @@ impl OgarEmitter for TripleEmitter {
         }
 
         for (i, sa) in class.store_accessors.iter().enumerate() {
-            triples.extend(Self::emit_store_accessor_indexed(sa, &class.name, prefix, i));
+            triples.extend(Self::emit_store_accessor_indexed(
+                sa,
+                &class.name,
+                prefix,
+                i,
+            ));
         }
 
         for attr in &class.attributes {
@@ -250,7 +280,12 @@ impl OgarEmitter for TripleEmitter {
         }
 
         for (i, cf) in class.computed_fields.iter().enumerate() {
-            triples.extend(Self::emit_computed_field_indexed(cf, &class.name, prefix, i));
+            triples.extend(Self::emit_computed_field_indexed(
+                cf,
+                &class.name,
+                prefix,
+                i,
+            ));
         }
 
         for (i, m) in class.methods.iter().enumerate() {
@@ -314,10 +349,18 @@ impl OgarEmitter for TripleEmitter {
             triples.push(Triple::new(&attr_id, "ogar:groupAccess", g.clone()));
         }
         if let Some(b) = opts.company_dependent {
-            triples.push(Triple::new(&attr_id, "ogar:companyDependent", bool_to_str(b)));
+            triples.push(Triple::new(
+                &attr_id,
+                "ogar:companyDependent",
+                bool_to_str(b),
+            ));
         }
         if let Some(b) = opts.copy_on_duplicate {
-            triples.push(Triple::new(&attr_id, "ogar:copyOnDuplicate", bool_to_str(b)));
+            triples.push(Triple::new(
+                &attr_id,
+                "ogar:copyOnDuplicate",
+                bool_to_str(b),
+            ));
         }
         if let Some(ref h) = opts.help_text {
             triples.push(Triple::new(&attr_id, "ogar:helpText", h.clone()));
@@ -382,7 +425,11 @@ impl TripleEmitter {
         ];
 
         if let Some(ref cn) = assoc.class_name {
-            triples.push(Triple::new(&assoc_id, "ogar:targetClass", class_identity(prefix, cn)));
+            triples.push(Triple::new(
+                &assoc_id,
+                "ogar:targetClass",
+                class_identity(prefix, cn),
+            ));
         }
         if let Some(ref fk) = assoc.foreign_key {
             triples.push(Triple::new(&assoc_id, "ogar:foreignKey", fk.clone()));
@@ -474,10 +521,17 @@ impl TripleEmitter {
                 }
             }
             ogar_vocab::EnumSource::Computed(body) => {
-                triples.push(Triple::new(&enum_id, "ogar:enumSourceKind", "ogar:Computed"));
+                triples.push(Triple::new(
+                    &enum_id,
+                    "ogar:enumSourceKind",
+                    "ogar:Computed",
+                ));
                 triples.push(Triple::new(&enum_id, "ogar:enumComputedBody", body.clone()));
             }
-            ogar_vocab::EnumSource::Add { items, parent_selection } => {
+            ogar_vocab::EnumSource::Add {
+                items,
+                parent_selection,
+            } => {
                 triples.push(Triple::new(&enum_id, "ogar:enumSourceKind", "ogar:Add"));
                 triples.push(Triple::new(
                     &enum_id,
@@ -556,7 +610,10 @@ impl TripleEmitter {
         index: usize,
     ) -> Vec<Triple> {
         let owner_id = class_identity(prefix, owner_class);
-        let cb_id = format!("{}/{}::callback::{}::{}", prefix, owner_class, index, cb.event);
+        let cb_id = format!(
+            "{}/{}::callback::{}::{}",
+            prefix, owner_class, index, cb.event
+        );
         let mut triples = vec![
             Triple::new(&owner_id, "ogar:hasCallback", cb_id.clone()),
             Triple::new(&cb_id, "rdf:type", "ogar:Callback"),
@@ -578,7 +635,10 @@ impl TripleEmitter {
         index: usize,
     ) -> Vec<Triple> {
         let owner_id = class_identity(prefix, owner_class);
-        let v_id = format!("{}/{}::validation::{}::{}", prefix, owner_class, index, v.target);
+        let v_id = format!(
+            "{}/{}::validation::{}::{}",
+            prefix, owner_class, index, v.target
+        );
         vec![
             Triple::new(&owner_id, "ogar:hasValidation", v_id.clone()),
             Triple::new(&v_id, "rdf:type", "ogar:Validation"),
@@ -656,8 +716,16 @@ impl TripleEmitter {
             Triple::new(&id, "rdf:type", "ogar:ActionDef"),
             Triple::new(&id, "ogar:actionPredicate", def.predicate.clone()),
             Triple::new(&id, "ogar:actionObjectClass", def.object_class.clone()),
-            Triple::new(&id, "ogar:defaultSubject", subject_to_ogar(def.default_subject)),
-            Triple::new(&id, "ogar:defaultTemporal", temporal_to_ogar(def.default_temporal)),
+            Triple::new(
+                &id,
+                "ogar:defaultSubject",
+                subject_to_ogar(def.default_subject),
+            ),
+            Triple::new(
+                &id,
+                "ogar:defaultTemporal",
+                temporal_to_ogar(def.default_temporal),
+            ),
             Triple::new(&id, "ogar:defaultModal", modal_to_ogar(def.default_modal)),
         ];
         // Action-scoped predicates — NOT the MethodDecl ones. Reusing
@@ -742,7 +810,10 @@ impl TripleEmitter {
 fn kausal_triples(action_subject: &str, k: &ogar_vocab::KausalSpec) -> Vec<Triple> {
     use ogar_vocab::KausalSpec;
     match k {
-        KausalSpec::StateGuard { guard_field, guard_values } => {
+        KausalSpec::StateGuard {
+            guard_field,
+            guard_values,
+        } => {
             let mut v = vec![
                 Triple::new(action_subject, "ogar:kausalKind", "ogar:StateGuard"),
                 Triple::new(action_subject, "ogar:guardField", guard_field.clone()),
@@ -762,21 +833,45 @@ fn kausal_triples(action_subject: &str, k: &ogar_vocab::KausalSpec) -> Vec<Tripl
         // ComputedField and corrupt "enumerate all computed fields" queries.
         // Codex review 2026-06-04.
         KausalSpec::Depends { paths } => {
-            let mut v = vec![Triple::new(action_subject, "ogar:kausalKind", "ogar:Depends")];
+            let mut v = vec![Triple::new(
+                action_subject,
+                "ogar:kausalKind",
+                "ogar:Depends",
+            )];
             for p in paths {
-                v.push(Triple::new(action_subject, "ogar:kausalDependsPath", p.clone()));
+                v.push(Triple::new(
+                    action_subject,
+                    "ogar:kausalDependsPath",
+                    p.clone(),
+                ));
             }
             v
         }
         KausalSpec::ContextDepends { keys } => {
-            let mut v = vec![Triple::new(action_subject, "ogar:kausalKind", "ogar:ContextDepends")];
+            let mut v = vec![Triple::new(
+                action_subject,
+                "ogar:kausalKind",
+                "ogar:ContextDepends",
+            )];
             for k in keys {
-                v.push(Triple::new(action_subject, "ogar:kausalDependsContext", k.clone()));
+                v.push(Triple::new(
+                    action_subject,
+                    "ogar:kausalDependsContext",
+                    k.clone(),
+                ));
             }
             v
         }
-        KausalSpec::External => vec![Triple::new(action_subject, "ogar:kausalKind", "ogar:External")],
-        _ => vec![Triple::new(action_subject, "ogar:kausalKind", "ogar:Unknown")],
+        KausalSpec::External => vec![Triple::new(
+            action_subject,
+            "ogar:kausalKind",
+            "ogar:External",
+        )],
+        _ => vec![Triple::new(
+            action_subject,
+            "ogar:kausalKind",
+            "ogar:Unknown",
+        )],
     }
 }
 
@@ -921,9 +1016,11 @@ mod tests {
                 && t.predicate == "ogar:parentClass"
                 && t.object == "ogit-op/ApplicationRecord"
         }));
-        assert!(triples.iter().any(|t| {
-            t.predicate == "ogar:sourceLanguage" && t.object == "ogar:Ruby"
-        }));
+        assert!(
+            triples
+                .iter()
+                .any(|t| { t.predicate == "ogar:sourceLanguage" && t.object == "ogar:Ruby" })
+        );
     }
 
     #[test]
@@ -986,21 +1083,31 @@ mod tests {
         // Variant name + value emitted as separate triples on a
         // synthetic per-variant subject — round-trippable even when
         // names or values contain `=` or other separators.
-        assert!(triples.iter().any(|t| {
-            t.predicate == "ogar:variantName" && t.object == "open"
-        }));
-        assert!(triples.iter().any(|t| {
-            t.predicate == "ogar:variantValue" && t.object == "0"
-        }));
-        assert!(triples.iter().any(|t| {
-            t.predicate == "ogar:variantName" && t.object == "closed"
-        }));
-        assert!(triples.iter().any(|t| {
-            t.predicate == "ogar:variantValue" && t.object == "1"
-        }));
-        assert!(triples.iter().any(|t| {
-            t.predicate == "ogar:scopesDisabled" && t.object == "true"
-        }));
+        assert!(
+            triples
+                .iter()
+                .any(|t| { t.predicate == "ogar:variantName" && t.object == "open" })
+        );
+        assert!(
+            triples
+                .iter()
+                .any(|t| { t.predicate == "ogar:variantValue" && t.object == "0" })
+        );
+        assert!(
+            triples
+                .iter()
+                .any(|t| { t.predicate == "ogar:variantName" && t.object == "closed" })
+        );
+        assert!(
+            triples
+                .iter()
+                .any(|t| { t.predicate == "ogar:variantValue" && t.object == "1" })
+        );
+        assert!(
+            triples
+                .iter()
+                .any(|t| { t.predicate == "ogar:scopesDisabled" && t.object == "true" })
+        );
         // Enum subject lives under `::enum::` namespace (distinct
         // from Attribute under `field_identity` and StoreAccessor
         // under `::store::`).
@@ -1016,15 +1123,23 @@ mod tests {
         // Rails allows two `after_create do ... end` blocks on the same
         // class — they MUST emit distinct subjects, not silently overwrite.
         let mut class = sample_work_package();
-        class.callbacks.push(Callback::block("after_create", "step_one"));
-        class.callbacks.push(Callback::block("after_create", "step_two"));
+        class
+            .callbacks
+            .push(Callback::block("after_create", "step_one"));
+        class
+            .callbacks
+            .push(Callback::block("after_create", "step_two"));
         let triples = TripleEmitter::emit_class(&class, "ogit-op");
         let cb_subjects: Vec<_> = triples
             .iter()
             .filter(|t| t.predicate == "rdf:type" && t.object == "ogar:Callback")
             .map(|t| t.subject.as_str())
             .collect();
-        assert_eq!(cb_subjects.len(), 2, "two distinct callback subjects expected");
+        assert_eq!(
+            cb_subjects.len(),
+            2,
+            "two distinct callback subjects expected"
+        );
         assert_ne!(cb_subjects[0], cb_subjects[1]);
     }
 
@@ -1065,9 +1180,11 @@ mod tests {
         assoc.after_remove = Some("module_disabled".into());
         class.associations.push(assoc);
         let triples = TripleEmitter::emit_class(&class, "ogit-op");
-        assert!(triples.iter().any(|t| {
-            t.predicate == "ogar:afterRemove" && t.object == "module_disabled"
-        }));
+        assert!(
+            triples
+                .iter()
+                .any(|t| { t.predicate == "ogar:afterRemove" && t.object == "module_disabled" })
+        );
     }
 
     #[test]
@@ -1101,12 +1218,36 @@ mod tests {
         class.transient = false;
         class.check_company_auto = Some(true);
         let triples = TripleEmitter::emit_class(&class, "ogit-erp");
-        assert!(triples.iter().any(|t| t.predicate == "ogar:description" && t.object == "Sale Order"));
-        assert!(triples.iter().any(|t| t.predicate == "ogar:recordOrder" && t.object == "date desc, id"));
-        assert!(triples.iter().any(|t| t.predicate == "ogar:recName" && t.object == "name"));
-        assert!(triples.iter().any(|t| t.predicate == "ogar:declaredIn" && t.object == "sale"));
-        assert!(triples.iter().any(|t| t.predicate == "ogar:sourceVersion" && t.object == "17.0"));
-        assert!(triples.iter().any(|t| t.predicate == "ogar:checkCompanyAuto" && t.object == "true"));
+        assert!(
+            triples
+                .iter()
+                .any(|t| t.predicate == "ogar:description" && t.object == "Sale Order")
+        );
+        assert!(
+            triples
+                .iter()
+                .any(|t| t.predicate == "ogar:recordOrder" && t.object == "date desc, id")
+        );
+        assert!(
+            triples
+                .iter()
+                .any(|t| t.predicate == "ogar:recName" && t.object == "name")
+        );
+        assert!(
+            triples
+                .iter()
+                .any(|t| t.predicate == "ogar:declaredIn" && t.object == "sale")
+        );
+        assert!(
+            triples
+                .iter()
+                .any(|t| t.predicate == "ogar:sourceVersion" && t.object == "17.0")
+        );
+        assert!(
+            triples
+                .iter()
+                .any(|t| t.predicate == "ogar:checkCompanyAuto" && t.object == "true")
+        );
     }
 
     #[test]
@@ -1114,7 +1255,11 @@ mod tests {
         let mut class = Class::new("mail.thread");
         class.abstract_model = true;
         let triples = TripleEmitter::emit_class(&class, "ogit-erp");
-        assert!(triples.iter().any(|t| t.predicate == "ogar:abstractModel" && t.object == "true"));
+        assert!(
+            triples
+                .iter()
+                .any(|t| t.predicate == "ogar:abstractModel" && t.object == "true")
+        );
         assert!(!triples.iter().any(|t| t.predicate == "ogar:transientModel"));
     }
 
@@ -1129,11 +1274,27 @@ mod tests {
         assoc.delegate = Some(false);
         class.associations.push(assoc);
         let triples = TripleEmitter::emit_class(&class, "ogit-erp");
-        assert!(triples.iter().any(|t| t.predicate == "ogar:ondelete" && t.object == "restrict"));
-        assert!(triples.iter().any(|t| t.predicate == "ogar:autoJoin" && t.object == "true"));
+        assert!(
+            triples
+                .iter()
+                .any(|t| t.predicate == "ogar:ondelete" && t.object == "restrict")
+        );
+        assert!(
+            triples
+                .iter()
+                .any(|t| t.predicate == "ogar:autoJoin" && t.object == "true")
+        );
         assert!(triples.iter().any(|t| t.predicate == "ogar:contextSource"));
-        assert!(triples.iter().any(|t| t.predicate == "ogar:checkCompany" && t.object == "true"));
-        assert!(triples.iter().any(|t| t.predicate == "ogar:delegateField" && t.object == "false"));
+        assert!(
+            triples
+                .iter()
+                .any(|t| t.predicate == "ogar:checkCompany" && t.object == "true")
+        );
+        assert!(
+            triples
+                .iter()
+                .any(|t| t.predicate == "ogar:delegateField" && t.object == "false")
+        );
     }
 
     #[test]
@@ -1152,16 +1313,51 @@ mod tests {
         attr.options.default_source = Some("New".into());
         class.attributes.push(attr);
         let triples = TripleEmitter::emit_class(&class, "ogit-erp");
-        assert!(triples.iter().any(|t| t.predicate == "ogar:required" && t.object == "true"));
-        assert!(triples.iter().any(|t| t.predicate == "ogar:translate" && t.object == "true"));
-        assert!(triples.iter().any(|t| t.predicate == "ogar:tracking" && t.object == "10"));
-        assert!(triples.iter().any(|t| t.predicate == "ogar:indexed" && t.object == "true"));
-        assert!(triples.iter().any(|t| t.predicate == "ogar:fieldSize" && t.object == "64"));
-        assert!(triples.iter().any(|t| t.predicate == "ogar:helpText" && t.object == "Order reference"));
-        assert!(triples.iter().any(|t| t.predicate == "ogar:fieldLabel" && t.object == "Order"));
-        assert!(triples.iter().any(|t| t.predicate == "ogar:default" && t.object == "New"));
+        assert!(
+            triples
+                .iter()
+                .any(|t| t.predicate == "ogar:required" && t.object == "true")
+        );
+        assert!(
+            triples
+                .iter()
+                .any(|t| t.predicate == "ogar:translate" && t.object == "true")
+        );
+        assert!(
+            triples
+                .iter()
+                .any(|t| t.predicate == "ogar:tracking" && t.object == "10")
+        );
+        assert!(
+            triples
+                .iter()
+                .any(|t| t.predicate == "ogar:indexed" && t.object == "true")
+        );
+        assert!(
+            triples
+                .iter()
+                .any(|t| t.predicate == "ogar:fieldSize" && t.object == "64")
+        );
+        assert!(
+            triples
+                .iter()
+                .any(|t| t.predicate == "ogar:helpText" && t.object == "Order reference")
+        );
+        assert!(
+            triples
+                .iter()
+                .any(|t| t.predicate == "ogar:fieldLabel" && t.object == "Order")
+        );
+        assert!(
+            triples
+                .iter()
+                .any(|t| t.predicate == "ogar:default" && t.object == "New")
+        );
         // Two groups → two triples.
-        let group_triples: Vec<_> = triples.iter().filter(|t| t.predicate == "ogar:groupAccess").collect();
+        let group_triples: Vec<_> = triples
+            .iter()
+            .filter(|t| t.predicate == "ogar:groupAccess")
+            .collect();
         assert_eq!(group_triples.len(), 2);
     }
 
@@ -1174,9 +1370,21 @@ mod tests {
         let mut class = Class::new("sale.order");
         class.attributes.push(attr);
         let triples = TripleEmitter::emit_class(&class, "ogit-erp");
-        assert!(triples.iter().any(|t| t.predicate == "ogar:precision" && t.object == "16"));
-        assert!(triples.iter().any(|t| t.predicate == "ogar:scale" && t.object == "2"));
-        assert!(triples.iter().any(|t| t.predicate == "ogar:currencyField" && t.object == "currency_id"));
+        assert!(
+            triples
+                .iter()
+                .any(|t| t.predicate == "ogar:precision" && t.object == "16")
+        );
+        assert!(
+            triples
+                .iter()
+                .any(|t| t.predicate == "ogar:scale" && t.object == "2")
+        );
+        assert!(
+            triples
+                .iter()
+                .any(|t| t.predicate == "ogar:currencyField" && t.object == "currency_id")
+        );
     }
 
     #[test]
@@ -1191,14 +1399,42 @@ mod tests {
         cf.inverse_method = Some("_inverse_total".into());
         class.computed_fields.push(cf);
         let triples = TripleEmitter::emit_class(&class, "ogit-erp");
-        assert!(triples.iter().any(|t| t.predicate == "ogar:hasComputedField"));
-        assert!(triples.iter().any(|t| t.predicate == "ogar:computedFieldRef" && t.object == "amount_total"));
+        assert!(
+            triples
+                .iter()
+                .any(|t| t.predicate == "ogar:hasComputedField")
+        );
+        assert!(
+            triples
+                .iter()
+                .any(|t| t.predicate == "ogar:computedFieldRef" && t.object == "amount_total")
+        );
         assert!(triples.iter().any(|t| t.predicate == "ogar:computeMethod" && t.object == "_compute_amount_total"));
-        assert!(triples.iter().any(|t| t.predicate == "ogar:stored" && t.object == "true"));
-        assert!(triples.iter().any(|t| t.predicate == "ogar:dependsPath" && t.object == "order_line.price_total"));
-        assert!(triples.iter().any(|t| t.predicate == "ogar:dependsPath" && t.object == "currency_id"));
-        assert!(triples.iter().any(|t| t.predicate == "ogar:dependsContext" && t.object == "company_id"));
-        assert!(triples.iter().any(|t| t.predicate == "ogar:inverseMethod" && t.object == "_inverse_total"));
+        assert!(
+            triples
+                .iter()
+                .any(|t| t.predicate == "ogar:stored" && t.object == "true")
+        );
+        assert!(
+            triples
+                .iter()
+                .any(|t| t.predicate == "ogar:dependsPath" && t.object == "order_line.price_total")
+        );
+        assert!(
+            triples
+                .iter()
+                .any(|t| t.predicate == "ogar:dependsPath" && t.object == "currency_id")
+        );
+        assert!(
+            triples
+                .iter()
+                .any(|t| t.predicate == "ogar:dependsContext" && t.object == "company_id")
+        );
+        assert!(
+            triples
+                .iter()
+                .any(|t| t.predicate == "ogar:inverseMethod" && t.object == "_inverse_total")
+        );
         assert!(!triples.iter().any(|t| t.predicate == "ogar:searchMethod"));
     }
 
@@ -1214,10 +1450,22 @@ mod tests {
         class.methods.push(m);
         let triples = TripleEmitter::emit_class(&class, "ogit-erp");
         assert!(triples.iter().any(|t| t.predicate == "ogar:hasMethod"));
-        assert!(triples.iter().any(|t| t.predicate == "ogar:methodName" && t.object == "create"));
+        assert!(
+            triples
+                .iter()
+                .any(|t| t.predicate == "ogar:methodName" && t.object == "create")
+        );
         assert!(triples.iter().any(|t| t.predicate == "ogar:methodKind" && t.object == "ogar:ApiModelCreateMulti"));
-        assert!(triples.iter().any(|t| t.predicate == "ogar:recordSemantics" && t.object == "ogar:ClassLevel"));
-        assert!(triples.iter().any(|t| t.predicate == "ogar:decoratorName" && t.object == "api.model_create_multi"));
+        assert!(
+            triples
+                .iter()
+                .any(|t| t.predicate == "ogar:recordSemantics" && t.object == "ogar:ClassLevel")
+        );
+        assert!(
+            triples.iter().any(
+                |t| t.predicate == "ogar:decoratorName" && t.object == "api.model_create_multi"
+            )
+        );
     }
 
     #[test]
@@ -1261,12 +1509,36 @@ mod tests {
         def.body_source = Some("if self.state != 'draft': raise...".into());
         def.decorators = vec!["api.depends".into()];
         let triples = TripleEmitter::emit_action_def(&def);
-        assert!(triples.iter().any(|t| t.predicate == "rdf:type" && t.object == "ogar:ActionDef"));
-        assert!(triples.iter().any(|t| t.predicate == "ogar:actionPredicate" && t.object == "action_confirm"));
-        assert!(triples.iter().any(|t| t.predicate == "ogar:defaultSubject" && t.object == "ogar:User"));
-        assert!(triples.iter().any(|t| t.predicate == "ogar:defaultModal" && t.object == "ogar:Atomic"));
-        assert!(triples.iter().any(|t| t.predicate == "ogar:kausalKind" && t.object == "ogar:StateGuard"));
-        assert!(triples.iter().any(|t| t.predicate == "ogar:guardField" && t.object == "state"));
+        assert!(
+            triples
+                .iter()
+                .any(|t| t.predicate == "rdf:type" && t.object == "ogar:ActionDef")
+        );
+        assert!(
+            triples
+                .iter()
+                .any(|t| t.predicate == "ogar:actionPredicate" && t.object == "action_confirm")
+        );
+        assert!(
+            triples
+                .iter()
+                .any(|t| t.predicate == "ogar:defaultSubject" && t.object == "ogar:User")
+        );
+        assert!(
+            triples
+                .iter()
+                .any(|t| t.predicate == "ogar:defaultModal" && t.object == "ogar:Atomic")
+        );
+        assert!(
+            triples
+                .iter()
+                .any(|t| t.predicate == "ogar:kausalKind" && t.object == "ogar:StateGuard")
+        );
+        assert!(
+            triples
+                .iter()
+                .any(|t| t.predicate == "ogar:guardField" && t.object == "state")
+        );
         let guard_values: Vec<_> = triples
             .iter()
             .filter(|t| t.predicate == "ogar:guardValue")
@@ -1293,13 +1565,41 @@ mod tests {
         inv.idempotency_key = Some("confirm-sale-order-42".into());
         inv.emitted_at_millis = Some(1717500000000);
         let triples = TripleEmitter::emit_action_invocation(&inv);
-        assert!(triples.iter().any(|t| t.predicate == "rdf:type" && t.object == "ogar:ActionInvocation"));
-        assert!(triples.iter().any(|t| t.predicate == "ogar:actionSubject" && t.object == "ogar:User"));
-        assert!(triples.iter().any(|t| t.predicate == "ogar:actionState" && t.object == "ogar:Pending"));
-        assert!(triples.iter().any(|t| t.predicate == "ogar:traceId" && t.object == "00-trace-id-here"));
-        assert!(triples.iter().any(|t| t.predicate == "ogar:parentInvocation"));
-        assert!(triples.iter().any(|t| t.predicate == "ogar:idempotencyKey" && t.object == "confirm-sale-order-42"));
-        assert!(triples.iter().any(|t| t.predicate == "ogar:actionTenant" && t.object == "acme"));
+        assert!(
+            triples
+                .iter()
+                .any(|t| t.predicate == "rdf:type" && t.object == "ogar:ActionInvocation")
+        );
+        assert!(
+            triples
+                .iter()
+                .any(|t| t.predicate == "ogar:actionSubject" && t.object == "ogar:User")
+        );
+        assert!(
+            triples
+                .iter()
+                .any(|t| t.predicate == "ogar:actionState" && t.object == "ogar:Pending")
+        );
+        assert!(
+            triples
+                .iter()
+                .any(|t| t.predicate == "ogar:traceId" && t.object == "00-trace-id-here")
+        );
+        assert!(
+            triples
+                .iter()
+                .any(|t| t.predicate == "ogar:parentInvocation")
+        );
+        assert!(
+            triples.iter().any(
+                |t| t.predicate == "ogar:idempotencyKey" && t.object == "confirm-sale-order-42"
+            )
+        );
+        assert!(
+            triples
+                .iter()
+                .any(|t| t.predicate == "ogar:actionTenant" && t.object == "acme")
+        );
     }
 
     #[test]
@@ -1321,19 +1621,25 @@ mod tests {
             .find(|x| x.predicate == "ogar:onEnter")
             .expect("ogar:onEnter link triple emitted");
         let node = link.object.clone();
-        assert!(node.ends_with("::on_enter"), "onEnter node should be derived from def id, got: {node}");
-        assert!(t
-            .iter()
-            .any(|x| x.subject == node && x.predicate == "ogar:enterField" && x.object == "state"));
-        assert!(t
-            .iter()
-            .any(|x| x.subject == node && x.predicate == "ogar:enterToValue" && x.object == "sale"));
+        assert!(
+            node.ends_with("::on_enter"),
+            "onEnter node should be derived from def id, got: {node}"
+        );
+        assert!(
+            t.iter().any(|x| x.subject == node
+                && x.predicate == "ogar:enterField"
+                && x.object == "state")
+        );
+        assert!(t.iter().any(|x| x.subject == node
+            && x.predicate == "ogar:enterToValue"
+            && x.object == "sale"));
         assert!(t
             .iter()
             .any(|x| x.predicate == "ogar:guardFailurePolicy" && x.object == "ogar:Postponable"));
-        assert!(t
-            .iter()
-            .any(|x| x.predicate == "ogar:stateTimeoutMillis" && x.object == "30000"));
+        assert!(
+            t.iter()
+                .any(|x| x.predicate == "ogar:stateTimeoutMillis" && x.object == "30000")
+        );
     }
 
     #[test]
@@ -1356,22 +1662,41 @@ mod tests {
         let mut def = ogar_vocab::ActionDef::new("a", "p", "ogit-op/Foo");
         def.kausal = Some(ogar_vocab::KausalSpec::lifecycle("before_save"));
         let t = TripleEmitter::emit_action_def(&def);
-        assert!(t.iter().any(|t| t.predicate == "ogar:kausalKind" && t.object == "ogar:LifecycleTrigger"));
-        assert!(t.iter().any(|t| t.predicate == "ogar:triggerEvent" && t.object == "before_save"));
+        assert!(
+            t.iter()
+                .any(|t| t.predicate == "ogar:kausalKind" && t.object == "ogar:LifecycleTrigger")
+        );
+        assert!(
+            t.iter()
+                .any(|t| t.predicate == "ogar:triggerEvent" && t.object == "before_save")
+        );
 
-        def.kausal = Some(ogar_vocab::KausalSpec::depends(vec!["partner_id".into(), "amount".into()]));
+        def.kausal = Some(ogar_vocab::KausalSpec::depends(vec![
+            "partner_id".into(),
+            "amount".into(),
+        ]));
         let t = TripleEmitter::emit_action_def(&def);
-        assert!(t.iter().any(|t| t.predicate == "ogar:kausalKind" && t.object == "ogar:Depends"));
+        assert!(
+            t.iter()
+                .any(|t| t.predicate == "ogar:kausalKind" && t.object == "ogar:Depends")
+        );
         // Kausal-scoped predicate, distinct from ComputedField's ogar:dependsPath
         // (so "enumerate computed fields" queries don't catch actions).
-        let paths: Vec<_> = t.iter().filter(|t| t.predicate == "ogar:kausalDependsPath").map(|t| t.object.as_str()).collect();
+        let paths: Vec<_> = t
+            .iter()
+            .filter(|t| t.predicate == "ogar:kausalDependsPath")
+            .map(|t| t.object.as_str())
+            .collect();
         assert_eq!(paths.len(), 2);
         // The ComputedField predicate must NOT appear on an ActionDef.
         assert!(!t.iter().any(|t| t.predicate == "ogar:dependsPath"));
 
         def.kausal = Some(ogar_vocab::KausalSpec::External);
         let t = TripleEmitter::emit_action_def(&def);
-        assert!(t.iter().any(|t| t.predicate == "ogar:kausalKind" && t.object == "ogar:External"));
+        assert!(
+            t.iter()
+                .any(|t| t.predicate == "ogar:kausalKind" && t.object == "ogar:External")
+        );
     }
 
     #[test]
@@ -1402,7 +1727,8 @@ mod tests {
             );
             // The field paths are NOT projected to TTL yet (the debt).
             assert!(
-                !t.iter().any(|t| t.object == "state" || t.object == "partner_id"),
+                !t.iter()
+                    .any(|t| t.object == "state" || t.object == "partner_id"),
                 "interim: Arm B field paths are dropped at TTL emission (§6 deferred)"
             );
         }
@@ -1419,22 +1745,34 @@ mod tests {
             let mut inv = ogar_vocab::ActionInvocation::new("i", "d", "o");
             inv.state = state;
             let triples = TripleEmitter::emit_action_invocation(&inv);
-            assert!(triples.iter().any(|t| t.predicate == "ogar:actionState" && t.object == expected));
+            assert!(
+                triples
+                    .iter()
+                    .any(|t| t.predicate == "ogar:actionState" && t.object == expected)
+            );
         }
     }
 
     #[test]
     fn callback_two_forms_emit_distinct_triples() {
         let mut class = sample_work_package();
-        class.callbacks.push(Callback::method("before_save", "touch_parent"));
-        class.callbacks.push(Callback::block("after_create", "notify_subscribers"));
+        class
+            .callbacks
+            .push(Callback::method("before_save", "touch_parent"));
+        class
+            .callbacks
+            .push(Callback::block("after_create", "notify_subscribers"));
         let triples = TripleEmitter::emit_class(&class, "ogit-op");
-        assert!(triples.iter().any(|t| {
-            t.predicate == "ogar:targetMethod" && t.object == "touch_parent"
-        }));
-        assert!(triples.iter().any(|t| {
-            t.predicate == "ogar:callbackBody" && t.object == "notify_subscribers"
-        }));
+        assert!(
+            triples
+                .iter()
+                .any(|t| { t.predicate == "ogar:targetMethod" && t.object == "touch_parent" })
+        );
+        assert!(
+            triples.iter().any(|t| {
+                t.predicate == "ogar:callbackBody" && t.object == "notify_subscribers"
+            })
+        );
     }
 
     #[test]

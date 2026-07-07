@@ -13,8 +13,8 @@
 
 use askama::Template;
 
-use super::html_list_view::{CellData, CellSource};
 use super::ArtifactEmitter;
+use super::html_list_view::{CellData, CellSource};
 use crate::list_view::{ColumnKind, RenderColumn};
 use crate::spec::ArtifactSpec;
 use ogar_vocab::canonical_concept_id;

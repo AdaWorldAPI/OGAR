@@ -136,7 +136,11 @@ pub fn check_parity(sink_in: &Class, legacy: &Class) -> ParityReport {
     }
 
     for sink_in_attr in &sink_in.attributes {
-        if !legacy.attributes.iter().any(|a| a.name == sink_in_attr.name) {
+        if !legacy
+            .attributes
+            .iter()
+            .any(|a| a.name == sink_in_attr.name)
+        {
             drifts.push(ParityDrift::MissingInLegacy {
                 field: sink_in_attr.name.clone(),
             });
@@ -165,7 +169,8 @@ mod tests {
     #[test]
     fn identical_shapes_have_clean_parity() {
         let mut c = Class::new("timesheet_activities");
-        c.attributes.push(attr("beschreibung", "string", Some(true)));
+        c.attributes
+            .push(attr("beschreibung", "string", Some(true)));
         c.attributes.push(attr("created_at", "datetime", None));
 
         let report = check_parity(&c, &c.clone());
@@ -181,7 +186,9 @@ mod tests {
         let report = check_parity(&sink_in, &legacy);
         assert_eq!(
             report.drifts,
-            vec![ParityDrift::MissingInSinkIn { field: "foo".into() }]
+            vec![ParityDrift::MissingInSinkIn {
+                field: "foo".into()
+            }]
         );
     }
 
@@ -241,7 +248,9 @@ mod tests {
         sink_in
             .attributes
             .push(attr("beschreibung", "string", Some(true)));
-        sink_in.attributes.push(attr("created_at", "datetime", None));
+        sink_in
+            .attributes
+            .push(attr("created_at", "datetime", None));
 
         let mut legacy = Class::new("TimesheetActivity");
         legacy

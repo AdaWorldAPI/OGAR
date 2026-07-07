@@ -155,29 +155,58 @@ mod tests {
     #[test]
     fn default_input_kind_hides_ids() {
         assert_eq!(default_input_kind_for("id", None), InputKind::Hidden);
-        assert_eq!(default_input_kind_for("project_id", None), InputKind::Hidden);
-        assert_eq!(default_input_kind_for("author_id", Some("integer")), InputKind::Hidden);
+        assert_eq!(
+            default_input_kind_for("project_id", None),
+            InputKind::Hidden
+        );
+        assert_eq!(
+            default_input_kind_for("author_id", Some("integer")),
+            InputKind::Hidden
+        );
     }
 
     #[test]
     fn default_input_kind_picks_range_for_ratios() {
         assert_eq!(default_input_kind_for("done_ratio", None), InputKind::Range);
-        assert_eq!(default_input_kind_for("complete_pct", None), InputKind::Range);
+        assert_eq!(
+            default_input_kind_for("complete_pct", None),
+            InputKind::Range
+        );
     }
 
     #[test]
     fn default_input_kind_picks_textarea_for_prose() {
         // Prose-named text fields get a textarea; non-prose text fields
         // also get a textarea (text is long enough to warrant it).
-        assert_eq!(default_input_kind_for("description", Some("text")), InputKind::TextArea);
-        assert_eq!(default_input_kind_for("body", Some("text")), InputKind::TextArea);
-        assert_eq!(default_input_kind_for("notes", Some("text")), InputKind::TextArea);
-        assert_eq!(default_input_kind_for("status_label", Some("text")), InputKind::TextArea);
+        assert_eq!(
+            default_input_kind_for("description", Some("text")),
+            InputKind::TextArea
+        );
+        assert_eq!(
+            default_input_kind_for("body", Some("text")),
+            InputKind::TextArea
+        );
+        assert_eq!(
+            default_input_kind_for("notes", Some("text")),
+            InputKind::TextArea
+        );
+        assert_eq!(
+            default_input_kind_for("status_label", Some("text")),
+            InputKind::TextArea
+        );
     }
 
     #[test]
     fn default_input_kind_picks_numeric_for_numbers() {
-        for t in ["integer", "big_integer", "bigint", "float", "double", "decimal", "monetary"] {
+        for t in [
+            "integer",
+            "big_integer",
+            "bigint",
+            "float",
+            "double",
+            "decimal",
+            "monetary",
+        ] {
             assert_eq!(
                 default_input_kind_for("position", Some(t)),
                 InputKind::Number,
@@ -188,20 +217,41 @@ mod tests {
 
     #[test]
     fn default_input_kind_picks_checkbox_for_boolean() {
-        assert_eq!(default_input_kind_for("active", Some("boolean")), InputKind::Checkbox);
-        assert_eq!(default_input_kind_for("locked", Some("bool")), InputKind::Checkbox);
+        assert_eq!(
+            default_input_kind_for("active", Some("boolean")),
+            InputKind::Checkbox
+        );
+        assert_eq!(
+            default_input_kind_for("locked", Some("bool")),
+            InputKind::Checkbox
+        );
     }
 
     #[test]
     fn default_input_kind_picks_date_types_for_temporal() {
-        assert_eq!(default_input_kind_for("start_date", Some("date")), InputKind::Date);
-        assert_eq!(default_input_kind_for("created_at", Some("datetime")), InputKind::DateTime);
-        assert_eq!(default_input_kind_for("updated_at", Some("timestamp")), InputKind::DateTime);
+        assert_eq!(
+            default_input_kind_for("start_date", Some("date")),
+            InputKind::Date
+        );
+        assert_eq!(
+            default_input_kind_for("created_at", Some("datetime")),
+            InputKind::DateTime
+        );
+        assert_eq!(
+            default_input_kind_for("updated_at", Some("timestamp")),
+            InputKind::DateTime
+        );
     }
 
     #[test]
     fn default_input_kind_falls_back_to_text() {
-        assert_eq!(default_input_kind_for("subject", Some("string")), InputKind::Text);
-        assert_eq!(default_input_kind_for("unknown_field", None), InputKind::Text);
+        assert_eq!(
+            default_input_kind_for("subject", Some("string")),
+            InputKind::Text
+        );
+        assert_eq!(
+            default_input_kind_for("unknown_field", None),
+            InputKind::Text
+        );
     }
 }

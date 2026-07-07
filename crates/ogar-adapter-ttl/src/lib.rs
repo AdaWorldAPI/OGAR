@@ -146,7 +146,10 @@ pub fn emit_ttl(classes: &[Class], prefix: &str) -> String {
         let mut by_subject: std::collections::BTreeMap<String, Vec<(String, String)>> =
             std::collections::BTreeMap::new();
         for t in triples {
-            by_subject.entry(t.subject).or_default().push((t.predicate, t.object));
+            by_subject
+                .entry(t.subject)
+                .or_default()
+                .push((t.predicate, t.object));
         }
         for (subject, predicates) in by_subject {
             write_subject_block(&mut out, &subject, &predicates);
@@ -197,7 +200,8 @@ pub fn parse_ttl(_input: &str) -> Result<Vec<Class>, TtlParseError> {
     {
         Err(TtlParseError::Unimplemented(
             "ttl-parser feature not enabled; rebuild with --features ttl-parser \
-             to enable Turtle parsing via oxttl".into(),
+             to enable Turtle parsing via oxttl"
+                .into(),
         ))
     }
 }
@@ -210,12 +214,8 @@ const OGAR_BASE: &str = "https://ogar.surrealdb-graph.io";
 
 fn prefix_block(prefix: &str) -> String {
     let mut out = String::new();
-    out.push_str(&format!(
-        "@prefix ogar: <{OGAR_BASE}/vocab/ogar#> .\n"
-    ));
-    out.push_str(&format!(
-        "@prefix {prefix}: <{OGAR_BASE}/{prefix}/> .\n"
-    ));
+    out.push_str(&format!("@prefix ogar: <{OGAR_BASE}/vocab/ogar#> .\n"));
+    out.push_str(&format!("@prefix {prefix}: <{OGAR_BASE}/{prefix}/> .\n"));
     out.push_str("@prefix rdf:  <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .\n");
     out.push_str("@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .\n");
     out.push_str("@prefix owl:  <http://www.w3.org/2002/07/owl#> .\n");
@@ -333,8 +333,7 @@ mod parse {
         let mut by_subject: HashMap<String, Vec<(String, String)>> = HashMap::new();
 
         for result in parser.for_slice(input.as_bytes()) {
-            let quad = result
-                .map_err(|e| TtlParseError::Parse(format!("{e}")))?;
+            let quad = result.map_err(|e| TtlParseError::Parse(format!("{e}")))?;
             let s = subject_iri(&quad.subject);
             let p = quad.predicate.as_str().to_string();
             let o = term_to_string(&quad.object);
@@ -481,9 +480,7 @@ mod parse {
         };
         let name = preds
             .iter()
-            .find_map(|(p, o)| {
-                (ogar_local(p) == Some("relationName")).then(|| o.clone())
-            })
+            .find_map(|(p, o)| (ogar_local(p) == Some("relationName")).then(|| o.clone()))
             .unwrap_or_else(|| local_name(subject));
         let mut assoc = Association::new(kind, name);
         for (p, o) in preds {
@@ -521,9 +518,9 @@ mod parse {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ogar_vocab::{Attribute, Class};
     #[cfg(feature = "ttl-parser")]
     use ogar_vocab::{Association, AssociationKind};
+    use ogar_vocab::{Attribute, Class};
 
     // ── Emit-side tests (always available) ─────────────────────────────
 

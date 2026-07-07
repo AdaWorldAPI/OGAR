@@ -30,13 +30,7 @@
 /// should pick a deeper segment under an existing prefix
 /// (`ogar-extensions/<lang>/...` or `ogit-<app>/...`) rather than
 /// claiming a new top-level.
-pub const RESERVED_PREFIXES: &[&str] = &[
-    "ogar",
-    "ogar-extensions",
-    "ogit",
-    "ogit-erp",
-    "ogit-op",
-];
+pub const RESERVED_PREFIXES: &[&str] = &["ogar", "ogar-extensions", "ogit", "ogit-erp", "ogit-op"];
 
 /// The `ogar/` prefix for core vocabulary terms.
 pub const OGAR_PREFIX: &str = "ogar";
@@ -154,7 +148,10 @@ mod tests {
 
     #[test]
     fn identity_helpers() {
-        assert_eq!(class_identity("ogit-op", "WorkPackage"), "ogit-op/WorkPackage");
+        assert_eq!(
+            class_identity("ogit-op", "WorkPackage"),
+            "ogit-op/WorkPackage"
+        );
         assert_eq!(
             field_identity("ogit-op", "WorkPackage", "subject"),
             "ogit-op/WorkPackage.subject"
@@ -175,7 +172,10 @@ mod tests {
     #[test]
     fn dotted_names_preserved() {
         // Odoo class names like `sale.order` stay verbatim.
-        assert_eq!(class_identity("ogit-erp", "sale.order"), "ogit-erp/sale.order");
+        assert_eq!(
+            class_identity("ogit-erp", "sale.order"),
+            "ogit-erp/sale.order"
+        );
     }
 
     #[test]

@@ -61,7 +61,11 @@ pub fn lift_model_sqlalchemy(model: &Model) -> Class {
     // AR-DSL-shaped associations (`db.relationship(...)`) lift the same way
     // Rails' `belongs_to`/`has_many` do — `lift_association` is producer
     // agnostic and already `pub` in `lib.rs`.
-    class.associations = model.associations.iter().filter_map(lift_association).collect();
+    class.associations = model
+        .associations
+        .iter()
+        .filter_map(lift_association)
+        .collect();
     project_sqlalchemy_fields(&mut class, model);
     class
 }
@@ -73,7 +77,9 @@ pub fn lift_model_sqlalchemy(model: &Model) -> Class {
 #[must_use]
 pub fn lift_model_graph_sqlalchemy(graph: &ModelGraph) -> Vec<Class> {
     let domain = classify_woa_domain(&graph.namespace);
-    let concept_domain = domain.as_deref().and_then(ogar_vocab::source_domain_concept);
+    let concept_domain = domain
+        .as_deref()
+        .and_then(ogar_vocab::source_domain_concept);
     let curator = if graph.namespace.is_empty() {
         None
     } else {
@@ -86,8 +92,10 @@ pub fn lift_model_graph_sqlalchemy(graph: &ModelGraph) -> Vec<Class> {
             let mut class = lift_model_sqlalchemy(m);
             class.source_domain = domain.clone();
             class.source_curator = curator.clone();
-            class.canonical_concept =
-                Some(ogar_vocab::canonical_concept_in_domain(&m.name, concept_domain));
+            class.canonical_concept = Some(ogar_vocab::canonical_concept_in_domain(
+                &m.name,
+                concept_domain,
+            ));
             class
         })
         .collect()
@@ -256,10 +264,16 @@ mod tests {
             assert_eq!(title.options.required, Some(true));
         }
 
-        let ruby_names: std::collections::BTreeSet<_> =
-            ruby_classes[0].attributes.iter().map(|a| a.name.clone()).collect();
-        let sqlalchemy_names: std::collections::BTreeSet<_> =
-            sqlalchemy_classes[0].attributes.iter().map(|a| a.name.clone()).collect();
+        let ruby_names: std::collections::BTreeSet<_> = ruby_classes[0]
+            .attributes
+            .iter()
+            .map(|a| a.name.clone())
+            .collect();
+        let sqlalchemy_names: std::collections::BTreeSet<_> = sqlalchemy_classes[0]
+            .attributes
+            .iter()
+            .map(|a| a.name.clone())
+            .collect();
         assert_eq!(
             ruby_names, sqlalchemy_names,
             "both producers must project the identical attribute name set, proving shared \

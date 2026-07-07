@@ -277,8 +277,14 @@ mod tests {
 
     #[test]
     fn default_kind_picks_progress_bar_for_ratios() {
-        assert_eq!(default_kind_for("done_ratio", None), ColumnKind::ProgressBar);
-        assert_eq!(default_kind_for("complete_pct", None), ColumnKind::ProgressBar);
+        assert_eq!(
+            default_kind_for("done_ratio", None),
+            ColumnKind::ProgressBar
+        );
+        assert_eq!(
+            default_kind_for("complete_pct", None),
+            ColumnKind::ProgressBar
+        );
     }
 
     #[test]
@@ -289,17 +295,35 @@ mod tests {
 
     #[test]
     fn default_kind_picks_rich_text_only_for_text_typed_prose_names() {
-        assert_eq!(default_kind_for("description", Some("text")), ColumnKind::RichText);
-        assert_eq!(default_kind_for("last_notes", Some("text")), ColumnKind::RichText);
+        assert_eq!(
+            default_kind_for("description", Some("text")),
+            ColumnKind::RichText
+        );
+        assert_eq!(
+            default_kind_for("last_notes", Some("text")),
+            ColumnKind::RichText
+        );
         // Same name with a non-text type stays Plain — the type gates it.
-        assert_eq!(default_kind_for("description", Some("string")), ColumnKind::Plain);
+        assert_eq!(
+            default_kind_for("description", Some("string")),
+            ColumnKind::Plain
+        );
         // Text type with non-prose name stays Plain — the name gates it.
-        assert_eq!(default_kind_for("status_label", Some("text")), ColumnKind::Plain);
+        assert_eq!(
+            default_kind_for("status_label", Some("text")),
+            ColumnKind::Plain
+        );
     }
 
     #[test]
     fn default_kind_falls_back_to_plain() {
-        assert_eq!(default_kind_for("position", Some("integer")), ColumnKind::Plain);
-        assert_eq!(default_kind_for("created_at", Some("datetime")), ColumnKind::Plain);
+        assert_eq!(
+            default_kind_for("position", Some("integer")),
+            ColumnKind::Plain
+        );
+        assert_eq!(
+            default_kind_for("created_at", Some("datetime")),
+            ColumnKind::Plain
+        );
     }
 }

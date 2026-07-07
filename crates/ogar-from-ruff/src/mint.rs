@@ -29,9 +29,9 @@
 //! [`OpenProjectPort`](ogar_vocab::ports::OpenProjectPort) — different render
 //! skins, the same conceptual identity where they converge.
 
-use ogar_vocab::{ActionDef, Class};
 use ogar_vocab::app::render_classid_for;
 use ogar_vocab::ports::PortSpec;
+use ogar_vocab::{ActionDef, Class};
 use ruff_spo_address::{Facet, Mint, mint_with_classid};
 use ruff_spo_triplet::{ModelGraph, expand};
 
@@ -98,7 +98,11 @@ pub fn compile_graph_python<P: PortSpec>(graph: &ModelGraph) -> Vec<CompiledClas
             let facet = mint
                 .facet(&node)
                 .unwrap_or_else(|| Facet::from_parts(classid_for_node::<P>(&node), [0; 6], [0; 6]));
-            CompiledClass { class, facet, actions: lift_actions(model) }
+            CompiledClass {
+                class,
+                facet,
+                actions: lift_actions(model),
+            }
         })
         .collect()
 }
@@ -153,7 +157,11 @@ pub fn compile_graph_sqlalchemy<P: PortSpec>(graph: &ModelGraph) -> Vec<Compiled
             let facet = mint
                 .facet(&node)
                 .unwrap_or_else(|| Facet::from_parts(classid_for_node::<P>(&node), [0; 6], [0; 6]));
-            CompiledClass { class, facet, actions: lift_actions(model) }
+            CompiledClass {
+                class,
+                facet,
+                actions: lift_actions(model),
+            }
         })
         .collect()
 }
@@ -188,7 +196,11 @@ pub fn compile_graph_ruby<P: PortSpec>(graph: &ModelGraph) -> Vec<CompiledClass>
             let facet = mint
                 .facet(&node)
                 .unwrap_or_else(|| Facet::from_parts(classid_for_node::<P>(&node), [0; 6], [0; 6]));
-            CompiledClass { class, facet, actions: lift_actions(model) }
+            CompiledClass {
+                class,
+                facet,
+                actions: lift_actions(model),
+            }
         })
         .collect()
 }
@@ -528,7 +540,10 @@ mod tests {
             "TimesheetActivity is an aliased convergence pin (BILLABLE_WORK_ENTRY | WoA), \
              not the bootstrap address SPEC-5 assumed"
         );
-        assert_eq!(ogar_vocab::app::concept_of(cc.facet.facet_classid()), 0x0103);
+        assert_eq!(
+            ogar_vocab::app::concept_of(cc.facet.facet_classid()),
+            0x0103
+        );
         assert_eq!(
             ogar_vocab::app::app_of(cc.facet.facet_classid()),
             WoaPort::APP_PREFIX

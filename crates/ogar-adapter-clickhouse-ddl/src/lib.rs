@@ -150,7 +150,8 @@ pub fn parse_clickhouse_ddl(_input: &str) -> Result<Vec<Class>, ParseError> {
     {
         Err(ParseError::Unimplemented(
             "clickhouse-parser feature not enabled; rebuild with \
-             --features clickhouse-parser to enable parsing".into(),
+             --features clickhouse-parser to enable parsing"
+                .into(),
         ))
     }
 }
@@ -206,9 +207,7 @@ fn ogar_type_to_clickhouse(t: Option<&str>) -> String {
             "Int64".to_string()
         }
         Some("float") | Some("double") | Some("real") => "Float64".to_string(),
-        Some("decimal") | Some("monetary") | Some("numeric") => {
-            "Decimal(18, 4)".to_string()
-        }
+        Some("decimal") | Some("monetary") | Some("numeric") => "Decimal(18, 4)".to_string(),
         Some("bool") | Some("boolean") => "Bool".to_string(),
         Some("datetime") | Some("timestamp") | Some("date") => "DateTime".to_string(),
         Some("uuid") => "UUID".to_string(),
@@ -225,7 +224,10 @@ fn ogar_type_to_clickhouse(t: Option<&str>) -> String {
 /// names like `sale.order` need quoting).
 fn quote_ch_ident(name: &str) -> String {
     let bare = !name.is_empty()
-        && name.chars().next().map_or(false, |c| c.is_ascii_alphabetic() || c == '_')
+        && name
+            .chars()
+            .next()
+            .map_or(false, |c| c.is_ascii_alphabetic() || c == '_')
         && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_');
     if bare {
         name.to_string()
@@ -306,8 +308,7 @@ mod walk {
         // nested Nullable (`Nullable(Nullable(X))` is rejected by the
         // server), so single-strip is sufficient.
         if let Some(inner) = strip_wrapper(&rendered, "nullable") {
-            let (canonical, _already_optional) =
-                clickhouse_type_to_ogar(&dummy_data_type(&inner));
+            let (canonical, _already_optional) = clickhouse_type_to_ogar(&dummy_data_type(&inner));
             return (canonical, true);
         }
 
@@ -403,7 +404,10 @@ mod tests {
         let c = Class::new("users");
         let ddl = emit_clickhouse_ddl(&[c]);
         assert!(ddl.contains("CREATE TABLE users (\n"), "got: {ddl}");
-        assert!(ddl.contains("ENGINE = MergeTree() ORDER BY tuple();"), "got: {ddl}");
+        assert!(
+            ddl.contains("ENGINE = MergeTree() ORDER BY tuple();"),
+            "got: {ddl}"
+        );
     }
 
     #[test]
@@ -424,10 +428,7 @@ mod tests {
         deleted.options.required = Some(false);
         c.attributes.push(deleted);
         let ddl = emit_clickhouse_ddl(&[c]);
-        assert!(
-            ddl.contains("deleted_at Nullable(DateTime)"),
-            "got: {ddl}"
-        );
+        assert!(ddl.contains("deleted_at Nullable(DateTime)"), "got: {ddl}");
     }
 
     #[test]
@@ -483,13 +484,17 @@ mod tests {
         assert_eq!(classes[0].attributes[0].name, "id");
         assert_eq!(classes[0].attributes[0].type_name.as_deref(), Some("int"));
         assert_eq!(classes[0].attributes[1].name, "name");
-        assert_eq!(classes[0].attributes[1].type_name.as_deref(), Some("string"));
+        assert_eq!(
+            classes[0].attributes[1].type_name.as_deref(),
+            Some("string")
+        );
     }
 
     #[cfg(feature = "clickhouse-parser")]
     #[test]
     fn parse_nullable_lifts_to_required_false() {
-        let ddl = "CREATE TABLE t (deleted_at Nullable(DateTime)) ENGINE = MergeTree ORDER BY tuple();";
+        let ddl =
+            "CREATE TABLE t (deleted_at Nullable(DateTime)) ENGINE = MergeTree ORDER BY tuple();";
         let classes = parse_clickhouse_ddl(ddl).expect("parse OK");
         let attr = &classes[0].attributes[0];
         // IR-canonical: bare type + required=Some(false). Same shape
@@ -507,12 +512,16 @@ mod tests {
                        i FixedString(16) \
                    ) ENGINE = MergeTree ORDER BY tuple();";
         let classes = parse_clickhouse_ddl(ddl).expect("parse OK");
-        let names: Vec<&str> = classes[0].attributes.iter()
+        let names: Vec<&str> = classes[0]
+            .attributes
+            .iter()
             .map(|a| a.type_name.as_deref().unwrap_or(""))
             .collect();
         assert_eq!(
             names,
-            vec!["string", "int", "int", "float", "decimal", "datetime", "bool", "uuid", "string"],
+            vec![
+                "string", "int", "int", "float", "decimal", "datetime", "bool", "uuid", "string"
+            ],
         );
     }
 
@@ -579,7 +588,10 @@ mod tests {
         assert_eq!(recovered[0].name, "sale.order");
         assert_eq!(recovered[0].attributes.len(), 1);
         assert_eq!(recovered[0].attributes[0].name, "amount_total");
-        assert_eq!(recovered[0].attributes[0].type_name.as_deref(), Some("decimal"));
+        assert_eq!(
+            recovered[0].attributes[0].type_name.as_deref(),
+            Some("decimal")
+        );
     }
 
     #[cfg(feature = "clickhouse-parser")]
