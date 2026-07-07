@@ -285,6 +285,68 @@ mod tests {
         }
     }
 
+    /// **Bijectivity through the codebook-DTO derive** (guards the
+    /// Boundary-4 failure mode: a green codebook check that does NOT
+    /// predict nonzero registration because three concept-normalizations
+    /// disagree).
+    ///
+    /// Three properties, together proving concept↔classid is a clean
+    /// bijection for this table AND that the codebook-DTO *check*
+    /// (`ruff_spo_triplet::concept_key`, case-folding) cannot diverge from
+    /// the registration *derive* (`entries_from_actions` →
+    /// `canonical_concept_id`, exact-match):
+    ///
+    /// 1. **Forward total + nonzero** — every derived row resolves to a
+    ///    nonzero id (no `0` default-class sentinel escapes: the exact
+    ///    Boundary-4 symptom where `entries_from_actions` silently yields
+    ///    `("cap", 0)` for a name it can't exact-match).
+    /// 2. **Inverse round-trip** — each distinct derived id reverses via
+    ///    `canonical_concept_name` back to exactly the `object_class`
+    ///    segment that produced it, so concept→id→concept is injective
+    ///    both ways over the table's concepts.
+    /// 3. **`concept_key` fixed-point** — every `object_class` segment is
+    ///    already canonical `snake_case` (equals its own ASCII-lowercase,
+    ///    carries no `:` namespace), which is precisely the condition
+    ///    under which the codebook-DTO check's `concept_key` normalization
+    ///    is the identity. So the case-folding check and the exact-match
+    ///    derive resolve this table's names identically — a green check
+    ///    here provably predicts the same nonzero registration.
+    #[test]
+    fn codebook_dto_derive_is_bijective() {
+        let defs = healthcare_actions();
+        let rows = crate::capability_registry::entries_from_actions(&defs);
+
+        // (1) forward total + nonzero — no classid-0 sentinel escapes.
+        for (cap, id) in &rows {
+            assert_ne!(
+                *id, 0,
+                "`{cap}` derived classid 0 — the Boundary-4 exact-match miss"
+            );
+        }
+
+        for def in &defs {
+            let seg = subject_concept_of(def);
+
+            // (3) concept_key fixed-point: canonical snake_case, no ':'.
+            assert!(
+                !seg.contains(':') && seg.chars().all(|c| !c.is_ascii_uppercase()),
+                "`{seg}` is not a concept_key fixed-point — the check's \
+                 case-fold could diverge from the exact-match derive"
+            );
+
+            // (1)+(2) forward exact-match to a nonzero id, then inverse
+            // round-trips to the same segment (bijection).
+            let id = crate::canonical_concept_id(seg)
+                .unwrap_or_else(|| panic!("`{seg}` must forward-resolve"));
+            assert_ne!(id, 0);
+            assert_eq!(
+                crate::canonical_concept_name(id),
+                Some(seg),
+                "id 0x{id:04X} must reverse to exactly `{seg}`"
+            );
+        }
+    }
+
     #[test]
     fn every_action_declares_external_kausal_and_user_subject() {
         for def in healthcare_actions() {
