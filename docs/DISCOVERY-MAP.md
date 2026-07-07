@@ -1109,8 +1109,15 @@ isolation. The map's job is to keep them visible.
     are DROPPED at TTL emission. The IR struct is correct (consumers that
     read `ActionDef.kausal` directly — e.g. the odoo-rs AT-CONSUME parity
     pin — are unaffected); only the TTL projection is lossy. §6 defers the
-    emitter/SurrealQL wiring, so this is not a spec violation, but it is
-    actively-wrong (not merely missing) TTL. Converted from silent to
+    downstream-consumer wiring, so this is not a spec violation, but it is
+    actively-wrong (not merely missing) TTL. (NB: SPEC-ATC2-OGAR §6 line 219
+    still names a "SurrealQL-Adapter" as a deferred consumer — that naming is
+    STALE. Per the operator ruling recorded above (2026-07-05: "Odoo's spog
+    lives now in V3 substrate in lance-graph <>OGAR, not surrealdb AST"), the
+    forward substrate is the OGAR-v3 / lance-graph path; the SurrealQL-AST
+    adapter is deprecated. The live debt is the `ogar-emitter` TTL path, which
+    `ogar-adapter-ttl` and the v3 substrate consume — not SurrealQL.)
+    Converted from silent to
     documented: characterization test
     `kausal_constrains_onchange_currently_emit_unknown_pending_emitter_wiring`
     PINS the interim `ogar:Unknown` + dropped-paths behaviour so it flips
