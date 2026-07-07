@@ -847,6 +847,48 @@ fn kausal_triples(action_subject: &str, k: &ogar_vocab::KausalSpec) -> Vec<Tripl
             }
             v
         }
+        // `@api.constrains` / `@api.onchange` (SPEC-ATC2-OGAR Arm B) — kept
+        // kausal-scoped (ogar:kausalConstrainsPath / ogar:kausalOnchangePath),
+        // never the ComputedField predicates, for the same reason as Depends
+        // above. Odoo silently drops dotted paths in `@api.constrains` /
+        // `@api.onchange` (odoo/orm/decorators.py:106-108/213-215); mirror
+        // that here: skip the path triple, keep the kausalKind triple.
+        KausalSpec::Constrains { paths } => {
+            let mut v = vec![Triple::new(
+                action_subject,
+                "ogar:kausalKind",
+                "ogar:Constrains",
+            )];
+            for p in paths {
+                if p.contains('.') {
+                    continue;
+                }
+                v.push(Triple::new(
+                    action_subject,
+                    "ogar:kausalConstrainsPath",
+                    p.clone(),
+                ));
+            }
+            v
+        }
+        KausalSpec::Onchange { paths } => {
+            let mut v = vec![Triple::new(
+                action_subject,
+                "ogar:kausalKind",
+                "ogar:Onchange",
+            )];
+            for p in paths {
+                if p.contains('.') {
+                    continue;
+                }
+                v.push(Triple::new(
+                    action_subject,
+                    "ogar:kausalOnchangePath",
+                    p.clone(),
+                ));
+            }
+            v
+        }
         KausalSpec::ContextDepends { keys } => {
             let mut v = vec![Triple::new(
                 action_subject,
@@ -1697,39 +1739,119 @@ mod tests {
             t.iter()
                 .any(|t| t.predicate == "ogar:kausalKind" && t.object == "ogar:External")
         );
+
+        def.kausal = Some(ogar_vocab::KausalSpec::constrains(vec!["state".into()]));
+        let t = TripleEmitter::emit_action_def(&def);
+        assert!(
+            t.iter()
+                .any(|t| t.predicate == "ogar:kausalKind" && t.object == "ogar:Constrains")
+        );
+        assert!(
+            t.iter()
+                .any(|t| t.predicate == "ogar:kausalConstrainsPath" && t.object == "state")
+        );
+
+        def.kausal = Some(ogar_vocab::KausalSpec::onchange(vec!["partner_id".into()]));
+        let t = TripleEmitter::emit_action_def(&def);
+        assert!(
+            t.iter()
+                .any(|t| t.predicate == "ogar:kausalKind" && t.object == "ogar:Onchange")
+        );
+        assert!(
+            t.iter()
+                .any(|t| t.predicate == "ogar:kausalOnchangePath" && t.object == "partner_id")
+        );
     }
 
     #[test]
-    fn kausal_constrains_onchange_currently_emit_unknown_pending_emitter_wiring() {
-        // CHARACTERIZATION (not aspiration): SPEC-ATC2-OGAR §6 defers the TTL
-        // emitter wiring for the Arm B variants, so `kausal_triples` has no
-        // Constrains/Onchange arm — they fall through the mandatory wildcard
-        // (`KausalSpec` is #[non_exhaustive], so cross-crate matches CANNOT be
-        // wildcard-free; the `kausal_spec_match_is_exhaustive` fuse only
-        // protects ogar-vocab, never this consumer). The IR struct carries the
-        // paths correctly; the TTL projection currently drops them and labels
-        // the kind `ogar:Unknown`. This test PINS that lossy interim so the
-        // drop is documented, not silent — when §6 lands (predicates
-        // `ogar:Constrains`/`ogar:Onchange` + a path predicate), this test
-        // fails loudly and forces the implementer to update it. See ledger
-        // D-ATC2-KAUSAL-RUFF-GATED.
-        for k in [
-            ogar_vocab::KausalSpec::constrains(vec!["state".into()]),
-            ogar_vocab::KausalSpec::onchange(vec!["partner_id".into()]),
+    fn kausal_constrains_onchange_emit_declared_kinds_and_paths() {
+        // §6-Mint (SPEC-MINT-ARM-B-TTL): Constrains/Onchange now emit their
+        // own declared kausalKind + kausal-scoped path predicates, replacing
+        // the prior ogar:Unknown characterization (D-ATC2-KAUSAL-RUFF-GATED,
+        // debt resolved per 5+3-Council GO).
+        for (k, expected_kind, expected_path_predicate, path) in [
+            (
+                ogar_vocab::KausalSpec::constrains(vec!["state".into()]),
+                "ogar:Constrains",
+                "ogar:kausalConstrainsPath",
+                "state",
+            ),
+            (
+                ogar_vocab::KausalSpec::onchange(vec!["partner_id".into()]),
+                "ogar:Onchange",
+                "ogar:kausalOnchangePath",
+                "partner_id",
+            ),
         ] {
             let mut def = ogar_vocab::ActionDef::new("a", "p", "ogit-op/Foo");
             def.kausal = Some(k);
             let t = TripleEmitter::emit_action_def(&def);
+
             assert!(
                 t.iter()
-                    .any(|t| t.predicate == "ogar:kausalKind" && t.object == "ogar:Unknown"),
-                "interim: unwired Arm B variants label as ogar:Unknown"
+                    .any(|t| t.predicate == "ogar:kausalKind" && t.object == expected_kind),
+                "expected kausalKind {expected_kind}"
             );
-            // The field paths are NOT projected to TTL yet (the debt).
+            assert!(
+                t.iter()
+                    .any(|t| t.predicate == expected_path_predicate && t.object == path),
+                "expected {expected_path_predicate} triple for {path}"
+            );
+
+            // Negative guards (Konflations-Fuse, Codex-Regel 2026-06-04):
+            // Arm B must never fall back to Unknown, and must never reuse
+            // the ComputedField or Depends path predicates.
             assert!(
                 !t.iter()
-                    .any(|t| t.object == "state" || t.object == "partner_id"),
-                "interim: Arm B field paths are dropped at TTL emission (§6 deferred)"
+                    .any(|t| t.predicate == "ogar:kausalKind" && t.object == "ogar:Unknown"),
+                "Arm B variants must not label as ogar:Unknown"
+            );
+            assert!(
+                !t.iter().any(|t| t.predicate == "ogar:dependsPath"),
+                "Arm B variants must not emit the ComputedField ogar:dependsPath"
+            );
+            assert!(
+                !t.iter().any(|t| t.predicate == "ogar:kausalDependsPath"),
+                "Arm B variants must not emit the Depends-scoped ogar:kausalDependsPath"
+            );
+        }
+    }
+
+    #[test]
+    fn kausal_constrains_onchange_drop_dotted_paths_without_triple() {
+        // Council-S5 pathology: Odoo silently ignores dotted paths in
+        // `@api.constrains` / `@api.onchange` (odoo/orm/decorators.py:
+        // 106-108/213-215). Mirror that: drop-with-no-triple for the dotted
+        // path, but the kausalKind triple still stands — NOT ogar:Unknown.
+        for (k, expected_kind, expected_path_predicate) in [
+            (
+                ogar_vocab::KausalSpec::constrains(vec!["partner_id.name".into()]),
+                "ogar:Constrains",
+                "ogar:kausalConstrainsPath",
+            ),
+            (
+                ogar_vocab::KausalSpec::onchange(vec!["partner_id.name".into()]),
+                "ogar:Onchange",
+                "ogar:kausalOnchangePath",
+            ),
+        ] {
+            let mut def = ogar_vocab::ActionDef::new("a", "p", "ogit-op/Foo");
+            def.kausal = Some(k);
+            let t = TripleEmitter::emit_action_def(&def);
+
+            assert!(
+                t.iter()
+                    .any(|t| t.predicate == "ogar:kausalKind" && t.object == expected_kind),
+                "kausalKind triple must remain even when the only path is dotted"
+            );
+            assert!(
+                !t.iter().any(|t| t.predicate == expected_path_predicate),
+                "dotted path must be dropped, not emitted as a path triple"
+            );
+            assert!(
+                !t.iter()
+                    .any(|t| t.predicate == "ogar:kausalKind" && t.object == "ogar:Unknown"),
+                "dropped dotted path must not reclassify the kind as ogar:Unknown"
             );
         }
     }
