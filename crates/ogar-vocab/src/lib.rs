@@ -34,6 +34,15 @@ use serde::{Deserialize, Serialize};
 /// `<port>::<path>(<shape>)` grammar (`E-GRAMMAR-IS-THE-RECIPE-SHAPE`).
 pub mod recipe;
 
+/// The tesseract-rs OCR capability surface — a hand-authored, non-`lift_*`
+/// [`ActionDef`] table (tesseract-rs has no source AST to extract from; see
+/// the module doc for why this is the authoritative action table rather
+/// than an extraction). Declares `recognize_line` / `recognize_page` /
+/// `extract_text_layer` / `extract_page_image` / `render_text` /
+/// `render_tsv` / `render_hocr` / `render_searchable_pdf`, each targeting a
+/// minted `0x08XX` [`class_ids`] concept.
+pub mod ocr_actions;
+
 /// Source language hint — discriminates the producer for traceability
 /// and for emitter dispatch on Ruby/Python-specific extension shapes
 /// (e.g. Odoo `ComputedField`). Not a hard schema discriminator: a class
