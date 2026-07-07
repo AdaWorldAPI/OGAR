@@ -58,12 +58,34 @@ parity witness**: two independent renderings of one authority, diffed.
 ### Missing (this plan's work-list)
 1. **No healthcare action table** in `ogar-vocab` — the OCR table is the
    only `domain_tables()` entry. (deficiency to fix)
-2. **No C# frontend for `lift_actions`.** `ogar-from-ruff::lift_actions`
-   (`lib.rs:574`) is language-agnostic (operates on a `Model`), but the
-   only shipped `ModelGraph` frontend is `sqlalchemy.rs` (Python). A
-   `ruff_csharp_spo → ModelGraph` bridge (a `csharp.rs` sibling of
-   `sqlalchemy.rs`) does not yet exist. This is the C# analogue of the
-   doc's "missing C++ arm for `lift_actions`."
+2. **The C# pull-in chain EXISTS but harvests THINK-arm only.**
+   (Corrected 2026-07-07 after reading the code — an earlier draft of
+   this plan wrongly said "no C# frontend exists".) Every link ships:
+   `ruff_csharp_spo::load` (loader/validator, `NAMESPACE="medcare"`,
+   "MedCare first") → `ruff_spo_triplet::reassemble(&[Triple]) ->
+   ModelGraph` (`reassemble.rs:89`) → `ogar-from-ruff::lift_actions`
+   (`lib.rs:574`). The C# parse is an **out-of-process Roslyn harvester**
+   (`ruff_csharp_spo/harvester/Program.cs` — Roslyn isn't Rust-callable),
+   emitting ndjson. **The gap is narrower than a missing frontend:** the
+   harvester emits only the THINK-arm predicates (`rdf:type`,
+   `inherits_from`, `has_field`, `field_type`, `has_function`,
+   `is_static` — per `ruff_csharp_spo`'s own test fixture). It does NOT
+   yet emit the DO-arm method-body effect facts (`reads_field`,
+   `writes_field`, `raises`, `calls`) — even though the closed
+   `ruff_spo_triplet::Predicate` vocab already defines them
+   (`triple.rs:100-456`) and `lift_actions` already consumes them. So
+   `lift_actions` over a C# model works TODAY but yields **name-only
+   ActionDefs** (empty effect facts, no `kausal`). The C# analogue of
+   the doc's "missing C++ arm" is thus a *harvester method-body walk*,
+   NOT a Rust frontend crate.
+
+   **Consequence for the hot-plug table:** name-only is ENOUGH for it.
+   `domain_tables()` needs `(capability_name, subject_classid)` rows —
+   capability = the `has_function` object, subject = the concept's
+   classid — both already in the THINK-arm harvest. The DO-arm walk
+   enriches ActionDefs (projection / kausal / RBAC) but is NOT required
+   for `resolve_hotplug`. So the medcare hot-plug is materially closer
+   than "harvest a whole new arm"; see the revised P3/P4 split.
 3. **No cross-language parity harness** wiring MedCare's C# side to the
    emitted `ogar-adapter-csharp` module.
 
@@ -81,21 +103,27 @@ parity witness**: two independent renderings of one authority, diffed.
 
 ```
 MedCare C# source (db_*.cs, service methods)
-  → ruff_csharp_spo        harvest AST → (subject, predicate, object) facts
-  → [NEW] ogar-from-ruff::csharp.rs   facts → ModelGraph
-  → ogar-from-ruff::lift_actions(&Model) -> Vec<ActionDef>   (lib.rs:574)
-  → [NEW] healthcare_actions.rs        Vec<ActionDef> → OcrActionSpec-shaped table
-  → ogar_vocab::capability_registry::domain_tables()  += one entry
+  → Roslyn harvester (harvester/Program.cs, .NET)   AST → SPO triples (ndjson)   [SHIPS]
+  → ruff_csharp_spo::load                            validate vs closed vocab    [SHIPS]
+  → ruff_spo_triplet::reassemble(&[Triple])          triples → ModelGraph        [SHIPS, reassemble.rs:89]
+  → ogar-from-ruff::lift_actions(&Model)             ModelGraph → Vec<ActionDef> [SHIPS, lib.rs:574]
+  → [NEW] healthcare_actions.rs                      ActionDefs → OcrActionSpec-shaped table
+  → ogar_vocab::capability_registry::domain_tables() += one entry
   → medcare-rs HOT_PLUG const + activation test resolves GREEN
 ```
 
-The healthcare action table is then **harvested, not hand-authored** —
-a MedCare method promoted/renamed in C# reshapes the table on
-re-harvest, exactly the property the doc's Future-synergy-1 promises.
-`lift_actions` already carries read/write/call effect facts +
-kausal-depends (`lib.rs` tests `lift_actions_carries_read_write_call_effect_facts`,
-`lift_actions_depends_field_yields_kausal_depends`), so the DO-arm facts
-survive the lift.
+Only ONE new file on the OGAR side (`healthcare_actions.rs`) — the entire
+harvest chain above it already ships (§1 item 2). The table is then
+**harvested, not hand-authored**: a MedCare method promoted/renamed in C#
+reshapes the table on re-harvest, exactly the property the doc's
+Future-synergy-1 promises. `lift_actions` already copies the effect
+facts + kausal-depends (`lib.rs` tests
+`lift_actions_carries_read_write_call_effect_facts`,
+`lift_actions_depends_field_yields_kausal_depends`) — so once the Roslyn
+harvester's DO-arm walk lands (P6), those facts flow through
+untouched. **Until then the lift still runs** and yields name-only
+ActionDefs (empty effect facts) — enough for the hot-plug capability
+rows, which key on the method name + subject classid, not the body.
 
 ### Loop B — PARITY (the brilliant part; MedCare IS C#)
 
@@ -149,14 +177,22 @@ before the table is auto-derived.
 | **P0** ✅ | Parity tests skip-when-toolchain-absent (this session) | `cargo test -p ogar-adapter-{csharp,python}` green in bare sandbox AND on CI | done |
 | **P1** | CI provisions `net8.0`; C# parity runs for real | C# `emitted_library_builds_and_dump_matches_ground_truth` green on CI (KILL: emitted C# ≠ ground truth) | operator |
 | **P2** | MedCareV2 consumes the emitted `ogar-adapter-csharp` module; a MedCare-side test dumps its capability surface | MedCareV2 `Dump()` == `ground_truth` for the OCR domain (KILL: divergence) | operator |
-| **P3** | `ruff_csharp_spo → ModelGraph` frontend (`ogar-from-ruff/src/csharp.rs`, sibling of `sqlalchemy.rs`) | harvest MedCare's C# → non-empty `ModelGraph`; round-trips a known class (KILL: facts drop) | operator |
-| **P4** | `lift_actions` over the MedCare `ModelGraph` → `healthcare_actions.rs` table + `domain_tables()` entry + `HEALTHCARE_{SUBJECT_CLASSIDS,EXPECTED_EXECUTORS}` | `resolve_hotplug("medcare-…", HEALTHCARE_IDS, covered)` GREEN (KILL: `NoCapabilitiesFor`/`Uncovered`) | operator |
-| **P5** | `medcare-rs` `HOT_PLUG` const + activation test; executor arms | medcare activation test green against the sibling OGAR (KILL: any drift arm) | operator |
-| **P6** | Loop B extended to the **healthcare** domain: MedCareV2 (C#) vs medcare-rs (Rust) parity over the harvested table | both dumps == ground truth (KILL: cross-language divergence) | operator |
+| **P3** | Run the ALREADY-SHIPPING C# chain over MedCare (Roslyn THINK-arm harvest → `ruff_csharp_spo::load` → `reassemble` → `lift_actions`, yielding name-only ActionDefs) → shape into `healthcare_actions.rs` (capabilities = the `has_function` method names) + a `domain_tables()` entry + `HEALTHCARE_{SUBJECT_CLASSIDS,EXPECTED_EXECUTORS}` | `resolve_hotplug("medcare-…", HEALTHCARE_IDS, covered)` GREEN (KILL: `NoCapabilitiesFor`/`Uncovered`) | operator |
+| **P4** | `medcare-rs` `HOT_PLUG` const + activation test; executor arms | medcare activation test green against the sibling OGAR (KILL: any drift arm) | operator |
+| **P5** | Loop B extended to the **healthcare** domain: MedCareV2 (C#) vs medcare-rs (Rust) parity over the harvested table | both dumps == ground truth (KILL: cross-language divergence) | operator |
+| **P6** *(enrichment, orthogonal)* | Roslyn harvester **DO-arm method-body walk**: emit `reads_field`/`writes_field`/`raises`/`calls` (ruff-side, gated on `.claude/knowledge/fuzzy-recipe-codebook.md`) → the healthcare ActionDefs gain effect facts + `kausal` | a known MedCare method's effect facts land in its ActionDef (KILL: facts drop / vocab break) | operator |
 
-**P1–P2 are "finish the consumer parity."** P3–P6 are "harvest the
-deficiency away." The plan is written so P1/P2 ship value even if P3+
-is deferred indefinitely.
+**Key correction (2026-07-07):** the whole C# pull-in chain already ships
+(§1 item 2). The minimal hot-plug table (P3) needs **no new harvest
+code** — the existing THINK-arm harvest already carries `has_function`
+(capability names) + the class (subject classid), which is all
+`resolve_hotplug` requires. **P1–P3 are the critical path** to a green
+medcare healthcare hot-plug (P1–P2 "finish the consumer parity"; P3 the
+name-only table). **P6 (the DO-arm walk) is ENRICHMENT** — it upgrades
+name-only ActionDefs into projection/kausal/RBAC-bearing ones — and is
+orthogonal: the hot-plug is green without it. The plan is written so
+P1/P2 ship value even if P3+ is deferred, and P3 lands the table even if
+P6 never does.
 
 ---
 
