@@ -1243,3 +1243,36 @@ isolation. The map's job is to keep them visible.
   not classid convergence). Cross-ref D-ATC2-KAUSAL-AUTARK (the Arm-A
   machinery this witnesses), D-PARITY-PROBE-WOA-1 (the synthetic-graph
   sibling this upgrades to real source).
+
+- **D-V3-SINK-COMPILEDCLASS** — 2026-07-06 `[G]`: W2 of the odoo→odoo-rs
+  transpile arc — the storage seam that `D-EXEC-ONE-ACTION` named as the
+  gap ("Lance tombstone needs the lance-graph runtime"). A `CompiledClass`
+  now sinks onto the lance-graph **V3 SoA** byte surface via new module
+  `crates/ogar-from-ruff/src/lance_sink.rs`, behind feature `lance-sink`
+  (pulls the ZERO-DEP `lance-graph-contract` only — no lance engine, no
+  kv-lance, **no `*Bridge`**). Mirrors two shipped sinks —
+  `contract::network` (harvest → `FacetCascade`, content-blind, deferred
+  embedding) for shape, `symbiont::bridge` (`NodeRow` +
+  `NodeRowPacket::as_le_bytes`) for the zero-copy idiom. Three functions:
+  `compiled_class_to_facet` (a reinterpret no-op — `Facet::to_bytes` →
+  `FacetCascade::from_bytes`, byte-identical L1 **rails** `G6D2`),
+  `compiled_class_to_noderow` (render classid in key `[0..4)`, **bootstrap**
+  tail, `ValueSchema::Bootstrap` all-zero slab), `compiled_classes_to_le_bytes`
+  (the storage byte boundary). 7 tests incl. the field-isolation matrix
+  (T-F) + the layout-version fuse (T-G: `ENVELOPE_LAYOUT_VERSION == 2`,
+  W2 moves ZERO bytes at rest). Worked example `account.move → 0x0202_0002`
+  taken verbatim from the mint (never recomposed). **Dependency direction:**
+  the sink is OGAR-owned because `CompiledClass` is OGAR-owned (lance-graph
+  cannot dep OGAR); it needs only the zero-dep contract, so it is NOT the
+  `ogar-proposal` Sprint-5b `lance-bind` boundary (that heavier feature is
+  untouched). **Scope (named, not hidden):** stops at `as_le_bytes()` — the
+  actual `Dataset::write` I/O + kanban transition need the engine/ractor
+  runtime (out of scope). `[H1]` the rail-chain↔key-tail reconciliation is
+  frozen — the tail is bootstrapped, never derived from the rails
+  (test-enforced T-D). `[H2]` embedding the 12-byte rail payload into a
+  NodeRow value tenant needs a new append-only `ValueTenant` (envelope-
+  auditor-gated) — deferred, mirror network which added no lane. `[H3]` the
+  facet stays on the L1 rails plane; L6 "odoo ?" quads are NOT implemented
+  (semantics unruled). This is an offline BAKE (BOOTSTRAP-OK, envelope
+  owner 0), not an online write. Cross-ref D-EXEC-ONE-ACTION,
+  D-KAUSAL-CONSUME-PIN-ODOO, OGAR-TRANSPILE-SUBSTRATE (pull-back contract).

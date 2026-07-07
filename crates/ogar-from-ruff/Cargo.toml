@@ -11,9 +11,18 @@ description = "Lift `ruff_spo_triplet::Model` (the language-agnostic IR populate
 [features]
 default = []
 serde = ["dep:serde", "ogar-vocab/serde"]
+# W2 — sink a `CompiledClass` onto the lance-graph V3 SoA (the 4+12 facet /
+# 512-byte CANON node). Pulls the ZERO-DEP `lance-graph-contract` only — no
+# lance engine, no kv-lance, no `*Bridge`. Mirrors `contract::network` +
+# `symbiont::bridge`; stops at the `NodeRowPacket::as_le_bytes` byte boundary.
+lance-sink = ["dep:lance-graph-contract"]
 
 [dependencies]
 ogar-vocab = { path = "../ogar-vocab" }
+# The zero-dep contract carries the V3 byte surface (FacetCascade / NodeGuid /
+# NodeRow / NodeRowPacket / ValueTenant). Git-floats on `main` like the two
+# `ruff_spo_*` deps + ogar-class-view's own contract dep (D-NEVER-PIN-BUMP).
+lance-graph-contract = { git = "https://github.com/AdaWorldAPI/lance-graph", branch = "main", optional = true }
 # Operator ruling: rev pins on AdaWorldAPI-internal git deps are retired —
 # they were "out of desperation to lock what hadn't converged in transpiler
 # sink-in yet." Drift protection is the fuse tests, not pins. Floats on the
