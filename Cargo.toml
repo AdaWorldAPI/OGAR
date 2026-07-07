@@ -19,6 +19,8 @@ members = [
     "crates/ogar-class-view",
     "crates/ogar-render-askama",
     "crates/ogar-fma-skeleton",
+    "crates/ogar-adapter-python",
+    "crates/ogar-adapter-csharp",
 ]
 
 [workspace.package]

@@ -1,0 +1,18 @@
+[package]
+name = "ogar-adapter-csharp"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+description = "Materializes the OGAR capability surface (class ids, domain action tables, hot-plug resolution, V3 facet decoder) as a self-contained generated C# class library for foreign consumers -- the plug-and-play pattern without a Rust/OGAR dependency."
+
+[dependencies]
+ogar-vocab = { path = "../ogar-vocab" }
+
+[dev-dependencies]
+# Reuses the ONE ground-truth dump generator + comparator so the
+# Python and C# verification loops can never silently diverge in what
+# "correct" means (see ogar_adapter_python::ground_truth).
+ogar-adapter-python = { path = "../ogar-adapter-python" }
