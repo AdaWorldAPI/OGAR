@@ -42,6 +42,10 @@ pub mod recipe;
 /// `render_tsv` / `render_hocr` / `render_searchable_pdf`, each targeting a
 /// minted `0x08XX` [`class_ids`] concept.
 pub mod capability_registry;
+/// Healthcare capability surface — the medcare-rs authoritative action
+/// table (parity-plan P3; hand-authored, harvest-informed — see the
+/// module doc for why the mechanical lift was falsified by the corpus).
+pub mod healthcare_actions;
 pub mod ocr_actions;
 
 /// Source language hint — discriminates the producer for traceability

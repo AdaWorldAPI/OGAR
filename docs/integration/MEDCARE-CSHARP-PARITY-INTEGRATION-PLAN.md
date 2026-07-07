@@ -1,7 +1,25 @@
 # MedCare ⇄ OGAR C# Parity — Future Integration Plan
 
-> **Status:** PROPOSAL (2026-07-07). Not shipped; gated on operator
-> green-light per OGAR probe-first discipline (`docs/INTEGRATION-TEST-PLAN.md`
+> **Status:** P3 + P4 SHIPPED (2026-07-07, this branch); P1/P2/P5/P6
+> still gated on operator. `healthcare_actions.rs` (P3) + `medcare-rbac`
+> `hotplug.rs` (P4) are green (`resolve_hotplug("medcare-rs", …)` resolves
+> the 6 Health classids; probe `healthcare_hotplug_resolves_vocab_and_actions`).
+>
+> **Loop A premise correction (2026-07-07 harvest).** The plan's Loop A
+> hoped to auto-derive the table mechanically (Roslyn harvest →
+> `reassemble` → `lift_actions` → `entries_from_actions`). The real corpus
+> **falsified that**: MedCare is a WinForms monolith — no AR-shaped class
+> per domain concept exists (the concepts never appear as classes; the
+> domain surface is `verb_concept` methods on one monolithic DAL class).
+> So P3 is **hand-authored, harvest-INFORMED** (the capability split
+> follows the measured DAL method inventory, evidence kept in the consumer
+> repo), exactly like
+> `ocr_actions.rs`'s "no ActiveRecord source" rationale — NOT the
+> mechanical lift. `visit` (0x0906) excluded: zero harvest evidence
+> (operator-confirmed). Six subjects, not seven.
+>
+> PROPOSAL for the remaining phases; gated on operator green-light per
+> OGAR probe-first discipline (`docs/INTEGRATION-TEST-PLAN.md`
 > — no integration brick lands before its probe is green).
 >
 > **READ WITH:** `.claude/knowledge/hotplug-consumer-migration.md`

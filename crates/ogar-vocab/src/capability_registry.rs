@@ -170,11 +170,18 @@ pub struct DomainTable {
 /// Every registered authoritative domain table. Append-only: a new domain
 /// (thinking styles, …) adds one entry and is immediately resolvable.
 pub fn domain_tables() -> Vec<DomainTable> {
-    vec![DomainTable {
-        domain: "ocr",
-        expected_executors: crate::ocr_actions::OCR_EXPECTED_EXECUTORS,
-        entries: ocr_entries,
-    }]
+    vec![
+        DomainTable {
+            domain: "ocr",
+            expected_executors: crate::ocr_actions::OCR_EXPECTED_EXECUTORS,
+            entries: ocr_entries,
+        },
+        DomainTable {
+            domain: "healthcare",
+            expected_executors: crate::healthcare_actions::HEALTHCARE_EXPECTED_EXECUTORS,
+            entries: healthcare_entries,
+        },
+    ]
 }
 
 /// Derive a domain's `(capability, subject classid)` join rows GENERICALLY
@@ -224,6 +231,13 @@ fn ocr_entries() -> Vec<(String, u16)> {
         .map(|spec| spec.def)
         .collect();
     entries_from_actions(&defs)
+}
+
+/// Healthcare domain rows ([`crate::healthcare_actions`], the medcare-rs
+/// table — parity-plan P3), derived through the same generic
+/// [`entries_from_actions`] path as OCR.
+fn healthcare_entries() -> Vec<(String, u16)> {
+    entries_from_actions(&crate::healthcare_actions::healthcare_actions())
 }
 
 /// A green hot-plug resolution: the `(concept, classid)` vocab rows and the
@@ -326,16 +340,47 @@ mod hotplug_tests {
         assert_eq!(caps.len(), 8);
     }
 
+    /// The parity-plan P3 probe: `resolve_hotplug("medcare-rs",
+    /// HEALTHCARE_SUBJECT_CLASSIDS, covered)` GREEN (KILL condition was
+    /// `NoCapabilitiesFor`/`Uncovered`). The Health classids that banged
+    /// `NoCapabilitiesFor` before this table landed now resolve.
+    #[test]
+    fn healthcare_hotplug_resolves_vocab_and_actions() {
+        let (concepts, caps) = resolve_hotplug(
+            "medcare-rs",
+            crate::healthcare_actions::HEALTHCARE_SUBJECT_CLASSIDS,
+            crate::healthcare_actions::HEALTHCARE_ACTION_NAMES,
+        )
+        .expect("healthcare hot-plug drifted from the authoritative table");
+        assert_eq!(concepts.len(), 6, "six subjects (visit excluded)");
+        assert!(concepts.contains(&("patient", 0x0901)));
+        assert!(concepts.contains(&("vital_sign", 0x0907)));
+        assert_eq!(caps.len(), 20);
+        // The wrong consumer against the same ids bangs UnexpectedConsumer.
+        assert!(matches!(
+            resolve_hotplug(
+                "tesseract-ogar",
+                crate::healthcare_actions::HEALTHCARE_SUBJECT_CLASSIDS,
+                crate::healthcare_actions::HEALTHCARE_ACTION_NAMES,
+            ),
+            Err(HotplugDrift::UnexpectedConsumer(_))
+        ));
+    }
+
     #[test]
     fn each_drift_arm_bangs() {
         assert!(matches!(
             resolve_hotplug("tesseract-ogar", &[0xFFFE], &[]),
             Err(HotplugDrift::UnknownClassid(0xFFFE))
         ));
-        // patient (0x0901) is minted but has no action table yet.
+        // visit (0x0906) is minted but deliberately table-less — the one
+        // Health entity the healthcare table excluded for zero harvest
+        // evidence (`healthcare_actions` module doc). It replaced patient
+        // (0x0901) as this arm's probe when the healthcare table landed
+        // and patient gained capabilities.
         assert!(matches!(
-            resolve_hotplug("tesseract-ogar", &[0x0901], &[]),
-            Err(HotplugDrift::NoCapabilitiesFor(0x0901))
+            resolve_hotplug("tesseract-ogar", &[crate::class_ids::VISIT], &[]),
+            Err(HotplugDrift::NoCapabilitiesFor(0x0906))
         ));
         assert!(matches!(
             resolve_hotplug("stranger", OCR_IDS, OCR_COVERED),
