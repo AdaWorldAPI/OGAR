@@ -722,6 +722,18 @@ impl KausalSpec {
     pub fn depends(paths: Vec<String>) -> Self {
         Self::Depends { paths }
     }
+
+    /// Convenience: build a Constrains spec (`@api.constrains` targets).
+    #[must_use]
+    pub fn constrains(paths: Vec<String>) -> Self {
+        Self::Constrains { paths }
+    }
+
+    /// Convenience: build an Onchange spec (`@api.onchange` targets).
+    #[must_use]
+    pub fn onchange(paths: Vec<String>) -> Self {
+        Self::Onchange { paths }
+    }
 }
 
 /// The four canonical Active Record relation kinds. Cross-ORM mapping:

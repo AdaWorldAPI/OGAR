@@ -1375,6 +1375,40 @@ mod tests {
     }
 
     #[test]
+    fn kausal_constrains_onchange_currently_emit_unknown_pending_emitter_wiring() {
+        // CHARACTERIZATION (not aspiration): SPEC-ATC2-OGAR §6 defers the TTL
+        // emitter wiring for the Arm B variants, so `kausal_triples` has no
+        // Constrains/Onchange arm — they fall through the mandatory wildcard
+        // (`KausalSpec` is #[non_exhaustive], so cross-crate matches CANNOT be
+        // wildcard-free; the `kausal_spec_match_is_exhaustive` fuse only
+        // protects ogar-vocab, never this consumer). The IR struct carries the
+        // paths correctly; the TTL projection currently drops them and labels
+        // the kind `ogar:Unknown`. This test PINS that lossy interim so the
+        // drop is documented, not silent — when §6 lands (predicates
+        // `ogar:Constrains`/`ogar:Onchange` + a path predicate), this test
+        // fails loudly and forces the implementer to update it. See ledger
+        // D-ATC2-KAUSAL-RUFF-GATED.
+        for k in [
+            ogar_vocab::KausalSpec::constrains(vec!["state".into()]),
+            ogar_vocab::KausalSpec::onchange(vec!["partner_id".into()]),
+        ] {
+            let mut def = ogar_vocab::ActionDef::new("a", "p", "ogit-op/Foo");
+            def.kausal = Some(k);
+            let t = TripleEmitter::emit_action_def(&def);
+            assert!(
+                t.iter()
+                    .any(|t| t.predicate == "ogar:kausalKind" && t.object == "ogar:Unknown"),
+                "interim: unwired Arm B variants label as ogar:Unknown"
+            );
+            // The field paths are NOT projected to TTL yet (the debt).
+            assert!(
+                !t.iter().any(|t| t.object == "state" || t.object == "partner_id"),
+                "interim: Arm B field paths are dropped at TTL emission (§6 deferred)"
+            );
+        }
+    }
+
+    #[test]
     fn action_state_lifecycle_serialization() {
         for (state, expected) in [
             (ogar_vocab::ActionState::Pending, "ogar:Pending"),

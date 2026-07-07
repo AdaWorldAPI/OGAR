@@ -1083,3 +1083,38 @@ isolation. The map's job is to keep them visible.
   index — safe under Odoo semantics (`@api.depends` is method-level,
   co-computed fields carry identical `depends_on`), revisit if a
   frontend ever emits divergent `depends_on` per co-computed field.
+
+- **D-ATC2-KAUSAL-RUFF-GATED** — 2026-07-06 `[G]`: AT-CARRY-2 arms B+D
+  landed (OGAR #169) after ruff #49 put `Function::{constrains,onchange}`
+  + `Field::stored` on ruff main. Arm B: `KausalSpec::{Constrains,Onchange}`
+  populated in `lift_actions` ONLY when `kausal.is_none()` (SPEC §3b) — so
+  Depends (Arm A) always wins, Constrains beats Onchange; sourced purely
+  from the decorator fields, never `reads`/`writes` (regression
+  `lift_actions_depends_arm_a_regression_unaffected_by_arm_b`). Arm D:
+  `ComputedField.stored = field.stored.unwrap_or(false)` at both projection
+  sites (§5: Odoo's not-stored default). Post-merge verification: OGAR
+  workspace green against ruff main `9ef26c1` — `cargo build --workspace`
+  clean incl. `ogar-from-rails` (the float-on-main risk), `cargo test
+  --workspace` 479/0. Opus adversarial review: CLEAN impl, one P2 below.
+  - **HONEST CORRECTION to the D-ATC2-KAUSAL-AUTARK fuse rationale.** That
+    entry (and the B-arm commit message) claimed the exhaustive
+    `kausal_spec_match_is_exhaustive` guard makes *consumers* "loud break
+    instead of silently defaulting" on new variants. That is TRUE only
+    intra-crate. `KausalSpec` is `#[non_exhaustive]`, so every cross-crate
+    `match` is FORCED to carry a wildcard — the fuse cannot protect any
+    consumer outside ogar-vocab. The claim was overstated.
+  - **DEBT (P2, spec-deferred per §6): the TTL emitter silently mislabels
+    Arm B.** `ogar-emitter::kausal_triples` has no Constrains/Onchange arm;
+    both fall through `_ => ogar:Unknown` (lib.rs:779) and their field paths
+    are DROPPED at TTL emission. The IR struct is correct (consumers that
+    read `ActionDef.kausal` directly — e.g. the odoo-rs AT-CONSUME parity
+    pin — are unaffected); only the TTL projection is lossy. §6 defers the
+    emitter/SurrealQL wiring, so this is not a spec violation, but it is
+    actively-wrong (not merely missing) TTL. Converted from silent to
+    documented: characterization test
+    `kausal_constrains_onchange_currently_emit_unknown_pending_emitter_wiring`
+    PINS the interim `ogar:Unknown` + dropped-paths behaviour so it flips
+    LOUDLY when §6 lands (defining `ogar:Constrains`/`ogar:Onchange` kinds
+    + a kausal path predicate — a governed vocab mint, NOT done here).
+  - Additive API gap closed: `KausalSpec::{constrains,onchange}` constructors
+    added to mirror `depends()`/`lifecycle()` (consumers + the test need them).
