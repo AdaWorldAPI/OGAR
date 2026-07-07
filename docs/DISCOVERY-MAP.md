@@ -1213,3 +1213,33 @@ isolation. The map's job is to keep them visible.
   IR-shape tests (effect-annotations-first-class, typed-signature, semantic-
   preservation) pass; the change is a declared-capability growth, not an IR
   reshape.
+
+- **D-KAUSAL-CONSUME-PIN-ODOO** — 2026-07-06 `[G]`: the OGAR-side
+  realization of the odoo-rs **AT-CONSUME** extension (W1 of the
+  odoo→odoo-rs transpile arc). The deprecated odoo-rs corpus witness is
+  replaced by **real, unmodified Odoo 19 source as the witness**:
+  `addons/account/models/account_payment_term.py` (AdaWorldAPI/odoo
+  `2c78d5f1`, byte-identical copy at
+  `crates/ogar-from-ruff/tests/py/account_payment_term.py` + PROVENANCE.md)
+  drives the already-shipped frontend end to end —
+  `ruff_python_spo::extract_from_source` → `compile_graph_python::<OdooPort>`
+  → `lift_actions` — and `tests/odoo_kausal_parity_probe.rs` pins the
+  Arm-A kausal reproduction VERBATIM. Result: **8/8 `@api.depends`
+  compute methods** across the two declared models
+  (`account.payment.term` 5, `account.payment.term.line` 3) round-trip
+  to `ActionDef.kausal == Some(KausalSpec::Depends { paths })` with
+  exact dotted paths (incl. the 9-path `_compute_example_preview` and
+  its two co-computed fields collapsing to ONE ActionDef — one per
+  METHOD, not per field); **8 plain methods** assert `kausal == None`
+  (the facts-only guard, real-source witnessed). Pinned values are
+  hand-derived by READING the source, not by copying extractor output.
+  `ruff_python_spo` added as a **dev-dependency** floating on `main`
+  (D-NEVER-PIN-BUMP). **Scope (named, not hidden):** only Arm A
+  (`compute=` + `@api.depends`); arms B (`@api.constrains`/`@api.onchange`)
+  and D (`computed.stored`) stay out of scope pending ruff #49 — no
+  `ActionDef`/`Class` slot carries them yet, so a consume pin for them
+  would fail by design today. Both models are unaliased → bootstrap
+  facet classid `0` (asserted as fact; this pin is the DO-arm/kausal,
+  not classid convergence). Cross-ref D-ATC2-KAUSAL-AUTARK (the Arm-A
+  machinery this witnesses), D-PARITY-PROBE-WOA-1 (the synthetic-graph
+  sibling this upgrades to real source).

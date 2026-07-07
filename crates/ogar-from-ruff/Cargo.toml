@@ -25,3 +25,10 @@ ogar-vocab = { path = "../ogar-vocab" }
 ruff_spo_triplet = { git = "https://github.com/AdaWorldAPI/ruff", branch = "main" }
 ruff_spo_address = { git = "https://github.com/AdaWorldAPI/ruff", branch = "main" }
 serde = { workspace = true, optional = true }
+
+[dev-dependencies]
+# Odoo/Python source frontend — dev-only: builds `ModelGraph` straight from
+# real `.py` source for the kausal-parity consume probe
+# (`tests/odoo_kausal_parity_probe.rs`). Floats on `main` like the two
+# `ruff_spo_*` deps above (no rev pin; drift protection is the fuse tests).
+ruff_python_spo = { git = "https://github.com/AdaWorldAPI/ruff", branch = "main" }
