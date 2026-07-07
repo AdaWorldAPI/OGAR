@@ -7,6 +7,19 @@
 
 ---
 
+## 2026-07-07 — E-ODOO-TRANSPILE-COMPLETE-1 — the odoo→odoo-rs transpile is complete on the V3 substrate; proven on REAL source
+
+**Status:** FINDING (5+3 council verdict LAND-with-named-tail; drift-fused in odoo-rs; council doc `odoo-rs docs/COUNCIL-5+3-2026-07-07.md`).
+
+The consumer arc closed (odoo-rs #21/#22/#24/#25/#26): source → `ruff_python_spo` (full fingerprint quartet, ruff #51) → `compile_graph_python::<OdooPort>` → `CompiledClass{class, facet, actions}` → SDK ×3 languages (#177). W1 kausal-parity pinned OGAR `lift_actions` as canonical vs the deprecated corpus witness (two divergences pinned: Depends source `depends_on` vs `reads_field`; guard variant `Constrains{paths}` vs `LifecycleTrigger+Reject`). W3 deleted the SurrealQL fork (−2 524 lines: `surreal_ast`/native emit/DDL tests; the kv-lance/rocksdb flexibility that justified SurrealQL now lives in the storage matrix itself). **Real-corpus proof:** the full `account` addon compiles (55 files → 71 models / 1 496 ActionDefs / 347 kausal), and the verbatim 7 380-line `account_move.py` is a vendored, exact-fused test (104 attrs / 38 assocs / 93 computed / 354 ActionDefs / 92 kausal, classid `0x0202_0002`). Named tail (council Q-queue): `triple.rs`→upstream migration, od-posting re-architecture off SurrealQL vocabulary, carriers #11/#15/#17, the 5.1% essential-imperative hand-port lane.
+
+## 2026-07-07 — E-C3-INCONSISTENT-MANIFESTS-1 — 3 real Odoo hierarchies are C3-inconsistent; naive DFS hides it (the F1 mixins-ordering fix, refiled)
+
+**Status:** FINDING (measured, odoo-rs `tests/delegation_inherit_equivalence.rs`, drift-fused; filed late — odoo-rs logged it "blocked here — OGAR read-only this session" and the append was missed until the 2026-07-07 council ledger audit).
+
+Corpus sweep (388 classes, 3 986 resolution points): 3 manifest hierarchies (`discuss_channel`, `product_product`, `product_template`) are genuinely **C3-INCONSISTENT** — `mail_thread` declared before a base whose MRO already contains it. CPython refuses this shape; naive parent-first DFS silently resolves it — a second divergence mode beyond the diamond. Lands in the F1 row's named fix: **`Class.mixins` ORDERING must carry the linearization, and a validator must reject inconsistent assemblies loudly.** D-DELEG-INHERIT `[H]→[G]` needs that mixins-ordering fix here (upstream OGAR).
+
+
 ## 2026-07-07 — E-HOTPLUG-GENERIC-1 — hot-plug is THE consumer migration pattern; OGAR is the authoritative store; migration doc is board discipline
 
 **Status:** RULING (operator 2026-07-07; shipped #174 `ocr_actions` + #175 `resolve_hotplug`; consumers: tesseract-rs #13/#14, socket+bridge lance-graph #658).
