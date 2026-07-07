@@ -50,6 +50,26 @@ fn dotnet() -> Command {
     cmd
 }
 
+/// Whether the `dotnet` SDK can be spawned. When it cannot, the parity
+/// tests skip with a printed notice instead of a hard panic — a bare
+/// sandbox (no .NET SDK) should not report a false failure for what is a
+/// missing-toolchain condition, not a code defect.
+///
+/// Under CI (`CI` env var set, as GitHub Actions does) a missing `dotnet`
+/// is instead a HARD failure: the C# parity loop is the whole point of
+/// this crate's coverage, so a runner without the SDK must break loudly
+/// rather than silently skip. CI images therefore MUST provision the
+/// `net8.0` SDK (pure BCL, no NuGet — see the module doc).
+fn dotnet_available() -> bool {
+    let present = dotnet().arg("--version").output().is_ok();
+    assert!(
+        present || std::env::var_os("CI").is_none(),
+        "`dotnet` not found but `CI` is set — the C# parity loop requires the \
+         net8.0 SDK on CI runners; provision it or unset CI to skip locally",
+    );
+    present
+}
+
 /// Write the csproj + the emitted class library into `dir`. The caller
 /// supplies `program_cs` (the tiny entry point) since the two tests need
 /// different `Main` bodies.
@@ -96,6 +116,13 @@ fn dotnet_run(dir: &Path) -> String {
 
 #[test]
 fn emitted_library_builds_and_dump_matches_ground_truth() {
+    if !dotnet_available() {
+        eprintln!(
+            "SKIP emitted_library_builds_and_dump_matches_ground_truth: \
+             `dotnet` (net8.0 SDK) not found — C# parity loop needs it"
+        );
+        return;
+    }
     let dir = unique_tmp_dir("build-dump");
     scaffold_project(
         &dir,
@@ -117,6 +144,13 @@ fn emitted_library_builds_and_dump_matches_ground_truth() {
 
 #[test]
 fn facet_bytes_built_in_rust_decode_correctly_in_csharp() {
+    if !dotnet_available() {
+        eprintln!(
+            "SKIP facet_bytes_built_in_rust_decode_correctly_in_csharp: \
+             `dotnet` (net8.0 SDK) not found — C# parity loop needs it"
+        );
+        return;
+    }
     let dir = unique_tmp_dir("facet");
 
     // Rust builds a known 16-byte facet BY HAND, straight from the
