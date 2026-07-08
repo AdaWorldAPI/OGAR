@@ -14,6 +14,24 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::Mutex;
+
+/// Serializes all `dotnet` invocations within this test binary.
+///
+/// The two parity tests run on separate threads; on a COLD machine
+/// (`~/.dotnet` absent, as on a fresh CI runner) each first `dotnet`
+/// process triggers .NET's first-time-use NuGet migration, which opens a
+/// named mutex under `/tmp/.dotnet/shm/session<N>`. That shm path is fixed
+/// by the runtime — it is NOT relocated by `TMPDIR`/`HOME`/`DOTNET_CLI_HOME`
+/// (verified empirically with dotnet-sdk 8.0.128: the session dir lands in
+/// `/tmp/.dotnet/shm` regardless, and per-test env isolation still flakes
+/// ~4/6 on cold-start). So two migrations racing at once lose with
+/// `mkdir(...) == EEXIST` / `stat(...) == ENOENT` — the intermittent CI
+/// failure. Serializing the invocations lets the migration complete once,
+/// uncontended; every later `dotnet` sees it done and skips it (cold-start
+/// x8 -> 8/8 green). Poison is ignored so a genuine assertion failure in one
+/// test never masks the other.
+static DOTNET_GATE: Mutex<()> = Mutex::new(());
 
 const NAMESPACE: &str = "Ogar.CapabilitySurface";
 
@@ -42,30 +60,11 @@ fn unique_tmp_dir(tag: &str) -> PathBuf {
     dir
 }
 
-fn dotnet(home: &Path) -> Command {
+fn dotnet() -> Command {
     let mut cmd = Command::new("dotnet");
     cmd.env("DOTNET_CLI_TELEMETRY_OPTOUT", "1")
         .env("DOTNET_SKIP_FIRST_TIME_EXPERIENCE", "1")
-        .env("DOTNET_NOLOGO", "1")
-        // Isolate the dotnet temp/home tree per invocation. The flaky
-        // failure is the .NET runtime's cross-process NAMED-MUTEX shared
-        // memory, which NuGet's first-run MigrationRunner opens. On Linux
-        // that shm lives at `$TMPDIR/.dotnet/shm` (falling back to
-        // `/tmp/.dotnet/shm` when TMPDIR is unset) — NOT under HOME or
-        // DOTNET_CLI_HOME. Two concurrent `dotnet` processes (the two
-        // parity tests run on separate threads in one binary; CI also runs
-        // jobs in parallel) then race on the one shared `.../shm/session<N>`
-        // path: one loses with `mkdir(...) == EEXIST` or `stat(...) ==
-        // ENOENT` in NuGet.Common.Migrations.MigrationRunner — an
-        // intermittent hard failure with nothing to do with the code under
-        // test. **`TMPDIR` is the controlling variable** (it relocates the
-        // shm dir); HOME/DOTNET_CLI_HOME/NUGET_PACKAGES are additionally
-        // isolated as hygiene. Each test owns its own `home`, so the shm
-        // dirs never collide.
-        .env("TMPDIR", home)
-        .env("HOME", home)
-        .env("DOTNET_CLI_HOME", home)
-        .env("NUGET_PACKAGES", home.join("nuget"));
+        .env("DOTNET_NOLOGO", "1");
     cmd
 }
 
@@ -80,9 +79,7 @@ fn dotnet(home: &Path) -> Command {
 /// rather than silently skip. CI images therefore MUST provision the
 /// `net8.0` SDK (pure BCL, no NuGet — see the module doc).
 fn dotnet_available() -> bool {
-    let probe_home = unique_tmp_dir("probe-home");
-    let present = dotnet(&probe_home).arg("--version").output().is_ok();
-    let _ = fs::remove_dir_all(&probe_home);
+    let present = dotnet().arg("--version").output().is_ok();
     assert!(
         present || std::env::var_os("CI").is_none(),
         "`dotnet` not found but `CI` is set — the C# parity loop requires the \
@@ -104,8 +101,8 @@ fn scaffold_project(dir: &Path, program_cs: &str) {
     fs::write(dir.join("Program.cs"), program_cs).expect("write Program.cs");
 }
 
-fn dotnet_build(dir: &Path, home: &Path) {
-    let build = dotnet(home)
+fn dotnet_build(dir: &Path) {
+    let build = dotnet()
         .current_dir(dir)
         .args(["build", "-v", "q"])
         .output()
@@ -119,8 +116,8 @@ fn dotnet_build(dir: &Path, home: &Path) {
     );
 }
 
-fn dotnet_run(dir: &Path, home: &Path) -> String {
-    let run = dotnet(home)
+fn dotnet_run(dir: &Path) -> String {
+    let run = dotnet()
         .current_dir(dir)
         .args(["run", "-v", "q", "--no-build"])
         .output()
@@ -137,6 +134,7 @@ fn dotnet_run(dir: &Path, home: &Path) -> String {
 
 #[test]
 fn emitted_library_builds_and_dump_matches_ground_truth() {
+    let _gate = DOTNET_GATE.lock().unwrap_or_else(|e| e.into_inner());
     if !dotnet_available() {
         eprintln!(
             "SKIP emitted_library_builds_and_dump_matches_ground_truth: \
@@ -145,14 +143,13 @@ fn emitted_library_builds_and_dump_matches_ground_truth() {
         return;
     }
     let dir = unique_tmp_dir("build-dump");
-    let home = unique_tmp_dir("build-dump-home");
     scaffold_project(
         &dir,
         &format!("using {NAMESPACE};\nConsole.Write(OgarCapabilitySurface.Dump());\n"),
     );
 
-    dotnet_build(&dir, &home);
-    let dump = dotnet_run(&dir, &home);
+    dotnet_build(&dir);
+    let dump = dotnet_run(&dir);
 
     // Compare the dump against the Rust-side ogar_vocab ground truth
     // exactly like the Python loop — the SAME comparison function
@@ -162,11 +159,11 @@ fn emitted_library_builds_and_dump_matches_ground_truth() {
     ogar_adapter_python::ground_truth::assert_dump_matches("csharp", &dump);
 
     let _ = fs::remove_dir_all(&dir);
-    let _ = fs::remove_dir_all(&home);
 }
 
 #[test]
 fn facet_bytes_built_in_rust_decode_correctly_in_csharp() {
+    let _gate = DOTNET_GATE.lock().unwrap_or_else(|e| e.into_inner());
     if !dotnet_available() {
         eprintln!(
             "SKIP facet_bytes_built_in_rust_decode_correctly_in_csharp: \
@@ -175,7 +172,6 @@ fn facet_bytes_built_in_rust_decode_correctly_in_csharp() {
         return;
     }
     let dir = unique_tmp_dir("facet");
-    let home = unique_tmp_dir("facet-home");
 
     // Rust builds a known 16-byte facet BY HAND, straight from the
     // documented layout (facet.rs / ruff_spo_address::Facet doc):
@@ -207,8 +203,8 @@ fn facet_bytes_built_in_rust_decode_correctly_in_csharp() {
     );
     scaffold_project(&dir, &program_cs);
 
-    dotnet_build(&dir, &home);
-    let got = dotnet_run(&dir, &home);
+    dotnet_build(&dir);
+    let got = dotnet_run(&dir);
 
     let expected = format!(
         "{classid:08X}\n{}\n{}",
@@ -229,5 +225,4 @@ fn facet_bytes_built_in_rust_decode_correctly_in_csharp() {
     );
 
     let _ = fs::remove_dir_all(&dir);
-    let _ = fs::remove_dir_all(&home);
 }
