@@ -61,9 +61,29 @@ pub trait PortSpec: 'static + Send + Sync {
     /// (`APP-CLASS-CODEBOOK-LAYOUT.md` §2; the prefix VALUES are
     /// order-invariant).
     ///
+    /// # Position in the `domain : appid : classview` spelling
+    ///
+    /// Per `DISCOVERY-MAP.md` D-CLASSID-HI-U16-SPELLING the composed
+    /// classid u32 reads **`domain(2 nibbles) : appid(2 nibbles) :
+    /// classview(4 nibbles)`** — i.e. `0xDDCCVVVV`, where the hi u16
+    /// `0xDDCC` (`domain byte ++ appid byte`) is the shared CANON concept
+    /// and the lo u16 `0xVVVV` is the per-vendor render skin. **`APP_PREFIX`
+    /// IS that lo-u16 `classview` slot** — see [`Self::classview`], the
+    /// preferred name for it.
+    ///
+    /// **Homonym warning** (the reason the two names coexist): the word
+    /// "app" appears in BOTH halves with different meanings. The **appid
+    /// byte** (hi half) is the shared app-concept slot within a domain
+    /// (e.g. `0x0102` = project work item, converged on by OpenProject
+    /// `0x0102_0001` AND Redmine `0x0102_0007`); the **APP render prefix**
+    /// here (lo half) is the per-vendor ClassView skin. They are
+    /// positionally distinct registers — `APP_PREFIX` is the *classview*,
+    /// NOT the appid.
+    ///
     /// Composing the full render classid:
     /// ```text
     /// render_classid = (concept as u32) << 16 | APP_PREFIX
+    /// //               └──── hi u16: domain:appid ────┘   └ lo u16: classview ┘
     /// ```
     ///
     /// `0x0000` is the **shared canonical core** — the cross-app ontology
@@ -77,6 +97,18 @@ pub trait PortSpec: 'static + Send + Sync {
     /// private class"). This constant is the allocation table as typed
     /// data — consumers re-export it instead of hardcoding `0x0001` etc.
     const APP_PREFIX: u16 = 0x0000;
+
+    /// The **classview** — the memorable name for [`Self::APP_PREFIX`] in
+    /// the operator's `domain : appid : classview` spelling
+    /// (D-CLASSID-HI-U16-SPELLING). Identical value; this accessor exists
+    /// so call sites can read the lo-u16 render-skin slot by the name that
+    /// matches the canon layout instead of the `APP_PREFIX` homonym. New
+    /// code should prefer `Port::classview()`; `APP_PREFIX` stays as the
+    /// underlying const (every existing consumer re-exports it).
+    #[must_use]
+    fn classview() -> u16 {
+        Self::APP_PREFIX
+    }
 
     /// All `(port-public-name, canonical-class-id)` aliases for this
     /// port. Order is not significant for resolution but kept stable
@@ -1070,6 +1102,15 @@ mod tests {
         );
         assert_eq!(OdooPort::APP_PREFIX, 0x0002, "Odoo prefix must be 0x0002");
         assert_eq!(WoaPort::APP_PREFIX, 0x0003, "WoA prefix must be 0x0003");
+        // `classview()` is the memorable name for the same lo-u16 slot
+        // (D-CLASSID-HI-U16-SPELLING); it must equal `APP_PREFIX` for every
+        // port so the two names never drift.
+        assert_eq!(OpenProjectPort::classview(), OpenProjectPort::APP_PREFIX);
+        assert_eq!(OdooPort::classview(), OdooPort::APP_PREFIX);
+        assert_eq!(WoaPort::classview(), WoaPort::APP_PREFIX);
+        assert_eq!(SmbPort::classview(), SmbPort::APP_PREFIX);
+        assert_eq!(HealthcarePort::classview(), HealthcarePort::APP_PREFIX);
+        assert_eq!(RedminePort::classview(), RedminePort::APP_PREFIX);
         assert_eq!(
             SmbPort::APP_PREFIX,
             0x0004,
