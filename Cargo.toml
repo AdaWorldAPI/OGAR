@@ -21,6 +21,7 @@ members = [
     "crates/ogar-fma-skeleton",
     "crates/ogar-adapter-python",
     "crates/ogar-adapter-csharp",
+    "crates/ogar-auth",
 ]
 
 [workspace.package]

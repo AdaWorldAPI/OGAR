@@ -1,0 +1,41 @@
+[package]
+name = "ogar-auth"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "OGAR auth arm: the reusable authentication SDK for OGAR consumers. Agnostic RFC 6238 TOTP, Argon2id PHC password hash/verify, a legacy 3DES-EDE2/PBKDF1-MD5 transition primitive (caller-supplied key table — carries no secrets), and a re-export of the ndarray `encryption` forward suite (XChaCha20-Poly1305 / SHA-384 / Ed25519 / zero-knowledge envelope). One surface every consumer pulls, so the auth primitives never diverge. Endgame seam: OGIT[auth] IAM federation (OIDC / Zitadel)."
+
+[dependencies]
+# Forward suite — REUSED from the ndarray fork, never re-implemented here.
+# Argon2id KDF, XChaCha20-Poly1305 AEAD, Ed25519 signatures, SHA-384, and the
+# wasm-capable zero-knowledge envelope all live in `encryption`; ogar-auth
+# re-exports them (see lib.rs) so a consumer imports ONE crate. Git dep,
+# matching the ogar-class-view → lance-graph-contract precedent (ndarray's
+# default branch is `master`).
+encryption = { git = "https://github.com/AdaWorldAPI/ndarray", branch = "master" }
+
+# Argon2id PHC hash+verify (the login-credential path — distinct from the
+# envelope KDF). Default features carry `password-hash` + `rand` (OsRng salt).
+argon2 = "0.5"
+
+# RFC 6238 TOTP: HMAC-SHA1 over the time-step counter. SHA1 here is
+# interop-mandated by the authenticator-app ecosystem and MAC-keyed (HMAC),
+# never a password or integrity hash.
+hmac = "0.12"
+sha1 = "0.10"
+
+# Legacy 3DES-EDE2 transition (PBKDF1/MD5 key derivation, zero-IV CBC, PKCS#7):
+# the agnostic .NET `TripleDESCryptoServiceProvider` + `PasswordDeriveBytes`
+# algorithm. The caller supplies the password table; none is baked here.
+des = "0.8"
+md-5 = "0.10"
+cipher = "0.4"
+base64 = "0.22"
+
+# The single entropy chokepoint (TOTP secret minting). On wasm32 the `js`
+# feature routes to crypto.getRandomValues; mirrors the encryption crate.
+getrandom = "0.2"
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+getrandom = { version = "0.2", features = ["js"] }
