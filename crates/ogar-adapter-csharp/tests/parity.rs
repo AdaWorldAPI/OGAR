@@ -47,17 +47,22 @@ fn dotnet(home: &Path) -> Command {
     cmd.env("DOTNET_CLI_TELEMETRY_OPTOUT", "1")
         .env("DOTNET_SKIP_FIRST_TIME_EXPERIENCE", "1")
         .env("DOTNET_NOLOGO", "1")
-        // Isolate the dotnet CLI home + NuGet caches per invocation-tree.
-        // Without this, every `dotnet` process shares the default
-        // `~/.dotnet` (`/tmp/.dotnet` when HOME is unset), whose first-run
-        // NuGet-migration step opens a named session mutex under
-        // `.../shm/session<N>`. Two concurrent processes (parallel test
-        // binaries, or parallel CI jobs on one runner) then race on the
-        // same path — `mkdir(...) == -1; errno == EEXIST` in
-        // NuGet.Common.Migrations.MigrationRunner, an intermittent hard
-        // failure unrelated to the code under test. Pointing HOME +
-        // DOTNET_CLI_HOME + NUGET_PACKAGES at a per-test dir removes the
-        // shared path, so the shm/session dirs never collide.
+        // Isolate the dotnet temp/home tree per invocation. The flaky
+        // failure is the .NET runtime's cross-process NAMED-MUTEX shared
+        // memory, which NuGet's first-run MigrationRunner opens. On Linux
+        // that shm lives at `$TMPDIR/.dotnet/shm` (falling back to
+        // `/tmp/.dotnet/shm` when TMPDIR is unset) — NOT under HOME or
+        // DOTNET_CLI_HOME. Two concurrent `dotnet` processes (the two
+        // parity tests run on separate threads in one binary; CI also runs
+        // jobs in parallel) then race on the one shared `.../shm/session<N>`
+        // path: one loses with `mkdir(...) == EEXIST` or `stat(...) ==
+        // ENOENT` in NuGet.Common.Migrations.MigrationRunner — an
+        // intermittent hard failure with nothing to do with the code under
+        // test. **`TMPDIR` is the controlling variable** (it relocates the
+        // shm dir); HOME/DOTNET_CLI_HOME/NUGET_PACKAGES are additionally
+        // isolated as hygiene. Each test owns its own `home`, so the shm
+        // dirs never collide.
+        .env("TMPDIR", home)
         .env("HOME", home)
         .env("DOTNET_CLI_HOME", home)
         .env("NUGET_PACKAGES", home.join("nuget"));
