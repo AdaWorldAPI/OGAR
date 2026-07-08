@@ -14,6 +14,22 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::Mutex;
+
+/// Serializes all `dotnet` invocations within this test binary.
+///
+/// The two parity tests run on separate threads; on a COLD machine
+/// (`~/.dotnet` absent, as on a fresh CI runner) each first `dotnet`
+/// process triggers .NET's first-time-use NuGet migration, which opens a
+/// named mutex under `/tmp/.dotnet/shm/session<N>`. That shm path is fixed
+/// by the runtime — it is NOT relocated by `TMPDIR`/`HOME`/`DOTNET_CLI_HOME`
+/// (verified empirically: the session dir lands in `/tmp/.dotnet/shm`
+/// regardless). So two migrations racing at once lose with
+/// `mkdir(...) == EEXIST` / `stat(...) == ENOENT` — the intermittent CI
+/// failure. Serializing the invocations lets the migration complete once,
+/// uncontended; every later `dotnet` sees it done and skips it. Poison is
+/// ignored so a genuine assertion failure in one test never masks the other.
+static DOTNET_GATE: Mutex<()> = Mutex::new(());
 
 const NAMESPACE: &str = "Ogar.CapabilitySurface";
 
@@ -116,6 +132,7 @@ fn dotnet_run(dir: &Path) -> String {
 
 #[test]
 fn emitted_library_builds_and_dump_matches_ground_truth() {
+    let _gate = DOTNET_GATE.lock().unwrap_or_else(|e| e.into_inner());
     if !dotnet_available() {
         eprintln!(
             "SKIP emitted_library_builds_and_dump_matches_ground_truth: \
@@ -144,6 +161,7 @@ fn emitted_library_builds_and_dump_matches_ground_truth() {
 
 #[test]
 fn facet_bytes_built_in_rust_decode_correctly_in_csharp() {
+    let _gate = DOTNET_GATE.lock().unwrap_or_else(|e| e.into_inner());
     if !dotnet_available() {
         eprintln!(
             "SKIP facet_bytes_built_in_rust_decode_correctly_in_csharp: \
