@@ -1155,3 +1155,29 @@ isolation. The map's job is to keep them visible.
     (verified — its module doc lists `ActionDef` / `KausalSpec` under
     "Not yet supported"), so TTL stays write-only for kausal; no
     roundtrip case added, per the spec's documented fallback.
+
+- **D-ACTIONHANDLER-GROUNDTRUTH-GAPS-CLOSED (arago config parity — three
+  instance-lift fields; 2026-07-08; [G] — shipped + tested against verbatim
+  `ssh_based_actions` values):** A ground-truth re-check of
+  `docs/ARAGO-ACTIONHANDLER-PARITY.md` §1 against the actual
+  `AdaWorldAPI/ActionHandlers` repo (the arago `aae.yaml` SSH stanza) found two
+  config fields the parity table never listed — **applicability-scoped
+  parameter defaults** (`Applicability.Parameter{Name,Value}`, the `SshOpts`
+  pattern) and **per-parameter `Description`** (the REST DTO carried it; the
+  lift dropped it) — plus the one it did list (`Applicability.Priority`,
+  footnote ²). All three closed **additively at the instance lift**:
+  `registration::{ApplicabilityParam, ConcreteApplicability,
+  lift_applicability_full, lift_applicabilities_full}` +
+  `RegisteredApplicability::{priority, parameters}` +
+  `ConcreteCapability::param_descriptions` +
+  `ogar-action-handler::parse_applicabilities_full`. Scoped params lift as
+  bindable `ActionParam{mandatory:false, default:Some(value)}` so
+  `bind_parameters` reproduces arago's template injection. Deliberate
+  non-moves: `ActionParam` (IR) NOT widened — descriptions are doc/render
+  metadata and ride the lift artifact (OGAR-AS-IR shape-test discipline);
+  `ApplicabilitySlot` (schema lift) NOT touched — the OGIT ontology genuinely
+  does not declare deploy-config fields; the guard-only
+  `lift_applicabilities`/`parse_applicabilities` view the hard gate consumes is
+  untouched. Full table + two fidelity notes (config-YAML nests the filter
+  under `Var:`; `Mode: string` is a match-type discriminator):
+  `ARAGO-ACTIONHANDLER-PARITY.md` §7 addendum.
