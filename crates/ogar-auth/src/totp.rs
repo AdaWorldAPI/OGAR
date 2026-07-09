@@ -77,6 +77,17 @@ pub fn base32_decode(s: &str) -> AuthResult<Vec<u8>> {
             out.push(((bits >> n_bits) & 0xff) as u8);
         }
     }
+    // RFC 4648: a valid unpadded base32 group leaves 0..=4 stray bits, ALL of
+    // which MUST be zero (the encoder zero-pads). 5..=7 stray bits means an
+    // invalid length — a lone/partial symbol carrying real entropy that cannot
+    // complete a byte (e.g. "A" would otherwise decode to 0 bytes = an empty
+    // HMAC key). Fail CLOSED so a corrupted / imported enrollment secret is
+    // rejected, not silently truncated to a shorter (or zero-entropy) key.
+    if n_bits >= 5 || (bits & ((1u64 << n_bits) - 1)) != 0 {
+        return Err(AuthError::Encoding(
+            "totp secret has invalid trailing base32 bits",
+        ));
+    }
     Ok(out)
 }
 
@@ -200,6 +211,24 @@ mod tests {
             assert_eq!(base32_decode(&enc.to_lowercase()).unwrap(), data);
         }
         assert!(base32_decode("not!base32").is_err());
+    }
+
+    #[test]
+    fn base32_rejects_invalid_trailing_bits() {
+        // Lengths that leave 5..=7 stray bits cannot complete a byte and would
+        // otherwise silently truncate — "A" -> empty HMAC key (zero entropy).
+        for bad in ["A", "ABC", "ABCDEF", "AAAAAA"] {
+            assert!(
+                base32_decode(bad).is_err(),
+                "{bad:?} has an invalid unpadded length and must be rejected"
+            );
+        }
+        // Valid length but non-zero trailing bits (encoder always zero-pads, so
+        // this is a corrupted secret) must also fail closed.
+        assert!(base32_decode("AB").is_err(), "non-zero trailing bits");
+        // Canonical zero-padded values still decode.
+        assert_eq!(base32_decode("AA").unwrap(), vec![0u8]);
+        assert!(base32_decode(&base32_encode(b"hi")).is_ok());
     }
 
     #[test]

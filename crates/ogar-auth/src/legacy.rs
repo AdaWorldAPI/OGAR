@@ -23,8 +23,31 @@
 //! **This crate bakes NO password table.** The 62-key (or however-many)
 //! table belongs to the consumer that owns the legacy corpus and is passed as
 //! a `&[&str]` argument. That is the whole reason this primitive is public and
-//! agnostic while the table stays private: the *algorithm* is a documented
-//! .NET convention; the *table* is a live secret.
+//! agnostic while the table stays private: the *algorithm* is a *reconstruction*
+//! of the .NET convention (see the UNVERIFIED note below); the *table* is a live
+//! secret.
+//!
+//! ## ⚠ UNVERIFIED — the KDF likely does NOT match real .NET yet (Codex P1)
+//!
+//! The key derivation above is a **best-effort reconstruction, NOT proven
+//! against production ciphertext.** A review (Codex, PR #186) correctly flags a
+//! specific likely discrepancy: **.NET's `CryptDeriveKey("RC2","MD5",128,…)`
+//! does not simply take the `PasswordDeriveBytes.GetBytes` 100-round PBKDF1
+//! stream plus a final `MD5`** — it feeds the password hash through the Windows
+//! CryptoAPI `CryptDeriveKey` key-material transform (the `0x36`/`0x5C`
+//! double-hash construction), producing a *different* 16-byte key. So real
+//! legacy ciphertext will very likely fail the PKCS#7 / UTF-8 checks here, and
+//! [`decrypt_prefixed`] currently round-trips only values this Rust helper
+//! itself produced.
+//!
+//! **Consequence — treat this module as a SCAFFOLD, not a working verifier.**
+//! Do NOT use it in a production migration until it is byte-parity-proven
+//! against a real `(plaintext, ciphertext)` pair from the target corpus (the
+//! canonical `Crypt.cs`). The `#[cfg(test)]` round-trips below prove *internal
+//! self-consistency only* — never oracle parity. When the real vector arrives,
+//! the fix is to replace [`derive_tdes_key_pbkdf1_md5`] with the actual
+//! `CryptDeriveKey` transform and gate it with a `tests/legacy_vectors.rs`
+//! byte-parity check.
 
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD as BASE64;
@@ -66,6 +89,11 @@ pub fn index_to_prefix(idx: usize) -> Option<char> {
 /// `.NET PasswordDeriveBytes` over MD5 with empty salt and `iterations`
 /// rounds, then the `CryptDeriveKey("RC2","MD5",128,…)` step, expanded to the
 /// 24-byte TripleDES-EDE2 key (K1‖K2‖K1).
+///
+/// **⚠ UNVERIFIED** (see the module-level note): this PBKDF1-fold is a
+/// *reconstruction* and likely diverges from the real Windows `CryptDeriveKey`
+/// transform, so it will not decrypt real .NET corpus ciphertext until proven
+/// against an oracle vector. Round-trips with [`encrypt_prefixed`] only.
 #[must_use]
 pub fn derive_tdes_key_pbkdf1_md5(password: &[u8], iterations: usize) -> [u8; 24] {
     // Step 1 — initial hash of password (empty salt appended unchanged).
