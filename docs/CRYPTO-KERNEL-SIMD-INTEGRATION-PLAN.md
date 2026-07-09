@@ -25,6 +25,19 @@ council (crypto/security review of the shipped crate) runs in parallel.
 - **Patch the CIPHER, not the AEAD.** `chacha20poly1305` is a thin composition
   of `chacha20` + `poly1305`; a SIMD backend added to `chacha20` is inherited by
   the AEAD and by `encryption` **with zero changes to audited AEAD code**.
+- **Acceleration ordering `ndarray-native ≥ wasm > WebGPU` — with one flip.**
+  ndarray-native (AVX-512/NEON) and wasm-SIMD are **the same polyfill code**, not
+  a priority choice — one substrate, two compile targets. WebGPU/WebGL (§5 Axis 3
+  Tier 3) is a *separate* build. For the **latency-bound** auth/envelope path
+  (OGAR's actual workload) the order holds: CPU-SIMD > GPU. It **flips only for
+  bulk throughput** (encrypting/hashing large volumes), where a GPU can beat both
+  CPUs — so GPU is reserved for that case, never the default. (On a *server*, the
+  bulk winner is a native GPU/CUDA, not WebGL — out of the browser scope here.)
+- **Effort ≈ a weekend, because the palette already paid the hard 90%.** The
+  polyfill, the 5-backend dispatch, the wide `U32x16`/`U64x8` types, the W1a
+  parity harness, and the `[v128;4]` wasm pattern all already exist (proven on
+  the float wides + the palette distance kernels). Crypto adds only a `rotl` op +
+  two small kernels (ChaCha double-round, BLAKE `G`) riding that substrate.
 
 ---
 
@@ -104,32 +117,39 @@ crates.io version of a forked crate*), the SIMD backends are patched into the
 
 **Fork coverage (verified via API 2026-07-09):**
 
-| RustCrypto repo | Holds | AdaWorldAPI fork | Golden-path role |
-|---|---|---|---|
-| `AEADs` | chacha20poly1305, aes-gcm | ✅ **forked** | AEAD wrapper (no cipher SIMD here) |
-| `hashes` | sha2, **blake2**, sha1 | ✅ **forked** | BLAKE2b SIMD patchable here |
-| `stream-ciphers` | **chacha20** | ❌ **not forked** | **ChaCha20 SIMD backend lives here** |
-| `password-hashes` | **argon2** | ❌ **not forked** | **Argon2 block-mix SIMD lives here** |
-| `universal-hashes` | poly1305 | ❌ not forked | Poly1305 stays scalar |
-| `block-ciphers` | aes | ❌ not forked | AES = native AES-NI / WebCrypto |
+| RustCrypto repo | Holds | AdaWorldAPI fork | Fork ver | Golden-path role |
+|---|---|---|---|---|
+| `AEADs` | chacha20poly1305, aes-gcm | ✅ forked | 0.11.0 | AEAD wrapper (no cipher SIMD here) |
+| `hashes` | sha2, **blake2**, sha1 | ✅ forked | 0.11.x | BLAKE2b SIMD patchable here |
+| `stream-ciphers` | **chacha20** | ✅ **forked** | 0.10.1 | **ChaCha20 SIMD backend lives here** |
+| `universal-hashes` | poly1305, ghash | ✅ **forked** | 0.9.1 | Poly1305 (stays scalar) |
+| `password-hashes` | **argon2** | ❌ not forked | — | **Argon2 block-mix SIMD lives here** |
+| `block-ciphers` | aes | ❌ not forked | — | AES = native AES-NI / WebCrypto |
 
-**The gap:** the two P0 kernels (ChaCha20, Argon2) live in `stream-ciphers` /
-`password-hashes`, which are **not forked yet**; and `AdaWorldAPI/AEADs`'s
-`chacha20poly1305` deps **crates.io** `chacha20 = "0.10"`, so even the AEAD fork
-pulls the cipher unforked. **The obligatory forks still to create are
-`AdaWorldAPI/stream-ciphers` (chacha20) and `AdaWorldAPI/password-hashes`
-(argon2)** — you literally cannot patch a SIMD backend into a crate you don't
-own a fork of.
+**Still to fork:** `password-hashes` (argon2 — the Argon2 golden-path kernel has
+no fork home yet) and `block-ciphers` (aes).
 
-**The obligatory re-wire (Step 0.0):** `encryption/Cargo.toml` currently deps
-crates.io (`chacha20poly1305="0.10"`, `sha2`, `argon2`, `ed25519-dalek`) — a P0
-violation. Before any SIMD can be *consumed*, point `encryption` at the forks
-and add `[patch.crates-io]` at the ndarray workspace root so the WHOLE tree
-(including `chacha20poly1305`'s transitive `chacha20`) resolves to forks:
-`chacha20poly1305`→AEADs, `sha2`/`blake2`→hashes, `chacha20`→stream-ciphers,
-`argon2`→password-hashes (the last two once forked). *This is the "obligatory
-fork to be able to patch": you cannot patch-and-consume a backend the dep graph
-doesn't point at.*
+**⚠ Version skew — the real integration cost.** The forks track the
+**bleeding-edge RustCrypto `0.11.x` / `0.9.x`** line; `encryption` is pinned to
+stable **`0.10.x`** (`chacha20poly1305 0.10`, `sha2 0.10`, `argon2 0.5`,
+`poly1305 0.8`). This reshapes the wiring:
+- **`[patch.crates-io]` cannot bridge a major gap** — patching `0.10` with the
+  `0.11` fork just emits *"patch … was not used in the crate graph"* (the
+  workspace's own policy-alert). `[patch]` is the wrong tool here.
+- **A direct git dep does work** (`chacha20poly1305 = { git = ".../AEADs" }`) —
+  cargo takes whatever version the fork ships, sidestepping the semver-match
+  wall. But then `encryption` must compile against the **`0.11` API** (RustCrypto
+  reshuffled the `aead`/`digest` trait surfaces at 0.11), so Step 0.0 carries a
+  **small API migration** in `aead.rs`/`hash.rs`, not a no-op.
+- The forks must be **internally version-consistent** (AEADs 0.11's
+  `chacha20poly1305` must accept the `chacha20 0.10.1` that stream-ciphers
+  ships) — verify during the migration.
+
+**Step 0.0 (revised):** migrate `encryption` to the `0.11` crypto line via **git
+deps onto the forks** (not `[patch]`); fork `password-hashes`/`block-ciphers` at
+matching versions (argon2 0.6, aes 0.9). *This is "the obligatory fork to be able
+to patch": once `encryption` consumes the fork, a single SIMD patch in the fork
+propagates to every consumer.*
 
 ---
 
@@ -151,9 +171,12 @@ doesn't point at.*
 Notes:
 - **BLAKE2b is already in-tree** (via `argon2`) — a fast, `u64x2`-friendly,
   non-NIST hash one `use` away if a hash hotpath ever appears.
-- **BLAKE3** is the only hash that would *justify* wasm SIMD (tree-parallel,
-  SIMD-native). Reach for it only if a **bulk fingerprint/identity** hotpath
-  emerges; otherwise SHA-384's audit-boringness wins and hash-SIMD is skipped.
+- **Hash role-split (not either/or):** for a *fast* hash, **BLAKE3** is the pick
+  — tree-parallel and SIMD-native (the one hash that pays back SIMD, incl. GPU
+  Tier 3), so **`chacha20poly1305` + BLAKE3** is the fast modern pairing.
+  **SHA-384** stays as the *conservative / NIST-audit* envelope-identity digest
+  where boringness > speed. Use BLAKE3 for bulk/throughput hashing, SHA-384 for
+  the audit-facing identity — **both, different roles**.
 - **SHA-384 = SHA-512 machinery + distinct IV, truncated to 48 B.** It is a
   digest-SIZE / length-extension-safety choice, **not** a throughput lever.
 
@@ -181,12 +204,29 @@ not "upstream vs fork" — the fork *is* the home. Per kernel:
   the whole point). Revisit dual-AEAD only if a *native* bulk-throughput
   workload proves AES-NI worth the envelope-format complexity.
 
-**Axis 3 — browser hardware path.**
-- Pure-wasm-SIMD (our ChaCha/BLAKE2b kernels).
-- **Delegate to WebCrypto SubtleCrypto** (AES-GCM/SHA/HKDF are hardware +
-  audited in-browser) — but it's async/JS-boundary and doesn't cover ChaCha.
-- **Recommendation:** pure-wasm-SIMD for the ChaCha/Argon2 golden path (keeps the
-  one-codebase invariant); keep WebCrypto in the back pocket for any AES path.
+**Axis 3 — browser hardware path (three tiers).**
+- **Tier 1 — wasm-CPU-SIMD** (our ChaCha/BLAKE kernels over `ndarray::simd`).
+  The one-codebase golden path; right for the *latency-bound* case (one login,
+  one envelope).
+- **Tier 2 — WebCrypto SubtleCrypto** (AES-GCM/SHA/HKDF are hardware + audited
+  in-browser) — async/JS-boundary, doesn't cover ChaCha; a back-pocket AES path.
+- **Tier 3 — borrowed browser GPU (WebGPU / WebGL compute).** A *distinct* path
+  (WGSL shaders, not the ndarray Rust SIMD) — and it's "not nothing": the browser
+  sandbox makes borrowing the client GPU a **bounded, consented** compute on the
+  user's *own* data, unlike unsandboxed cryptojacking.
+  - **Fits:** *bulk/throughput* client-side work — batch AEAD over many
+    independent ChaCha blocks, bulk BLAKE3 hashing of large files (GPU loves
+    embarrassingly-parallel keystreams).
+  - **Does NOT fit:** single-op latency (host↔GPU transfer dominates), and
+    **Argon2 by design** (memory-hard specifically to resist GPU parallelism —
+    the defender gets no win; GPU-Argon2 is the *attacker's* tool).
+  - **Cost:** separate WGSL kernels + `wgpu`/WebGPU plumbing + async dispatch +
+    feature-detection (WebGPU still uneven, Safari lagging); added attack surface
+    (shared-GPU timing side-channels).
+- **Recommendation:** **Tier 1** for the golden path (latency-bound envelope /
+  login — the whole point). Keep **Tier 2** for AES. Reserve **Tier 3** for a
+  *proven bulk* client-side encrypt/hash workload (e.g. sealing large records
+  in-browser) — real capability, separate build, and **never for Argon2**.
 
 ---
 
