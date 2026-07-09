@@ -44,8 +44,8 @@ use std::collections::BTreeMap;
 
 use ogar_from_schema::action_ws::CapabilityExecutor;
 use ogar_from_schema::registration::{
-    ConcreteCapability, RegisteredApplicabilities, RegisteredCapabilities, lift_applicabilities,
-    lift_registration,
+    ConcreteApplicability, ConcreteCapability, RegisteredApplicabilities, RegisteredCapabilities,
+    lift_applicabilities, lift_applicabilities_full, lift_registration,
 };
 use ogar_vocab::KausalSpec;
 
@@ -81,6 +81,27 @@ pub fn parse_capabilities(json: &str) -> Result<Vec<ConcreteCapability>, String>
 pub fn parse_applicabilities(json: &str) -> Result<BTreeMap<String, Vec<KausalSpec>>, String> {
     let apps: RegisteredApplicabilities = serde_json::from_str(json).map_err(|e| e.to_string())?;
     Ok(lift_applicabilities(&apps))
+}
+
+/// Read a deployed handler's `GET /applicabilities` REST response and lift it
+/// **in full** — per handler: the guards PLUS the applicability precedence
+/// (arago `Priority`) and the applicability-scoped parameter defaults (arago
+/// `Applicability.Parameter{Name,Value}`, e.g. the SSH handler's `SshOpts`).
+///
+/// The additive sibling of [`parse_applicabilities`] (which stays as the
+/// guard-only view the hard gate consumes). A dispatcher concatenates each
+/// [`ConcreteApplicability::params`] onto the matched capability's signature so
+/// `bind_parameters` fills the scoped defaults exactly the way arago expands
+/// them into the capability `Command` template.
+///
+/// # Errors
+/// Returns the `serde_json` error message if the body is not a valid
+/// `MapOfApplicabilities`.
+pub fn parse_applicabilities_full(
+    json: &str,
+) -> Result<BTreeMap<String, ConcreteApplicability>, String> {
+    let apps: RegisteredApplicabilities = serde_json::from_str(json).map_err(|e| e.to_string())?;
+    Ok(lift_applicabilities_full(&apps))
 }
 
 /// Reference executor for the **native** target: runs a capability's command via
@@ -366,6 +387,43 @@ mod tests {
                 guard_field: "ogit/_type".to_owned(),
                 guard_values: vec!["ogit/Network/Machine".to_owned()],
             }]
+        );
+    }
+
+    /// B2-lift applicabilities, FULL view: the canonical `ssh_based_actions`
+    /// stanza (`AdaWorldAPI/ActionHandlers` `aae.yaml` — Priority 50,
+    /// `ModelFilter{NodeType,string,Machine}`, scoped `SshOpts`) survives the
+    /// JSON read: guards + priority + the bindable scoped default all land.
+    #[test]
+    fn rest_applicabilities_full_lift_carries_priority_and_scoped_params() {
+        let body = r#"{
+            "ssh-handler": {
+                "priority": 50,
+                "modelFilters": [
+                    { "var": "NodeType", "mode": "string", "value": "Machine" }
+                ],
+                "parameters": [
+                    { "name": "SshOpts", "value": "-o StrictHostKeyChecking=no -o BatchMode=yes -o LogLevel=quiet" }
+                ]
+            }
+        }"#;
+
+        let lifted = parse_applicabilities_full(body).expect("valid MapOfApplicabilities");
+        let app = &lifted["ssh-handler"];
+        assert_eq!(app.priority, Some(50));
+        assert_eq!(
+            app.guards,
+            vec![KausalSpec::StateGuard {
+                guard_field: "NodeType".to_owned(),
+                guard_values: vec!["Machine".to_owned()],
+            }]
+        );
+        assert_eq!(app.params.len(), 1);
+        assert_eq!(app.params[0].name, "SshOpts");
+        assert!(!app.params[0].mandatory);
+        assert_eq!(
+            app.params[0].default.as_deref(),
+            Some("-o StrictHostKeyChecking=no -o BatchMode=yes -o LogLevel=quiet")
         );
     }
 

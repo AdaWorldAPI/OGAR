@@ -360,3 +360,41 @@ is replaceable; the parity claim is certified, not argued.
   `action-ws.yaml` (the WebSocket message contract), `action.yaml` (the REST
   registration API), `auth.yaml` (the token endpoint) — served by the HIRO 7
   dev portal (`/help/specs/`, indexed under `/7.0/api/`).
+
+---
+
+## 7. Addendum (2026-07-08) — ground-truth re-check against `AdaWorldAPI/ActionHandlers`
+
+A re-check of the §1 config table against the actual vendored handler repo
+(`AdaWorldAPI/ActionHandlers`, the arago `ssh_based_actions` `aae.yaml` stanza)
+found **two gaps the table did not name**, plus closed the one it did (²):
+
+| arago config field (ground truth) | prior state | closure |
+|---|---|---|
+| `Applicability.Parameter{Name,Value}` — applicability-scoped defaults (the SSH handler's `SshOpts`, declared once at the applicability and expanded in every capability `Command`) | **unlisted gap** — `RegisteredApplicability` / `ApplicabilitySlot` had no home for it | `registration::ApplicabilityParam` + `RegisteredApplicability::parameters`; lifts to bindable `ActionParam{mandatory:false, default:Some(value)}` via `lift_applicability_full` so `bind_parameters` fills them exactly like arago's template expansion (test: `applicability_params_drive_bind_parameters_like_arago_injection`) |
+| `Capability.Parameter.Description` (per-param) | **unlisted gap** — the REST DTO (`RegisteredParam.description`) carried it; `lift_capability` dropped it | `ConcreteCapability::param_descriptions` (kept OFF `ActionParam` deliberately — binding needs `(name,mandatory,default)` only; descriptions are doc/render metadata, so they ride the lift artifact, not the IR type) |
+| `Applicability.Priority` (the known §1 footnote ² gap) | `[H]` — "no OGAR home yet" | `RegisteredApplicability::priority: Option<i64>` + `ConcreteApplicability::priority` (the MUL/elevation ranking noted in ² can now consume it) |
+
+All three land in the **instance lift** (`registration.rs` + the
+`ogar-action-handler` I/O half — `parse_applicabilities_full`), NOT in the
+OGIT-schema lift: the ontology genuinely does not declare them (they are
+deploy-config), so `ApplicabilitySlot` (do_arm) is unchanged. Additive only —
+`lift_applicability`/`parse_applicabilities` (the guard-only view the hard gate
+consumes) are untouched.
+
+Two fidelity notes observed in the same re-check, recorded so they don't
+re-surface as "gaps":
+
+- In the **config YAML** the filter nests under `Var:` (`ModelFilter: Var:
+  {Name, Mode, Value}`); the flat `ModelFilter{Var,Mode,Value}` this doc (and
+  the REST DTO) uses is the spec/REST projection. Same contract, two framings.
+- Ground truth uses `Mode: string` — the mode is a match-*type* discriminator
+  (`string` vs regex), not only `equals`/`matches` as §the DTO doc-comment
+  suggests. `ModelFilter.mode` already preserves it verbatim as data, so
+  nothing is lost; the executor consumes it when match-modes matter.
+
+Tests grounding this addendum on the verbatim `ssh_based_actions` values
+(Priority 50, `NodeType/string/Machine`, the full `SshOpts` string):
+`ssh_stanza_lifts_priority_guards_and_scoped_params`,
+`lift_preserves_per_param_descriptions`,
+`rest_applicabilities_full_lift_carries_priority_and_scoped_params`.
