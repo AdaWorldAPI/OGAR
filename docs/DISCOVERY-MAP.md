@@ -1181,3 +1181,35 @@ isolation. The map's job is to keep them visible.
   untouched. Full table + two fidelity notes (config-YAML nests the filter
   under `Var:`; `Mode: string` is a match-type discriminator):
   `ARAGO-ACTIONHANDLER-PARITY.md` §7 addendum.
+
+- **D-OCR-ACTIONS-V2 (tesseract-rs structured-document capability surface;
+  2026-07-10; [G] — shipped + tested, 5-savant-verified pre-merge):** The
+  `ogar_vocab::ocr_actions` authoritative table grew from **8 to 14**
+  capabilities, adding the structured-document + layout-classifier surface the
+  tesseract-rs arc shipped after the original eight: `recognize_page_words`
+  (word/box page → `line_words`), `recognize_document` (the ONE-SHOT: grey
+  page → `doc.v1` JSON + typed `fields`, the WoA Rechnungs-Erfassung path),
+  `harvest_fields` (typed invoice harvest — numeric hardening, IBAN mod-97,
+  netto+ust==brutto cross-check), `segment_page` (recursive XY-cut /
+  deimposition), `detect_halftone_regions` (leptonica-parity
+  `pixGenerateHalftoneMask` figure detector), `detect_page_furniture`
+  (header/footer/page-number). **Zero new mints** — subjects are the already-
+  minted `page_image` (0x0808, rows 9/10/12/13) and `page_layout` (0x0807,
+  rows 11/14). `OCR_SUBJECT_CLASSIDS` gained exactly `{PAGE_LAYOUT}` (PAGE_IMAGE
+  was already present); the `capability_registry` hot-plug test mirrors
+  (`OCR_IDS`/`OCR_COVERED`) were converted to LIVE references to
+  `ocr_actions::{OCR_SUBJECT_CLASSIDS, OCR_ACTION_NAMES}` so they can never
+  re-drift. The `const _` fuse (`OCR_ACTION_NAMES.len()`) is 8→14; the
+  tesseract-ogar executor's `COVERED_CAPABILITIES` grows in lockstep (the
+  interim is a HARD workspace compile failure via the sibling path-dep, so the
+  OGAR PR merges FIRST). Deferred (recorded, not omitted): a `typed_field`
+  concept mint (would-be 0x080A) — only when a consumer persists harvested
+  fields as graph nodes; a `language` param slot — only WITH a multi-model
+  executor (eng-only ships today, so a dead param would be a lie in the facts);
+  a `classify_regions` cheap-path toggle — no precedent, regions always
+  classified today. Spec + phase-1 consolidation:
+  `docs/OCR-ACTIONS-V2-PROPOSAL.md`. Non-moves per OGAR-AS-IR §3: no new
+  `ActionDef` field, no lowering pass, additive rows only — the 3 applicable
+  IR-shape tests (effect-annotations-first-class, typed-signature, semantic-
+  preservation) pass; the change is a declared-capability growth, not an IR
+  reshape.
