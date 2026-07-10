@@ -7,6 +7,67 @@
 
 ---
 
+## 2026-07-09 — E-CLICKWEG-CHOREOGRAPHY-1 — Clickwege live in the moving joints: traces-not-facts, the five-edge mint, ore/slag refinery
+
+**Status:** RULING (operator 2026-07-09; gap map verified in code — 5-reader sweep over ruff / OGAR / op-nexgen / OpenProject corpus / MedCare-rs. Canon twin: openproject-nexgen-rs `.claude/board/EPIPHANIES.md` 2026-07-09, which carries the full receipt table.)
+
+Operator, in substance: *ORM gives nouns (what exists/relates/persists), AR
+gives verbs (what can move, what mutates together, what becomes legal after
+state changes), Clickwege give choreography — and choreography must be
+harvested from motion, not tables. The hard extraction is joint → intent:
+the proposer harvests Clickweg candidates as TRACES, not facts ("user sees
+button X because view renders helper Y → route Z → controller A → mutates
+model B, if policy C and state D"), and OGAR mints **NavigationEdge /
+ActionEdge / MutationEdge / GuardEdge / StateTransitionEdge**. Residue is
+never handwritten Rust — every failed/uncertain click path becomes another
+recipe; the refinery gets cleaner with every project. Generated source files
+are a cache; the real artifact is the harvested semantic graph.*
+
+What the sweep pinned on the OGAR side:
+
+1. **OGAR has NO static choreography type.** All behaviour facts are
+   single-hop and node-attached (`ActionDef` per method, `calls` an
+   unordered name list); the only chain carriers are runtime
+   (`ActionInvocation.parent_invocation` + `trace_id`).
+   `docs/ADAPTERS-AND-ACTORS.md:76` already names the split — "shape vs
+   choreography" — with choreography = the invocation log. The ruling
+   makes choreography a HARVESTED, static, edge-shaped stratum too.
+2. **Nearest-type map:** NavigationEdge → ABSENT as edge
+   (`ogar-from-rails::RailAction` is a vertex); ActionEdge → `ActionDef`
+   (node property, `predicate: String`, `RecipeConceptId` Phase 2 unwired);
+   MutationEdge → `ActionDef.writes` (name-level) + `EnterEffect`
+   (string-encoded value); GuardEdge → `Guard 0x02XX` recipe family is
+   VALIDATION-only, no permission concept (`required_role` lives downstream
+   in lance-graph-ogar); StateTransitionEdge → **doc-only** —
+   `results_in: Option<StateTransition>` (OGAR-AST-CONTRACT.md:88) has no
+   crate type; `StateMachineDecl` named-unbuilt.
+3. **Mint constraint (canon-consistent):** the five kinds would be OGAR's
+   first edge-shaped behavioural types; per `docs/V3-TRANSPILER-ADR.md`
+   they land as GUID-reference tenants / triplet-mode `[SpoTriple; 4]`
+   facets — never a resurrected EdgeBlock.
+4. **Corpus reality splits the ore:** guard DECLARATIONS are static
+   (`OpenProject::AccessControl.map` = permission→{controller:[actions]};
+   contract `attribute …, permission:` DSL) — grants (`role_permissions`
+   rows) and Workflow transition content (`workflows` table:
+   type×role×old_status→new_status) are DB rows → the existing
+   `ogar-hydrator-postgres` proposal is their harvest arm. The
+   daily-migration residue IS the fuel, as ruled.
+5. **Trace carrier is already paid for:** the SPO `Triple` carries NARS
+   `{f,c}` — a trace is a typed CHAIN of triples with composed confidence;
+   low-confidence chains are the flag-for-review → recipe-library flywheel.
+   No new uncertainty machinery.
+6. **Cross-coat parity:** MedCare-rs runs the same refinery (WinForms
+   `navigates_to`/`selects_view` choreography plane; residue 99.6–99.7%
+   recoverable / 5 essential vs Rails 98.4% / 1) — the pattern is
+   language-independent; only adapters differ.
+
+Gap ledger (extends the (a)–(c) ledger shared with nexgen): (b) ruff
+routes.rb stratum OPEN (helper stems never resolve to `controller#action`;
+1311-line custom DSL measured) · (c) recipe codebook Phase 2 unwired ·
+**(d) permission-declaration harvest arm** (prior art: RBAC-keystone spec,
+doctrine without an arm) · **(e) DB-resident choreography content →
+hydrator**.
+
 ## 2026-07-07 — E-ODOO-TRANSPILE-COMPLETE-1 — the odoo→odoo-rs transpile is complete on the V3 substrate; proven on REAL source
 
 **Status:** FINDING (5+3 council verdict LAND-with-named-tail; drift-fused in odoo-rs; council doc `odoo-rs docs/COUNCIL-5+3-2026-07-07.md`).
