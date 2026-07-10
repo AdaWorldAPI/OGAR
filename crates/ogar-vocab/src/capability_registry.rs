@@ -305,25 +305,25 @@ pub enum HotplugDrift {
 mod hotplug_tests {
     use super::*;
 
-    const OCR_IDS: &[u16] = &[0x0805, 0x0808, 0x0809];
-    const OCR_COVERED: &[&str] = &[
-        "extract_page_image",
-        "extract_text_layer",
-        "recognize_line",
-        "recognize_page",
-        "render_hocr",
-        "render_searchable_pdf",
-        "render_text",
-        "render_tsv",
-    ];
+    // LIVE references (not hand-mirrored) so these can never drift from the
+    // authoritative table — the v2 growth (8→14 caps, +PAGE_LAYOUT subject,
+    // 2026-07-10) flows in automatically. `resolve_hotplug` does SET
+    // comparison, so the slice order is irrelevant.
+    const OCR_IDS: &[u16] = crate::ocr_actions::OCR_SUBJECT_CLASSIDS;
+    const OCR_COVERED: &[&str] = crate::ocr_actions::OCR_ACTION_NAMES;
 
     #[test]
     fn ocr_hotplug_resolves_vocab_and_actions() {
         let (concepts, caps) =
             resolve_hotplug("tesseract-ogar", OCR_IDS, OCR_COVERED).expect("green");
-        assert_eq!(concepts.len(), 3);
+        assert_eq!(
+            concepts.len(),
+            OCR_IDS.len(),
+            "one concept per subject classid"
+        );
         assert!(concepts.contains(&("textline", 0x0805)));
-        assert_eq!(caps.len(), 8);
+        assert!(concepts.contains(&("page_layout", 0x0807)));
+        assert_eq!(caps.len(), crate::ocr_actions::OCR_ACTION_NAMES.len());
     }
 
     #[test]
@@ -402,13 +402,15 @@ mod hotplug_tests {
         assert_eq!(entries_from_actions(&[a]), vec![("bar".to_string(), 0)]);
     }
 
-    /// The hand-authored OCR table, routed through the generic derive, is
-    /// byte-for-byte what it was before the refactor — the "config becomes
-    /// data" seam subsumes the bespoke path with zero behavior change.
+    /// The hand-authored OCR table, routed through the generic derive, has
+    /// one join row per declared capability (14 after the v2 growth,
+    /// 2026-07-10) — the "config becomes data" seam subsumes the bespoke
+    /// path with zero behavior change. Count keyed to the live
+    /// `OCR_ACTION_NAMES` so it can never re-drift.
     #[test]
-    fn ocr_entries_still_derive_the_eight_known_rows() {
+    fn ocr_entries_derive_one_row_per_declared_capability() {
         let ocr = ocr_entries();
-        assert_eq!(ocr.len(), 8);
+        assert_eq!(ocr.len(), crate::ocr_actions::OCR_ACTION_NAMES.len());
         assert!(
             ocr.iter()
                 .any(|(cap, id)| cap == "recognize_line" && *id == crate::class_ids::TEXTLINE)
@@ -417,5 +419,13 @@ mod hotplug_tests {
             ocr.iter()
                 .any(|(cap, id)| cap == "render_hocr" && *id == crate::class_ids::OCR_RENDERER)
         );
+        // v2 rows resolve to their page_image / page_layout subjects.
+        assert!(
+            ocr.iter()
+                .any(|(cap, id)| cap == "recognize_document" && *id == crate::class_ids::PAGE_IMAGE)
+        );
+        assert!(ocr.iter().any(
+            |(cap, id)| cap == "detect_page_furniture" && *id == crate::class_ids::PAGE_LAYOUT
+        ));
     }
 }
