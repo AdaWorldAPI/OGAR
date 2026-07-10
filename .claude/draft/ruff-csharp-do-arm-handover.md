@@ -1,5 +1,19 @@
 # DRAFT / HANDOVER — close out the C# (Roslyn) DO-arm harvest for MedCare
 
+> **RESOLVED — 2026-07-07.** The ready-to-apply patch this handover
+> pointed at landed as [AdaWorldAPI/ruff#59](https://github.com/AdaWorldAPI/ruff/pull/59)
+> and merged (`5c6c0fcf9ca4a7ac3a7efb924b00285456b5cf51`). The ruff-write
+> 403 was proxy-specific, not an org/token permission gate — direct
+> `git`/REST against `github.com` with the proxy env unset worked (see
+> `tesseract-rs/CLAUDE.md` § GitHub access matrix). Loader fixture +
+> codebook-DTO check are in on `main` now. Still open: the `dotnet` run
+> against a real C# corpus to de-draft `EmitBodyArm` (no `dotnet` in the
+> sandbox that closed this out). Full record:
+> `MedCare-rs/.claude/handovers/ruff-csharp-arm/RESOLVED.md`.
+
+---
+
+
 > **Why this lives in OGAR, not ruff:** ruff writes are currently
 > **403-blocked** for this session (org-level — the Claude GitHub App needs
 > (re)connecting for `AdaWorldAPI`, and/or `ruff` re-added to its scope;

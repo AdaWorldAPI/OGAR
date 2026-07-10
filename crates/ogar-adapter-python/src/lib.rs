@@ -489,7 +489,10 @@ def dump() -> str:
         lines.append(f"UnknownClassid={e.classid:04X}")
 
     try:
-        resolve_hotplug("tesseract-ogar", [CLASS_IDS["patient"]], [])
+        # `visit` (0x0906): the table-less Health concept — the stable
+        # "no capabilities" probe now that `patient` carries the healthcare
+        # table (whose executor guard would fire first).
+        resolve_hotplug("tesseract-ogar", [CLASS_IDS["visit"]], [])
         raise AssertionError("expected NoCapabilitiesFor")
     except NoCapabilitiesFor as e:
         lines.append(f"NoCapabilitiesFor={e.classid:04X}")
@@ -625,7 +628,13 @@ pub mod ground_truth {
             "UnknownClassid={}\n",
             expect_drift_hex(r1, "UnknownClassid")
         ));
-        let r2 = resolve_hotplug("tesseract-ogar", &[class_ids::PATIENT], &[]);
+        // `visit` (0x0906) is the deliberately table-less Health concept
+        // (excluded from HEALTHCARE_SUBJECT_CLASSIDS) — no OCR and no
+        // healthcare capabilities, so it is the stable "no capabilities"
+        // probe. `patient` USED to work here but now carries the
+        // healthcare table, so its executor guard fires before the
+        // NoCapabilitiesFor check (matches capability_registry's own probe).
+        let r2 = resolve_hotplug("tesseract-ogar", &[class_ids::VISIT], &[]);
         out.push_str(&format!(
             "NoCapabilitiesFor={}\n",
             expect_drift_hex(r2, "NoCapabilitiesFor")

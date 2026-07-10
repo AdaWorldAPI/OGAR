@@ -170,11 +170,91 @@ pub struct DomainTable {
 /// Every registered authoritative domain table. Append-only: a new domain
 /// (thinking styles, …) adds one entry and is immediately resolvable.
 pub fn domain_tables() -> Vec<DomainTable> {
-    vec![DomainTable {
-        domain: "ocr",
-        expected_executors: crate::ocr_actions::OCR_EXPECTED_EXECUTORS,
-        entries: ocr_entries,
-    }]
+    vec![
+        DomainTable {
+            domain: "ocr",
+            expected_executors: crate::ocr_actions::OCR_EXPECTED_EXECUTORS,
+            entries: ocr_entries,
+        },
+        DomainTable {
+            domain: "healthcare",
+            expected_executors: crate::healthcare_actions::HEALTHCARE_EXPECTED_EXECUTORS,
+            entries: healthcare_entries,
+        },
+    ]
+}
+
+/// One slag-ledger row: an ActionDef whose subject concept the codebook
+/// could not mint. NOT waste — the empirical boundary of the current
+/// codebook/convention: each recurring residual names the next config fact
+/// (a mint, an alias row, or a convention fix). (MedCare transcode
+/// doctrine: "study the slag, teach the furnace".)
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UnmintedRow {
+    /// The capability name (ActionDef.predicate).
+    pub capability: String,
+    /// The full object_class the def carried.
+    pub object_class: String,
+    /// The concept segment that failed to resolve (last '/'-segment).
+    pub concept: String,
+}
+
+/// One row of the single-pass action walk shared by
+/// [`entries_from_actions`] and [`entries_from_actions_with_residuals`] —
+/// private so both public functions project the SAME walk instead of
+/// re-deriving it and risking drift between them.
+enum ActionRow {
+    /// A resolved `(capability, subject classid)` join row.
+    Resolved(String, u16),
+    /// A row whose subject concept the codebook could not mint.
+    Unminted(UnmintedRow),
+}
+
+/// Walk `actions` exactly once, in order, resolving each subject classid
+/// from [`crate::ActionDef::object_class`] (`<prefix>/<concept>` — the
+/// concept is the last `/`-segment, so any prefix works: `ogit-ocr/…`,
+/// `medcare:…/…`, …) via [`crate::canonical_concept_id`]. Effect-fact
+/// fields on the `ActionDef` (`reads`/`writes`/`calls`/`raises`) are
+/// irrelevant to the join — the hot-plug keys on the capability NAME
+/// (`predicate`) and the subject classid alone, so a name-only `ActionDef`
+/// (e.g. a C#-Roslyn lift before the harvester's method-body walk lands)
+/// derives a valid row.
+fn derive_action_rows(actions: &[crate::ActionDef]) -> Vec<ActionRow> {
+    actions
+        .iter()
+        .map(|def| {
+            let concept = def.object_class.rsplit('/').next().unwrap_or_default();
+            match crate::canonical_concept_id(concept) {
+                Some(id) => ActionRow::Resolved(def.predicate.clone(), id),
+                None => ActionRow::Unminted(UnmintedRow {
+                    capability: def.predicate.clone(),
+                    object_class: def.object_class.clone(),
+                    concept: concept.to_string(),
+                }),
+            }
+        })
+        .collect()
+}
+
+/// Residual-aware twin of [`entries_from_actions`]: resolved rows carry
+/// their nonzero classid; unresolvable concepts land in the slag ledger
+/// instead of degrading to the id-0 sentinel. New consumers (the
+/// transcode-doctrine Phase 6 exam) use THIS; the id-0 sentinel path
+/// below stays for existing fuse consumers (I-LEGACY-API-FEATURE-GATED:
+/// same name keeps same semantics; new semantics get a new name).
+#[must_use]
+pub fn entries_from_actions_with_residuals(
+    actions: &[crate::ActionDef],
+) -> (Vec<(String, u16)>, Vec<UnmintedRow>) {
+    let mut resolved = Vec::new();
+    let mut residuals = Vec::new();
+    for row in derive_action_rows(actions) {
+        match row {
+            ActionRow::Resolved(capability, id) => resolved.push((capability, id)),
+            ActionRow::Unminted(residual) => residuals.push(residual),
+        }
+    }
+    (resolved, residuals)
 }
 
 /// Derive a domain's `(capability, subject classid)` join rows GENERICALLY
@@ -203,14 +283,23 @@ pub fn domain_tables() -> Vec<DomainTable> {
 /// name-only `ActionDef` (e.g. a C#-Roslyn lift before the harvester's
 /// method-body walk lands) derives a valid row; the effect facts are
 /// enrichment for projection/kausal/RBAC, not join inputs.
+///
+/// **LEGACY id-0-sentinel projection.** This function is now the id-0
+/// projection of [`entries_from_actions_with_residuals`]: same single
+/// walk ([`derive_action_rows`]), same original order, but an unminted
+/// concept folds to `(capability, 0)` here instead of surfacing as an
+/// [`UnmintedRow`] in a slag ledger. Existing fuse consumers
+/// (`resolve_hotplug` / `verify_registration`) key on the id-0 sentinel
+/// and keep calling this function; new consumers wanting the residual
+/// ledger (no unwrap-or-default concept-id fallback — doctrine Phase 6)
+/// should call `entries_from_actions_with_residuals` directly.
 #[must_use]
 pub fn entries_from_actions(actions: &[crate::ActionDef]) -> Vec<(String, u16)> {
-    actions
-        .iter()
-        .map(|def| {
-            let concept = def.object_class.rsplit('/').next().unwrap_or_default();
-            let id = crate::canonical_concept_id(concept).unwrap_or_default();
-            (def.predicate.clone(), id)
+    derive_action_rows(actions)
+        .into_iter()
+        .map(|row| match row {
+            ActionRow::Resolved(capability, id) => (capability, id),
+            ActionRow::Unminted(residual) => (residual.capability, 0),
         })
         .collect()
 }
@@ -224,6 +313,13 @@ fn ocr_entries() -> Vec<(String, u16)> {
         .map(|spec| spec.def)
         .collect();
     entries_from_actions(&defs)
+}
+
+/// Healthcare domain rows ([`crate::healthcare_actions`], the medcare-rs
+/// table — parity-plan P3), derived through the same generic
+/// [`entries_from_actions`] path as OCR.
+fn healthcare_entries() -> Vec<(String, u16)> {
+    entries_from_actions(&crate::healthcare_actions::healthcare_actions())
 }
 
 /// A green hot-plug resolution: the `(concept, classid)` vocab rows and the
@@ -326,16 +422,47 @@ mod hotplug_tests {
         assert_eq!(caps.len(), crate::ocr_actions::OCR_ACTION_NAMES.len());
     }
 
+    /// The parity-plan P3 probe: `resolve_hotplug("medcare-rs",
+    /// HEALTHCARE_SUBJECT_CLASSIDS, covered)` GREEN (KILL condition was
+    /// `NoCapabilitiesFor`/`Uncovered`). The Health classids that banged
+    /// `NoCapabilitiesFor` before this table landed now resolve.
+    #[test]
+    fn healthcare_hotplug_resolves_vocab_and_actions() {
+        let (concepts, caps) = resolve_hotplug(
+            "medcare-rs",
+            crate::healthcare_actions::HEALTHCARE_SUBJECT_CLASSIDS,
+            crate::healthcare_actions::HEALTHCARE_ACTION_NAMES,
+        )
+        .expect("healthcare hot-plug drifted from the authoritative table");
+        assert_eq!(concepts.len(), 6, "six subjects (visit excluded)");
+        assert!(concepts.contains(&("patient", 0x0901)));
+        assert!(concepts.contains(&("vital_sign", 0x0907)));
+        assert_eq!(caps.len(), 20);
+        // The wrong consumer against the same ids bangs UnexpectedConsumer.
+        assert!(matches!(
+            resolve_hotplug(
+                "tesseract-ogar",
+                crate::healthcare_actions::HEALTHCARE_SUBJECT_CLASSIDS,
+                crate::healthcare_actions::HEALTHCARE_ACTION_NAMES,
+            ),
+            Err(HotplugDrift::UnexpectedConsumer(_))
+        ));
+    }
+
     #[test]
     fn each_drift_arm_bangs() {
         assert!(matches!(
             resolve_hotplug("tesseract-ogar", &[0xFFFE], &[]),
             Err(HotplugDrift::UnknownClassid(0xFFFE))
         ));
-        // patient (0x0901) is minted but has no action table yet.
+        // visit (0x0906) is minted but deliberately table-less — the one
+        // Health entity the healthcare table excluded for zero harvest
+        // evidence (`healthcare_actions` module doc). It replaced patient
+        // (0x0901) as this arm's probe when the healthcare table landed
+        // and patient gained capabilities.
         assert!(matches!(
-            resolve_hotplug("tesseract-ogar", &[0x0901], &[]),
-            Err(HotplugDrift::NoCapabilitiesFor(0x0901))
+            resolve_hotplug("tesseract-ogar", &[crate::class_ids::VISIT], &[]),
+            Err(HotplugDrift::NoCapabilitiesFor(0x0906))
         ));
         assert!(matches!(
             resolve_hotplug("stranger", OCR_IDS, OCR_COVERED),
@@ -400,6 +527,73 @@ mod hotplug_tests {
         use crate::ActionDef;
         let a = ActionDef::new("z", "bar", "any:ns/totally_not_a_concept");
         assert_eq!(entries_from_actions(&[a]), vec![("bar".to_string(), 0)]);
+    }
+
+    /// The residual-aware derive: minted rows resolve to nonzero classids
+    /// (no id-0 escapes into the resolved vec), in original order;
+    /// unminted concepts land in the slag ledger carrying enough to name
+    /// the next config fact — never silently dropped, never degraded to
+    /// a fallback id.
+    #[test]
+    fn entries_from_actions_with_residuals_splits_minted_and_slag() {
+        use crate::ActionDef;
+        let minted_a = ActionDef::new("a", "recognize_line", "ogit-ocr/textline");
+        let unminted = ActionDef::new("z", "bar", "any:ns/totally_not_a_concept");
+        let minted_b = ActionDef::new("b", "render_hocr", "ogit-ocr/ocr_renderer");
+        let (resolved, residuals) =
+            entries_from_actions_with_residuals(&[minted_a, unminted, minted_b]);
+
+        assert_eq!(
+            resolved,
+            vec![
+                ("recognize_line".to_string(), crate::class_ids::TEXTLINE),
+                ("render_hocr".to_string(), crate::class_ids::OCR_RENDERER),
+            ]
+        );
+        assert!(
+            resolved.iter().all(|&(_, id)| id != 0),
+            "no id-0 escapes into resolved rows"
+        );
+
+        assert_eq!(residuals.len(), 1);
+        assert_eq!(residuals[0].capability, "bar");
+        assert_eq!(residuals[0].object_class, "any:ns/totally_not_a_concept");
+        assert_eq!(residuals[0].concept, "totally_not_a_concept");
+    }
+
+    /// Parity pin: `entries_from_actions` is exactly the interleaved
+    /// (resolved ++ residual-as-0) projection of the residual-aware
+    /// derive, in the ORIGINAL action order — the legacy id-0 sentinel
+    /// behavior is unchanged by the residual-aware rewrite.
+    #[test]
+    fn entries_from_actions_matches_residual_derive_interleaved() {
+        use crate::ActionDef;
+        let minted_a = ActionDef::new("a", "recognize_line", "ogit-ocr/textline");
+        let unminted = ActionDef::new("z", "bar", "any:ns/totally_not_a_concept");
+        let minted_b = ActionDef::new("b", "render_hocr", "ogit-ocr/ocr_renderer");
+        let actions = [minted_a, unminted, minted_b];
+
+        let expected = vec![
+            ("recognize_line".to_string(), crate::class_ids::TEXTLINE),
+            ("bar".to_string(), 0),
+            ("render_hocr".to_string(), crate::class_ids::OCR_RENDERER),
+        ];
+        assert_eq!(entries_from_actions(&actions), expected);
+    }
+
+    /// The healthcare table's bijectivity pin (module doc,
+    /// `codebook_dto_derive_is_bijective`), mirrored through the
+    /// residual-aware derive: zero slag rows — every subject concept is
+    /// minted, so nothing degrades and nothing lands in `UnmintedRow`.
+    #[test]
+    fn healthcare_entries_with_residuals_has_zero_slag() {
+        let (resolved, residuals) =
+            entries_from_actions_with_residuals(&crate::healthcare_actions::healthcare_actions());
+        assert!(residuals.is_empty(), "unexpected slag: {residuals:?}");
+        assert_eq!(
+            resolved.len(),
+            crate::healthcare_actions::HEALTHCARE_ACTION_NAMES.len()
+        );
     }
 
     /// The hand-authored OCR table, routed through the generic derive, has

@@ -69,6 +69,7 @@ use ogar_vocab::{
     // 0x0CXX — automation (HIRO MARS CMDB + DO-arm actuators)
     action_applicability,
     action_handler,
+    anamnesis,
     anatomical_structure,
     auth_ory_keto,
     auth_store,
@@ -85,10 +86,13 @@ use ogar_vocab::{
     commercial_line_item,
     currency_policy,
     diagnosis,
+    examination,
+    external_practice,
     hr_department,
     hr_employee,
     hr_employment_contract,
     hr_job,
+    investigation,
     joint,
     knowledge_item,
     lab_value,
@@ -114,6 +118,7 @@ use ogar_vocab::{
     page_layout,
     patient,
     payment_record,
+    practitioner,
     pricelist,
     pricelist_rule,
     priority,
@@ -210,7 +215,7 @@ fn all_canonical_classes() -> Vec<(&'static str, Class)> {
         ("page_layout", page_layout()),
         ("page_image", page_image()),
         ("ocr_renderer", ocr_renderer()),
-        // ── 0x09XX — health (OGIT Healthcare) ──
+        // ── 0x09XX — health (7 OGIT Healthcare + 4 harvest-derived mints) ──
         ("patient", patient()),
         ("diagnosis", diagnosis()),
         ("lab_value", lab_value()),
@@ -218,6 +223,11 @@ fn all_canonical_classes() -> Vec<(&'static str, Class)> {
         ("treatment", treatment()),
         ("visit", visit()),
         ("vital_sign", vital_sign()),
+        ("anamnesis", anamnesis()),
+        ("investigation", investigation()),
+        ("examination", examination()),
+        ("practitioner", practitioner()),
+        ("external_practice", external_practice()),
         // ── 0x0AXX — anatomy (FMA reference kinds) ──
         ("anatomical_structure", anatomical_structure()),
         ("skeleton", skeleton()),
@@ -596,9 +606,12 @@ mod tests {
 
     #[test]
     fn health_concepts_are_registered_with_their_fields() {
-        // The 7 OGIT Healthcare concepts resolve to registry entries —
-        // this is what makes `every_codebook_id_appears_in_class_ids_all`
-        // green for the 0x09XX block.
+        // All 12 Health concepts (7 OGIT + 5 harvest-derived mints)
+        // resolve to registry entries — this is what makes
+        // `every_codebook_id_appears_in_class_ids_all` green for the
+        // 0x09XX block. The `!fields.is_empty()` assertion is the
+        // empty-ObjectView guard: even the name-level mints must carry
+        // at least one field.
         let v = OgarClassView::new();
         for concept in [
             "patient",
@@ -608,6 +621,11 @@ mod tests {
             "treatment",
             "visit",
             "vital_sign",
+            "anamnesis",
+            "investigation",
+            "examination",
+            "practitioner",
+            "external_practice",
         ] {
             let id = canonical_concept_id(concept).unwrap();
             let view = v

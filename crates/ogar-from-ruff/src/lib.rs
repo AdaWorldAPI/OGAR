@@ -635,6 +635,53 @@ pub fn lift_actions(model: &Model) -> Vec<ActionDef> {
         .collect()
 }
 
+/// Re-keyed DO-arm lift for a God-object model (MedCare transcode doctrine
+/// Phase 1 wired into the lift — the CONCEPT = CLASS fix, production side).
+///
+/// [`lift_actions`] keys every [`ActionDef::object_class`] on the OWNING
+/// CLASS name — correct for AR-shaped corpora (one class per concept), and
+/// exactly the give-up point for a God-object DAL, where hundreds of
+/// `verb_concept` methods share one class and
+/// `entries_from_actions` resolves classid 0 for every row. This variant
+/// runs `ruff_spo_triplet::concept_split::rekey_model` over the model with
+/// the corpus-owner convention (data-as-config) and re-subjects each
+/// ActionDef:
+///
+/// - a method that SPLITS gets `object_class = <inferred concept>` (already
+///   `concept_key`-fixed-point, so the codebook exact-match resolves it —
+///   Boundary-4) and `predicate = <canonical verb>_<concept>` is NOT
+///   invented: the predicate stays the source method name (capability
+///   identity is the name; renaming is a registration concern);
+/// - a method that refuses to split keeps the class subject and lands on
+///   the caller's slag ledger via
+///   `ogar_vocab::capability_registry::entries_from_actions_with_residuals`
+///   (never silent id 0).
+///
+/// The effect/kausal enrichment is IDENTICAL to [`lift_actions`] — this
+/// wrapper only re-keys the subject, so the two paths cannot drift.
+#[must_use]
+pub fn lift_actions_with_convention(
+    model: &Model,
+    conv: &ruff_spo_triplet::ConceptConvention,
+) -> Vec<ActionDef> {
+    let outcome = ruff_spo_triplet::rekey_model(model, conv);
+    let concept_of: HashMap<&str, &str> = outcome
+        .keyed
+        .iter()
+        .map(|(name, split)| (name.as_str(), split.concept.as_str()))
+        .collect();
+    lift_actions(model)
+        .into_iter()
+        .map(|mut a| {
+            if let Some(concept) = concept_of.get(a.predicate.as_str()) {
+                a.object_class = (*concept).to_string();
+                a.identity = format!("{}::action_def::{}", concept, a.predicate);
+            }
+            a
+        })
+        .collect()
+}
+
 // ───────────────────────────── associations ──────────────────────────────
 
 /// Lift one [`AssocDecl`] to an OGAR [`Association`].
@@ -2222,5 +2269,75 @@ mod tests {
         assert_eq!(hook.identity, "Issue::action_def::update_closed_on");
         assert_eq!(hook.writes, vec!["closed_on".to_string()]);
         assert_eq!(hook.reads, vec!["updated_on".to_string()]);
+    }
+    /// **The OGAR-side furnace exam** (MedCare transcode doctrine Phase 6):
+    /// a God-object model — one class, `verb_concept` methods — flows
+    /// through `rekey_model → lift_actions_with_convention →
+    /// entries_from_actions_with_residuals` and re-derives its concepts
+    /// with NONZERO classids, while the unsplittable method lands on the
+    /// slag ledger instead of degrading to the id-0 sentinel. Green means
+    /// a hand-authored domain table for such a corpus is only an
+    /// unautomated config read. (The ruff-side twin — real-corpus
+    /// harvest → reassemble → rekey → codebook check — lives in
+    /// `ruff_spo_triplet`'s `rekey_exam` example; this is the OGAR half
+    /// the doctrine's success criteria name: "no unwrap_or_default
+    /// concept-id fallback; every unresolved row becomes a residual DTO".)
+    #[test]
+    fn god_object_rekey_lift_derives_nonzero_concepts_with_slag() {
+        use ruff_spo_triplet::ConceptConvention;
+
+        // A God-object DAL: every concept lives in the method name. The
+        // concept names are public codebook mints (`patient` 0x0901,
+        // `diagnosis` 0x0902); the method/class shapes are neutral.
+        let mut m = Model::new("Database");
+        for name in ["add_iv_patient", "get_list_patient", "add_iv_diagnosis"] {
+            m.functions.push(Function {
+                name: name.to_string(),
+                ..Default::default()
+            });
+        }
+        // The slag: no verb prefix — refuses to split, keeps the class key.
+        m.functions.push(Function {
+            name: "InitializeComponent".to_string(),
+            ..Default::default()
+        });
+
+        let conv = ConceptConvention {
+            verbs: vec![
+                ("add".into(), "create".into()),
+                ("get".into(), "read".into()),
+            ],
+            scopes: vec!["iv".into(), "list".into()],
+            concept_aliases: vec![],
+        };
+
+        let defs = lift_actions_with_convention(&m, &conv);
+        assert_eq!(defs.len(), 4);
+        let (rows, residuals) =
+            ogar_vocab::capability_registry::entries_from_actions_with_residuals(&defs);
+
+        // Split methods resolve their concept NONZERO — never id 0.
+        assert_eq!(rows.len(), 3);
+        for (cap, id) in &rows {
+            assert_ne!(*id, 0, "`{cap}` must resolve nonzero");
+        }
+        assert!(
+            rows.iter()
+                .any(|(c, id)| c == "add_iv_patient" && *id == 0x0901)
+        );
+        assert!(
+            rows.iter()
+                .any(|(c, id)| c == "get_list_patient" && *id == 0x0901)
+        );
+        assert!(
+            rows.iter()
+                .any(|(c, id)| c == "add_iv_diagnosis" && *id == 0x0902)
+        );
+
+        // The unsplittable method is SLAG — a named residual carrying the
+        // class subject, not a silent zero.
+        assert_eq!(residuals.len(), 1);
+        assert_eq!(residuals[0].capability, "InitializeComponent");
+        assert_eq!(residuals[0].concept, "Database");
     }
 }
