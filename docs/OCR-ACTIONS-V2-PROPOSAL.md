@@ -177,3 +177,84 @@ path by construction.
   because the executor cannot honor it yet (eng-only model shipped);
   adding a dead param would be a lie in the facts. Recorded as the v3
   trigger: the slot lands WITH the multi-model executor.
+
+---
+
+# CONSOLIDATION — Phase 1 (5 verification savants, 2026-07-10)
+
+> 5/5 savants completed (0 errors, ~1M tokens). Lens 1 (vocab) 9/9 CONFIRMED.
+> The corrections below are folded in BEFORE the 3 brutal reviewers so they
+> attack a clean spec (operator protocol: "consolidate first, otherwise the
+> 5+3 becomes mushy"). Each is evidence-backed (file:line verified in-repo,
+> the load-bearing fuse correction re-verified directly by the orchestrator).
+
+## Corrections applied (supersede the body above where they conflict)
+
+- **[Lens 4 — LOAD-BEARING] The live fuse is `resolve_hotplug` + `HOT_PLUG`,
+  NOT `verify_ocr_registration`.** Verified: `ogar-vocab/src/
+  capability_registry.rs:242` `resolve_hotplug`; the green test is
+  `hotplug_activation_is_green` (:323) calling
+  `resolve_hotplug("tesseract-ogar", OCR_IDS, OCR_COVERED)`; the executor's
+  live surface is `tesseract-ogar::{COVERED_CAPABILITIES, HOT_PLUG}` +
+  `const _: () = assert!(OCR_ACTION_NAMES.len() == COVERED_CAPABILITIES.len())`
+  (tesseract-ogar/src/lib.rs:61,81,94). `verify_ocr_registration` still
+  compiles + self-tests but is NOT this executor's live path. C1/V2-6 are
+  corrected to name the hot-plug surface.
+- **[Lens 4 GAP + Lens 2 CORRECTED] Implementation touches THREE fuse sites,
+  all in-PR:** (a) OGAR `OCR_ACTION_NAMES` 8→14 + `const _` assert 8→14;
+  (b) OGAR `OCR_SUBJECT_CLASSIDS` += `class_ids::PAGE_LAYOUT` (the only net-new
+  subject — PAGE_IMAGE already present); (c) the `#[cfg(test)]` mirrors in
+  `capability_registry.rs` (`OCR_IDS` += `0x0807`, `OCR_COVERED` → 14) — the
+  spec now mandates converting these test mirrors to LIVE references
+  (`ocr_actions::{OCR_SUBJECT_CLASSIDS, OCR_ACTION_NAMES}`) so they can never
+  drift again. tesseract-ogar side: `COVERED_CAPABILITIES` 8→14 + the
+  `hotplug_activation_is_green` concept count 3→4.
+- **[Lens 2 CORRECTED — merge order] The interim break is a HARD COMPILE
+  FAILURE of the whole tesseract-rs workspace** (the `const _` assert + the
+  unpinned sibling path-dep on ogar-vocab), not "a registration test goes
+  red." Consequence for C3: OGAR PR merges FIRST; the tesseract-rs PR
+  (executor + `COVERED_CAPABILITIES`=14) must be ready to merge in lockstep,
+  because tesseract-rs `main` will fail `cargo build` against OGAR `main`=14
+  until it lands. Both PRs authored together this session.
+- **[Lens 2 GAP — DROP `classify_regions`] Row 10's optional `classify_regions`
+  param is REMOVED.** No code precedent (repo-wide grep = 0); the shipped web
+  arm classifies regions unconditionally. Row 10 optional params are now just
+  `with_dict, harvest_profile`. A future cheap-path toggle (skip
+  classification) is recorded as a v3 trigger, not shipped as a dead flag.
+- **[Lens 3 CORRECTED — C4] The real OGAR-AS-IR §3 tests** (OGAR-AS-IR.md:57-62)
+  are: (1) SSA/dataflow-explicit, (2) effect-annotations-first-class,
+  (3) typed-signature-not-field-bag, (4) named-lowering-passes,
+  (5) semantic-preservation-guarantee, (6) IR-is-canonical. Re-answered:
+  (1) N/A — this is a declared capability table, not a lowering (no dataflow
+  to make explicit); (2) YES — `reads`/`writes` are the first-class effect
+  annotations, exactly as the existing 8; (3) YES — `OcrActionSpec.params`
+  (`OcrActionParam{name,mandatory}`) IS the typed signature, not a field bag;
+  (4) N/A — no new lowering pass; (5) YES — additive, no existing row edited,
+  semantics of the 8 preserved; (6) YES — the vocab table is the canonical IR
+  the executor resolves against. The change PASSES (the 3 applicable tests),
+  and my original C4 six invented questions are withdrawn.
+- **[Lens 3 GAP — BBB path] The woa-rs consumer sketch (C3) violates no
+  anti-pattern, but must resolve via the membrane:** woa-rs (a BBB / customer
+  binary, woa-rs Iron Rule 1) pulls `PAGE_IMAGE` (0x0808) through
+  `lance_graph_contract::ogar_codebook::canonical_concept_id`, NOT
+  `ogar_vocab::ports` directly (OGAR-CONSUMER-BEST-PRACTICES.md §2 Pattern 1b).
+  The invocation stays behavior-free at the address; behavior is at the
+  tesseract-ogar executor. Sketch remains SPEC-ONLY.
+- **[Lens 5 CORRECTED — V2-7 docs] The six rows land in `ocr_actions.rs`'s own
+  module-doc capability table** (mirroring the existing 8-row table there), NOT
+  in `docs/ARAGO-ACTIONHANDLER-PARITY.md` — verified (401-line read) to be the
+  generic arago-protocol scorecard with ZERO OCR content. V2-7 is corrected.
+- **[Lens 5 GAP — ledger] Append a `docs/DISCOVERY-MAP.md` D-entry** for the v2
+  table growth (CLAUDE.md marks it mandatory; v1 shipped without one — a
+  pre-existing gap this change closes rather than repeats).
+
+## Net implementation delta (what the 3 reviewers should hold the diff to)
+
+OGAR: `ocr_actions.rs` +6 `OcrActionSpec` rows (subjects: rows 9/10/12/13 →
+`page_image` 0x0808, rows 11/14 → `page_layout` 0x0807), `OCR_ACTION_NAMES`
+8→14, `const _` 8→14, `OCR_SUBJECT_CLASSIDS` += `PAGE_LAYOUT`, module-doc table
++6 rows; `capability_registry.rs` test mirrors → live refs; `DISCOVERY-MAP.md`
++1 D-entry. tesseract-rs: `tesseract-ocr::recognize_document` composition helper
+(+ web arm refactored onto it, DRY), `tesseract-ogar` +6 request/response
+variants + execute/capability_of/param-map arms + `COVERED_CAPABILITIES` 8→14 +
+hotplug concept-count 3→4. Merge OGAR first; tesseract-rs in lockstep.
