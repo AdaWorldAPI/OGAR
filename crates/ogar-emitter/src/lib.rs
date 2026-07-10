@@ -39,6 +39,9 @@ use ogar_vocab::{
     Validation,
 };
 
+mod do_adapter;
+pub use do_adapter::{AdapterAction, AdapterClass, emit_do_adapters};
+
 /// A subject-predicate-object triple in the OGAR / OGIT prefix-radix
 /// namespace.
 ///
