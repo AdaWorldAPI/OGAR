@@ -1098,7 +1098,7 @@ impl Class {
 ///   0x06XX  unassigned
 ///   0x07XX  reserved: OSINT
 ///   0x08XX  OCR               (container kinds: unicharset/recoder/charset)
-///   0x09XX  Health            (clinical / patient / care; 7 OGIT entities + 4 harvest-derived mints)
+///   0x09XX  Health            (clinical / patient / care; 7 OGIT entities + 5 harvest-derived mints)
 ///   0x0AXX  Anatomy           (FMA reference ontology; bones/skeleton)
 ///   0x0BXX  Auth              (IAM; the AuthStore class family)
 ///   0x0CXX  Automation        (HIRO IT-automation: MARS CMDB + actuators)
@@ -1226,13 +1226,13 @@ const CODEBOOK: &[(&str, u16)] = &[
     ("page_image", 0x0808),
     ("ocr_renderer", 0x0809),
     // ── 0x09XX — Health domain (clinical / patient / care) ──
-    // 11 concepts, two provenance classes. 0x0901..0x0907: the 7 entities
+    // 12 concepts, two provenance classes. 0x0901..0x0907: the 7 entities
     // the OGIT `NTO/Healthcare/entities/` TTL ships (medcare-rs
     // Healthcare-namespace promotion, Northstar T9), projected onto
     // canonical Health ids so `ports::HealthcarePort` resolves them
     // through the `UnifiedBridge` codebook path (the same way OpenProject
     // `WorkPackage` and Redmine `Issue` resolve through their ports).
-    // 0x0908..0x090B: harvest-derived mints — surfaced by the transcode
+    // 0x0908..0x090C: harvest-derived mints — surfaced by the transcode
     // furnace exam's slag ledger (concept-shaped unbound residues), minted
     // through the engineer's gate; no OGIT TTL entity yet, so they carry
     // no port alias until one exists. Single-tenant today — no
@@ -1250,6 +1250,7 @@ const CODEBOOK: &[(&str, u16)] = &[
     ("investigation", 0x0909),
     ("examination", 0x090A),
     ("practitioner", 0x090B),
+    ("external_practice", 0x090C),
     // ── 0x0AXX — Anatomy domain (FMA reference ontology) ──
     // The public anatomical reference frame consumed by the splat-native
     // ultrasound arc (`docs/SPLAT-NATIVE-CUSTOMER.md` §6 litmus) and the FMA
@@ -1458,7 +1459,7 @@ pub fn canonical_concept_domain(id: u16) -> ConceptDomain {
 ///     .map(|(name, _id)| name)
 ///     .collect();
 /// assert!(health.contains(&"patient"));
-/// assert_eq!(health.len(), 11); // 7 OGIT Healthcare entities + 4 harvest-derived mints
+/// assert_eq!(health.len(), 12); // 7 OGIT Healthcare entities + 5 harvest-derived mints
 /// ```
 pub fn concepts_in_domain(domain: ConceptDomain) -> impl Iterator<Item = (&'static str, u16)> {
     CODEBOOK
@@ -1776,6 +1777,16 @@ pub mod class_ids {
     /// (`0x0DXX` HR owns the employment axis). Harvest-derived mint
     /// (furnace-exam slag, round 2); no OGIT entity — no port alias.
     pub const PRACTITIONER: u16 = 0x090B;
+    /// `external_practice` (`0x090C`) — a referral-partner organization:
+    /// an external clinic recorded for inter-clinic correspondence
+    /// (name, postal address, contact channel). FHIR `Organization`. NOT
+    /// a patient-file record — it is an org, not care data — so it
+    /// carries no patient family edge. Harvest-derived mint (furnace-exam
+    /// slag, round 4); three-axis-witnessed (method family + storage
+    /// projection + a dedicated navigation home), so grounded [G] rather
+    /// than method-only; no clean OGIT entity — no port alias until one
+    /// exists.
+    pub const EXTERNAL_PRACTICE: u16 = 0x090C;
 
     // ── 0x0AXX — Anatomy domain (FMA reference ontology) ──
 
@@ -1969,6 +1980,7 @@ pub mod class_ids {
         ("investigation", INVESTIGATION),
         ("examination", EXAMINATION),
         ("practitioner", PRACTITIONER),
+        ("external_practice", EXTERNAL_PRACTICE),
         // 0x0AXX — anatomy (FMA reference ontology)
         ("anatomical_structure", ANATOMICAL_STRUCTURE),
         ("skeleton", SKELETON),
@@ -2069,7 +2081,7 @@ pub mod class_ids {
             // lance-graph mirror is rebuilt against it.
             assert_eq!(
                 ALL.len(),
-                88,
+                89,
                 "class_ids::ALL count changed — update this pin AND the \
                  lance-graph mirror COUNT_FUSE (crates/lance-graph-ogar/src/lib.rs) \
                  in the same PR",
@@ -2901,7 +2913,7 @@ pub fn all_promoted_classes() -> Vec<Class> {
         page_layout(),
         page_image(),
         ocr_renderer(),
-        // 0x09XX — health arm (7 OGIT Healthcare concepts + 4
+        // 0x09XX — health arm (7 OGIT Healthcare concepts + 5
         // harvest-derived mints), in class_ids::ALL order.
         patient(),
         diagnosis(),
@@ -2914,6 +2926,7 @@ pub fn all_promoted_classes() -> Vec<Class> {
         investigation(),
         examination(),
         practitioner(),
+        external_practice(),
         // 0x0AXX — anatomy arm (FMA reference kinds), in class_ids::ALL order.
         anatomical_structure(),
         skeleton(),
@@ -4283,6 +4296,22 @@ pub fn practitioner() -> Class {
     c
 }
 
+/// ExternalPractice — a referral-partner organization (`0x090C`; FHIR
+/// `Organization`): an external clinic recorded for inter-clinic
+/// correspondence. Harvest-derived mint, name-level schema. NO patient
+/// edge — it is an organization, not a patient-file record.
+#[must_use]
+pub fn external_practice() -> Class {
+    let mut c = Class::new("ExternalPractice");
+    c.language = Language::Unknown;
+    c.canonical_concept = Some("external_practice".to_string());
+    c.description = Some("A referral-partner organization".to_string());
+    let mut name = Attribute::new("name");
+    name.type_name = Some("string".to_string());
+    c.attributes = vec![name];
+    c
+}
+
 // ── 0x0BXX — Auth domain builders (the AuthStore class family, keystone §7) ──
 
 /// The `auth_store` (`0x0B01`) base class of the AuthStore family — the
@@ -5361,6 +5390,7 @@ mod tests {
             "investigation",
             "examination",
             "practitioner",
+            "external_practice",
         ] {
             let id = canonical_concept_id(health_concept)
                 .unwrap_or_else(|| panic!("{health_concept} missing from codebook"));
@@ -5440,6 +5470,7 @@ mod tests {
             (investigation, "investigation", 0x0909),
             (examination, "examination", 0x090A),
             (practitioner, "practitioner", 0x090B),
+            (external_practice, "external_practice", 0x090C),
         ] {
             let c = builder();
             assert_eq!(c.canonical_concept.as_deref(), Some(concept));
@@ -5464,6 +5495,7 @@ mod tests {
             (investigation(), 1),
             (examination(), 1),
             (practitioner(), 0),
+            (external_practice(), 0),
         ] {
             assert_eq!(
                 c.attributes.len(),
@@ -5525,6 +5557,7 @@ mod tests {
                 "investigation",
                 "examination",
                 "practitioner",
+                "external_practice",
             ],
             "Health domain set drift — re-sync the consumer coverage gate",
         );
@@ -5532,8 +5565,8 @@ mod tests {
         for (_, id) in concepts_in_domain(ConceptDomain::Health) {
             assert_eq!(canonical_concept_domain(id), ConceptDomain::Health);
         }
-        // Counts line up with the codebook blocks (7 OGIT + 4 harvest mints).
-        assert_eq!(concepts_in_domain(ConceptDomain::Health).count(), 11);
+        // Counts line up with the codebook blocks (7 OGIT + 5 harvest mints).
+        assert_eq!(concepts_in_domain(ConceptDomain::Health).count(), 12);
         // 0x08XX OCR: the nine container KINDS (unicharset/recoder/charset/
         // network_layer + the PDF→text plan mints textline/blob/page_layout/
         // page_image/ocr_renderer). Content (the 112 unichars, code tables,

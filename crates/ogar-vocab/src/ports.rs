@@ -595,8 +595,12 @@ mod tests {
         // Patient / Diagnosis / LabValue / Medication / Treatment / Visit
         // / VitalSign — the 7 OGIT `NTO/Healthcare/entities/` classes this
         // port was lifted from. Deliberately NOT the Health-domain codebook
-        // cardinality (11): the 0x0908..0x090B harvest-derived mints carry
-        // no OGIT entity and therefore no port alias. NOTE (assessment
+        // cardinality (12): the 0x0908..0x090C harvest-derived mints carry
+        // no OGIT entity and therefore no port alias. (0x090C
+        // external_practice has a mechanical sql_mirror TTL stub but no
+        // curated OGIT NTO/Healthcare entity — the port mirrors the curated
+        // entity set, so it stays alias-less like its siblings.) NOTE
+        // (assessment
         // drift, filed follow-up): upstream OGIT now ships an 8th entity
         // (`Healthcare:Assessment`, 2026-07-06) that was never lifted —
         // when it is, this pin moves 7→8 and `examination` (0x090A) must

@@ -87,6 +87,7 @@ use ogar_vocab::{
     currency_policy,
     diagnosis,
     examination,
+    external_practice,
     hr_department,
     hr_employee,
     hr_employment_contract,
@@ -226,6 +227,7 @@ fn all_canonical_classes() -> Vec<(&'static str, Class)> {
         ("investigation", investigation()),
         ("examination", examination()),
         ("practitioner", practitioner()),
+        ("external_practice", external_practice()),
         // ── 0x0AXX — anatomy (FMA reference kinds) ──
         ("anatomical_structure", anatomical_structure()),
         ("skeleton", skeleton()),
@@ -604,7 +606,7 @@ mod tests {
 
     #[test]
     fn health_concepts_are_registered_with_their_fields() {
-        // All 11 Health concepts (7 OGIT + 4 harvest-derived mints)
+        // All 12 Health concepts (7 OGIT + 5 harvest-derived mints)
         // resolve to registry entries — this is what makes
         // `every_codebook_id_appears_in_class_ids_all` green for the
         // 0x09XX block. The `!fields.is_empty()` assertion is the
@@ -623,6 +625,7 @@ mod tests {
             "investigation",
             "examination",
             "practitioner",
+            "external_practice",
         ] {
             let id = canonical_concept_id(concept).unwrap();
             let view = v
