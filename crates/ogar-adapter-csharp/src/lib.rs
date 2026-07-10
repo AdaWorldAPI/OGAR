@@ -522,7 +522,10 @@ public static class OgarCapabilitySurface
 
         try
         {
-            ResolveHotplug("tesseract-ogar", new[] { ClassIds["patient"] }, Array.Empty<string>());
+            // `visit` (0x0906): the table-less Health concept — the stable
+            // "no capabilities" probe now that `patient` carries the
+            // healthcare table (whose executor guard would fire first).
+            ResolveHotplug("tesseract-ogar", new[] { ClassIds["visit"] }, Array.Empty<string>());
             throw new Exception("expected NoCapabilitiesFor");
         }
         catch (NoCapabilitiesFor e) { lines.Add($"NoCapabilitiesFor={e.ClassId:X4}"); }
