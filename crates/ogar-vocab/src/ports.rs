@@ -593,7 +593,14 @@ mod tests {
     #[test]
     fn healthcare_alias_count_matches_ogit_entities() {
         // Patient / Diagnosis / LabValue / Medication / Treatment / Visit
-        // / VitalSign — the 7 OGIT `NTO/Healthcare/entities/` classes.
+        // / VitalSign — the 7 OGIT `NTO/Healthcare/entities/` classes this
+        // port was lifted from. Deliberately NOT the Health-domain codebook
+        // cardinality (11): the 0x0908..0x090B harvest-derived mints carry
+        // no OGIT entity and therefore no port alias. NOTE (assessment
+        // drift, filed follow-up): upstream OGIT now ships an 8th entity
+        // (`Healthcare:Assessment`, 2026-07-06) that was never lifted —
+        // when it is, this pin moves 7→8 and `examination` (0x090A) must
+        // NOT be double-minted as `assessment`.
         assert_eq!(
             HealthcarePort::aliases().len(),
             7,

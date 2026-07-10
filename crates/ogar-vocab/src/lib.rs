@@ -1098,7 +1098,7 @@ impl Class {
 ///   0x06XX  unassigned
 ///   0x07XX  reserved: OSINT
 ///   0x08XX  OCR               (container kinds: unicharset/recoder/charset)
-///   0x09XX  Health            (clinical / patient / care; 7 OGIT entities)
+///   0x09XX  Health            (clinical / patient / care; 7 OGIT entities + 4 harvest-derived mints)
 ///   0x0AXX  Anatomy           (FMA reference ontology; bones/skeleton)
 ///   0x0BXX  Auth              (IAM; the AuthStore class family)
 ///   0x0CXX  Automation        (HIRO IT-automation: MARS CMDB + actuators)
@@ -1226,14 +1226,19 @@ const CODEBOOK: &[(&str, u16)] = &[
     ("page_image", 0x0808),
     ("ocr_renderer", 0x0809),
     // ── 0x09XX — Health domain (clinical / patient / care) ──
-    // medcare-rs Healthcare-namespace promotion (Northstar T9). The 7
-    // entities the OGIT `NTO/Healthcare/entities/` TTL ships, projected
-    // onto canonical Health ids so `ports::HealthcarePort` resolves them
+    // 11 concepts, two provenance classes. 0x0901..0x0907: the 7 entities
+    // the OGIT `NTO/Healthcare/entities/` TTL ships (medcare-rs
+    // Healthcare-namespace promotion, Northstar T9), projected onto
+    // canonical Health ids so `ports::HealthcarePort` resolves them
     // through the `UnifiedBridge` codebook path (the same way OpenProject
     // `WorkPackage` and Redmine `Issue` resolve through their ports).
-    // Single-tenant today — no cross-curator convergence yet — but the
-    // ids are minted into the shared codebook so a future second clinical
-    // curator (FMA / SNOMED import) converges here rather than re-mints.
+    // 0x0908..0x090B: harvest-derived mints — surfaced by the transcode
+    // furnace exam's slag ledger (concept-shaped unbound residues), minted
+    // through the engineer's gate; no OGIT TTL entity yet, so they carry
+    // no port alias until one exists. Single-tenant today — no
+    // cross-curator convergence yet — but the ids are minted into the
+    // shared codebook so a future second clinical curator (FMA / SNOMED
+    // import) converges here rather than re-mints.
     ("patient", 0x0901),
     ("diagnosis", 0x0902),
     ("lab_value", 0x0903),
@@ -1241,6 +1246,10 @@ const CODEBOOK: &[(&str, u16)] = &[
     ("treatment", 0x0905),
     ("visit", 0x0906),
     ("vital_sign", 0x0907),
+    ("anamnesis", 0x0908),
+    ("investigation", 0x0909),
+    ("examination", 0x090A),
+    ("practitioner", 0x090B),
     // ── 0x0AXX — Anatomy domain (FMA reference ontology) ──
     // The public anatomical reference frame consumed by the splat-native
     // ultrasound arc (`docs/SPLAT-NATIVE-CUSTOMER.md` §6 litmus) and the FMA
@@ -1449,7 +1458,7 @@ pub fn canonical_concept_domain(id: u16) -> ConceptDomain {
 ///     .map(|(name, _id)| name)
 ///     .collect();
 /// assert!(health.contains(&"patient"));
-/// assert_eq!(health.len(), 7); // the 7 OGIT Healthcare entities
+/// assert_eq!(health.len(), 11); // 7 OGIT Healthcare entities + 4 harvest-derived mints
 /// ```
 pub fn concepts_in_domain(domain: ConceptDomain) -> impl Iterator<Item = (&'static str, u16)> {
     CODEBOOK
@@ -1743,6 +1752,30 @@ pub mod class_ids {
     /// `vital_sign` (`0x0907`) — a measured vital. OGIT
     /// `Healthcare:VitalSign`.
     pub const VITAL_SIGN: u16 = 0x0907;
+    /// `anamnesis` (`0x0908`) — a patient's recorded history-taking
+    /// (the discoverable English synonym is `medical_history`; SNOMED
+    /// "history taking"). Harvest-derived mint (furnace-exam slag,
+    /// round 2); no OGIT entity — no port alias until one exists.
+    pub const ANAMNESIS: u16 = 0x0908;
+    /// `investigation` (`0x0909`) — an ordered clinical workup /
+    /// investigation record (FHIR ServiceRequest/DiagnosticReport-
+    /// adjacent). Harvest-derived mint (furnace-exam slag, round 2);
+    /// no OGIT entity — no port alias until one exists.
+    pub const INVESTIGATION: u16 = 0x0909;
+    /// `examination` (`0x090A`) — a performed examination record,
+    /// distinct from `investigation` (performed exam vs ordered
+    /// workup). Parallel grounding: OGIT `Healthcare:Assessment`
+    /// (upstream 2026-07-06, not yet lifted into this codebook — see
+    /// the assessment-drift follow-up before minting `assessment`).
+    /// Harvest-derived mint (furnace-exam slag, round 2).
+    pub const EXAMINATION: u16 = 0x090A;
+    /// `practitioner` (`0x090B`) — the clinical actor: the physician
+    /// selected on clinical screens (FHIR `Practitioner`). Explicitly
+    /// NOT staff-account / license administration — that is an admin
+    /// concern, not the care-delivery role — and NOT employment
+    /// (`0x0DXX` HR owns the employment axis). Harvest-derived mint
+    /// (furnace-exam slag, round 2); no OGIT entity — no port alias.
+    pub const PRACTITIONER: u16 = 0x090B;
 
     // ── 0x0AXX — Anatomy domain (FMA reference ontology) ──
 
@@ -1932,6 +1965,10 @@ pub mod class_ids {
         ("treatment", TREATMENT),
         ("visit", VISIT),
         ("vital_sign", VITAL_SIGN),
+        ("anamnesis", ANAMNESIS),
+        ("investigation", INVESTIGATION),
+        ("examination", EXAMINATION),
+        ("practitioner", PRACTITIONER),
         // 0x0AXX — anatomy (FMA reference ontology)
         ("anatomical_structure", ANATOMICAL_STRUCTURE),
         ("skeleton", SKELETON),
@@ -2032,7 +2069,7 @@ pub mod class_ids {
             // lance-graph mirror is rebuilt against it.
             assert_eq!(
                 ALL.len(),
-                84,
+                88,
                 "class_ids::ALL count changed — update this pin AND the \
                  lance-graph mirror COUNT_FUSE (crates/lance-graph-ogar/src/lib.rs) \
                  in the same PR",
@@ -2864,8 +2901,8 @@ pub fn all_promoted_classes() -> Vec<Class> {
         page_layout(),
         page_image(),
         ocr_renderer(),
-        // 0x09XX — health arm (7 OGIT Healthcare concepts), in
-        // class_ids::ALL order.
+        // 0x09XX — health arm (7 OGIT Healthcare concepts + 4
+        // harvest-derived mints), in class_ids::ALL order.
         patient(),
         diagnosis(),
         lab_value(),
@@ -2873,6 +2910,10 @@ pub fn all_promoted_classes() -> Vec<Class> {
         treatment(),
         visit(),
         vital_sign(),
+        anamnesis(),
+        investigation(),
+        examination(),
+        practitioner(),
         // 0x0AXX — anatomy arm (FMA reference kinds), in class_ids::ALL order.
         anatomical_structure(),
         skeleton(),
@@ -4165,6 +4206,83 @@ pub fn vital_sign() -> Class {
     c
 }
 
+// The four 0x0908..0x090B builders below are harvest-derived mints
+// (furnace-exam slag, round 2) with NO OGIT TTL entity behind them. Per
+// the round-2 council ruling they are deliberately NAME-LEVEL: canonical
+// concept + the harvest-evident minimum (one structural attribute, plus
+// the patient edge where the record demonstrably lives in the patient
+// file). Clinical attribute schemas are NOT fabricated here — they
+// arrive from the harvest via the production lift when the evidence
+// exists, never by hand. A test pins these attribute counts.
+
+/// Anamnesis — a patient's recorded history-taking (`0x0908`; the
+/// discoverable English synonym is `medical_history`; SNOMED "history
+/// taking"). Harvest-derived mint — no OGIT entity, name-level schema.
+#[must_use]
+pub fn anamnesis() -> Class {
+    let mut c = Class::new("Anamnesis");
+    c.language = Language::Unknown;
+    c.canonical_concept = Some("anamnesis".to_string());
+    c.description =
+        Some("A patient's recorded medical history (history-taking record)".to_string());
+    c.associations = vec![family_edge("patient", "Patient")];
+    let mut recorded_at = Attribute::new("recorded_at");
+    recorded_at.type_name = Some("datetime".to_string());
+    c.attributes = vec![recorded_at];
+    c
+}
+
+/// Investigation — an ordered clinical workup / investigation record
+/// (`0x0909`; FHIR ServiceRequest/DiagnosticReport-adjacent).
+/// Harvest-derived mint — no OGIT entity, name-level schema.
+#[must_use]
+pub fn investigation() -> Class {
+    let mut c = Class::new("Investigation");
+    c.language = Language::Unknown;
+    c.canonical_concept = Some("investigation".to_string());
+    c.description = Some("An ordered clinical workup / investigation record".to_string());
+    c.associations = vec![family_edge("patient", "Patient")];
+    let mut recorded_at = Attribute::new("recorded_at");
+    recorded_at.type_name = Some("datetime".to_string());
+    c.attributes = vec![recorded_at];
+    c
+}
+
+/// Examination — a performed examination record (`0x090A`), distinct
+/// from [`investigation`] (performed exam vs ordered workup). Parallel
+/// grounding: OGIT `Healthcare:Assessment` (upstream 2026-07-06, not
+/// yet lifted into this codebook). Harvest-derived mint, name-level.
+#[must_use]
+pub fn examination() -> Class {
+    let mut c = Class::new("Examination");
+    c.language = Language::Unknown;
+    c.canonical_concept = Some("examination".to_string());
+    c.description = Some("A performed examination record".to_string());
+    c.associations = vec![family_edge("patient", "Patient")];
+    let mut performed_at = Attribute::new("performed_at");
+    performed_at.type_name = Some("datetime".to_string());
+    c.attributes = vec![performed_at];
+    c
+}
+
+/// Practitioner — the clinical actor (`0x090B`; FHIR `Practitioner`):
+/// the physician selected on clinical screens. Explicitly NOT
+/// staff-account / license administration (an admin concern, not the
+/// care-delivery role) and NOT employment (`0x0DXX` HR owns that axis).
+/// Harvest-derived mint — no OGIT entity, name-level schema. No patient
+/// edge: the practitioner is the actor, not a patient-file record.
+#[must_use]
+pub fn practitioner() -> Class {
+    let mut c = Class::new("Practitioner");
+    c.language = Language::Unknown;
+    c.canonical_concept = Some("practitioner".to_string());
+    c.description = Some("The clinical actor delivering care".to_string());
+    let mut name = Attribute::new("name");
+    name.type_name = Some("string".to_string());
+    c.attributes = vec![name];
+    c
+}
+
 // ── 0x0BXX — Auth domain builders (the AuthStore class family, keystone §7) ──
 
 /// The `auth_store` (`0x0B01`) base class of the AuthStore family — the
@@ -5239,6 +5357,10 @@ mod tests {
             "treatment",
             "visit",
             "vital_sign",
+            "anamnesis",
+            "investigation",
+            "examination",
+            "practitioner",
         ] {
             let id = canonical_concept_id(health_concept)
                 .unwrap_or_else(|| panic!("{health_concept} missing from codebook"));
@@ -5314,11 +5436,47 @@ mod tests {
             (treatment, "treatment", 0x0905),
             (visit, "visit", 0x0906),
             (vital_sign, "vital_sign", 0x0907),
+            (anamnesis, "anamnesis", 0x0908),
+            (investigation, "investigation", 0x0909),
+            (examination, "examination", 0x090A),
+            (practitioner, "practitioner", 0x090B),
         ] {
             let c = builder();
             assert_eq!(c.canonical_concept.as_deref(), Some(concept));
             assert_eq!(c.canonical_id(), Some(id), "{concept} -> {id:#06x}");
             assert_eq!(canonical_concept_domain(id), ConceptDomain::Health);
+        }
+    }
+
+    #[test]
+    fn harvest_derived_health_mints_stay_name_level() {
+        // Round-2 council pin (anti-fabrication): the four 0x0908..0x090B
+        // builders are harvest-derived with NO OGIT entity behind them, so
+        // their schemas stay at the harvest-evident minimum — exactly ONE
+        // structural attribute each, a patient edge only where the record
+        // demonstrably lives in the patient file, and zero fabricated
+        // clinical attributes. Clinical schemas arrive from the harvest
+        // via the production lift, never by hand. Growing one of these
+        // sets is a deliberate act: bring the harvest evidence and update
+        // this pin in the same change.
+        for (c, expected_edges) in [
+            (anamnesis(), 1usize),
+            (investigation(), 1),
+            (examination(), 1),
+            (practitioner(), 0),
+        ] {
+            assert_eq!(
+                c.attributes.len(),
+                1,
+                "{}: harvest-derived mint grew past its name-level schema",
+                c.name,
+            );
+            assert_eq!(
+                c.associations.len(),
+                expected_edges,
+                "{}: unexpected family-edge set for a name-level mint",
+                c.name,
+            );
         }
     }
 
@@ -5363,6 +5521,10 @@ mod tests {
                 "treatment",
                 "visit",
                 "vital_sign",
+                "anamnesis",
+                "investigation",
+                "examination",
+                "practitioner",
             ],
             "Health domain set drift — re-sync the consumer coverage gate",
         );
@@ -5370,8 +5532,8 @@ mod tests {
         for (_, id) in concepts_in_domain(ConceptDomain::Health) {
             assert_eq!(canonical_concept_domain(id), ConceptDomain::Health);
         }
-        // Counts line up with the codebook blocks.
-        assert_eq!(concepts_in_domain(ConceptDomain::Health).count(), 7);
+        // Counts line up with the codebook blocks (7 OGIT + 4 harvest mints).
+        assert_eq!(concepts_in_domain(ConceptDomain::Health).count(), 11);
         // 0x08XX OCR: the nine container KINDS (unicharset/recoder/charset/
         // network_layer + the PDF→text plan mints textline/blob/page_layout/
         // page_image/ocr_renderer). Content (the 112 unichars, code tables,
