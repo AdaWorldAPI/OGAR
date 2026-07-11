@@ -1,0 +1,22 @@
+[package]
+name = "ogar-encryption"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "OGAR's single, generic, classid-agnostic encryption surface: a thin re-export of the ndarray `encryption` crate (Argon2id KDF, XChaCha20-Poly1305 AEAD, Ed25519 signatures, SHA-384 hash, the wasm-capable zero-knowledge seal/open envelope). Every Ada consumer that needs raw forward crypto pulls THIS crate rather than depping the ndarray fork directly or hand-rolling argon2/chacha/ed25519. Carries no secrets and no consumer specifics; ogar-auth builds its auth-specific flows (password/totp/legacy) on top of this."
+
+[dependencies]
+# The forward crypto suite — REUSED from the ndarray fork, never re-implemented
+# here. Argon2id KDF, XChaCha20-Poly1305 AEAD, Ed25519 signatures, SHA-384, and
+# the wasm-capable zero-knowledge envelope all live in `encryption`; this crate
+# re-exports them verbatim (see lib.rs) so every consumer imports ONE crate.
+# Git dep, matching the ogar-auth precedent (ndarray's default branch is
+# `master`).
+encryption = { git = "https://github.com/AdaWorldAPI/ndarray", branch = "master" }
+
+[features]
+# Forward to the ndarray crate's wasm bindings, so browser consumers (e.g. a
+# hub-client-style SPA that wants client-side `envelope::seal` before secrets
+# ever reach a server) get the wasm-bindgen surface through this crate too.
+wasm = ["encryption/wasm-bindings"]
