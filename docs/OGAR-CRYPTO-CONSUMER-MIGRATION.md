@@ -43,6 +43,39 @@ argon2/chacha/ed25519; never copy the codebook.**
 | woa-rs | `src/auth/mod.rs::{hash_password,verify_argon2id}` | `ogar-auth::password` |
 | openproject-nexgen-rs | `op-auth::api_key` Argon2 arm | `ogar-auth::password` |
 
+#### MedCare-rs Tier-1 recipe (verified drop-in; staged — needs the dep-wiring green-light below)
+
+Byte-compatibility is **confirmed by source read** (2026-07-11): `ogar-auth::password`
+is `Argon2::default()` (identical PHC to `medcare-core::crypto`), and `ogar-auth::totp`
+is a near-verbatim copy of `medcare-core::totp` — same `STEP_SECONDS=30`/`DIGITS=6`/
+`SKEW_STEPS=1`, same RFC 4648 base32, same RFC 4226 HOTP, same RFC 6238 Appendix-B
+vectors, same `otpauth://` URI. So the migration is a **body-only delegation** that
+preserves every `medcare-core` public signature (zero caller changes in medcare-db /
+medcare-server):
+
+1. `medcare-core/Cargo.toml`: add `ogar-auth = { path = "../../vendor/OGAR/crates/ogar-auth" }`.
+2. `medcare-core/src/crypto.rs`: replace the `hash_password`/`verify_password` **bodies**
+   with `ogar_auth::password::*`, mapping `AuthError → DomainError::Crypto`. Keep AES-GCM +
+   SHA-256 local (Tier 2/3). 
+3. `medcare-core/src/totp.rs`: replace `base32_{encode,decode}` / `hotp` / `code_at` /
+   `verify_code` / `provisioning_uri` / `generate_secret_base32` **bodies** with
+   `ogar_auth::totp::*`, mapping errors; keep the existing medcare tests (they now
+   exercise the delegated path and must stay green). One signature mismatch to bridge:
+   ogar-auth `generate_secret_base32()` is `AuthResult<String>` (getrandom) vs medcare's
+   infallible `-> String` — either propagate the Result (touches 1-2 callers) or map a
+   CSPRNG failure explicitly; do NOT paper over it.
+
+**⚠ Dep-wiring decision the operator must make first** (why this is staged, not shipped):
+`ogar-auth` → `ogar-encryption` → `encryption` is a **git** dep (`ndarray` `branch="master"`),
+so depping `ogar-auth` into `medcare-core` git-fetches an `encryption`/`ndarray` tree into a
+workspace that otherwise **vendors ndarray locally** (`vendor/ndarray -> ../../ndarray`). That
+is the established `ogar-encryption` wiring, not a new inconsistency — but it means a second,
+git-sourced ndarray-encryption alongside the locally-vendored one, plus a heavier first build.
+Resolve before wiring: either (a) accept the git `encryption` pull as-is, or (b) repoint
+`ogar-encryption`'s `encryption` dep at the local path so all consumers share one ndarray
+source (the fork-policy-consistent option). Only `password`+`totp` are used here, but depping
+`ogar-auth` pulls the whole forward suite (incl. the git `encryption`) regardless.
+
 ### Tier 2 — data-compat (different algorithm/format → coordinated rekey, not drop-in)
 | Consumer | Site | Note |
 |---|---|---|
