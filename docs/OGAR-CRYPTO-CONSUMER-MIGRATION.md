@@ -9,8 +9,11 @@
 > **Status:** the generic surface exists — `ogar-encryption` (this repo, thin
 > re-export of the `encryption` crate), `ogar-auth` (password/totp/legacy on top),
 > `lance-graph-rbac` (the `0x0B` auth membrane / `ClassRbac`). The
-> `ndarray::simd::chacha20_block` ARX primitive (ndarray, RFC 8439 KAT-green) is
-> the acceleration foundation the `encryption` AEAD adopts next.
+> `ndarray::simd` ChaCha20 ARX keystream is **complete and trusted**: scalar
+> reference + **AVX-512 (server)** + **wasm128 (browser)** backends, all
+> byte-parity-proven against both the RFC 8439 KAT and the vetted RustCrypto
+> `chacha20` implementation across the parameter space (`chacha20_keystream`,
+> ndarray branch `claude/medcare-ruff-codebook-handover-5ulx0i`).
 
 ## The one crypto+SIMD spine
 
@@ -64,9 +67,9 @@ argon2/chacha/ed25519; never copy the codebook.**
 - **Sharepoint-rs** won't `cargo build` today (3 members missing `Cargo.toml`, 1 missing directory) — nothing to migrate yet; fix by scaffolding onto the generic surface.
 
 ## Sequencing
-1. Adopt `ndarray::simd::chacha20_block` inside the `encryption` AEAD hot path (behind a feature; parity vs RustCrypto on RFC 8439 vectors) — the acceleration the goal names. **(next)**
-2. Land the AVX-512 / wasm128 backends of `chacha20_block` (parity vs the scalar KAT).
-3. Tier-1 drop-in migrations (password/totp) — start with MedCare-rs (no barrier).
+1. ~~Land the AVX-512 / wasm128 backends of `chacha20_block` (parity vs the scalar KAT).~~ **DONE.** Both backends shipped, byte-parity-proven vs the scalar KAT *and* vs the vetted RustCrypto `chacha20` across the parameter space. The keystream primitive is trusted.
+2. **The `encryption` AEAD is NOT re-wired to the primitive — by security ruling, not omission.** XChaCha20-Poly1305 = HChaCha20 subkey + Poly1305 one-time-key + MAC/AAD/length framing, not just a keystream. Swapping only the keystream means hand-composing that authenticated construction — the "roll your own AEAD" footgun the stack forbids ("never roll your own crypto — wrap vetted RustCrypto"). The RustCrypto `XChaCha20Poly1305` stays. The accelerated primitive is for **raw-stream** use sites whose caller already owns a vetted MAC/framing (e.g. a future woa-rs RFC-005 vault built on `ogar-encryption::{aead,kdf}`), never for reimplementing an AEAD. See the doc-comment in `encryption/src/aead.rs`. **OPEN DECISION for the operator:** whether to add `ndarray` as an *optional* dep of the lean `encryption` crate to expose a raw-stream `apply_keystream` at all — it pulls a heavy dep and the crate's wasm build currently has an unrelated `getrandom` `wasm_js` config gap. Deferred pending that call.
+3. Tier-1 drop-in migrations (password/totp → `ogar-auth`) — start with MedCare-rs (no barrier). **(next)**
 4. Confirm the woa-rs allowlist ruling; then woa-rs Tier-1.
 5. Tier-2 data-compat migrations behind their rekey plans.
 6. Fill the JWT-session gap (`ogar-auth::session`) if the consumers want to converge it.
