@@ -19,12 +19,14 @@
 //! | [`envelope`] (re-export) | seal / open | wasm-capable zero-knowledge envelope |
 //!
 //! The forward suite (`kdf` / `aead` / `hash` / `sign` / `envelope`) is
-//! **re-exported from the ndarray `encryption` crate, never re-implemented**.
-//! That crate is the audited, wasm-capable home of XChaCha20-Poly1305 +
-//! Argon2id + Ed25519 + SHA-384; duplicating its byte-exact envelope layout
-//! here would be exactly the dilution ogar-auth prevents. The three modules
-//! this crate *adds* (`password`, `totp`, `legacy`) are the auth-specific
-//! primitives the encryption crate deliberately does not carry.
+//! **re-exported via [`ogar-encryption`](https://github.com/AdaWorldAPI/OGAR),
+//! never re-implemented**. `ogar-encryption` is itself a thin, classid-agnostic
+//! re-export of the ndarray `encryption` crate — the audited, wasm-capable
+//! home of XChaCha20-Poly1305 + Argon2id + Ed25519 + SHA-384; duplicating its
+//! byte-exact envelope layout here would be exactly the dilution ogar-auth
+//! prevents. The three modules this crate *adds* (`password`, `totp`,
+//! `legacy`) are the auth-specific primitives neither `ogar-encryption` nor
+//! the encryption crate it wraps deliberately carries.
 //!
 //! ## Agnostic by construction — no consumer secrets
 //!
@@ -50,10 +52,10 @@ pub mod legacy;
 pub mod password;
 pub mod totp;
 
-// ── Forward suite: re-exported from the ndarray `encryption` crate ──────────
+// ── Forward suite: re-exported via `ogar-encryption` ────────────────────────
 // Reused wholesale, never re-implemented (see crate docs). A consumer that
 // pulls `ogar-auth` gets the entire forward crypto surface under one import.
-pub use encryption::{aead, envelope, hash, kdf, sign};
+pub use ogar_encryption::{aead, envelope, hash, kdf, sign};
 
 /// Unified error for the auth-specific primitives this crate adds
 /// (`password`, `totp`, `legacy`). Field-free on the secret-bearing paths so
