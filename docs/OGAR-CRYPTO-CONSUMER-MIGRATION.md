@@ -43,9 +43,21 @@ argon2/chacha/ed25519; never copy the codebook.**
 | woa-rs | `src/auth/mod.rs::{hash_password,verify_argon2id}` | `ogar-auth::password` |
 | openproject-nexgen-rs | `op-auth::api_key` Argon2 arm | `ogar-auth::password` |
 
-#### MedCare-rs Tier-1 recipe (verified drop-in; staged — needs the dep-wiring green-light below)
+#### MedCare-rs Tier-1 — ✅ SHIPPED (2026-07-11, medcare-rs `6d2c372`)
 
-Byte-compatibility is **confirmed by source read** (2026-07-11): `ogar-auth::password`
+`medcare-core::crypto::{hash,verify}_password` and the whole `medcare-core::totp`
+module now **delegate to `ogar-auth`** (body-only, public signatures preserved).
+Empirically byte-compatible: medcare-core's own crypto+totp tests — including the
+RFC 6238 Appendix-B vectors and the Argon2 hash/verify round-trip — pass **through**
+the delegated ogar-auth path (56/56). medcare-core / medcare-db / medcare-server all
+compile. The dep-wiring decision below was resolved as **option (b)**: a root
+`[patch."…/ndarray"] encryption = { path = "vendor/ndarray/crates/encryption" }`
+folds `ogar-encryption`'s git `encryption` onto the locally-vendored fork copy — one
+source, no git fetch, no OGAR change. (The `encryption` crate has no ndarray dep, so
+the patch touches only that leaf.) The recipe + rationale below are retained as the
+template for the woa-rs / openproject Tier-1 migrations.
+
+Byte-compatibility was **confirmed by source read** (2026-07-11) before wiring: `ogar-auth::password`
 is `Argon2::default()` (identical PHC to `medcare-core::crypto`), and `ogar-auth::totp`
 is a near-verbatim copy of `medcare-core::totp` — same `STEP_SECONDS=30`/`DIGITS=6`/
 `SKEW_STEPS=1`, same RFC 4648 base32, same RFC 4226 HOTP, same RFC 6238 Appendix-B
@@ -102,7 +114,7 @@ source (the fork-policy-consistent option). Only `password`+`totp` are used here
 ## Sequencing
 1. ~~Land the AVX-512 / wasm128 backends of `chacha20_block` (parity vs the scalar KAT).~~ **DONE.** Both backends shipped, byte-parity-proven vs the scalar KAT *and* vs the vetted RustCrypto `chacha20` across the parameter space. The keystream primitive is trusted.
 2. **The `encryption` AEAD is NOT re-wired to the primitive — by security ruling, not omission.** XChaCha20-Poly1305 = HChaCha20 subkey + Poly1305 one-time-key + MAC/AAD/length framing, not just a keystream. Swapping only the keystream means hand-composing that authenticated construction — the "roll your own AEAD" footgun the stack forbids ("never roll your own crypto — wrap vetted RustCrypto"). The RustCrypto `XChaCha20Poly1305` stays. The accelerated primitive is for **raw-stream** use sites whose caller already owns a vetted MAC/framing (e.g. a future woa-rs RFC-005 vault built on `ogar-encryption::{aead,kdf}`), never for reimplementing an AEAD. See the doc-comment in `encryption/src/aead.rs`. **OPEN DECISION for the operator:** whether to add `ndarray` as an *optional* dep of the lean `encryption` crate to expose a raw-stream `apply_keystream` at all — it pulls a heavy dep and the crate's wasm build currently has an unrelated `getrandom` `wasm_js` config gap. Deferred pending that call.
-3. Tier-1 drop-in migrations (password/totp → `ogar-auth`) — start with MedCare-rs (no barrier). **(next)**
-4. Confirm the woa-rs allowlist ruling; then woa-rs Tier-1.
+3. Tier-1 drop-in migrations (password/totp → `ogar-auth`). **MedCare-rs DONE** (`6d2c372`, delegated + 56/56 green + all crates compile; dep-wiring resolved via the local-`encryption` patch). openproject-nexgen-rs next (no barrier, same pattern).
+4. Confirm the woa-rs allowlist ruling (the `ogar-*` namespace is in neither BBB list); then woa-rs Tier-1.
 5. Tier-2 data-compat migrations behind their rekey plans.
 6. Fill the JWT-session gap (`ogar-auth::session`) if the consumers want to converge it.
