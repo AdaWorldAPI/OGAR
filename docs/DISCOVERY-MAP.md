@@ -1213,3 +1213,66 @@ isolation. The map's job is to keep them visible.
   IR-shape tests (effect-annotations-first-class, typed-signature, semantic-
   preservation) pass; the change is a declared-capability growth, not an IR
   reshape.
+
+- **D-KAUSAL-CONSUME-PIN-ODOO** — 2026-07-06 `[G]`: the OGAR-side
+  realization of the odoo-rs **AT-CONSUME** extension (W1 of the
+  odoo→odoo-rs transpile arc). The deprecated odoo-rs corpus witness is
+  replaced by **real, unmodified Odoo 19 source as the witness**:
+  `addons/account/models/account_payment_term.py` (AdaWorldAPI/odoo
+  `2c78d5f1`, byte-identical copy at
+  `crates/ogar-from-ruff/tests/py/account_payment_term.py` + PROVENANCE.md)
+  drives the already-shipped frontend end to end —
+  `ruff_python_spo::extract_from_source` → `compile_graph_python::<OdooPort>`
+  → `lift_actions` — and `tests/odoo_kausal_parity_probe.rs` pins the
+  Arm-A kausal reproduction VERBATIM. Result: **8/8 `@api.depends`
+  compute methods** across the two declared models
+  (`account.payment.term` 5, `account.payment.term.line` 3) round-trip
+  to `ActionDef.kausal == Some(KausalSpec::Depends { paths })` with
+  exact dotted paths (incl. the 9-path `_compute_example_preview` and
+  its two co-computed fields collapsing to ONE ActionDef — one per
+  METHOD, not per field); **8 plain methods** assert `kausal == None`
+  (the facts-only guard, real-source witnessed). Pinned values are
+  hand-derived by READING the source, not by copying extractor output.
+  `ruff_python_spo` added as a **dev-dependency** floating on `main`
+  (D-NEVER-PIN-BUMP). **Scope (named, not hidden):** only Arm A
+  (`compute=` + `@api.depends`); arms B (`@api.constrains`/`@api.onchange`)
+  and D (`computed.stored`) stay out of scope pending ruff #49 — no
+  `ActionDef`/`Class` slot carries them yet, so a consume pin for them
+  would fail by design today. Both models are unaliased → bootstrap
+  facet classid `0` (asserted as fact; this pin is the DO-arm/kausal,
+  not classid convergence). Cross-ref D-ATC2-KAUSAL-AUTARK (the Arm-A
+  machinery this witnesses), D-PARITY-PROBE-WOA-1 (the synthetic-graph
+  sibling this upgrades to real source).
+
+- **D-V3-SINK-COMPILEDCLASS** — 2026-07-06 `[G]`: W2 of the odoo→odoo-rs
+  transpile arc — the storage seam that `D-EXEC-ONE-ACTION` named as the
+  gap ("Lance tombstone needs the lance-graph runtime"). A `CompiledClass`
+  now sinks onto the lance-graph **V3 SoA** byte surface via new module
+  `crates/ogar-from-ruff/src/lance_sink.rs`, behind feature `lance-sink`
+  (pulls the ZERO-DEP `lance-graph-contract` only — no lance engine, no
+  kv-lance, **no `*Bridge`**). Mirrors two shipped sinks —
+  `contract::network` (harvest → `FacetCascade`, content-blind, deferred
+  embedding) for shape, `symbiont::bridge` (`NodeRow` +
+  `NodeRowPacket::as_le_bytes`) for the zero-copy idiom. Three functions:
+  `compiled_class_to_facet` (a reinterpret no-op — `Facet::to_bytes` →
+  `FacetCascade::from_bytes`, byte-identical L1 **rails** `G6D2`),
+  `compiled_class_to_noderow` (render classid in key `[0..4)`, **bootstrap**
+  tail, `ValueSchema::Bootstrap` all-zero slab), `compiled_classes_to_le_bytes`
+  (the storage byte boundary). 7 tests incl. the field-isolation matrix
+  (T-F) + the layout-version fuse (T-G: `ENVELOPE_LAYOUT_VERSION == 2`,
+  W2 moves ZERO bytes at rest). Worked example `account.move → 0x0202_0002`
+  taken verbatim from the mint (never recomposed). **Dependency direction:**
+  the sink is OGAR-owned because `CompiledClass` is OGAR-owned (lance-graph
+  cannot dep OGAR); it needs only the zero-dep contract, so it is NOT the
+  `ogar-proposal` Sprint-5b `lance-bind` boundary (that heavier feature is
+  untouched). **Scope (named, not hidden):** stops at `as_le_bytes()` — the
+  actual `Dataset::write` I/O + kanban transition need the engine/ractor
+  runtime (out of scope). `[H1]` the rail-chain↔key-tail reconciliation is
+  frozen — the tail is bootstrapped, never derived from the rails
+  (test-enforced T-D). `[H2]` embedding the 12-byte rail payload into a
+  NodeRow value tenant needs a new append-only `ValueTenant` (envelope-
+  auditor-gated) — deferred, mirror network which added no lane. `[H3]` the
+  facet stays on the L1 rails plane; L6 "odoo ?" quads are NOT implemented
+  (semantics unruled). This is an offline BAKE (BOOTSTRAP-OK, envelope
+  owner 0), not an online write. Cross-ref D-EXEC-ONE-ACTION,
+  D-KAUSAL-CONSUME-PIN-ODOO, OGAR-TRANSPILE-SUBSTRATE (pull-back contract).
