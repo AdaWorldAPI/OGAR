@@ -1213,3 +1213,25 @@ isolation. The map's job is to keep them visible.
   IR-shape tests (effect-annotations-first-class, typed-signature, semantic-
   preservation) pass; the change is a declared-capability growth, not an IR
   reshape.
+
+- **D-OGAR-DOC-LAYER** (2026-07-12; [S] — spec, council-pending): `ogar-doc`
+  is the document persistence + reconstruction layer over `ogar-ocr` (the
+  shipped 14-cap `ocr_actions` table). It PERSISTS a `doc.v1`: the **raw bytes
+  as a KV reference** (the `document` node value = `{sha256, kv_key, mime,
+  counts}`, never the bytes — raw lives in the consumer's blob store) + the
+  **awareness as a GUID-keyed SoA subtree** (page / region / table-cell / field
+  nodes, each a facet on the 4+12 register the ClassView projects). It
+  RECONSTRUCTS via a `reconstruct_document` ActionDef — walk the awareness
+  subtree, bind a template (`ogar-render-askama` + the proven
+  `tesseract-ocr-pdf::render_searchable_pdf` brick), re-emit a PDF; mutate a
+  field node + re-fire ⇒ the document re-issues with updated knowledge (the
+  operator's Spire.Doc-style headline). This FIRES the v2-deferred `typed_field`
+  mint (0x080A reserved — the trigger recorded in the D-entry above) + adds a
+  `document` mint (0x080B); three facts-only ActionDefs (`persist` / `read` /
+  `reconstruct_document`, External kausal). Consumers inherit it via the classid
+  membrane (`lance_graph_contract::ogar_codebook::canonical_concept_id`) — no
+  per-consumer `tesseract-ogar` dep, dodging the customer-binary dep-graph
+  landmine. OGAR-AS-IR §3 + SURREAL-AST-TRAP-PREFLIGHT answered in the charter.
+  Charter: `docs/OGAR-DOC-LAYER-PROPOSAL.md` (merged #191). Grade [S] until the
+  5+3 council + a probe promote it; the canon mints (0x080A/0x080B) land WITH
+  the council-verified build, never ahead of it.
