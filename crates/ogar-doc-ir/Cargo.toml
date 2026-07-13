@@ -1,0 +1,13 @@
+[package]
+name = "ogar-doc-ir"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+description = "The source-agnostic perceptual IR for OGAR's document layer: a closed-vocabulary region tree that both a pixel retina (tesseract-rs) and a DOM retina (spider-rs) produce, and that ogar-doc persists as a `document 0x080B` awareness subtree. serde-only neutral tissue; no classid mint, no canon dependency."
+
+[dependencies]
+serde = { workspace = true }
+serde_json = "1.0"
