@@ -294,6 +294,48 @@ pub fn to_json(ir: &DocIr) -> Result<String, serde_json::Error> {
     serde_json::to_string(ir)
 }
 
+// ─────────────────────────────────────────────────────────────────────────
+// Cross-retina convergence (the P-XRETINA probe surface)
+// ─────────────────────────────────────────────────────────────────────────
+
+/// The **retina-invariant identity** of a document: the set of its typed-field
+/// facts `(key, value)`.
+///
+/// # Why NOT `content_sha256`
+///
+/// The plan's first sketch named [`DocIr::content_sha256`] the cross-retina
+/// convergence key. Building the probe surfaced that this is **wrong for the
+/// cross-retina case**: `content_sha256` hashes the ORIGINAL bytes, and the
+/// same invoice as a *scan* (pixels) and as *HTML* (markup) has different
+/// bytes → different hashes. So `content_sha256` is a **per-acquisition dedup
+/// key** (the same file uploaded twice ⇒ one subtree), NOT a semantic
+/// identity across retinas.
+///
+/// The retina-invariant thing is the **facts**: netto / ust / IBAN read the
+/// same whether a pixel retina or a DOM retina produced them. This function is
+/// that identity — the basis of [`converges_on_facts`], the P-XRETINA
+/// assertion.
+#[must_use]
+pub fn field_facts(ir: &DocIr) -> std::collections::BTreeSet<(&str, &str)> {
+    ir.fields
+        .iter()
+        .map(|f| (f.key.as_str(), f.value.as_str()))
+        .collect()
+}
+
+/// The **P-XRETINA convergence assertion**: two documents produced by
+/// different retinas from the same source converge iff their typed-field facts
+/// match — regardless of [`Provenance`], [`Geometry`], region ordering, or
+/// [`DocIr::content_sha256`] (which differs by acquisition, see [`field_facts`]).
+///
+/// Deliberately compares FACTS, not the whole tree: two retinas legitimately
+/// differ on geometry (rendered vs DomOrder rails) and region granularity; the
+/// convergence claim is about the *harvested knowledge*, which must agree.
+#[must_use]
+pub fn converges_on_facts(a: &DocIr, b: &DocIr) -> bool {
+    field_facts(a) == field_facts(b)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -438,5 +480,124 @@ mod tests {
         // is the u8:u8 facet pair, never a u16.
         assert_eq!(core::mem::size_of::<Rail>(), 2);
         assert_eq!(core::mem::size_of::<BBoxRail>(), 4);
+    }
+
+    /// Build one invoice as two retinas would see it — deliberately differing
+    /// on Provenance, Geometry, region shape, AND raw-bytes hash, but agreeing
+    /// on the harvested facts.
+    fn two_retinas() -> (DocIr, DocIr) {
+        let facts = || {
+            vec![
+                TypedField {
+                    key: "netto".to_string(),
+                    value: "100.00".to_string(),
+                    bbox: bbox(0, 0, 10, 10),
+                    confidence: 180, // OCR recognition confidence
+                },
+                TypedField {
+                    key: "iban".to_string(),
+                    value: "DE00 0000 0000 0000 0000 00".to_string(),
+                    bbox: bbox(0, 10, 10, 20),
+                    confidence: 180,
+                },
+            ]
+        };
+        // Pixel retina: rendered geometry, one big Main region, scan bytes.
+        let ocr = DocIr {
+            version: DOC_IR_VERSION.to_string(),
+            source: Provenance::Ocr,
+            geometry: Geometry::Rendered,
+            content_sha256: [0xAA; 32], // sha256 of the SCAN
+            mime: "image/png".to_string(),
+            pages: vec![DocPage {
+                number: 0,
+                width: 2480,
+                height: 3508,
+                regions: vec![Region {
+                    kind: RegionKind::Main,
+                    bbox: bbox(0, 0, 255, 255),
+                    reading_order: 0,
+                    text: Some("Rechnung".to_string()),
+                    cells: vec![],
+                    children: vec![],
+                }],
+            }],
+            fields: {
+                let mut f = facts();
+                // DOM-declared trust differs from OCR — the fields' confidence
+                // bytes need not match; only key/value (the facts) do.
+                for tf in &mut f {
+                    tf.confidence = 255;
+                }
+                f
+            },
+        };
+        // DOM retina: DomOrder geometry, header/main/footer, HTML bytes.
+        let dom = DocIr {
+            version: DOC_IR_VERSION.to_string(),
+            source: Provenance::Dom,
+            geometry: Geometry::DomOrder,
+            content_sha256: [0xBB; 32], // sha256 of the HTML — DIFFERENT bytes
+            mime: "text/html".to_string(),
+            pages: vec![DocPage {
+                number: 0,
+                width: 0,
+                height: 0,
+                regions: vec![
+                    Region {
+                        kind: RegionKind::Header,
+                        bbox: bbox(0, 0, 255, 8),
+                        reading_order: 0,
+                        text: Some("Acme".to_string()),
+                        cells: vec![],
+                        children: vec![],
+                    },
+                    Region {
+                        kind: RegionKind::Main,
+                        bbox: bbox(0, 8, 255, 250),
+                        reading_order: 1,
+                        text: Some("Rechnung".to_string()),
+                        cells: vec![],
+                        children: vec![],
+                    },
+                ],
+            }],
+            fields: facts(),
+        };
+        (ocr, dom)
+    }
+
+    /// P-XRETINA: two retinas of the same invoice CONVERGE on facts even
+    /// though their raw-bytes hashes, geometry, provenance, and region shape
+    /// all differ. This is the plan's killer probe, made executable.
+    #[test]
+    fn cross_retina_converges_on_facts_not_bytes() {
+        let (ocr, dom) = two_retinas();
+        assert!(
+            converges_on_facts(&ocr, &dom),
+            "same invoice via two retinas must agree on the harvested facts"
+        );
+        // THE FINDING: content_sha256 is NOT the cross-retina key — the raw
+        // bytes (scan vs HTML) differ, so the byte-hash cannot be the
+        // convergence identity. It is a per-acquisition dedup key only.
+        assert_ne!(
+            ocr.content_sha256, dom.content_sha256,
+            "raw-bytes hash differs across retinas — it is per-acquisition dedup, \
+             not the semantic convergence key"
+        );
+        // And the facts identity is stable regardless of the confidence lane.
+        assert_eq!(field_facts(&ocr), field_facts(&dom));
+    }
+
+    /// The converse: a genuine fact disagreement must NOT converge (the probe
+    /// can actually fail — it is a falsifier, not a tautology).
+    #[test]
+    fn cross_retina_diverges_when_a_fact_disagrees() {
+        let (ocr, mut dom) = two_retinas();
+        dom.fields[0].value = "999.99".to_string(); // netto misread
+        assert!(
+            !converges_on_facts(&ocr, &dom),
+            "a disagreeing fact must break convergence — P-XRETINA can fail"
+        );
     }
 }
