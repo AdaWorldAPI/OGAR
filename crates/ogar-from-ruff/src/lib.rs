@@ -68,6 +68,8 @@
 #![warn(missing_docs)]
 
 pub mod emit;
+#[cfg(feature = "lance-sink")]
+pub mod lance_sink; // W2 — CompiledClass → lance-graph V3 SoA
 pub mod mint;
 pub mod sqlalchemy; // WS-G-D
 
