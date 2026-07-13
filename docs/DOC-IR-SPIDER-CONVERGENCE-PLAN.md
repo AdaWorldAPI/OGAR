@@ -159,11 +159,24 @@ document store.
 
 - **P-XRETINA (the killer witness):** the same invoice through both
   retinas (scan → tesseract; HTML → spider) must converge to the same
-  typed-field facts and the same sha-keyed subtree identity. Diverse
-  redundancy applied to perception — the MySQL-oracle pattern. GREEN
-  promotes the whole IR from [S] to [G]; RED means the IR is
-  tesseract-shaped-with-a-second-door and W1 gets corrected before more
-  producers land.
+  **typed-field facts**. Diverse redundancy applied to perception — the
+  MySQL-oracle pattern. GREEN promotes the whole IR from [S] to [G]; RED
+  means the IR is tesseract-shaped-with-a-second-door and W1 gets corrected
+  before more producers land.
+  **CORRECTION (2026-07-13, building the probe): the convergence key is the
+  FACTS, NOT `content_sha256`.** The v1 sketch said "same sha-keyed subtree
+  identity" — that is wrong for the cross-retina case. `content_sha256`
+  hashes the ORIGINAL bytes, and the same invoice as a scan (pixels) and as
+  HTML (markup) has different bytes → different hashes. So `content_sha256`
+  is a **per-acquisition dedup key** (same file twice ⇒ one subtree), NOT a
+  semantic identity across retinas. The retina-invariant identity is the
+  harvested facts (netto/ust/IBAN read the same either way). Implemented +
+  tested in `ogar-doc-ir`: `field_facts()` / `converges_on_facts()`, with a
+  cross-retina test that converges on facts while the byte-hashes differ, and
+  a converse test that fails on a disagreeing fact (the probe can actually
+  falsify). Open question for W4: whether a `semantic_id` (a hash OF the
+  facts) should be minted so the discovery arm can dedup across retinas —
+  deferred to the doc-layer council with the persistence mints.
 - **P-DOM-GROUNDTRUTH:** spider + headless render yields (pixels,
   DOM-labeled regions) pairs at zero annotation cost — a calibration
   corpus for tesseract's region classifier. The web trains the eye that
