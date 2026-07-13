@@ -23,6 +23,7 @@ members = [
     "crates/ogar-adapter-csharp",
     "crates/ogar-auth",
     "crates/ogar-encryption",
+    "crates/ogar-doc-ir",
 ]
 
 [workspace.package]

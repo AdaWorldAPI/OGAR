@@ -1320,3 +1320,15 @@ isolation. The map's job is to keep them visible.
   facts + same subtree identity, run BEFORE anything persists. Plan:
   `docs/DOC-IR-SPIDER-CONVERGENCE-PLAN.md`; amendment:
   `docs/OGAR-DOC-LAYER-PROPOSAL.md` §AMENDMENT. Depends: D-OGAR-DOC-LAYER.
+  **Status 2026-07-13 — W1 CODED (canon-free):** the `ogar-doc-ir` crate
+  landed — serde-only, ZERO canon dependency (the `0x080A/0x080B` mints stay
+  in ogar-vocab/W4, operator-gated), 6 tests green, clippy/fmt clean. Carries
+  the closed `RegionKind` vocabulary + version-marker `from_json` load gate
+  (mirror of `ruff_spo_triplet::from_ndjson`) and `const _` size guards
+  proving `Rail` = `u8:u8` (2 bytes, never widened — P0 canon). Building
+  validated the P6 surface and REFINED it: enums are exhaustive (not
+  `#[non_exhaustive]`) so a ClassView renderer gets a compile error on an
+  unhandled kind — the closed-vocab guarantee extended to the render side;
+  evolution goes through the version marker. W2/W3 (producers) still gate on
+  the doc-layer council for the persistence mints; W1 was the canon-free half
+  and is done.
