@@ -36,7 +36,10 @@ use ruff_spo_address::{Facet, Mint, mint_with_classid};
 use ruff_spo_triplet::{ModelGraph, expand};
 
 use crate::sqlalchemy::lift_model_graph_sqlalchemy;
-use crate::{lift_actions, lift_model_graph, lift_model_graph_python};
+use crate::{
+    lift_actions, lift_model_graph, lift_model_graph_python, lift_model_graph_with_language,
+};
+use ogar_vocab::Language;
 
 /// A class compiled to its rail-shaped, language-agnostic form: the lifted
 /// schema ([`Class`]) plus its 16-byte address ([`Facet`]). This is what a
@@ -181,6 +184,49 @@ pub fn compile_graph_sqlalchemy<P: PortSpec>(graph: &ModelGraph) -> Vec<Compiled
 pub fn compile_graph_ruby<P: PortSpec>(graph: &ModelGraph) -> Vec<CompiledClass> {
     let mint = mint_graph::<P>(graph);
     let classes = lift_model_graph(graph);
+    // 1:1 with `graph.models` in declaration order (see compile_graph_python).
+    assert_eq!(
+        classes.len(),
+        graph.models.len(),
+        "lift must map graph.models 1:1 in declaration order — a model-level \
+         filter would silently mis-zip actions onto the wrong class"
+    );
+    classes
+        .into_iter()
+        .zip(&graph.models)
+        .map(|(class, model)| {
+            let node = format!("{}:{}", graph.namespace, class.name);
+            let facet = mint
+                .facet(&node)
+                .unwrap_or_else(|| Facet::from_parts(classid_for_node::<P>(&node), [0; 6], [0; 6]));
+            CompiledClass {
+                class,
+                facet,
+                actions: lift_actions(model),
+            }
+        })
+        .collect()
+}
+
+/// Compile a C# [`ModelGraph`] into rail-shaped [`CompiledClass`]es —
+/// the fourth language leg, completing the trio
+/// ([`compile_graph_python`] / [`compile_graph_sqlalchemy`] /
+/// [`compile_graph_ruby`]).
+///
+/// The C# frontend is out-of-process (Roslyn `ruff_csharp_spo` harvester →
+/// closed-vocabulary ndjson), so the graph arrives via
+/// `ruff_spo_triplet::reassemble_model_graph(&triples)` rather than an
+/// in-Rust parse — this function is the missing terminal step that turned
+/// the first corpus run into a frozen fixture instead of a re-runnable
+/// pipeline. Lift stamps [`Language::CSharp`]; actions carry the body facts
+/// (`writes` / `reads` / `calls` / `raises`) the harvester emits —
+/// signature-only (`kausal` stays `None` pending the C#-side KausalSpec
+/// arms). Declaration order preserved, 1:1 with `graph.models` (same
+/// zip-carry as the sibling legs, AT-CARRY-1).
+#[must_use]
+pub fn compile_graph_csharp<P: PortSpec>(graph: &ModelGraph) -> Vec<CompiledClass> {
+    let mint = mint_graph::<P>(graph);
+    let classes = lift_model_graph_with_language(graph, Language::CSharp);
     // 1:1 with `graph.models` in declaration order (see compile_graph_python).
     assert_eq!(
         classes.len(),
@@ -573,5 +619,44 @@ mod tests {
             0,
             "unmapped WoA model -> literal bootstrap 0, not 0x0000_0003"
         );
+    }
+
+    /// The C# leg (reassembled-ndjson path): a WinForms-shaped model compiles
+    /// with `Language::CSharp` stamped, its facet minted through the port,
+    /// and its DO-arm actions carried (AT-CARRY-1) — the terminal step that
+    /// makes the C# corpus re-runnable instead of a frozen fixture.
+    #[test]
+    fn compile_graph_csharp_stamps_language_and_carries_actions() {
+        let mut m = Model::new("uc_rec_CustomerList");
+        m.fields.push(Field {
+            name: "active_customer".to_string(),
+            ..Default::default()
+        });
+        m.functions.push(Function {
+            name: "Reload".to_string(),
+            reads: vec!["active_customer".to_string()],
+            writes: vec!["active_customer".to_string()],
+            ..Default::default()
+        });
+        let mut g = ModelGraph::new("app");
+        g.models.push(m);
+
+        let compiled = compile_graph_csharp::<OdooPort>(&g);
+        assert_eq!(compiled.len(), 1);
+        let cc = &compiled[0];
+        assert_eq!(cc.class.language, Language::CSharp, "C# stamp");
+        assert_eq!(cc.class.name, "uc_rec_CustomerList");
+        // Unmapped under the port -> bootstrap classid 0 with valid rails
+        // (same semantics as the sqlalchemy leg's unmapped case).
+        assert_eq!(
+            cc.facet.facet_classid(),
+            0,
+            "unmapped model mints bootstrap"
+        );
+        // The DO arm travels with the class.
+        assert_eq!(cc.actions.len(), 1);
+        assert_eq!(cc.actions[0].predicate, "Reload");
+        assert_eq!(cc.actions[0].writes, vec!["active_customer".to_string()]);
+        assert!(cc.actions[0].kausal.is_none(), "signature-only today");
     }
 }
