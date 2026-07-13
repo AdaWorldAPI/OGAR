@@ -1332,3 +1332,18 @@ isolation. The map's job is to keep them visible.
   evolution goes through the version marker. W2/W3 (producers) still gate on
   the doc-layer council for the persistence mints; W1 was the canon-free half
   and is done.
+  **Status 2026-07-13 — W3 BUILT (blocked on access):** the DOM retina
+  `spider_doc_ir` (in the `AdaWorldAPI/spider` fork) is written + validated —
+  `lol_html` streaming handlers map HTML5 landmarks → closed `RegionKind`
+  nodes in reading order; `<td>`/`<th>` → `TableCell`s; `<meta
+  name|property|itemprop … content>` → `TypedField`s (OpenGraph/DC/microdata,
+  the DOM analogue of OCR `harvest_profile`); DomOrder pseudo-geometry rails
+  (rendered `getBoundingClientRect` a later increment). 5 tests green incl.
+  the two convergence proofs — DOM output passes the SAME
+  `ogar_doc_ir::from_json` load gate an OCR producer's does (source-agnostic),
+  and `content_sha256` is the P-XRETINA identity key. git-deps `ogar-doc-ir`
+  on OGAR main (post-#197). **NOT YET PUSHED:** the spider fork is not in this
+  session's allowed-repos list (MCP/pygithub/git-proxy all 403); commit sits
+  on local branch `claude/spider-doc-ir-w3`, ready to ship via the MCP write
+  path the moment spider is re-added. W2 (tesseract retina) blocked — repo not
+  accessible this session. P-XRETINA runs once both producers exist.
