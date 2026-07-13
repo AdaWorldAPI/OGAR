@@ -82,6 +82,11 @@ pub enum Language {
     /// adapters. `gen_statem` lifecycles lower onto the same `Action`
     /// state machine as every other producer (see `docs/ELIXIR-HIRO-PREFETCH.md`).
     Elixir,
+    /// C# — covers WinForms-era business code harvested out-of-process by
+    /// the Roslyn `ruff_csharp_spo` frontend (ndjson triples →
+    /// `reassemble_model_graph` → this workspace). Corpora stay upstream in
+    /// their own repositories, never here.
+    CSharp,
     /// Unknown or hand-authored.
     Unknown,
 }
