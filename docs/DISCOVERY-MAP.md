@@ -1298,3 +1298,25 @@ isolation. The map's job is to keep them visible.
   Charter: `docs/OGAR-DOC-LAYER-PROPOSAL.md` (merged #191). Grade [S] until the
   5+3 council + a probe promote it; the canon mints (0x080A/0x080B) land WITH
   the council-verified build, never ahead of it.
+
+- **D-DOC-IR-SECOND-RETINA** (2026-07-13; [S] — plan, council gates W1+):
+  `doc.v1` is promoted from OCR output format to the substrate's **perceptual
+  IR** (`ogar-doc-ir`, serde-only neutral tissue), with TWO sanctioned
+  producers: tesseract-rs (pixels) and spider-rs (`AdaWorldAPI/spider` fork,
+  DOM — HTML5 `<header>/<main>/<footer>/<table>` self-labels the regions OCR
+  infers). The code-side pattern replayed on perception: N retinas → one
+  closed doc IR → one awareness subtree, with `ruff_spo_triplet` discipline
+  verbatim (closed region-kind vocab, hard-fail load gate, version marker).
+  Spatial address = u8×u8 unit-square rail (the `X:Y` facet rail; a page IS a
+  256×256 tile — the "2D spatial focus of attention", zero-value-decode
+  region attention). Provenance lane keeps OCR confidence and crawl trust as
+  separate quantities; subtree identity = content sha256 (scan and HTML of
+  the same document converge on ONE `0x080B` subtree). Operator rulings
+  A1–A5 amend the doc-layer charter (one `ogar-doc` crate — split axis is
+  STATE not direction; `DocRenderer` trait with runtime-bound tesseract /
+  Spire.Doc / askama adapters — the one-leg rule; document template =
+  ClassView × WideFieldMask, same brick as Klickwege — no new DSL). Killer
+  falsifier P-XRETINA: same invoice via both retinas ⇒ same typed-field
+  facts + same subtree identity, run BEFORE anything persists. Plan:
+  `docs/DOC-IR-SPIDER-CONVERGENCE-PLAN.md`; amendment:
+  `docs/OGAR-DOC-LAYER-PROPOSAL.md` §AMENDMENT. Depends: D-OGAR-DOC-LAYER.
