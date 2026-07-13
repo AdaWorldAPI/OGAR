@@ -33,21 +33,36 @@ Kopfzeile/Fußzeile/main positions the amendment's A3 template projects —
 the web *self-labels* what OCR must *infer*. Same regions, two
 acquisition modes, one IR.
 
-## P1. Access preflight (blocking facts to verify, first spider-enabled session)
+## P1. Access preflight — VERIFIED against source (2026-07-13, this session)
 
-`AdaWorldAPI/spider` was NOT readable from this session (repo-access gate).
-Before W3 is scoped in detail, a session with spider access verifies:
+`AdaWorldAPI/spider` is not readable via GitHub-MCP (repo-access gate) but
+clones fine over the local git proxy (same transport as MedCare-rs). Cloned
+to `/home/user/spider`; all four PF facts verified against the Rust source
+(the fork's own `.claude`/`CLAUDE.md` are stale upstream boilerplate and were
+NOT used — the seam is grounded in code):
 
-- **PF-1** fork exists, default branch, divergence from upstream
-  `spider-rs/spider`.
-- **PF-2** page output surface (assumed from upstream: `Website` crawl →
-  per-page HTML string + URL + headers; a headless-chrome feature exists
-  for rendered layout). Verify names/features before writing the seam.
-- **PF-3** whether rendered layout coordinates are obtainable (headless
-  feature) or whether W3 ships DOM-order pseudo-geometry first (see W3
-  fallback — the plan works either way).
-- **PF-4** workspace layout: where a harvest crate lands in the fork
-  (sibling crate, mirroring how `ruff_*_spo` crates live in the ruff fork).
+- **PF-1 ✓** Fork of `spider-rs/spider`, default branch `main` @ v2.52.9,
+  exactly ONE AdaWorldAPI commit over upstream: `8df3a1b3` *"Add pluggable
+  in-process HttpFetchEngine seam (#403)"* — the fork already thinks in
+  swappable seams (same shape as `DocRenderer` / OGAR producer seams),
+  lowering the risk of wiring a doc-IR producer. Otherwise virgin.
+- **PF-2 ✓** Page output surface: `spider::page::Page` exposes `get_html()`
+  (String) + `get_url()` + `get_bytes()` + status/headers + optional
+  `screenshot_bytes`. That is the W3 producer input.
+- **PF-3 ✓ (upgraded from "unknown" to "feasible-later")** Per-element
+  geometry is NOT exposed as page output, BUT the CDP primitive is used
+  throughout the `chrome` feature path — `bounding_box()` on element handles
+  (`features/solvers.rs`) and `getBoundingClientRect()` in injected JS
+  (`features/webdriver.rs`, `chrome_common.rs`). So rendered-coordinate rails
+  are a KNOWN-FEASIBLE later increment (a CDP/JS pass over the region
+  landmarks reusing that in-repo primitive), not speculative. W3 v1 ships
+  DOM-order pseudo-geometry (below); rendered rails are the increment.
+- **PF-4 ✓** Harvest crate `spider_doc_ir` lands as a workspace sibling next
+  to **`spider_agent_html`** — which is NOT an empty field: it already ships
+  `clean_html_with_profile` / `smart_clean_html` / `CleaningIntent` /
+  `HtmlCleaningProfile{Raw,Default,Aggressive,Slim,Minimal,Auto}` with
+  `from_content_analysis` — a content-relevance layer the region harvest
+  builds ON, not around.
 
 ## P2. Wave plan
 
@@ -86,14 +101,36 @@ gains a dep on `ogar-doc-ir`; `ogar-doc-ir` never depends back.
 
 ### W3 — spider-fork producer (`spider_doc_ir` harvest crate, in the fork)
 
-DOM → doc IR: HTML5 landmarks → region kinds; DOM order → reading order;
-`<table>` → cell grids; microdata/schema.org → typed fields; rendered
-layout coords → rails when PF-3 confirms the headless path, else
-**DOM-order pseudo-geometry** (top-to-bottom rail assignment) as the
-honest v1 — provenance lane marks which geometry mode produced the rails.
-Fixture-driven tests on committed HTML files; no live crawling in CI.
-Lives in the spider fork (PF-4), mirroring `ruff_*_spo`-in-ruff; depends
-on `ogar-doc-ir` via git dep floating on main (D-NEVER-PIN-BUMP).
+**Grounded in the verified surface (PF-2/3/4).** `spider_agent_html` parses
+with **`lol_html`** (Cloudflare's streaming CSS-selector rewriter — no
+random-access DOM tree), and that is a *gift* for region harvesting, not a
+constraint:
+
+- **HTML5 landmarks are CSS selectors → lol_html element handlers.**
+  `header`→Header, `main`/`article`→Main, `footer`→Footer, `nav`→furniture,
+  `table`→Table (with nested `tr`/`td`/`th` handlers → cell grids),
+  `figure`/`img`→Figure. The harvest is a rewriter with one handler per
+  landmark selector, emitting `ogar-doc-ir` region nodes as the stream
+  passes.
+- **Reading order is free.** lol_html is forward-only streaming = document
+  order = the reading-order the IR needs (and the temporal stream DeepNSM
+  consumes). No sort, no tree walk.
+- **DOM-order pseudo-geometry is free.** The streaming index → u8 rail
+  (top-to-bottom) IS the v1 spatial rail — lol_html gives no layout, but
+  document order is exactly the honest v1 the amendment specified. Rendered
+  rects (PF-3, the `bounding_box()` path) are the later increment; the
+  provenance lane marks which geometry mode produced the rails.
+- **Furniture/boilerplate discrimination is half-done.** Reuse
+  `HtmlCleaningProfile::from_content_analysis` / `CleaningIntent` to mark
+  which regions are content vs chrome — the "detect page furniture" concern
+  (header/footer/nav) the OCR side infers, the web side already scores.
+- **Typed fields:** microdata / schema.org / `<meta>` → typed-field nodes
+  (the DOM analogue of OCR's `harvest_profile`).
+
+Crate: `spider_doc_ir`, sibling to `spider_agent_html`, deps = `lol_html`
+(already in the workspace) + `ogar-doc-ir` (git dep floating on main,
+D-NEVER-PIN-BUMP). Fixture-driven tests on committed HTML files; no live
+crawling in CI (P4). Mirrors `ruff_*_spo`-in-ruff.
 
 ### W4 — `ogar-doc` (persistence + template + renderer trait)
 
