@@ -145,3 +145,122 @@ Append `D-OGAR-DOC-LAYER` to `docs/DISCOVERY-MAP.md`: `ogar-doc` persists `doc.v
 as a raw-ref (KV) + an awareness subtree (SoA graph), reconstructs it via a
 `reconstruct_document` ActionDef; triggers the v2-deferred `typed_field` mint +
 a `document` mint. Grade `[S]` (spec) until the council + a probe promote it.
+
+---
+
+# AMENDMENT — operator rulings, 2026-07-13 (pre-council; the council verifies THIS boundary)
+
+> Supersedes the body above where they conflict. Four rulings from the
+> 2026-07-13 session, each recorded with its reasoning so the 5+3 council
+> verifies rather than re-litigates. Companion integration plan (the
+> spider-rs convergence + wave sequencing): `docs/DOC-IR-SPIDER-CONVERGENCE-PLAN.md`.
+
+## A1. ONE `ogar-doc` crate; the split axis is STATE, not data direction
+
+The considered-and-rejected topology was `ogar-ocr (inbound)` /
+`ogar-doc (outbound)`. Rejected because "render" names two different things:
+
+- `render_searchable_pdf` / `render_text` / `render_tsv` / `render_hocr`
+  (ocr_actions rows 5–8) are the **OCR round-trip** — serialize *this scan's*
+  recognition back onto the pixels it came from. Stateless tesseract-rs
+  compute; they STAY in the OCR surface (already shipped, unchanged).
+- `reconstruct_document` never sees pixels — it walks **stored graph
+  knowledge** and lays it out. Stateful; it belongs to `ogar-doc` *because it
+  reads the graph*, not because it is "outbound."
+
+So: `ogar-ocr` (the existing ocr_actions surface) = **perception**, stateless,
+pixels ↔ structure ↔ bytes. `ogar-doc` = **memory + lifecycle**
+(`persist_document` / `read_document` / `reconstruct_document` + the template),
+one crate, in and out. Creating Word/PDF documents from graph knowledge is NOT
+a tesseract-rs concern, even though tesseract-rs serves delicate PDF features
+`ogar-doc` composes.
+
+## A2. `DocRenderer` is a TRAIT; tesseract-rs is one adapter (the one-leg rule)
+
+tesseract-rs rendering capabilities become **explicitly reusable** behind a
+renderer trait owned by `ogar-doc`:
+
+```text
+ogar-doc:  DocTemplate (ClassView × WideFieldMask) ──▶ trait DocRenderer
+                                                        ├─ tesseract adapter (raster + text-layer PDF)
+                                                        ├─ Spire.Doc adapter  (Word, C#-side)
+                                                        └─ askama adapter     (data-only PDF/HTML)
+```
+
+**The one boundary the council must hold:** the tesseract adapter binds at
+RUNTIME (ActionInvocation / hot-plug, same fuse pattern as `tesseract-ogar`),
+never as a compile-time `use` — otherwise `ogar-doc` drags the tesseract
+render brick into its compile graph and quietly recreates the second leg the
+topology avoids. One tesseract-rs leg total, at the executor layer, serving
+both recognition and rendering.
+
+## A3. The document template IS ClassView × WideFieldMask (no new DSL)
+
+A document layout — Kopfzeile / main / Fußzeile — is not a new template
+vocabulary. It is the SAME machinery as the Klickwege structure surface:
+
+- **ClassView** projects the document class's ordered region set (header
+  positions, body/table, footer positions) exactly as it projects a class's
+  field set — and §D2 already has the ClassView projecting the 4+12 facet
+  register on the *inbound* side.
+- **WideFieldMask** gates which regions are present in this instance —
+  the same `from_universe_present` brick that gates screens in the
+  Klickwege menu-quad.
+- Header/footer/main are **positions in the ordered set**, structurally
+  identical to screen-surface regions.
+
+Consequence: ClassView projects `doc.v1 → facets` going in and
+`facets → laid-out document` going out; WideFieldMask gates presence both
+ways; navigation surfaces and documents render through ONE mechanism. This
+SHARPENS D8's "reuse ogar-render-askama" — the template contract is
+ClassView × WideFieldMask; askama is merely one `DocRenderer` adapter's
+serialization. Spire.Doc reuses the same positional projection for Word.
+
+## A4. `ogar-doc-ir` — the doc IR is SOURCE-AGNOSTIC neutral tissue (the second-retina rule)
+
+The `doc.v1` structure is not an OCR output format — it is the **perceptual
+IR**, and it is about to gain a second producer: **spider-rs**
+(`AdaWorldAPI/spider` fork) harvesting web pages, where HTML5 sectioning
+(`<header>/<main>/<footer>/<table>`) *self-labels* the same regions OCR must
+infer. This is the code-side pattern replayed on perception: N language
+frontends → one closed ndjson → one ModelGraph becomes N perception
+frontends (retinas) → one closed doc IR → one awareness subtree.
+
+Therefore the IR types move OUT of tesseract-rs ownership into a new
+**`ogar-doc-ir`** crate (near-zero-dep: serde only), with the
+`ruff_spo_triplet` discipline applied verbatim:
+
+1. **Closed region-kind vocabulary** + a `from_json` load gate that
+   HARD-FAILS on unknown kinds; explicit version marker (`doc.v1` → `doc.v2`).
+2. **Canonical spatial address = u8-quantized unit square per axis** — the
+   bbox IS the `X:Y` rail of the 4+12 facet; the page/viewport becomes a
+   256×256 tile on the existing centroid/Morton machinery. Raw pixel/viewport
+   coordinates are optional provenance, never the address. This is the
+   "2D spatial focus of attention": a consumer attends to regions across
+   documents from keys alone, zero value decode.
+3. **Provenance lane**: source enum (`ocr` / `dom` / …) with PER-SOURCE
+   confidence semantics — OCR recognition confidence and crawl/boilerplate
+   trust are different quantities and must never alias in one float
+   (I-LEGACY-API-FEATURE-GATED applied prospectively).
+4. **Subtree identity = content sha256** — the same document arriving as
+   scan and as HTML converges on ONE `document 0x080B` subtree. This is the
+   dedup pin arm-discovery needs.
+
+Producers (tesseract-rs's `structured::render_json*` arm; the spider fork's
+future harvest crate) depend on `ogar-doc-ir` — never the reverse, and never
+on each other. The existing tesseract doc.v1 JSON becomes the byte-parity
+golden for the migration (no silent reshape).
+
+## A5. Net crate topology (what the council ratifies)
+
+| crate | owns | deps |
+|---|---|---|
+| `ogar-doc-ir` | doc IR types, closed vocab, load gate, rails, provenance, sha256 identity | serde only |
+| `ogar-doc` | `persist` / `read` / `reconstruct` ActionDefs' vocab side + `DocTemplate` (ClassView × WideFieldMask) + `trait DocRenderer` | ogar-vocab, ogar-doc-ir |
+| ocr surface (existing) | rows 1–14 incl. render primitives | unchanged |
+| producers | tesseract-rs `structured` arm; spider-fork harvest crate | → ogar-doc-ir |
+| renderer adapters | tesseract PDF / Spire.Doc / askama | runtime-bound (A2) |
+
+Mints unchanged from D3 (`typed_field 0x080A`, `document 0x080B`); the three
+ActionDefs unchanged from D4. D8's "no template DSL" is KEPT and sharpened
+(A3); D8's "no storage backend chosen" is KEPT.
