@@ -1431,3 +1431,19 @@ isolation. The map's job is to keep them visible.
   class's ActionDef set — trap T2 honored). 6 tests incl. wide roundtrip +
   refusal gates (version/kind/length-lie/short-mask). Next: a2ui-rs seed
   (workspace + core consuming the frames), then W2 service shape.
+  **Status 2026-07-14 — W2/W3 render brick CODED (the askama fieldview):**
+  `ogar-render-askama::field_view` landed (`render_field_view` + the
+  `field_view.askama` template + `from_value_rows`/`from_render_rows`
+  ClassView bridges) — the render half of "don't push pixels, address the
+  screen": a `WideFieldMask`-projected `ClassView` instance renders as an
+  ADDRESSED surface where every field carries `data-field-pos` (its mask
+  position = layout address) and every action carries `data-action-ordinal`
+  (its `ActionDef` address — trap T2, no inline handler is even
+  representable). `escape="html"`, no `|safe` hatch, so the XSS class the
+  list/detail kits fixed under codex P1 (#83/#84) cannot arise on a
+  fieldview. 5 tests (addressed render incl. a wide position ≥ 64, XSS
+  regression, empty-action nav omit, both ClassView-projection bridges); 61
+  crate tests green, clippy clean. The a2ui-rs W2 `a2ui-server` tier consumes
+  this brick (RBAC-project `WideFieldMask ∩ role` fail-closed → NodeDelta
+  frame down + fieldview render; ActionInvoke up resolved by ordinal;
+  ogar-encryption sealed transport). Branch `claude/ogar-a2ui-transcoding-b7xzrn`.
