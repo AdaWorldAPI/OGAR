@@ -1407,3 +1407,14 @@ isolation. The map's job is to keep them visible.
   Charter: `docs/A2UI-SCREEN-ADDRESSING-PROPOSAL.md`. Depends:
   D-DOC-IR-SECOND-RETINA (A3 template ruling), D-OGAR-DOC-LAYER
   (DocRenderer), the Klickwege/ActionDef harvests (MedCare-rs).
+  **Correction 2026-07-14 (codex P2 on #204, verified in-repo; sharpened by
+  operator same day — "we already have WideFieldMask"):** the
+  RBAC-by-projection claim requires WIDE role masks — `ClassRbac::field_mask`
+  is narrow (u64) while wide surfaces exceed 64 fields. Fix per the charter's
+  C1.4 CORRECTION: **retype `field_mask` → `WideFieldMask` in place** (NOT an
+  additive `field_mask_wide` — the type already exists and self-promotes;
+  verified cheap: production surface = the trait default + one test
+  override); the one W1 decision is the permit-all identity (`ALL` on
+  `WideFieldMask`, or default `full_for(field_count)`); zero-extension
+  fail-closed for legacy narrow-mask interop; sentinel ban (`full_for` is a
+  render convenience, never an RBAC fallback; missing role mask = refusal).
