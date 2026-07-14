@@ -1,0 +1,14 @@
+[package]
+name = "ogar-from-docv1"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+description = "The PIXEL retina's consumer-side transcode: parse tesseract-rs's `doc.v1` recognition JSON into the source-agnostic `ogar-doc-ir` perceptual IR (W2 of the doc-IR × spider convergence). Honors the tesseract-rs boundary — tesseract produces doc.v1, OGAR transcodes it — exactly as `ogar-from-ruff` lifts ruff's output. serde-only, canon-free."
+
+[dependencies]
+ogar-doc-ir = { path = "../ogar-doc-ir" }
+serde = { workspace = true }
+serde_json = "1.0"
