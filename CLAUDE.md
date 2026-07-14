@@ -24,6 +24,16 @@
 > `docs/V3-TRANSPILER-ADR.md` RFC→adopted; reconcile `ogar-fma-skeleton::Guid`
 > classid 2→4 (F-2); invert `docs/NODEGUID-CANON-AUDIT.md` F-3 (see its dated note).
 
+> **Grace-period amendment (operator, 2026-07-13 — D‑V1‑GRACE‑CARVINGS):**
+> an un-migrated class does NOT crash — it gets a **legal V3 waiting room**:
+> three **wide contiguous** carvings of the same 96-bit content-blind register
+> (G1 `3×u16+2×u24` / G2 `4×u24` / G3 `3×u32`), **strongly discouraged if
+> god-object-related or lacking proper bucket rollover; migrate to
+> cosine-replacement palette256 (L4)**. Not a tail revival — one register read
+> coarsely; the V1 `family:identity` u24 fragment is the degenerate G1/G2 case.
+> Code home: lance-graph `lance_graph_contract::legacy_outliers`; catalogue:
+> `le-contract.md` §3a; ledger: `docs/DISCOVERY-MAP.md` D‑V1‑GRACE‑CARVINGS.
+
 ```
 xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
 classid    HEEL   HIP    TWIG   family-basin-leaf(6) + identity(6)  ← V1-LEGACY tail (read-only; new units use the V3 4+12 facet, above)
