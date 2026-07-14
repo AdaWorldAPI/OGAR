@@ -1397,3 +1397,10 @@ isolation. The map's job is to keep them visible.
   Charter: `docs/A2UI-SCREEN-ADDRESSING-PROPOSAL.md`. Depends:
   D-DOC-IR-SECOND-RETINA (A3 template ruling), D-OGAR-DOC-LAYER
   (DocRenderer), the Klickwege/ActionDef harvests (MedCare-rs).
+  **Correction 2026-07-14 (codex P2 on #204, verified in-repo):** the
+  RBAC-by-projection claim requires WIDE role masks — `ClassRbac::field_mask`
+  is narrow (u64) while wide surfaces exceed 64 fields; fix mandated in the
+  charter's C1.4 CORRECTION: zero-extension fail-closed rule (narrow role
+  mask extends past bit 63 as ZEROS, never full), additive
+  `field_mask_wide`, and a sentinel ban (`WideFieldMask::full_for` is a
+  render convenience, never an RBAC fallback; missing role mask = refusal).

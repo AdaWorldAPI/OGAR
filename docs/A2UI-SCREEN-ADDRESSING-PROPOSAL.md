@@ -62,6 +62,29 @@ screen — same mechanism, different renderer.
    brick from the SoC/dedup pipeline). A field the role may not see is not
    *hidden on the client* — it is **absent from the wire**. Pixel streams
    cannot make that guarantee; address streams get it for free.
+   **CORRECTION (codex P2 on #204, verified in-repo):** as merged, this
+   claim silently breaks for surfaces with >64 fields — the RBAC seam's
+   `ClassRbac::field_mask` returns a NARROW `FieldMask` (u64;
+   `CLASSID-RBAC-KEYSTONE-SPEC.md` §4), while the wide renderer exists
+   precisely because surfaces exceed `FieldMask::MAX_FIELDS`
+   (`ogar-render-askama::render_class_with_methods_wide`, whose
+   `WideFieldMask::full_for` "emit everything" sentinel is exactly the
+   unsafe fallback). Three requirements make the claim hold, all MANDATORY
+   for W1+:
+   (a) **Zero-extension rule (fail-closed):** a narrow role mask extends
+   past bit 63 as ZEROS, never as full — `wide-surface ∩
+   narrow-role-mask` therefore drops every field ≥ 64 unless a wide grant
+   exists. Absent wide role data, unauthorized-by-default.
+   (b) **Wide role projection (additive seam):** `ClassRbac` gains
+   `field_mask_wide(role, class) -> WideFieldMask` (additive trait method;
+   narrow `field_mask` stays for ≤64 surfaces) so wide grants are
+   expressible at all.
+   (c) **Sentinel ban on the RBAC path:** `WideFieldMask::full_for` is a
+   RENDER convenience ("unmasked, emit everything") and must never be the
+   fallback where a role mask is required — a missing role mask is a
+   refusal, not a full grant. Alternative where (b) is not yet wired:
+   PAGE the surface into ≤64-field panes and intersect per-pane with the
+   narrow mask.
 5. **rdp-2graph security = reuse, no new crypto:** session KDF via
    `ogar-auth` (Argon2 — the MedCare Tier-1 password/totp home), transport
    via `ogar-encryption` (the single generic encryption surface). The
