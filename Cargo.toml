@@ -24,6 +24,7 @@ members = [
     "crates/ogar-auth",
     "crates/ogar-encryption",
     "crates/ogar-doc-ir",
+    "crates/ogar-from-docv1",
 ]
 
 [workspace.package]
