@@ -69,6 +69,7 @@
 #![warn(missing_docs)]
 
 pub mod artifact_kinds;
+pub mod field_view;
 pub mod form_view;
 pub mod list_view;
 pub mod rust_class;
@@ -79,6 +80,7 @@ pub use artifact_kinds::{
     GroupHeader, InputData, RelationEntryOwned, RowSource, SelectOptionOwned, UserEntryOwned,
     for_kind, render_detail, render_form, render_list,
 };
+pub use field_view::{ActionRef, FieldView, from_render_rows, from_value_rows, render_field_view};
 pub use form_view::{InputKind, default_input_kind_for};
 pub use list_view::{ColumnKind, RenderColumn, SortOrder, default_kind_for};
 pub use rust_class::{RenderError, render_class_with_methods, render_class_with_methods_wide};

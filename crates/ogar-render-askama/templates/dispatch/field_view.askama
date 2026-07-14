@@ -1,0 +1,32 @@
+{# The addressed desktop surface (charter C1.2 — the fieldview).           #}
+{# Don't push pixels, address the screen: every field carries its mask     #}
+{# POSITION (data-field-pos = its layout address), every action carries    #}
+{# its ActionDef ORDINAL (data-action-ordinal = its invocation address,    #}
+{# trap T2), and the node key addresses the whole surface (data-key). The  #}
+{# client holds the ClassView/template codebook and repaints only the      #}
+{# addressed positions. Every interpolation is data-derived and escaped    #}
+{# (escape="html", no |safe) — there is no pre-rendered HTML on a          #}
+{# fieldview, so the XSS class the list/detail kits had to fix cannot      #}
+{# arise here.                                                             #}
+<section class="ogar-fieldview" data-class-id="{{ class_id_hex }}" data-concept="{{ canonical_concept }}" data-key="{{ key_hex }}">
+  <header class="fieldview-header">
+    <h2 class="fieldview-title">{{ title }}</h2>
+  </header>
+
+  <dl class="fieldview-fields">
+  {%- for f in fields %}
+    <div class="fieldview-field" data-field-pos="{{ f.position }}">
+      <dt class="fieldview-label">{{ f.label }}</dt>
+      <dd class="fieldview-value">{{ f.value }}</dd>
+    </div>
+  {%- endfor %}
+  </dl>
+
+  {%- if !actions.is_empty() %}
+  <nav class="fieldview-actions">
+  {%- for a in actions %}
+    <button type="button" class="fieldview-action" data-action-ordinal="{{ a.ordinal }}" data-key="{{ key_hex }}">{{ a.label }}</button>
+  {%- endfor %}
+  </nav>
+  {%- endif %}
+</section>
