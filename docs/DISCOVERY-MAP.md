@@ -1368,3 +1368,32 @@ isolation. The map's job is to keep them visible.
   create the PR from the browser link.** W2 (tesseract) still needs repo
   access; P-XRETINA now needs only the tesseract producer (the DOM half is
   live + the `converges_on_facts` probe is on OGAR main via #199).
+
+- **D-A2UI-SCREEN-ADDRESSING** (2026-07-14; [S] — proposal, council + repo
+  mint gate W0+): the remote desktop stops pushing pixels and starts
+  **addressing the screen** — down the wire `(GUID key 16 B, WideFieldMask
+  delta, changed LE values)`, up the wire `ActionInvocation`s; the client
+  holds the ClassView/template codebook and renders locally from borrowed
+  memory (askama, zero serialization; wasm client = the same Rust — the
+  browser IS the thin client). **The ClassView registry is the font of the
+  desktop** (codepoints, not glyph rasters; D-AMORT). A screen and a document
+  are the SAME positional projection (doc-layer A3 extended): `DocRenderer`
+  gains its fourth adapter — a2ui, the live interactive surface. Nested
+  ClassView = desktop→window→region→widget; `X:Y` rails = layout address.
+  **RBAC by projection:** what leaves the server = `WideFieldMask ∩
+  role-mask` — an unauthorized field is absent from the wire, not hidden.
+  Security = reuse (`ogar-auth` Argon2 KDF, `ogar-encryption` transport).
+  Home: `AdaWorldAPI/A2UI` fork (cloned/verified — upstream "agents speak
+  UI" pattern; its `proto/a2ui/hamming.proto` prior art REGRADED pre-V3:
+  service shape kept — RenderStream/ActionStream/codebook sync — payload
+  replaced, 1,250 B fingerprint frames → 16 B key + mask + values) →
+  transcode target `AdaWorldAPI/a2ui-rs` (repo NOT yet minted — operator
+  gate). Traps named: T1 component-vocab fork (skins are templates, never a
+  second closed vocabulary), T2 behavior-in-tree (the SURREAL-AST trap, UI
+  edition — actions are `ActionDef` refs), T3 serialization creep (LE
+  end-to-end, Firewall). Killer probe **P-REHOST**: re-render one harvested
+  MedCare screen from CompiledClass × ClassView × askama, fire one harvested
+  ActionDef round-trip — harvest the app → re-render the app, no WinForms.
+  Charter: `docs/A2UI-SCREEN-ADDRESSING-PROPOSAL.md`. Depends:
+  D-DOC-IR-SECOND-RETINA (A3 template ruling), D-OGAR-DOC-LAYER
+  (DocRenderer), the Klickwege/ActionDef harvests (MedCare-rs).
