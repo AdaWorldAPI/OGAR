@@ -1,0 +1,17 @@
+[package]
+name = "ogar-a2ui-frame"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+description = "The addressed-surface wire frames for a2ui screen addressing (W1 of docs/A2UI-SCREEN-ADDRESSING-PROPOSAL.md): down = (GUID key 16 B, wide mask delta, changed LE values), up = ActionInvocation refs. LE-first per the Firewall (ADR-022/023) — zero dependencies in the hot path; serde is an optional membrane feature. Closed frame vocabulary + version gate, mirroring ogar-doc-ir discipline."
+
+[features]
+default = []
+# Membrane-only: JSON debug/interchange at the edge. NEVER the hot path.
+serde = ["dep:serde"]
+
+[dependencies]
+serde = { workspace = true, optional = true }
