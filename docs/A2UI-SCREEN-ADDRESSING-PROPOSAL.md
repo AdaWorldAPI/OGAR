@@ -71,20 +71,28 @@ screen — same mechanism, different renderer.
    `WideFieldMask::full_for` "emit everything" sentinel is exactly the
    unsafe fallback). Three requirements make the claim hold, all MANDATORY
    for W1+:
-   (a) **Zero-extension rule (fail-closed):** a narrow role mask extends
-   past bit 63 as ZEROS, never as full — `wide-surface ∩
-   narrow-role-mask` therefore drops every field ≥ 64 unless a wide grant
-   exists. Absent wide role data, unauthorized-by-default.
-   (b) **Wide role projection (additive seam):** `ClassRbac` gains
-   `field_mask_wide(role, class) -> WideFieldMask` (additive trait method;
-   narrow `field_mask` stays for ≤64 surfaces) so wide grants are
-   expressible at all.
-   (c) **Sentinel ban on the RBAC path:** `WideFieldMask::full_for` is a
-   RENDER convenience ("unmasked, emit everything") and must never be the
-   fallback where a role mask is required — a missing role mask is a
-   refusal, not a full grant. Alternative where (b) is not yet wired:
-   PAGE the surface into ≤64-field panes and intersect per-pane with the
-   narrow mask.
+   (a) **Retype in place — `WideFieldMask` already exists (operator
+   correction, 2026-07-14):** NO parallel `field_mask_wide` method.
+   `ClassRbac::field_mask` changes its return type to [`WideFieldMask`]
+   directly — verified cheap: the entire production surface is the trait
+   DEFAULT (`FieldMask::FULL`, rbac.rs:176) + one test override
+   (rbac.rs:455); no production impl overrides it, so the retype touches
+   two bodies and the compiler surfaces everything else. `WideFieldMask`
+   is already the universal mask (`Small` repr ≤64, self-promoting past
+   64) — a second method name for the same projection would be the
+   two-vocabularies anti-pattern (T1) applied to the seam itself.
+   (b) **The permit-all identity is the ONE W1 decision:** `WideFieldMask`
+   has `EMPTY` + `full_for(count)` but no count-free permit-all, and the
+   axis-4 default is deliberately "FULL unless configured" (RBAC opt-in).
+   Either `WideFieldMask` gains `ALL` (the intersection identity) or the
+   default derives `full_for(field_count)` from the ClassView. W1 decides;
+   the opt-in default semantics survive either way.
+   (c) **Zero-extension rule (fail-closed) for legacy narrow interop:**
+   wherever an existing narrow `FieldMask` (SoC/dedup bricks) meets a wide
+   surface, the narrow mask extends past bit 63 as ZEROS, never as full.
+   And the sentinel ban: `full_for` as a RENDER convenience is fine; as an
+   RBAC fallback it is forbidden — a missing role mask is a refusal, not a
+   full grant.
 5. **rdp-2graph security = reuse, no new crypto:** session KDF via
    `ogar-auth` (Argon2 — the MedCare Tier-1 password/totp home), transport
    via `ogar-encryption` (the single generic encryption surface). The
