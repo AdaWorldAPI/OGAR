@@ -1418,3 +1418,16 @@ isolation. The map's job is to keep them visible.
   `WideFieldMask`, or default `full_for(field_count)`); zero-extension
   fail-closed for legacy narrow-mask interop; sentinel ban (`full_for` is a
   render convenience, never an RBAC fallback; missing role mask = refusal).
+  **Status 2026-07-14 — W0 repo gate OPEN + W1 CODED (canon-free):**
+  `AdaWorldAPI/a2ui-rs` is minted (empty, virgin main — the W2 home) and the
+  `ogar-a2ui-frame` crate landed: the LE-first addressed-surface wire frames
+  (down `NodeDelta{key 16 B, mask_words: Vec<u64>, values}`, up
+  `ActionInvoke{key, action_ordinal, args}`), closed `FrameKind` vocabulary +
+  `FRAME_VERSION` gate (`ogar-doc-ir` discipline), zero deps in the hot path
+  (serde = membrane-only feature), `#![forbid(unsafe_code)]`. Wide surfaces
+  native on the wire (explicit u64 mask words — the #205 correction made
+  concrete; test proves positions ≥ 64 decode). RBAC happens BEFORE framing
+  (the frame is dumb transport); actions travel by address (ordinal into the
+  class's ActionDef set — trap T2 honored). 6 tests incl. wide roundtrip +
+  refusal gates (version/kind/length-lie/short-mask). Next: a2ui-rs seed
+  (workspace + core consuming the frames), then W2 service shape.
