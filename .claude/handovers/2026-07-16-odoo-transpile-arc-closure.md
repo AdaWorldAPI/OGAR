@@ -38,4 +38,7 @@ green. Branch `claude/odoo-rs-v3-ogar-transpile-nwriny` reset to main
    `FieldMask` — never route RBAC through `ClassRbac::field_mask` narrow.
 
 Authoritative forward plan: odoo-rs
-`docs/HANDOVER-2026-07-16-transpile-plan-v3.md`.
+`docs/HANDOVER-2026-07-16-transpile-plan-v3.md` — landing via **odoo-rs
+PR #37**; until that merges, the file lives on the odoo-rs branch
+`claude/odoo-rs-v3-ogar-transpile-nwriny` (commit `593b9c2`), not on
+odoo-rs `main`.
