@@ -144,8 +144,12 @@ pub fn emit_projection_adapters(classes: &[ProjectionClass]) -> String {
     sorted.sort_by(|a, b| a.domain_type.cmp(&b.domain_type));
 
     let mut out = String::new();
-    out.push_str("//! Generated projection adapters — DO NOT EDIT.\n");
-    out.push_str("//! Emitted from the ClassView column->field projection recipe (Pattern A).\n");
+    // Line comments (not `//!` inner-doc) so the emitted file is
+    // `include!`-safe: a consumer can `include!` this straight into a
+    // module (e.g. next to a private row type) as the live `impl`, which
+    // an inner-doc attribute at a non-start position would reject (E0753).
+    out.push_str("// Generated projection adapters — DO NOT EDIT.\n");
+    out.push_str("// Emitted from the ClassView column->field projection recipe (Pattern A).\n");
     out.push('\n');
 
     let mut minted = 0usize;
@@ -296,8 +300,8 @@ mod tests {
     #[test]
     fn patient_projection_golden_is_pinned() {
         let out = emit_projection_adapters(&[patient_projection()]);
-        let expected = r#"//! Generated projection adapters — DO NOT EDIT.
-//! Emitted from the ClassView column->field projection recipe (Pattern A).
+        let expected = r#"// Generated projection adapters — DO NOT EDIT.
+// Emitted from the ClassView column->field projection recipe (Pattern A).
 
 // [concept: patient  class_id: 0x0901]
 impl From<PatientRow> for Patient {
