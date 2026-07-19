@@ -42,6 +42,11 @@ use ogar_vocab::{
 mod do_adapter;
 pub use do_adapter::{AdapterAction, AdapterClass, emit_do_adapters};
 
+mod projection_adapter;
+pub use projection_adapter::{
+    FieldProjection, FieldSource, ProjectionClass, emit_projection_adapters,
+};
+
 /// A subject-predicate-object triple in the OGAR / OGIT prefix-radix
 /// namespace.
 ///
