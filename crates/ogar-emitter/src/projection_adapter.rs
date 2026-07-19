@@ -24,6 +24,32 @@
 //! set of transforms the Pattern-A projections actually use. A field whose
 //! transform is not yet in this set is a Core gap: extend the enum
 //! deliberately (Core-First), never hand-patch the generated output.
+//!
+//! # Scope boundary — this arm is Pattern A only (row→domain `From`)
+//!
+//! This emitter covers the **Pattern A** shape: a named row struct
+//! (`#[derive(sqlx::FromRow)] struct XRow`) with a hand `From<XRow> for
+//! Domain`. It does NOT cover **Pattern C** — the tuple-fold read
+//! (`sqlx::query_as::<(T1, T2, …)>` mapped by positional destructure, no
+//! named row struct). The furnace's next entity (Anamnese, worklist row 2)
+//! is Pattern C, and a 2026-07-19 harvest of medcare-rs `queries/anamnese.rs`
+//! found it needs a *distinct* arm, not an extension of this one:
+//!
+//! - **positional-tuple destructure** — map columns to tuple *position*
+//!   (`|(a, b, c)| Domain { … }`), not to a named row field.
+//! - **SQL-side coercion templating** — several fields are `CAST(col AS
+//!   CHAR) AS alias` in the query text (numeric FK → String); that lives in
+//!   the emitted SQL, not in a post-fetch Rust transform.
+//! - **clamp-and-cast** — `col.unwrap_or(0).clamp(0, u8::MAX as i32) as u8`
+//!   (a new `FieldSource` variant when that arm is built).
+//!
+//! And it names three genuine slag outliers to hand-keep, never codegen:
+//! `GynAnamnese` (17 cols → sqlx's 16-field tuple cap forces name-keyed
+//! `try_get`), `Sexualanamnese` (code→enum matching), and `Alkohol` /
+//! `GynAnamnese` array assembly (`[bool; 7]`). This corrects the worklist's
+//! "purest metal / id·patient_id·date·text ×14" label: those are query
+//! filters, not domain fields. Build the Pattern-C arm when the loop reaches
+//! Anamnese (A records the C# fixture first) — do not speculatively pre-build.
 
 use ogar_vocab::canonical_concept_id;
 
