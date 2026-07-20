@@ -1230,6 +1230,16 @@ const CODEBOOK: &[(&str, u16)] = &[
     ("page_layout", 0x0807),
     ("page_image", 0x0808),
     ("ocr_renderer", 0x0809),
+    // The generic, source-agnostic DOCUMENT concept — the parsed-structure
+    // root the OCR arc converges on. This is the emit seam already declared by
+    // `ogar-doc-ir::DocIr` ("the document 0x080B subtree"): the reusable
+    // document DTO the `tesseract-rs → doc.v1 → ogar-from-docv1 → DocIr →
+    // render` pipeline produces and every consumer (medcare-rs DMS, odoo,
+    // openproject) reuses. Content-addressed (`DocIr::content_sha256`); the
+    // raw bytes live in a content store (a consumer `DocumentKv`), never as a
+    // concept slot — the kind gets the slot, the bytes do not (0x08XX rule
+    // above). 0x080A stays reserved for a future OCR-plane kind.
+    ("document", 0x080B),
     // ── 0x09XX — Health domain (clinical / patient / care) ──
     // 12 concepts, two provenance classes. 0x0901..0x0907: the 7 entities
     // the OGIT `NTO/Healthcare/entities/` TTL ships (medcare-rs
@@ -1734,6 +1744,13 @@ pub mod class_ids {
     /// classid custom-low half, mirroring the `network_layer` pattern
     /// (plan Phase 4B-D).
     pub const OCR_RENDERER: u16 = 0x0809;
+    /// `document` (`0x080B`) — the generic, source-agnostic DOCUMENT concept:
+    /// the parsed-structure root the OCR arc converges on and the reusable DTO
+    /// `ogar-doc-ir::DocIr` carries (`tesseract-rs → doc.v1 → ogar-from-docv1
+    /// → DocIr → render`). Content-addressed via `DocIr::content_sha256`; the
+    /// raw bytes live in a consumer content store, never as a concept slot.
+    /// `0x080A` is reserved for a future OCR-plane kind.
+    pub const DOCUMENT: u16 = 0x080B;
 
     // ── 0x09XX — health domain (medcare-rs Healthcare namespace) ──
 
@@ -1973,6 +1990,7 @@ pub mod class_ids {
         ("page_layout", PAGE_LAYOUT),
         ("page_image", PAGE_IMAGE),
         ("ocr_renderer", OCR_RENDERER),
+        ("document", DOCUMENT),
         // 0x09XX — health
         ("patient", PATIENT),
         ("diagnosis", DIAGNOSIS),
@@ -2086,7 +2104,7 @@ pub mod class_ids {
             // lance-graph mirror is rebuilt against it.
             assert_eq!(
                 ALL.len(),
-                89,
+                90,
                 "class_ids::ALL count changed — update this pin AND the \
                  lance-graph mirror COUNT_FUSE (crates/lance-graph-ogar/src/lib.rs) \
                  in the same PR",
@@ -2918,6 +2936,7 @@ pub fn all_promoted_classes() -> Vec<Class> {
         page_layout(),
         page_image(),
         ocr_renderer(),
+        document(),
         // 0x09XX — health arm (7 OGIT Healthcare concepts + 5
         // harvest-derived mints), in class_ids::ALL order.
         patient(),
@@ -3998,6 +4017,34 @@ pub fn ocr_renderer() -> Class {
     let mut format = Attribute::new("format");
     format.type_name = Some("u8".to_string());
     c.attributes = vec![format];
+    c
+}
+
+/// Document (`0x080B`) — the generic, source-agnostic document concept: the
+/// parsed-structure root the OCR arc converges on and the reusable DTO
+/// `ogar-doc-ir::DocIr` carries (`tesseract-rs → doc.v1 → ogar-from-docv1 →
+/// DocIr → render`). The attributes mirror `DocIr`'s top-level shape so a
+/// `ClassView` can project it; the raw bytes are content-addressed
+/// (`content_sha256`) and live in a consumer content store, never inline.
+#[must_use]
+pub fn document() -> Class {
+    let mut c = Class::new("Document");
+    c.language = Language::Unknown;
+    c.canonical_concept = Some("document".to_string());
+    let attr = |name: &str, ty: &str| {
+        let mut a = Attribute::new(name);
+        a.type_name = Some(ty.to_string());
+        a
+    };
+    c.attributes = vec![
+        attr("version", "String"),
+        attr("source", "Provenance"),
+        attr("geometry", "Geometry"),
+        attr("content_sha256", "[u8; 32]"),
+        attr("mime", "String"),
+        attr("pages", "Vec<DocPage>"),
+        attr("fields", "Vec<TypedField>"),
+    ];
     c
 }
 
@@ -5572,12 +5619,14 @@ mod tests {
         }
         // Counts line up with the codebook blocks (7 OGIT + 5 harvest mints).
         assert_eq!(concepts_in_domain(ConceptDomain::Health).count(), 12);
-        // 0x08XX OCR: the nine container KINDS (unicharset/recoder/charset/
+        // 0x08XX OCR: nine container KINDS (unicharset/recoder/charset/
         // network_layer + the PDF→text plan mints textline/blob/page_layout/
-        // page_image/ocr_renderer). Content (the 112 unichars, code tables,
-        // blob outlines) never becomes concepts — see the CODEBOOK 0x08XX
-        // section note (Osint zero-rows precedent).
-        assert_eq!(concepts_in_domain(ConceptDomain::Ocr).count(), 9);
+        // page_image/ocr_renderer) plus the generic `document` (0x080B — the
+        // ogar-doc-ir::DocIr concept the tesseract-rs pipeline converges on).
+        // Content (the 112 unichars, code tables, blob outlines) never becomes
+        // concepts — see the CODEBOOK 0x08XX section note (Osint zero-rows
+        // precedent).
+        assert_eq!(concepts_in_domain(ConceptDomain::Ocr).count(), 10);
         let ocr: Vec<&str> = concepts_in_domain(ConceptDomain::Ocr)
             .map(|(name, _)| name)
             .collect();
@@ -5593,6 +5642,7 @@ mod tests {
                 "page_layout",
                 "page_image",
                 "ocr_renderer",
+                "document",
             ],
             "OCR domain set drift — re-sync the consumer coverage gate",
         );
