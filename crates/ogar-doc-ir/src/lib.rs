@@ -75,6 +75,8 @@
 use serde::{Deserialize, Serialize};
 
 pub mod compose;
+#[cfg(feature = "classview")]
+pub mod project;
 
 /// Perceptual-IR version marker. [`from_json`] refuses any other value.
 /// A `doc.v2` is a NEW marker + (possibly) new [`RegionKind`]s, never a

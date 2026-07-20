@@ -11,3 +11,21 @@ description = "The source-agnostic perceptual IR for OGAR's document layer: a cl
 [dependencies]
 serde = { workspace = true }
 serde_json = "1.0"
+
+# The ClassView projection — OFF by default so the observation-IR core stays
+# serde-only / no-canon (it lands ahead of the W4 classid ratification). Pulls
+# ONLY the zero-dep masking contract (`ClassView` / `FieldMask` / `WideFieldMask`).
+# The neutral IR hands out the mask + the values addressed through it; a CONSUMER
+# (e.g. `lance-graph-arm-discovery`) builds its own `Dataset` from that. The
+# neutral IR never depends on any one consumer — the arrow points OUT, never in.
+# Wired via `git branch = "main"`, the same float-then-flip form the sibling
+# `ogar-class-view` / `ogar-from-ruff` / `ogar-render-askama` crates use.
+lance-graph-contract = { git = "https://github.com/AdaWorldAPI/lance-graph", branch = "main", optional = true }
+
+[features]
+default = []
+# The `project` module: `ClassView × WideFieldMask` masking over the in-memory
+# `DocIr`. Same binary, zero serialization — presence is a mask bit, the values
+# are addressed THROUGH the mask. A consumer turns the projection into its own
+# arm `Dataset`; the neutral IR never names a consumer. (The Firewall, ADR-022/023.)
+classview = ["dep:lance-graph-contract"]
