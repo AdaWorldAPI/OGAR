@@ -64,7 +64,7 @@ to the general concept):
 | **`FieldView`** (renderer-neutral enum) | `E-ONE-MASK-THREE-PORTS` / `E-OGAR-CONVERGENCE-SHAPE`: render is *"classview fieldmask → **fieldview fold** → askama/jinja"*; the fold is *"one fieldview partial per column type × skin, ~22 of them"* resolved longest-prefix (app-specific → concept-canonical). | The shipped `ogar-render-askama::field_view::FieldView` (`field_view.rs:58` — `struct { position, label, predicate, value }`) is the **text-leaf reading** of that fold. The doctrine's `enum FieldView {Text, Badge, Table, ObjectSlot, Geometry, …}` is **the fold formalized as its variant set**. The general name (`FieldView`) belongs to the general concept (the enum); today's struct is specifically an addressed field *row* and becomes the enum's `Text` payload (rename to e.g. `FieldRow`). | **Expansion, not collision** — the struct is the narrow reading of the widened concept |
 | **`ProjectionRenderer`** (trait) | `A3`: *"a screen and a document are the SAME positional projection; **`DocRenderer` gains its fourth adapter**."* The trait already exists as `DocRenderer` (one-leg rule; runtime-bound tesseract / Spire.Doc / askama adapters). | The doctrine's `ProjectionRenderer` **is** `DocRenderer`. Askama/Typst/Blitz/Vello are adapters on the existing trait; do not mint a second trait — widen `DocRenderer`'s adapter set (and rename `ProjectionRenderer → DocRenderer` in the composition types). | **Expansion** (existing trait, more adapters) |
 | **Named multi-view per class** (`WorkPackage.inline` vs `.summary`) | `E-ONE-MASK-THREE-PORTS`: a classview bitmask is **per-mode** ("one mask, three projections … per mode"). | Today `OgarClassView.by_id: HashMap<ClassId, ObjectView>` (`ogar-class-view/src/lib.rs:311`) keys by bare `ClassId` — one view per class. The expansion is to key by **`(ClassId, mode)`**; a "named view" is a mode, a mode is a mask. This is the one structural registry change the slice forces. | **Expansion** of the registry key |
-| **RBAC by projection** | `E-ONE-MASK-THREE-PORTS` + the `D-A2UI` #205 correction: `effective_mask = classview_mask ∧ role_mask`; `field_mask` retyped to `WideFieldMask`; fail-closed; sentinel ban. | Already canon and already CODED (wide masks decode ≥ 64 on the `ogar-a2ui-frame` wire). The doctrine's "unauthorized field absent from the wire" is this, verbatim. | **Already shipped** |
+| **RBAC by projection** | `E-ONE-MASK-THREE-PORTS` + the `D-A2UI` #205 correction: `effective_mask = classview_mask ∧ role_mask`; `field_mask` retyped to `WideFieldMask`; fail-closed; sentinel ban. | **Ruled, but only the transport half is coded.** The wire carries wide masks (positions ≥ 64 decode on the `ogar-a2ui-frame` wire) and `a2ui-server` projects *before* framing (`render_stream.rs`: RBAC before frame). But the **enforcement** — an `impl ClassRbac` / `effective_mask` that computes `classview_mask ∧ role_mask` — does **not** exist under OGAR `crates/` (`ClassRbac` is spec-only, `docs/CLASSID-RBAC-KEYSTONE-SPEC.md`; enforcement is **probe-gated on `PROBE-OGAR-RBAC-AUTHORIZE`**, `ISSUES.md` ISS-RBAC-AUTHORIZE-BY-CLASSID). | **Transport CODED; enforcement spec + probe-gated — NOT shipped** |
 | **`DocNode`** (composition-only) | `D-DOC-IR-SECOND-RETINA`: *"one closed doc IR"* — the observation IR (`DocIr{version, source, geometry, content_sha256, mime, pages, fields}`, `ogar-doc-ir/src/lib.rs:207`) is the perceptual retina and is **untouched**. | `DocNode` is a **new composition layer** whose leaves reference observations through `ObjectSlot`s (an imported scan appears in a report as a portal, not as pasted regions). No domain variants (`Wall`/`WorkPackage`) enter `DocNode` — those are OGAR nodes the slots point at. | **New module**, observation IR preserved |
 | **`ResolutionMode{Live, Revision, Snapshot}`** + `ogar://` | `@sha256:` = the content-address discipline the doc KV already enforces (`DocumentId = sha256(raw)`, `D-OGAR-DOC-LAYER`); `@revision:` = Lance versioning (ADR-008/013 shape). | Clean, unclaimed names (confirmed absent from `crates/`). The beyond-Rails move; the storage semantics are reuse. | **New names, reused semantics** |
 
@@ -131,6 +131,17 @@ render twice HTML + Typst) lands here, exact files:
   `ogar_vocab::canonical_concept_id` inline (`board.rs:25` + 7 call sites).
   Slot-target classid resolution should route through `op_canon::app`
   (the OGAR-consumer-best-practices pattern), fixing that inconsistency.
+- **RBAC is the slice's own responsibility — do NOT assume it is shipped.**
+  Because `ClassRbac`/`effective_mask` enforcement is spec + probe-gated (§A1),
+  the slice's slot resolution MUST apply the fail-closed intersection
+  `resolved_mask = requested_wide_mask ∧ role_wide_mask` **server-side, before
+  rendering**, and treat a missing/narrow role mask as a **refusal**, never a
+  fall-through to the requested mask (the `full_for` sentinel is a render
+  convenience, never an RBAC fallback — the #205 rule). A slot that supplies an
+  unfiltered mask must not cause unauthorized fields to render. Until the OGAR
+  `ClassRbac` enforcement lands, the slice carries the intersection itself
+  (mirroring `a2ui-server`'s `project_surface` fail-closed gate); it does not
+  wait for, nor assume, the upstream primitive.
 
 **Slice = ** 5 `DocNode` kinds + 3 attachables × 2 modes each + render HTML
 (askama, exists) + Typst PDF (greenfield adapter). The Typst leg is the only
@@ -249,7 +260,9 @@ defer.
   `ObjectSlot` = the A3 Klickwege brick made addressable; `FieldView` (enum) =
   the `E-ONE-MASK-THREE-PORTS` fold formalized (the shipped struct is its `Text`
   leaf); `ProjectionRenderer` = `DocRenderer`; named multi-view = mask-per-mode;
-  RBAC = the shipped `classview_mask ∧ role_mask`. Crate placement is bound by
+  RBAC = the ruled `classview_mask ∧ role_mask` (transport CODED; the
+  `ClassRbac`/`effective_mask` enforcement is spec + probe-gated, NOT shipped).
+  Crate placement is bound by
   the A1 "one crate" ruling. Slice landing zone is grounded to exact files in
   `openproject-nexgen-rs`.
 - **Part B** — the STL/geometry chunk is a `[S]` rediscovery of the "address is

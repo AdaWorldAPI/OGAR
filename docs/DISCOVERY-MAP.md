@@ -1493,7 +1493,13 @@ isolation. The map's job is to keep them visible.
   **`DocRenderer` trait** (A3, *"gains its fourth adapter"*) widened;
   **named multi-view = mask-per-mode**, registry key `ClassId → (ClassId, mode)`
   (`OgarClassView.by_id`, `ogar-class-view/src/lib.rs:311`); RBAC by projection
-  = the shipped `classview_mask ∧ role_mask` (#205). **Crate placement bound by
+  = the ruled `classview_mask ∧ role_mask` (#205) — **transport-side CODED
+  (`ogar-a2ui-frame` wide masks, projection-before-framing), but the
+  `ClassRbac`/`effective_mask` ENFORCEMENT is spec + probe-gated
+  (`PROBE-OGAR-RBAC-AUTHORIZE`, ISS-RBAC-AUTHORIZE-BY-CLASSID), NOT shipped — so
+  the slice carries the fail-closed intersection itself** (codex P2 on #218,
+  verified: no `impl ClassRbac`/`effective_mask` under `crates/`). **Crate
+  placement bound by
   the A1 ruling** (*"one `ogar-doc` crate; split axis is STATE not
   direction"*) → composition is a MODULE in the doc-ir family, not a sibling
   `ogar-doc-compose`. First-slice landing zone grounded to exact files in
