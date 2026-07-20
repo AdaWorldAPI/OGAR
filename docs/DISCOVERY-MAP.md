@@ -1447,3 +1447,37 @@ isolation. The map's job is to keep them visible.
   this brick (RBAC-project `WideFieldMask ∩ role` fail-closed → NodeDelta
   frame down + fieldview render; ActionInvoke up resolved by ordinal;
   ogar-encryption sealed transport). Branch `claude/ogar-a2ui-transcoding-b7xzrn`.
+
+- **[D-DOCIR-COMPOSITION] DocIr = the composition layer over the OGAR object
+  graph; documents are lenses, not boxes of decaying copies** — `[G]`
+  (operator-ruled 2026-07-20, verbatim doctrine) — **ADR**
+  (`docs/DOCIR-COMPOSITION-LAYER.md`) — home: `ogar-doc-ir` (composition
+  layer TBD under the OGAR-AS-IR gate) + `ogar-class-view` +
+  `ogar-render-askama` / future `ogar-render-typst` — depends:
+  D-DOC-IR-SECOND-RETINA (observation IR untouched), D-OGAR-DOC-LAYER, the
+  D-A2UI arc (`WideFieldMask` CODED, `field_view` askama brick,
+  `ogar-a2ui-frame`), `document 0x080B` mint (#216). Shape: ActionText's
+  attachment doctrine transplanted as **`ObjectSlot` typed projection
+  portals** (`target: ObjectRef` + `class_view` + `FieldMask` +
+  `WideFieldMask` + **`ResolutionMode{Live, Revision, Snapshot}`** — the
+  beyond-Rails move: dashboards live, signed/GoBD artifacts pinned, deleted
+  objects snapshot-fallback; `ogar://app/class/id@{live|revision:N|sha256:…}`
+  as the SGID equivalent). Sharp split: ClassView = named semantic
+  projection (`WorkPackage.{compact-card,document-inline,inspector,…}`);
+  FieldMask = immediate fields; WideFieldMask = GraphQL-shaped traversal
+  selection compiled into the radix/path machinery; **FieldView =
+  renderer-neutral presentation intent — Askama/Typst/Blitz/Vello render
+  FieldView and never query domains (the hinge)**. `DocNode` is
+  composition-only (NO domain variants — those belong to OGAR). Trix donates
+  editor authority (`DocOp` → DocIr → rerender; DOM/Typst/HTML never
+  authoritative; CRDT-compatible later). Typst owns the paged projection
+  (generated from render nodes, never arbitrary syntax in canon); Blitz
+  behind the `ProjectionRenderer` trait (experimental, not load-bearing);
+  Parley/Vello = precision canvas (inline boxes carry object slots as
+  references, never text). `ogar-bim` lands as semantic objects + ClassViews
+  directly addressable from documents — one identity, several faces. First
+  vertical slice: OpenProject `WorkPackage.description` (5 node kinds, 3
+  attachables × 2 named ClassViews, rendered twice HTML+Typst PDF, then ONE
+  BimObject). Named gaps: ObjectSlot/ResolutionMode/`ogar://` · composition
+  DocNode · DocOp · FieldView + ProjectionRenderer · **named multi-views per
+  class** (registry is single-view today) · ogar-render-typst.
