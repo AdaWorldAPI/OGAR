@@ -1507,6 +1507,26 @@ isolation. The map's job is to keep them visible.
   `description: Formattable`; render seam `op-server/src/board.rs:735/1446`
   `CellData::RichText`; `@mention`/WP-link parsers are all-TODO stubs → clean).
   Grounds against, not ahead of, the `OGAR-AS-IR.md` six-test gate. Docs-only.
+  **Status 2026-07-20 — W1 composition brick CODED (canon-free):**
+  `ogar-doc-ir::compose` landed per the A1 module placement — the closed
+  5-kind `DocNode` vocabulary (`Document/Section/Paragraph/Text/ObjectSlot`,
+  exactly the §7 slice scope; `Figure/Table/PageBreak` = a `doc-compose.v2`
+  bump), `ObjectSlot{target, class_view (named view), field_mask u64,
+  wide_mask_words Vec<u64> (wire form, positions ≥ 64 native — the
+  `ogar-a2ui-frame` precedent), resolution, fallback}`,
+  `ResolutionMode{Live, Revision(u64), Snapshot([u8;32])}`, strict `ogar://`
+  parse/format (all three arms; missing resolution suffix = refusal, no
+  default), `DOC_COMPOSE_VERSION = "doc-compose.v1"` load gate + structural
+  validate (out-of-range refusal, cycle refusal). serde-only, ZERO canon
+  dependency — the observation IR untouched beside it. 9 new tests incl. the
+  §7 proof shape (a `WorkPackage.description` composing Text + User/WP/
+  Attachment slots), version/kind/URI refusal gates, wide-position + fallback
+  round-trips; 16/16 crate tests green, clippy/fmt clean. Module doc pins the
+  §A4 RBAC posture (slot masks are a REQUEST; the fail-closed `∧ role`
+  intersection is the resolver's, enforcement probe-gated). Deferred, named:
+  `DocOp` (§4 editor authority — next brick), `FieldView` enum widening +
+  `(ClassId, mode)` registry (ogar-render-askama / ogar-class-view side),
+  `ogar-render-typst`.
 
 - **[D-STL-GEOMETRY-REDISCOVERY] the STL→mesh→surfel / `ogar-bim` geometry chunk
   is a rediscovery of the "address is geometry" arc** — `[S]` (PROPOSAL-
