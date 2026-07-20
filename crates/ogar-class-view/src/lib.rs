@@ -86,6 +86,7 @@ use ogar_vocab::{
     commercial_line_item,
     currency_policy,
     diagnosis,
+    document,
     examination,
     external_practice,
     hr_department,
@@ -215,6 +216,7 @@ fn all_canonical_classes() -> Vec<(&'static str, Class)> {
         ("page_layout", page_layout()),
         ("page_image", page_image()),
         ("ocr_renderer", ocr_renderer()),
+        ("document", document()),
         // ── 0x09XX — health (7 OGIT Healthcare + 4 harvest-derived mints) ──
         ("patient", patient()),
         ("diagnosis", diagnosis()),
