@@ -74,6 +74,8 @@
 
 use serde::{Deserialize, Serialize};
 
+pub mod compose;
+
 /// Perceptual-IR version marker. [`from_json`] refuses any other value.
 /// A `doc.v2` is a NEW marker + (possibly) new [`RegionKind`]s, never a
 /// silent reshape of `doc.v1`.
