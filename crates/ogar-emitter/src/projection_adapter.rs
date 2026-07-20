@@ -103,6 +103,21 @@ pub enum FieldSource {
         /// Source column on the row binding.
         column: String,
     },
+    /// `field: r.col.map(|v| v != 0)` — `Option<iN>` flag → `Option<bool>`
+    /// (the nullable sibling of [`FieldSource::IntFlagToBool`], which
+    /// unwraps the flag to a bare `bool`; here the `Option` is preserved).
+    OptionFlagToOptionBool {
+        /// Source column on the row binding.
+        column: String,
+    },
+    /// `field: r.col.date()` — `NaiveDateTime` → `NaiveDate`, non-optional
+    /// (the non-`Option` sibling of [`FieldSource::MapNaiveDate`]; drops the
+    /// time component from a `NOT NULL DATETIME` column read as a full
+    /// timestamp).
+    TruncateDate {
+        /// Source column on the row binding.
+        column: String,
+    },
     /// `field: <literal>` — no backing column (e.g. `None` for a domain
     /// field absent from the live schema).
     Const {
@@ -120,6 +135,10 @@ impl FieldSource {
             FieldSource::UnwrapOrDefault { column } => format!("r.{column}.unwrap_or_default()"),
             FieldSource::MapNaiveDate { column } => format!("r.{column}.map(|dt| dt.date())"),
             FieldSource::IntFlagToBool { column } => format!("r.{column}.unwrap_or(0) != 0"),
+            FieldSource::OptionFlagToOptionBool { column } => {
+                format!("r.{column}.map(|v| v != 0)")
+            }
+            FieldSource::TruncateDate { column } => format!("r.{column}.date()"),
             FieldSource::Const { literal } => literal.clone(),
         }
     }
@@ -401,5 +420,41 @@ impl From<PatientRow> for Patient {
         let out = emit_projection_adapters(&[c]);
         assert!(out.contains("// [concept: UNMINTED"));
         assert!(out.contains("unminted=1"));
+    }
+
+    /// The two variants added for the medcare-rs read-arm W4 hand-off
+    /// (`dms` needs `Option<iN>` → `Option<bool>`; `lab_order` needs a
+    /// non-optional `NaiveDateTime` → `NaiveDate` truncation). Each must
+    /// render the exact hand-written spelling those projections already use.
+    #[test]
+    fn option_flag_and_truncate_date_render_the_handwritten_spelling() {
+        let c = ProjectionClass {
+            row_type: "Row".to_string(),
+            domain_type: "Dom".to_string(),
+            concept: String::new(),
+            fields: vec![
+                FieldProjection {
+                    domain_field: "transfercomplete".to_string(),
+                    source: FieldSource::OptionFlagToOptionBool {
+                        column: "transfercomplete".to_string(),
+                    },
+                },
+                FieldProjection {
+                    domain_field: "measured_on".to_string(),
+                    source: FieldSource::TruncateDate {
+                        column: "file_date".to_string(),
+                    },
+                },
+            ],
+        };
+        let out = emit_projection_adapters(&[c]);
+        assert!(
+            out.contains("transfercomplete: r.transfercomplete.map(|v| v != 0),"),
+            "OptionFlagToOptionBool must render `.map(|v| v != 0)`"
+        );
+        assert!(
+            out.contains("measured_on: r.file_date.date(),"),
+            "TruncateDate must render `.date()` (non-optional)"
+        );
     }
 }
