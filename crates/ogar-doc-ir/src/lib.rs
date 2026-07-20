@@ -44,6 +44,23 @@
 //! the doc-layer 5+3 council. This crate is pure perceptual structure with no
 //! canon dependency, so it can land ahead of that ratification.
 //!
+//! # Observation IR vs. the composition layer (DocIr composition grounding)
+//!
+//! [`DocIr`] here is the **observation IR** — the perceptual retina (what a
+//! scan / DOM faithfully *saw*). The 2026-07-20 ruling
+//! (`docs/DOCIR-COMPOSITION-LAYER.md`, #217; grounded in
+//! `docs/DOCIR-COMPOSITION-GROUNDING.md`, #218) promotes *DocIr* to also name a
+//! **composition layer** over the OGAR object graph — a `DocNode` graph of
+//! `Text` / `Section` / `ObjectSlot` (typed projection portals into OGAR
+//! nodes). Per operator ruling **A1** (*"one `ogar-doc` crate; split axis is
+//! STATE not direction"*), that composition `DocNode` is a **module in this
+//! crate family, never a sibling `ogar-doc-compose`**. It **references this
+//! observation IR through an `ObjectSlot`** (an imported scan appears in a
+//! composed document as a portal, not as pasted regions) — this observation IR
+//! is **untouched, referenced, never retyped in place**. An `ObjectSlot` is the
+//! `D-DOC-IR-SECOND-RETINA` **A3 brick** (`ClassView × WideFieldMask`, "same
+//! brick as Klickwege — no new DSL") plus an `ObjectRef` + a `ResolutionMode`.
+//!
 //! # Refinements this crate makes to the plan's P6 sketch (building validated the spec)
 //!
 //! - **Enums are EXHAUSTIVE, not `#[non_exhaustive]`.** A closed vocabulary
