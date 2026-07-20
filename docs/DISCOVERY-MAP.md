@@ -1481,3 +1481,46 @@ isolation. The map's job is to keep them visible.
   BimObject). Named gaps: ObjectSlot/ResolutionMode/`ogar://` · composition
   DocNode · DocOp · FieldView + ProjectionRenderer · **named multi-views per
   class** (registry is single-view today) · ogar-render-typst.
+  **Grounding 2026-07-20 (`docs/DOCIR-COMPOSITION-GROUNDING.md`, this branch):**
+  the "new" names are **expansions of shipped/ruled bricks, not new
+  architecture** — `ObjectSlot` = the `D-DOC-IR-SECOND-RETINA` A3 brick
+  (*"document template = ClassView × WideFieldMask, same brick as Klickwege"*)
+  made addressable (+ `ObjectRef` + `ResolutionMode`); the doctrine's
+  renderer-neutral `FieldView` enum = the `E-ONE-MASK-THREE-PORTS` **fieldview
+  fold** formalized (the shipped `ogar-render-askama::field_view::FieldView`
+  struct, `field_view.rs:58`, is its **`Text`-leaf** reading — widen, rename the
+  struct to `FieldRow`; NOT a collision); `ProjectionRenderer` = the ruled
+  **`DocRenderer` trait** (A3, *"gains its fourth adapter"*) widened;
+  **named multi-view = mask-per-mode**, registry key `ClassId → (ClassId, mode)`
+  (`OgarClassView.by_id`, `ogar-class-view/src/lib.rs:311`); RBAC by projection
+  = the shipped `classview_mask ∧ role_mask` (#205). **Crate placement bound by
+  the A1 ruling** (*"one `ogar-doc` crate; split axis is STATE not
+  direction"*) → composition is a MODULE in the doc-ir family, not a sibling
+  `ogar-doc-compose`. First-slice landing zone grounded to exact files in
+  `openproject-nexgen-rs` (`op-work-packages/src/work_package.rs:74-76`
+  `description: Formattable`; render seam `op-server/src/board.rs:735/1446`
+  `CellData::RichText`; `@mention`/WP-link parsers are all-TODO stubs → clean).
+  Grounds against, not ahead of, the `OGAR-AS-IR.md` six-test gate. Docs-only.
+
+- **[D-STL-GEOMETRY-REDISCOVERY] the STL→mesh→surfel / `ogar-bim` geometry chunk
+  is a rediscovery of the "address is geometry" arc** — `[S]` (PROPOSAL-
+  GROUNDING, 2026-07-20; **council-pending, NOT adopted** — no mint, no crate,
+  no code) — home: `docs/DOCIR-COMPOSITION-GROUNDING.md` Part B — depends:
+  D-FMA-SKELETON, D-GUID-TIER (`HhtlMode::Located` CODED), D-BOUNDS, D-CESIUM-
+  PROBE, lance-graph `helix` crate + `jc::ewa_sandwich_3d` + the `3DGS-*.md`
+  plan family. Reuse-map (defer build): a spatial-LOD `HhtlNode` = the shipped
+  **`HhtlMode::Located`** reading (`ogar-fma-skeleton/src/guid.rs:328`,
+  `located_3d`/`morton3`, Cesium 3D-octree CRS) — HHTL stays key-path canon, a
+  spatial index is the `Located` reading, NOT a new hierarchy; `HelixAddress` =
+  the shipped **`helix::ResidueEdge`** sphere codec (L7 `hhtl++helix`) — surfel
+  normals ride it, never a new name; `Surfel` math = `jc` + `ndarray::splat3d`
+  (certified); `Aabb` = **derived from address (D-BOUNDS), never stored**;
+  `BufferRef` = the anatomy-mesh out-of-line-Lance pattern
+  (`canonical_node.rs:706-723`, the 4M-vert mesh named verbatim); `PartGraph`
+  extends `same_family` partonomy. The one genuinely-new sliver: an **STL-ingest
+  producer** (mirror of `ogar-from-ruff`) feeding the existing address+splat
+  substrate — **probe-gated** (D-FMA-SKELETON grades splat-fit convergence
+  CONJECTURE; the next deliverable is the round-trip probe, not synthesis). The
+  `ogar-bim` **semantic-object** half (a `Wall` node + `document-inline`
+  ClassView, addressable via `ObjectSlot`) can proceed independently of the mesh
+  pipeline. Naming discipline: widen the shipped carrier, never fork it.
