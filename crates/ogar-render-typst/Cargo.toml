@@ -1,0 +1,26 @@
+# SPDX-License-Identifier: MIT
+[package]
+name = "ogar-render-typst"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+description = "Typst SOURCE emitter over the same FieldView rows the askama surface renders — the paged/archival projection of a resolved OGAR document (one surface, two renderers). Emits .typ text only; no typst compiler dependency."
+
+[dependencies]
+# ONE SURFACE, TWO RENDERERS: this crate consumes the SAME `FieldView` rows the
+# askama HTML surface renders (the a2ui #207 brick). It emits Typst SOURCE text
+# — the paged/`@revision`-pinned projection — and deliberately does NOT embed
+# the typst compiler (a heavy dep tree); compiling .typ → PDF is the consumer's
+# egress step.
+ogar-render-askama = { path = "../ogar-render-askama" }
+
+[dev-dependencies]
+# The dual-render proof (tests/dual_render.rs): one resolved DocCompose →
+# askama HTML AND Typst source, same rows, plus a tesseract-rs doc.v1
+# observation participating via ogar-doc-ir's project masking.
+ogar-doc-ir = { path = "../ogar-doc-ir", features = ["classview"] }
+# FLOAT: branch = "main" → PR branch until lance-graph #776 merges (flip back to main then).
+lance-graph-contract = { git = "https://github.com/AdaWorldAPI/lance-graph", branch = "claude/ogar-docir-architecture-jjzlig" }

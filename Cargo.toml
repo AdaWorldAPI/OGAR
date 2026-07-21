@@ -26,6 +26,7 @@ members = [
     "crates/ogar-doc-ir",
     "crates/ogar-a2ui-frame",
     "crates/ogar-from-docv1",
+    "crates/ogar-render-typst",
 ]
 
 [workspace.package]

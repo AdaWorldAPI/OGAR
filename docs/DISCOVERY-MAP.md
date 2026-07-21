@@ -1550,3 +1550,28 @@ isolation. The map's job is to keep them visible.
   `ogar-bim` **semantic-object** half (a `Wall` node + `document-inline`
   ClassView, addressable via `ObjectSlot`) can proceed independently of the mesh
   pipeline. Naming discipline: widen the shipped carrier, never fork it.
+
+- **[D-DOCIR-DUAL-RENDER] the DocIr vertical slice CLOSES: ObjectSlot → resolve
+  (rail walk) → the SAME rows through askama HTML AND Typst source; the retina
+  participates through project masking; the fallback is exercised** — `[G]`
+  (BUILT + INSPECTED, 2026-07-20) — home: `ogar-doc-ir::resolve` (the missing
+  VERB over the composition brick) + NEW crate `ogar-render-typst` (paged
+  projection, SOURCE emitter only — no typst compiler dep) + the executable
+  proof `ogar-render-typst/tests/dual_render.rs` — depends: D-DOCIR-COMPOSE
+  (the brick), lance-graph #776 `selection` (walk_rails/NamedView/ViewRegistry;
+  contract deps FLOAT on that PR branch, flip to main on merge), #220 `project`
+  (the observation masking). Mechanism: `resolve_doc` walks the composition;
+  each slot's named view governs its root, nested hops resolve per-class
+  (`DocObjectSource` dependency inversion — consumer owns graph/values/
+  bindings); an OCR `doc.v1` is just a graph NODE whose presence/values are
+  `project::{field_mask, masked_values}` — retina and live objects flow the
+  SAME walk. Proof (inspected output, 6/6 + 26/26 green, clippy/fmt clean):
+  one `DocCompose` (User + WorkPackage + Attachment + scanned-invoice slots +
+  a deleted target) renders to BOTH surfaces with identical facts — the
+  assignee rail hop lands at depth 1 in both; `user.inline` masks email/role
+  out of both; the retina's unread `ust` is absent from both (cleared presence
+  bit); the deleted slot shows its sha256 snapshot fallback in both. Typst =
+  the `@revision`/archival leg (ResolutionMode pairing: live surface ↔ Live,
+  page ↔ Revision/Snapshot); compiling `.typ`→PDF stays a consumer egress
+  (deliberately no compiler dep). Deferred, named: `DocOp` (editor authority),
+  Lance-versioned `Revision(n)` lookup, `FieldView` enum widening.
