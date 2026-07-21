@@ -185,13 +185,29 @@ where
 {
     let uri = format_ogar_uri(&slot.target, &slot.resolution);
 
-    let outcome = match (
+    // Root-view/class agreement (codex P2 on #222): the slot's named view must
+    // project the ROOT's own class. A stale or cross-class view name would
+    // otherwise yield a silently-EMPTY `Resolved` (the walker prunes the
+    // foreign mask fail-closed), which reads as "object rendered with no
+    // fields" instead of "slot did not resolve". Fail closed into the
+    // fallback/unresolvable arm so the outcome says what actually happened.
+    let resolved = match (
         source.lookup(&slot.target, &slot.resolution),
         source.view_by_name(&slot.class_view),
     ) {
         (Some(root), Some(root_view)) => {
+            let root_class = source.graph().class_of(root);
+            registry
+                .get(root_view)
+                .is_some_and(|v| v.class == root_class)
+                .then_some((root, root_view, root_class))
+        }
+        _ => None,
+    };
+
+    let outcome = match resolved {
+        Some((root, root_view, root_class)) => {
             let graph = source.graph();
-            let root_class = graph.class_of(root);
             let mut fields = Vec::new();
             walk_rails(
                 graph,
@@ -488,5 +504,33 @@ mod tests {
         let s = slot("wp1", "no.such.view", None);
         let r = resolve_slot(&s, &src, &TestView, &registry, 4);
         assert_eq!(r.outcome, SlotOutcome::Unresolvable);
+    }
+
+    /// Falsifier (codex P2 on #222): a slot whose named view projects a
+    /// DIFFERENT class than its target must fail closed — Unresolvable (or the
+    /// fallback), never a silently-EMPTY `Resolved`.
+    #[test]
+    fn cross_class_root_view_is_unresolvable_not_empty_resolved() {
+        let (src, registry) = setup();
+        // Target wp1 (class WP) with the USER-class "user.inline" view.
+        let s = slot("wp1", "user.inline", None);
+        let r = resolve_slot(&s, &src, &TestView, &registry, 4);
+        assert_eq!(r.outcome, SlotOutcome::Unresolvable);
+
+        // With a fallback attached, the same mismatch takes the fallback arm.
+        let s = slot(
+            "wp1",
+            "user.inline",
+            Some(SnapshotRef {
+                content_sha256: [0xCD; 32],
+            }),
+        );
+        let r = resolve_slot(&s, &src, &TestView, &registry, 4);
+        assert_eq!(
+            r.outcome,
+            SlotOutcome::Fallback {
+                content_sha256_hex: "cd".repeat(32)
+            }
+        );
     }
 }

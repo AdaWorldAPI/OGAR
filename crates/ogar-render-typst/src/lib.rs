@@ -25,9 +25,18 @@ use ogar_render_askama::FieldView;
 /// Typst's active characters in markup context are escaped with a backslash —
 /// the set below covers the markup-significant ASCII characters (Typst accepts
 /// a backslash escape before any of them). Newlines are preserved.
+///
+/// Additionally, Typst recognizes `=` (heading), `-` (list item), and `+`
+/// (enum item) as BLOCK markers at the start of a line: user data beginning a
+/// line with one of them would otherwise become a heading/list in the emitted
+/// page (codex P2 on #222). They are escaped in line-start position only —
+/// mid-line they are inert and stay readable. The escape is conservative at
+/// the start of the string too: `\=` renders identically to `=` when the
+/// context turns out to be mid-line.
 #[must_use]
 pub fn escape_typst(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
+    let mut at_line_start = true;
     for c in s.chars() {
         match c {
             // Markup-active characters in Typst content mode.
@@ -35,8 +44,22 @@ pub fn escape_typst(s: &str) -> String {
             | '"' => {
                 out.push('\\');
                 out.push(c);
+                at_line_start = false;
             }
-            _ => out.push(c),
+            // Line-start block markers: heading / list / enum.
+            '=' | '-' | '+' if at_line_start => {
+                out.push('\\');
+                out.push(c);
+                at_line_start = false;
+            }
+            '\n' => {
+                out.push(c);
+                at_line_start = true;
+            }
+            _ => {
+                out.push(c);
+                at_line_start = false;
+            }
         }
     }
     out
@@ -137,5 +160,20 @@ mod tests {
     fn heading_and_text_escape() {
         assert_eq!(emit_heading("A & B"), "= A & B\n");
         assert!(emit_text("cost: $5").contains(r"\$5"));
+    }
+
+    /// Falsifier (codex P2 on #222): user data starting a line with a Typst
+    /// block marker must not become a heading/list/enum in the emitted page.
+    #[test]
+    fn line_start_block_markers_are_escaped() {
+        // Start of string.
+        assert_eq!(emit_text("= fake heading"), "\\= fake heading\n");
+        // After an embedded newline — each line start is guarded.
+        assert_eq!(emit_text("- item\n+ item"), "\\- item\n\\+ item\n");
+        // Mid-line the same characters are inert and stay unescaped.
+        assert_eq!(emit_text("a - b = c + d"), "a - b = c + d\n");
+        // A multi-line value inside a field view cannot smuggle a heading in.
+        let t = emit_field_view("v", "T", &[fv(0, "note", "x\n= injected")]);
+        assert!(t.contains("x\n\\= injected"), "got: {t}");
     }
 }
