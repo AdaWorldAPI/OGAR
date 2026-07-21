@@ -22,5 +22,4 @@ ogar-render-askama = { path = "../ogar-render-askama" }
 # askama HTML AND Typst source, same rows, plus a tesseract-rs doc.v1
 # observation participating via ogar-doc-ir's project masking.
 ogar-doc-ir = { path = "../ogar-doc-ir", features = ["classview"] }
-# FLOAT: branch = "main" → PR branch until lance-graph #776 merges (flip back to main then).
-lance-graph-contract = { git = "https://github.com/AdaWorldAPI/lance-graph", branch = "claude/ogar-docir-architecture-jjzlig" }
+lance-graph-contract = { git = "https://github.com/AdaWorldAPI/lance-graph", branch = "main" }

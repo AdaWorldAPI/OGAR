@@ -22,8 +22,7 @@ ogar-vocab = { path = "../ogar-vocab" }
 # The zero-dep contract carries the V3 byte surface (FacetCascade / NodeGuid /
 # NodeRow / NodeRowPacket / ValueTenant). Git-floats on `main` like the two
 # `ruff_spo_*` deps + ogar-class-view's own contract dep (D-NEVER-PIN-BUMP).
-# FLOAT: branch = "main" → PR branch until lance-graph #776 merges (flip back to main then).
-lance-graph-contract = { git = "https://github.com/AdaWorldAPI/lance-graph", branch = "claude/ogar-docir-architecture-jjzlig", optional = true }
+lance-graph-contract = { git = "https://github.com/AdaWorldAPI/lance-graph", branch = "main", optional = true }
 # Operator ruling: rev pins on AdaWorldAPI-internal git deps are retired —
 # they were "out of desperation to lock what hadn't converged in transpiler
 # sink-in yet." Drift protection is the fuse tests, not pins. Floats on the

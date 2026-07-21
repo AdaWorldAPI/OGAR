@@ -20,8 +20,7 @@ serde_json = "1.0"
 # neutral IR never depends on any one consumer — the arrow points OUT, never in.
 # Wired via `git branch = "main"`, the same float-then-flip form the sibling
 # `ogar-class-view` / `ogar-from-ruff` / `ogar-render-askama` crates use.
-# FLOAT: branch = "main" → PR branch until lance-graph #776 merges (flip back to main then).
-lance-graph-contract = { git = "https://github.com/AdaWorldAPI/lance-graph", branch = "claude/ogar-docir-architecture-jjzlig", optional = true }
+lance-graph-contract = { git = "https://github.com/AdaWorldAPI/lance-graph", branch = "main", optional = true }
 
 [features]
 default = []
