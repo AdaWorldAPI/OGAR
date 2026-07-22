@@ -204,11 +204,11 @@ two halves of a cell. ADR‑026 names the cascade that ties them.
 | D‑VOCAB | `Class`/`Attribute`/`Association`/`EnumDecl`/`ActionDef`/`KausalSpec`/`Identity` IR | G | CODED | `ogar-vocab/` | 023 |
 | D‑IDENT | `class_identity(prefix,name)` = NiblePath; canonical‑form invariant | G | CODED | `ogar-ontology/` (#31) | D‑VOCAB |
 | D‑EMIT | `TripleEmitter` — 129 RDF predicates; SPO + TeKaMoLo | G | CODED | `ogar-emitter/` | D‑VOCAB |
-| D‑SURREALQL | SurrealQL DDL adapter, parse+emit, round‑trip, identifier‑quoted | G | CODED | `ogar-adapter-surrealql/` (#32,#36) | D‑VOCAB |
+| D‑SURREALQL | SurrealQL DDL adapter, parse+emit, round‑trip, identifier‑quoted | G→**DEPRECATED (2026‑07‑22)** | CODED but retired on SoC grounds: OGAR does not delegate its AST/IR concern to SurrealQL's AST (DLL) API — even if functional, an SoC error. Replacement = `render_class_with_methods` (behavior→ActionDef Rust methods) + compiled ClassView (V3). See `D‑SURREALQL‑DEPRECATED`. | `ogar-adapter-surrealql/` (#32,#36; deprecated: this PR) | D‑VOCAB |
 | D‑TTL | Turtle (RDF/OWL) adapter, parse+emit, round‑trip | G | CODED | `ogar-adapter-ttl/` (#37) | D‑EMIT |
 | D‑CHDDL | ClickHouse DDL adapter, parse+emit, dotted‑name round‑trip | G | CODED | `ogar-adapter-clickhouse-ddl/` (#38,#40) | D‑VOCAB |
 | D‑KNOWABLE | `KnowableFromStore` + `register_class_knowable_from`; `surrealql-hint`; **`vart-backend`** | G | CODED | `ogar-knowable-from/` (#25,#33,#43) | D‑IDENT |
-| D‑HINT | `schema_ddl_hint` loop closed — self‑describing registry via emit | G | CODED | (#33) | D‑SURREALQL, D‑KNOWABLE |
+| D‑HINT | `schema_ddl_hint` loop closed — self‑describing registry via emit | G→**DEPRECATED (2026‑07‑22)** | Renders DDL *into the registry as stored text* — the "code in storage" pattern the compile‑time ruling condemns; downstream‑deprecated with `D‑SURREALQL` (the `surrealql-hint` feature is default‑off). Migrate the hint to a compile‑time form or drop it. | (#33) | D‑SURREALQL, D‑KNOWABLE |
 | D‑ELIXIR | Elixir/HIRO SchemaSource scaffold (`gen_statem`→Rubicon) | G | CODED (scaffold) | `ogar-from-elixir/` | D‑VOCAB |
 | D‑HIRO‑DO | OGIT Automation → DO arm: `into_action_def` lifts `KnowledgeItem`→`ActionDef` (object_class←`relates`, kausal←`contains Trigger`, body **pointed‑to** not inlined — lossless‑DO §1); schema half of `PROBE‑OGAR‑DO‑ARM‑LIFT` green; lift→`emit_action_def`→SPO triples proven end‑to‑end (`tests/do_arm_emit.rs`, lossless‑DO holds across emit) | G | CODED (schema half) | `ogar-from-schema/src/do_arm.rs` | D‑VOCAB, D‑TTL, D‑ELIXIR, D‑EMIT |
 | D‑MARS‑CLASSID | MARS/Automation classids MINTED: `ConceptDomain::Automation` (0x0C), 9 concepts (`mars_application/resource/software/machine` 0x0C01‑04, `knowledge_item` 05, `mars_node_template` 06, `action_handler` 07, `action_applicability` 08, `automation_trigger` 09) — one domain spanning MARS structural CMDB + Automation DO‑arm (Auth precedent); resolves MARS‑TRANSCODING §1 deferral; passed 5+3 hardening (theorem/doctrine/integration/runtime savants + drift‑guards). Reserves the speculative rest | G | CODED | `ogar-vocab/src/lib.rs`, `ogar-class-view/src/lib.rs` | D‑VOCAB, D‑HIRO‑DO |
@@ -741,6 +741,39 @@ isolation. The map's job is to keep them visible.
   clippy clean. Supersedes the "widen parent vs primary+relation"
   framing in the 2026-07-04 lance-graph broadcast — the vocab's mixins
   axis is the answer.
+
+- **D-SURREALQL-DEPRECATED (2026-07-22; operator ruling; regrades
+  `D‑SURREALQL` + `D‑HINT` G→DEPRECATED):** the ROOT reason is a
+  **separation-of-concerns misconception**, not a storage one (operator
+  correction: *"it's not about touching storage — it's the initial
+  misconception that runtime AST can be delegated to the SurrealQL DLL AST
+  API; even if it would work it would be a fundamental SoC misconception"*).
+  OGAR is a compiler; its IR (`Class`/`ActionDef`) is its OWN concern. The
+  parse arm (`parse_surrealql_ddl`, built on `surrealdb-parser`/`surrealdb-ast`
+  — the foreign AST DLL API) delegates OGAR's own AST/IR front-end concern to
+  that foreign API; the emit arm treats SurrealQL DDL as if it were part of
+  OGAR's IR pipeline rather than a pure adapter *output*. **Even if it worked
+  perfectly it would still be wrong** — an architectural error, not a
+  functional one. Crucially the crate was ALREADY structural-only (it never
+  emitted `DEFINE EVENT … WHEN … THEN`), so this is not "remove a smuggled
+  behavioral arm" — it retires the AST-delegation SoC pattern. **The DO arm can
+  never use SurrealQL**; behavior is `ActionDef`, compile-time. (Downstream
+  consequences that also hold, but are NOT the root: no runtime (de)serialization
+  of code; compile-time only; ADR-022/023 Firewall.)
+  Executed this PR: `#[deprecated]` on `emit_surrealql_ddl` /
+  `parse_surrealql_ddl` / `ParseError` + a crate-level `#![allow(deprecated)]`
+  (internal use only; external callers still warned) + Cargo description flag;
+  the one default-off caller (`ogar-knowable-from` `surrealql-hint`, itself the
+  "DDL into the registry as stored text" `D‑HINT` pattern) gets
+  `#[allow(deprecated)]` and is downstream-deprecated. **Replacement (already
+  shipped, all compile-time):** behavior → `render_class_with_methods`
+  (the entry directly below — Rust methods that ARE the ActionDef DO-arm);
+  spine → the compiled `ClassView` in the lance-graph⟷OGAR V3 substrate
+  (`lance_graph_contract::facet`). Supersedes `SURREAL-AST-AS-ADAPTER.md` §7's
+  2026-06-04 "No deprecation" (see that doc's dated correction). Adapter 22
+  tests still green (retained, not removed); `cargo clippy -p
+  ogar-adapter-surrealql` + `-p ogar-knowable-from --features surrealql-hint
+  -- -D warnings` clean.
 
 - **D-OGAR-RENDER-CLASSVIEW-FIELDMASK-METHODS (transpile-chain LEG 3;
   2026-07-04; [G] — CODED + tested):** the render end of the operator's

@@ -270,6 +270,14 @@ pub fn register_class_knowable_from<S: KnowableFromStore>(
     // gets wired into the call site.
     #[cfg(feature = "surrealql-hint")]
     {
+        // NOTE: `emit_surrealql_ddl` is `#[deprecated]` (SoC ruling 2026-07-22
+        // — OGAR does not delegate its AST/IR to SurrealQL's AST API). This
+        // default-off `surrealql-hint` feature is downstream-deprecated with
+        // it; a follow-up should migrate the self-describing hint off the
+        // SurrealQL surface (or drop it). `#[allow(deprecated)]` keeps the
+        // `--features surrealql-hint` build green under `-D warnings` until
+        // then. See DISCOVERY-MAP D-SURREALQL-DEPRECATED.
+        #[allow(deprecated)]
         let ddl = ogar_adapter_surrealql::emit_surrealql_ddl(std::slice::from_ref(class));
         store.register(class_identity, Some(ddl.as_str()))
     }

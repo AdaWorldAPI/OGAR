@@ -1,5 +1,44 @@
 //! `ogar-adapter-surrealql` — bidirectional SurrealQL DDL bridge for OGAR.
 //!
+//! # ⊘ DEPRECATED (operator ruling 2026-07-22 — a separation-of-concerns error)
+//!
+//! **This whole crate is deprecated.** The reason is *not* primarily "it
+//! touches storage" — it is the **initial separation-of-concerns
+//! misconception the crate embodies: that OGAR's own runtime AST / IR concern
+//! could be delegated to SurrealQL's AST (DLL) API.** OGAR is a compiler; its
+//! IR (`Class` / `ActionDef`) is *its own* concern. A source is lifted into
+//! `Class` by OGAR's own front-ends (`ogar-from-<lang>`), **never** by
+//! round-tripping through a foreign query language's AST parser
+//! (`parse_surrealql_ddl` is built on `surrealdb-parser` / `surrealdb-ast` —
+//! that IS the delegation). Symmetrically, SurrealQL DDL is at most a pure
+//! adapter *output* — never a spine, never part of OGAR's AST pipeline.
+//!
+//! **Even if it worked perfectly, it would still be wrong** — this is an
+//! architectural (SoC) error, not a functional one. (Consequences that also
+//! hold, but are downstream of the SoC point, not the root: no runtime
+//! (de)serialization of code; compile-time only; the Firewall ADR-022/023.)
+//!
+//! The behavioral (DO) arm can **never** live in SurrealQL — behavior is
+//! `ActionDef`, resolved at compile time. The sanctioned replacements, all
+//! compile-time:
+//!
+//! - **Behavior → Rust methods, not DDL:**
+//!   [`ogar_render_askama::render_class_with_methods`] emits a struct whose
+//!   methods ARE the `ActionDef` DO-arm (`on_enter` ⇒ `&mut self`). Compiled,
+//!   not parsed.
+//! - **Spine → the compiled `ClassView`** baked into the binary via the
+//!   lance-graph⟷OGAR V3 substrate (`lance_graph_contract::facet`). Compiled
+//!   beats parsed; even a JIT over SurrealQL loses to compiled code.
+//! - **Structural egress** (if a storage membrane genuinely needs a schema
+//!   language) stays on the sibling RDF/columnar adapters — those are storage
+//!   membranes, not a spine, and are out of scope for this deprecation.
+//!
+//! This supersedes the 2026-06-04 `docs/SURREAL-AST-AS-ADAPTER.md §7` "No
+//! deprecation" line (see that doc's dated correction and
+//! `docs/DISCOVERY-MAP.md` `D-SURREALQL-DEPRECATED`). The crate is retained,
+//! `#[deprecated]`-annotated, for the one default-off caller and for
+//! reference; it is not a forward path.
+//!
 //! # The two directions
 //!
 //! Per `docs/OGAR-AST-CONTRACT.md §2`:
@@ -78,6 +117,14 @@
 
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
+// This crate is deprecated (SoC ruling 2026-07-22 — see the module banner:
+// OGAR's AST/IR is not delegated to SurrealQL's AST API). Its own public fns
+// / `ParseError` are `#[deprecated]`, and
+// they reference each other internally (the fn signatures + bodies + the
+// crate's own tests). `#![allow(deprecated)]` silences only THIS crate's
+// internal use so it still compiles + its tests still prove the retained
+// behavior; EXTERNAL callers still receive the deprecation warning.
+#![allow(deprecated)]
 
 use ogar_vocab::{Association, AssociationKind, Attribute, Class, EnumDecl};
 
@@ -98,6 +145,9 @@ use ogar_vocab::{Association, AssociationKind, Attribute, Class, EnumDecl};
 /// to call catalog builders directly once the rust-version blocker
 /// clears.
 #[must_use]
+#[deprecated(
+    note = "SoC ruling 2026-07-22: OGAR's IR is OGAR's own concern; SurrealQL DDL is at most a pure adapter output, never a spine or part of OGAR's AST pipeline. DO arm = ActionDef via ogar_render_askama::render_class_with_methods; spine = compiled ClassView (V3). See docs/DISCOVERY-MAP.md D-SURREALQL-DEPRECATED."
+)]
 pub fn emit_surrealql_ddl(classes: &[Class]) -> String {
     let mut out = String::new();
     for class in classes {
@@ -141,6 +191,9 @@ pub fn emit_surrealql_ddl(classes: &[Class]) -> String {
 /// `parse_surrealql_ddl(emit_surrealql_ddl(parse_surrealql_ddl(x)?)?) == parse_surrealql_ddl(x)?`
 /// should hold for any well-formed SurrealQL DDL `x`. Proptest fixture
 /// lands alongside the parser wiring.
+#[deprecated(
+    note = "SoC ruling 2026-07-22: delegating OGAR's runtime AST/IR concern to SurrealQL's AST (DLL) API (surrealdb-parser/surrealdb-ast) is a fundamental separation-of-concerns error, even if functional. Sources lift into Class via OGAR's own ogar-from-<lang> front-ends, never a foreign-AST round-trip. See docs/DISCOVERY-MAP.md D-SURREALQL-DEPRECATED."
+)]
 pub fn parse_surrealql_ddl(_input: &str) -> Result<Vec<Class>, ParseError> {
     #[cfg(feature = "surrealdb-parser")]
     {
@@ -462,6 +515,9 @@ mod walk {
 
 /// Errors from [`parse_surrealql_ddl`].
 #[derive(Debug, Clone)]
+#[deprecated(
+    note = "SoC ruling 2026-07-22: the SurrealQL DDL parse path is deprecated — OGAR does not delegate its AST/IR concern to a foreign query-language AST API (see parse_surrealql_ddl). See docs/DISCOVERY-MAP.md D-SURREALQL-DEPRECATED."
+)]
 pub enum ParseError {
     /// The input couldn't be tokenized / parsed by `surrealdb-parser`.
     Parse(String),
