@@ -47,6 +47,11 @@ pub mod capability_registry;
 /// module doc for why the mechanical lift was falsified by the corpus).
 pub mod healthcare_actions;
 pub mod ocr_actions;
+/// The general loose-ends-as-DTO residual ([`residual::ResidualRepresentation`])
+/// — the doctrine `{ surface, storage, handler, unresolved_reason }` slag shape.
+/// [`capability_registry::UnmintedRow`] is the capability-minting-specific
+/// residual; this is its general sibling (`From<UnmintedRow>` bridges them).
+pub mod residual;
 
 /// Source language hint — discriminates the producer for traceability
 /// and for emitter dispatch on Ruby/Python-specific extension shapes
