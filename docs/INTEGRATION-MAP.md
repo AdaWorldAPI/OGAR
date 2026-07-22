@@ -130,7 +130,7 @@ enter the SoA (§4).
 |---|---|---|
 | `ogar-python` | Odoo 17.0 core (`@api.depends/@api.onchange/@api.constrains` → `ActionDef` per `ADAPTERS-AND-ACTORS §3.4.1`; `_inherits` → mixins; mapping locked `ODOO-TRANSCODING.md §3,§5`) | **ABSENT** (queued) → **Track O3** |
 | `ruff_openproject` / `ruff_ruby_spo` | Rails AR source → SPO triples; vendored in openproject‑nexgen‑rs; test extracts `[TimeEntry, WorkPackage]` from a Rails fixture | **[G] CODED** `[per xs]` |
-| `parse_surrealql_ddl` walk | SurrealQL DDL → `Vec<Class>`: DEFINE TABLE→Class; `record<X>`→BelongsTo; `option<record<X>>`→BelongsTo+optional; `option<prim>`→Attribute(required=false). NOT yet: `ASSERT IN`→EnumDecl, DEFINE EVENT→ActionDef, non-owning-side post-pass | **[H] scaffold** — feature `surrealdb-parser` wired (OGAR #23 rust 1.95), walk partial (`ogar-adapter-surrealql/src/lib.rs:143-165, 219-299`) → **Track O2** |
+| `parse_surrealql_ddl` walk | SurrealQL DDL → `Vec<Class>` | **[H] scaffold →DEPRECATED (2026‑07‑22)** — SoC error: delegating OGAR's own AST/IR front‑end concern to SurrealQL's AST (DLL) API (`surrealdb-parser`/`surrealdb-ast`); OGAR sources lift via `ogar-from-<lang>`, never a foreign‑AST round‑trip. Track O2 (below) is retired, not deferred. See DISCOVERY‑MAP `D‑SURREALQL‑DEPRECATED`. |
 | `ogar-from-elixir` (HIRO `gen_statem` → Rubicon) | Elixir | **[G] scaffold** |
 | `ogar-from-ruby` (generic Rails) | — | **ABSENT**; decision: build vs reuse the nexgen ruff path → **Track O4** |
 
@@ -138,7 +138,7 @@ enter the SoA (§4).
 
 | Adapter | Direction | Status |
 |---|---|---|
-| `emit_surrealql_ddl(&[Class]) → String` | IR → SurrealQL DDL | **[G] CODED** (hand formatter; signature durable — body swaps to `TableDefinition::new_for_ddl().with_*() + ToSql::to_sql()` when convergence lands, `lib.rs:68-77`) |
+| `emit_surrealql_ddl(&[Class]) → String` | IR → SurrealQL DDL | **[G]→DEPRECATED (2026‑07‑22)** — SoC error: OGAR's IR is its own concern; SurrealQL DDL is at most a pure adapter output, never a spine or part of OGAR's AST pipeline. Replacement: `render_class_with_methods` (behavior→ActionDef Rust methods) + compiled ClassView (V3). See DISCOVERY‑MAP `D‑SURREALQL‑DEPRECATED`. |
 | `ogar-adapter-ttl` (Turtle round-trip), `ogar-adapter-clickhouse-ddl` (dotted-name round-trip) | bidirectional | **[G] CODED** (#37, #38/#40) |
 | `ogar-knowable-from` — `KnowableFromWriter` trait + `register_class_knowable_from`; `surrealql-hint` (self-describing via emit); `vart-backend` (`Tree<VariableSizeKey,u64>`, NULL-terminated keys) | IR → registry | **[G] CODED** (#25/#33/#43); Lance writer impl = `lance-bind` boundary **[H]** |
 | `TripleEmitter` (129 RDF predicates, SPO + TeKaMoLo) | IR → triples | **[G] CODED** |
@@ -322,7 +322,12 @@ IDENTITY   A NodeGuid ✅(#480) ──→ B SchemaSig→ClassView live ─┐
 OGAR       O1 Class traversal API (leaf, ~50 LOC) ──→ O2's non-owning post-pass
               (G-pass: the real dependent — producers BUILD, consumers NAVIGATE;
               O3/O4 benefit from O1 but are not gated by it)
-           O2 parse walk completion (EnumDecl lift · DEFINE EVENT→ActionDef · non-owning post-pass)
+           O2 parse walk completion — ⊘ RETIRED (2026-07-22): the SurrealQL DDL
+              parse path is deprecated on SoC grounds (OGAR does not delegate
+              its AST/IR to SurrealQL's foreign AST API); its
+              "DEFINE EVENT→ActionDef" item was additionally the forbidden
+              behavior-in-DDL trap. Behavior = ActionDef, compile-time. See
+              DISCOVERY-MAP D-SURREALQL-DEPRECATED.
            O3 ogar-python (Odoo) · O4 ruby producer decision (build vs reuse nexgen ruff)
            O5 content_tier + ContentResolver (needs T-backends: all exist)
            O6 ADR-026 draft (ready bucket; enriched by Q1's verdict)

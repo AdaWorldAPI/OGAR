@@ -395,6 +395,28 @@ scaffold dissolves once graduation completes.
 
 ## 7. What changes in the existing crates
 
+> **⊘ SUPERSEDED IN PART (operator ruling, 2026-07-22 — a separation-of-concerns
+> error).** The "**No deprecation**" of `ogar-adapter-surrealql` below
+> (bullet 1, CARVED v0 2026-06-04) is **reversed**: the whole SurrealQL DDL
+> adapter (both `emit_surrealql_ddl` and `parse_surrealql_ddl`) is now
+> `#[deprecated]`. The reasoning is orthogonal to this doc's carving and does
+> not weaken it: this doc correctly kept the **behavioral arm** out of DDL
+> (`DEFINE EVENT` is the rejected hijack, §0), and the adapter never carried
+> behavior. The *new* ground is a **separation-of-concerns** one, NOT a storage
+> one (operator: *"it's not about touching storage — it's the initial
+> misconception that runtime AST can be delegated to the SurrealQL DLL AST API;
+> even if it would work it would be a fundamental SoC misconception"*). OGAR is
+> a compiler; its AST/IR is its OWN concern: `parse_surrealql_ddl` delegates
+> that front-end concern to `surrealdb-parser`/`surrealdb-ast` (the foreign AST
+> DLL API), and `emit` treats DDL as if it were part of OGAR's IR pipeline
+> rather than a pure adapter *output*. The DO arm is `ActionDef`, compile-time
+> only; the replacement is `ogar-render-askama::render_class_with_methods`
+> (Rust methods = the ActionDef DO-arm) + the compiled `ClassView` (V3), both
+> compile-time. `ogar-vocab`'s `Class`/`ActionDef`/`ActionInvocation` (bullet 2)
+> are UNAFFECTED — they stay canonical; only the DDL-string adapter is retired.
+> See `docs/DISCOVERY-MAP.md` `D-SURREALQL-DEPRECATED`. (Append-only: the
+> original §7 text is retained below, read through this note.)
+
 Nothing immediate — this doc *records* the decision; the trajectory was
 already correct. The pieces this doc explicitly endorses:
 
