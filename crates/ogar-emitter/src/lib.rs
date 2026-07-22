@@ -47,6 +47,12 @@ pub use projection_adapter::{
     FieldProjection, FieldSource, ProjectionClass, emit_projection_adapters,
 };
 
+mod write_adapter;
+pub use write_adapter::{
+    InsertClass, SoftDeleteClass, UpdateClass, WriteColumn, WriteValue, emit_insert_adapters,
+    emit_update_adapters,
+};
+
 /// A subject-predicate-object triple in the OGAR / OGIT prefix-radix
 /// namespace.
 ///
