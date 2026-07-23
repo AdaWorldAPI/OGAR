@@ -1,0 +1,17 @@
+[package]
+name = "ogar-fma"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+description = "FMA anatomy structure resolver — the public name→structure reference surface (organs / joints / systems / tissues) beyond the bone skeleton. Resolves an anatomical-structure name to its canonical Anatomy classid (0x0AXX) + FMA cross-reference, the key q2 /helix uses to zoom a surfel render. Pure reference; never PHI."
+
+[features]
+default = []
+serde = ["dep:serde", "ogar-vocab/serde"]
+
+[dependencies]
+ogar-vocab = { path = "../ogar-vocab" }
+serde = { workspace = true, optional = true }
