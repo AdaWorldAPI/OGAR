@@ -1,0 +1,17 @@
+[package]
+name = "ogar-cpic"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+description = "CPIC pharmacogenomics reference surface — the public gene → phenotype → drug-recommendation guideline table (the Genetics domain, 0x0EXX, consumed by q2 /cpic). Resolves a CPIC gene(-pair) + drug to its actionable recommendation + a NARS (frequency, confidence) deduction premise. Pure public reference; never PHI, never a patient genotype."
+
+[features]
+default = []
+serde = ["dep:serde", "ogar-vocab/serde"]
+
+[dependencies]
+ogar-vocab = { path = "../ogar-vocab" }
+serde = { workspace = true, optional = true }
