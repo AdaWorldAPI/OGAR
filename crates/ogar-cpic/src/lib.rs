@@ -46,8 +46,12 @@
 //! maps) is the graph a reasoner walks, loaded separately as `graph:cpic`. The
 //! contract: the curated row answers "what does CPIC say about *this* pair?" in
 //! one lookup; the graph answers the open-ended "is there a guideline for X, and
-//! what does it chain to?" A pair absent here is not absent from CPIC — it lives
-//! in `graph:cpic` and resolves there.
+//! what does it chain to?" A pair absent here *may* still have a CPIC guideline
+//! in `graph:cpic` (this table carries only the small actionable subset) — but
+//! many gene-drug pairs have no CPIC guideline at all and resolve in neither.
+//! [`resolve`] returning `None` therefore means "no actionable guideline in this
+//! curated table," not "no guideline exists anywhere"; consult `graph:cpic` for
+//! the authoritative answer.
 
 #![warn(missing_docs)]
 #![forbid(unsafe_code)]
