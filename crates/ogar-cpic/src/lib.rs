@@ -38,6 +38,16 @@
 //! is a deliberate, operator-gated follow-up, surfaced not silently taken.
 //! Until then a consumer routes CPIC nodes on the reserved domain tag and keys
 //! the concrete guideline by its (gene, drug) pair.
+//!
+//! # Curated subset of the full CPIC corpus
+//!
+//! This table is the small, **actionable** subset a consumer resolves directly.
+//! The **full** CPIC corpus (all guidelines, pairs, alleles, diplotype→phenotype
+//! maps) is the graph a reasoner walks, loaded separately as `graph:cpic`. The
+//! contract: the curated row answers "what does CPIC say about *this* pair?" in
+//! one lookup; the graph answers the open-ended "is there a guideline for X, and
+//! what does it chain to?" A pair absent here is not absent from CPIC — it lives
+//! in `graph:cpic` and resolves there.
 
 #![warn(missing_docs)]
 #![forbid(unsafe_code)]

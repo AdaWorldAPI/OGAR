@@ -40,6 +40,16 @@
 //! name→partition→classid routing and the laterality, which carry regardless
 //! of whether the numeric cross-reference is yet pinned.
 //!
+//! # Curated subset of the full FMA
+//!
+//! This atlas is the small, **classid-addressable** subset a consumer pulls —
+//! the structures the clinical reasoning surfaces actually name. The **full**
+//! Foundational Model of Anatomy (~80K structures) is the graph a reasoner
+//! walks, loaded separately as `graph:fma`. The contract: the curated row is
+//! the *address* (concept classid + name); the graph is what's *reasoned over*.
+//! An `fma_id` left `None` here is the loose end that resolves against
+//! `graph:fma`, never fabricated in this table.
+//!
 //! [`ogar-fma-skeleton`]: https://docs.rs/ogar-fma-skeleton
 
 #![warn(missing_docs)]
@@ -65,6 +75,12 @@ pub enum FmaPartition {
     System,
     /// A tissue (bone marrow). Routes on `anatomical_structure` (`0x0A01`).
     Tissue,
+    /// An articular cartilage *surface* — a named target surface on a bone
+    /// (femoral trochlea, talar dome, distal humeral epiphysis) that a
+    /// sonographic score reads cartilage from. Routes on `anatomical_structure`
+    /// (`0x0A01`); there is no dedicated cartilage concept in the Anatomy
+    /// codebook, and the full FMA structure lives in `graph:fma`.
+    ArticularSurface,
     /// A skeletal element. Routes on `bone` (`0x0A03`); the *spatial* address
     /// lives in [`ogar-fma-skeleton`](crate), not here.
     Bone,
@@ -78,9 +94,10 @@ impl FmaPartition {
         match self {
             FmaPartition::Joint => ogar_vocab::class_ids::JOINT,
             FmaPartition::Bone => ogar_vocab::class_ids::BONE,
-            FmaPartition::Organ | FmaPartition::System | FmaPartition::Tissue => {
-                ogar_vocab::class_ids::ANATOMICAL_STRUCTURE
-            }
+            FmaPartition::Organ
+            | FmaPartition::System
+            | FmaPartition::Tissue
+            | FmaPartition::ArticularSurface => ogar_vocab::class_ids::ANATOMICAL_STRUCTURE,
         }
     }
 }
@@ -205,6 +222,27 @@ const ATLAS: &[FmaStructure] = &[
         partition: FmaPartition::Tissue,
         laterality: Laterality::Unpaired,
     },
+    // Articular cartilage target surfaces — the sonographic-score C-plane
+    // targets. FMA ids are loose ends resolved through the FMA import
+    // (`graph:fma`); the name→partition→classid routing is stable regardless.
+    FmaStructure {
+        name: "femoral trochlea",
+        fma_id: None,
+        partition: FmaPartition::ArticularSurface,
+        laterality: Laterality::Paired,
+    },
+    FmaStructure {
+        name: "anterior talar dome",
+        fma_id: None,
+        partition: FmaPartition::ArticularSurface,
+        laterality: Laterality::Paired,
+    },
+    FmaStructure {
+        name: "anterior distal humeral epiphysis",
+        fma_id: None,
+        partition: FmaPartition::ArticularSurface,
+        laterality: Laterality::Paired,
+    },
 ];
 
 /// Resolve an anatomical-structure name to its public FMA reference row.
@@ -290,6 +328,24 @@ mod tests {
         assert_eq!(resolve("synovial joint").unwrap().fma_id, Some(7501));
         assert_eq!(resolve("bone marrow").unwrap().fma_id, None);
         assert_eq!(resolve("systemic arterial system").unwrap().fma_id, None,);
+    }
+
+    #[test]
+    fn cartilage_target_surfaces_resolve_and_route_on_structure() {
+        // The sonographic-score C-plane targets — added for the HEAD-US grounding.
+        for name in [
+            "femoral trochlea",
+            "anterior talar dome",
+            "anterior distal humeral epiphysis",
+        ] {
+            let s = resolve(name).expect("cartilage surface in atlas");
+            assert_eq!(s.partition, FmaPartition::ArticularSurface);
+            assert_eq!(s.concept_id(), class_ids::ANATOMICAL_STRUCTURE);
+            assert_eq!(
+                s.fma_id, None,
+                "loose end resolved via graph:fma, not faked"
+            );
+        }
     }
 
     #[test]
