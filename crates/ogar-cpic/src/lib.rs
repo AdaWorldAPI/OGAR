@@ -38,6 +38,20 @@
 //! is a deliberate, operator-gated follow-up, surfaced not silently taken.
 //! Until then a consumer routes CPIC nodes on the reserved domain tag and keys
 //! the concrete guideline by its (gene, drug) pair.
+//!
+//! # Curated subset of the full CPIC corpus
+//!
+//! This table is the small, **actionable** subset a consumer resolves directly.
+//! The **full** CPIC corpus (all guidelines, pairs, alleles, diplotype→phenotype
+//! maps) is the graph a reasoner walks, loaded separately as `graph:cpic`. The
+//! contract: the curated row answers "what does CPIC say about *this* pair?" in
+//! one lookup; the graph answers the open-ended "is there a guideline for X, and
+//! what does it chain to?" A pair absent here *may* still have a CPIC guideline
+//! in `graph:cpic` (this table carries only the small actionable subset) — but
+//! many gene-drug pairs have no CPIC guideline at all and resolve in neither.
+//! [`resolve`] returning `None` therefore means "no actionable guideline in this
+//! curated table," not "no guideline exists anywhere"; consult `graph:cpic` for
+//! the authoritative answer.
 
 #![warn(missing_docs)]
 #![forbid(unsafe_code)]
@@ -254,9 +268,18 @@ mod tests {
     #[test]
     fn nars_truth_leans_with_strength() {
         let strong = Strength::Strong.nars_truth();
+        let moderate = Strength::Moderate.nars_truth();
         let optional = Strength::Optional.nars_truth();
-        assert!(strong.0 > optional.0, "strong is higher-frequency");
-        assert!(strong.1 > optional.1, "strong is higher-confidence");
+        // Full monotone chain Strong > Moderate > Optional on BOTH axes — pins
+        // Moderate, which a Strong-vs-Optional-only check would leave unguarded.
+        assert!(
+            strong.0 > moderate.0 && moderate.0 > optional.0,
+            "frequency is monotone in strength",
+        );
+        assert!(
+            strong.1 > moderate.1 && moderate.1 > optional.1,
+            "confidence is monotone in strength",
+        );
         // Bounded probabilities.
         for s in [Strength::Strong, Strength::Moderate, Strength::Optional] {
             let (f, c) = s.nars_truth();

@@ -40,6 +40,16 @@
 //! name→partition→classid routing and the laterality, which carry regardless
 //! of whether the numeric cross-reference is yet pinned.
 //!
+//! # Curated subset of the full FMA
+//!
+//! This atlas is the small, **classid-addressable** subset a consumer pulls —
+//! the structures the clinical reasoning surfaces actually name. The **full**
+//! Foundational Model of Anatomy (~80K structures) is the graph a reasoner
+//! walks, loaded separately as `graph:fma`. The contract: the curated row is
+//! the *address* (concept classid + name); the graph is what's *reasoned over*.
+//! An `fma_id` left `None` here is the loose end that resolves against
+//! `graph:fma`, never fabricated in this table.
+//!
 //! [`ogar-fma-skeleton`]: https://docs.rs/ogar-fma-skeleton
 
 #![warn(missing_docs)]
@@ -65,6 +75,12 @@ pub enum FmaPartition {
     System,
     /// A tissue (bone marrow). Routes on `anatomical_structure` (`0x0A01`).
     Tissue,
+    /// An articular cartilage *surface* — a named target surface on a bone
+    /// (femoral trochlea, talar dome, distal humeral epiphysis) that a
+    /// sonographic score reads cartilage from. Routes on `anatomical_structure`
+    /// (`0x0A01`); there is no dedicated cartilage concept in the Anatomy
+    /// codebook, and the full FMA structure lives in `graph:fma`.
+    ArticularSurface,
     /// A skeletal element. Routes on `bone` (`0x0A03`); the *spatial* address
     /// lives in [`ogar-fma-skeleton`](crate), not here.
     Bone,
@@ -78,9 +94,10 @@ impl FmaPartition {
         match self {
             FmaPartition::Joint => ogar_vocab::class_ids::JOINT,
             FmaPartition::Bone => ogar_vocab::class_ids::BONE,
-            FmaPartition::Organ | FmaPartition::System | FmaPartition::Tissue => {
-                ogar_vocab::class_ids::ANATOMICAL_STRUCTURE
-            }
+            FmaPartition::Organ
+            | FmaPartition::System
+            | FmaPartition::Tissue
+            | FmaPartition::ArticularSurface => ogar_vocab::class_ids::ANATOMICAL_STRUCTURE,
         }
     }
 }
@@ -124,12 +141,13 @@ impl FmaStructure {
     }
 
     /// The full V3 render classid for this structure under a consumer's app
-    /// prefix (the lo-u16 render skin): `(concept as u32) << 16 | app_prefix`.
-    /// The hi-u16 is the shared `domain:concept` canon; the lo-u16 is the
-    /// per-consumer classview. Mirrors `ogar_vocab::render_classid`.
+    /// prefix: the hi-u16 is the shared `domain:concept` canon, the lo-u16 is
+    /// the per-consumer classview render skin. Delegates to
+    /// [`ogar_vocab::app::render_classid`] — the single source of the
+    /// `(concept << 16) | prefix` bit math, so this never drifts from canon.
     #[must_use]
     pub const fn render_classid(&self, app_prefix: u16) -> u32 {
-        ((self.concept_id() as u32) << 16) | (app_prefix as u32)
+        ogar_vocab::app::render_classid(app_prefix, self.concept_id())
     }
 }
 
@@ -139,6 +157,10 @@ impl FmaStructure {
 const ATLAS: &[FmaStructure] = &[
     // Organs — route on `anatomical_structure` (0x0A01). FMA ids filled where
     // canonical + stable (same practice as the skeleton atlas's bone ids).
+    // Sourced from the FMA reference ontology (FMAID xref); the viscera cluster
+    // numerically (kidney/lung/pancreas within FMA:719x–720x) because FMA
+    // entered the thoraco-abdominal organs as one adjacent block — not a sign
+    // of fabrication. Any id NOT confidently in a stable FMA release stays None.
     FmaStructure {
         name: "kidney",
         fma_id: Some(7203),
@@ -173,10 +195,12 @@ const ATLAS: &[FmaStructure] = &[
     FmaStructure {
         // The classic podagra site. Numeric FMA id is a loose end (many
         // per-toe MTP-joint ids exist; not fabricating the aggregate here).
+        // `Paired`, not `Unpaired`: the joint exists on both feet and a gout
+        // flare localizes to one side — a consumer must be able to prompt L/R.
         name: "first metatarsophalangeal joint",
         fma_id: None,
         partition: FmaPartition::Joint,
-        laterality: Laterality::Unpaired,
+        laterality: Laterality::Paired,
     },
     // Systems / trees — route on `anatomical_structure` (0x0A01).
     FmaStructure {
@@ -197,6 +221,27 @@ const ATLAS: &[FmaStructure] = &[
         fma_id: None,
         partition: FmaPartition::Tissue,
         laterality: Laterality::Unpaired,
+    },
+    // Articular cartilage target surfaces — the sonographic-score C-plane
+    // targets. FMA ids are loose ends resolved through the FMA import
+    // (`graph:fma`); the name→partition→classid routing is stable regardless.
+    FmaStructure {
+        name: "femoral trochlea",
+        fma_id: None,
+        partition: FmaPartition::ArticularSurface,
+        laterality: Laterality::Paired,
+    },
+    FmaStructure {
+        name: "anterior talar dome",
+        fma_id: None,
+        partition: FmaPartition::ArticularSurface,
+        laterality: Laterality::Paired,
+    },
+    FmaStructure {
+        name: "anterior distal humeral epiphysis",
+        fma_id: None,
+        partition: FmaPartition::ArticularSurface,
+        laterality: Laterality::Paired,
     },
 ];
 
@@ -286,11 +331,38 @@ mod tests {
     }
 
     #[test]
+    fn cartilage_target_surfaces_resolve_and_route_on_structure() {
+        // The sonographic-score C-plane targets — added for the HEAD-US grounding.
+        for name in [
+            "femoral trochlea",
+            "anterior talar dome",
+            "anterior distal humeral epiphysis",
+        ] {
+            let s = resolve(name).expect("cartilage surface in atlas");
+            assert_eq!(s.partition, FmaPartition::ArticularSurface);
+            assert_eq!(s.concept_id(), class_ids::ANATOMICAL_STRUCTURE);
+            assert_eq!(
+                s.fma_id, None,
+                "loose end resolved via graph:fma, not faked"
+            );
+        }
+    }
+
+    #[test]
     fn render_classid_packs_concept_high_appid_low() {
         let s = resolve("synovial joint").unwrap();
-        // q2 render skin 0x1000: hi-u16 = 0x0A04 (joint), lo-u16 = 0x1000.
-        assert_eq!(s.render_classid(0x1000), 0x0A04_1000);
-        assert_eq!((s.render_classid(0x1000) >> 16) as u16, class_ids::JOINT);
+        // Core prefix 0x0000 (PortSpec's default APP_PREFIX): hi-u16 = 0x0A04
+        // (joint), lo-u16 = the render skin. A real consumer's prefix is
+        // allocated by an operator naming ruling — this test does NOT bake in
+        // one (0x1000 is the reserved V3-adoption monitor marker, never a real
+        // prefix; see ogar_vocab::ports). It also pins agreement with the
+        // canonical bit math in ogar_vocab::app.
+        assert_eq!(s.render_classid(0x0000), 0x0A04_0000);
+        assert_eq!((s.render_classid(0x0000) >> 16) as u16, class_ids::JOINT);
+        assert_eq!(
+            s.render_classid(0x0042),
+            ogar_vocab::app::render_classid(0x0042, class_ids::JOINT),
+        );
     }
 
     #[test]
