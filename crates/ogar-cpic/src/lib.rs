@@ -254,9 +254,18 @@ mod tests {
     #[test]
     fn nars_truth_leans_with_strength() {
         let strong = Strength::Strong.nars_truth();
+        let moderate = Strength::Moderate.nars_truth();
         let optional = Strength::Optional.nars_truth();
-        assert!(strong.0 > optional.0, "strong is higher-frequency");
-        assert!(strong.1 > optional.1, "strong is higher-confidence");
+        // Full monotone chain Strong > Moderate > Optional on BOTH axes — pins
+        // Moderate, which a Strong-vs-Optional-only check would leave unguarded.
+        assert!(
+            strong.0 > moderate.0 && moderate.0 > optional.0,
+            "frequency is monotone in strength",
+        );
+        assert!(
+            strong.1 > moderate.1 && moderate.1 > optional.1,
+            "confidence is monotone in strength",
+        );
         // Bounded probabilities.
         for s in [Strength::Strong, Strength::Moderate, Strength::Optional] {
             let (f, c) = s.nars_truth();
