@@ -188,6 +188,27 @@ pub struct TableCell {
     pub text: String,
     /// Where on the page the cell was read.
     pub bbox: BBoxRail,
+    /// Per-source confidence, read through [`DocIr::source`] exactly like
+    /// [`TypedField::confidence`] — for [`Provenance::Ocr`] this is
+    /// recognition certainty.
+    ///
+    /// **Why a cell needs its own confidence, not just the region's.** The
+    /// values a consumer actually imports — a lab result, an invoice line
+    /// amount — are *cells*, not [`TypedField`]s, so before this existed the
+    /// per-cell signal was dropped at the boundary and a review gate had
+    /// nothing to gate on.
+    ///
+    /// The producer aggregates it as the **minimum** over the cell's words,
+    /// not the mean: one misread digit invalidates a whole value, and a mean
+    /// dilutes exactly the signal the gate exists to catch (a cell of 95 and
+    /// 40 reports 40, not 67).
+    ///
+    /// **`0` is the fail-closed default**, and deliberately so: a `doc.v1`
+    /// payload predating cell confidence deserializes to `0`, which routes
+    /// everything to human review rather than auto-committing at an assumed
+    /// score. Never treat `0` as "measured zero-confidence" — it is
+    /// indistinguishable from "not reported".
+    pub confidence: u8,
 }
 
 /// A region node — the recursive awareness unit. Text-bearing kinds carry
@@ -412,6 +433,7 @@ mod tests {
                                 col: 0,
                                 text: "Pos".to_string(),
                                 bbox: bbox(10, 40, 60, 55),
+                                confidence: 97,
                             }],
                             children: vec![],
                         }],

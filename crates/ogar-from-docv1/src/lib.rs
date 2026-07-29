@@ -120,6 +120,13 @@ struct V1Cell {
     col: u32,
     bbox: [i32; 4],
     text: String,
+    /// Per-cell OCR confidence, 0..=100. `#[serde(default)]` so a `doc.v1`
+    /// emitted BEFORE cells carried confidence still parses — it reads `0.0`,
+    /// which is fail-closed: a consumer's review gate rejects rather than
+    /// auto-commits. Never read `0.0` as "measured zero"; it is
+    /// indistinguishable from "not reported".
+    #[serde(default)]
+    conf: f32,
 }
 
 #[derive(Deserialize)]
@@ -227,6 +234,9 @@ pub fn from_doc_v1(
                     col: c.col.min(255) as u8,
                     text: c.text.clone(),
                     bbox: rail_bbox(c.bbox, w, h),
+                    // Same 0..=100 -> u8 conversion the TypedField arm below
+                    // uses, so the two confidence surfaces stay comparable.
+                    confidence: c.conf.round().clamp(0.0, 255.0) as u8,
                 })
                 .collect();
             regions.push(Region {
@@ -286,7 +296,7 @@ mod tests {
               {"text":"GmbH","bbox":[210,0,500,100],"conf":98.0,"leading_space":true}]}]},
           {"type":"table","bbox":[0,200,1000,600],"lines":[],
             "rows":1,"cols":2,"cells":[
-              {"row":0,"col":0,"bbox":[0,200,500,300],"text":"Pos","header":true},
+              {"row":0,"col":0,"bbox":[0,200,500,300],"text":"Pos","header":true,"conf":97.0},
               {"row":0,"col":1,"bbox":[500,200,1000,300],"text":"1","header":true}]},
           {"type":"footer","bbox":[0,1900,1000,2000],"lines":[
             {"bbox":[0,1900,300,2000],"words":[
@@ -319,6 +329,30 @@ mod tests {
         // Table cells carried across with quantized bboxes.
         assert_eq!(page.regions[1].cells.len(), 2);
         assert_eq!(page.regions[1].cells[0].text, "Pos");
+
+        // Per-cell confidence survives the bridge — BOTH paths, which is why
+        // the fixture gives cell 0 a `"conf"` and deliberately withholds one
+        // from cell 1.
+        //
+        // Before this field existed, per-cell OCR confidence died here: the
+        // values a consumer actually imports (a lab result, an invoice line
+        // amount) are CELLS, not `TypedField`s, so a review gate downstream
+        // had nothing to gate on. `V1Cell` is a plain `Deserialize` with no
+        // `deny_unknown_fields`, so a producer emitting `conf` was silently
+        // discarded — the omission was invisible from either side.
+        assert_eq!(
+            page.regions[1].cells[0].confidence, 97,
+            "cell 0's doc.v1 conf:97.0 must reach TableCell::confidence"
+        );
+        // Cell 1 carries NO `conf` in the fixture: a legacy `doc.v1` predating
+        // per-cell confidence. `#[serde(default)]` gives 0 — fail-closed, so
+        // such a payload routes to human review instead of auto-committing at
+        // an assumed score. This asserts the legacy path is REACHABLE, not
+        // merely that the new one works.
+        assert_eq!(
+            page.regions[1].cells[1].confidence, 0,
+            "a cell with no conf in doc.v1 must default to 0 (fail-closed)"
+        );
         // Field harvested to the document-level facts.
         assert_eq!(ir.fields.len(), 1);
         assert_eq!(ir.fields[0].key, "iban");
