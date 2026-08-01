@@ -196,10 +196,10 @@ impl TermId {
 /// **These are load-bearing, never truncated.** They are (a) the horizontal
 /// **projection-join / multilateration bearings** — the "who am I" evidence a
 /// broadMatch is triangulated against — and (b) the **guideline-spider path**:
-/// a MeSH reference resolves a disease/phenotype to its clinical guideline
-/// (Leitlinie), pulled online→local by a consumer (medcare-rs), even when the
-/// end surface is "just" a basic PDF viewer. Dropping xrefs during CURIE
-/// parsing would silently kill both downstreams.
+/// a MeSH reference resolves a disease/phenotype to its clinical guideline,
+/// pulled online→local by a consumer, even when the end surface is "just" a
+/// basic PDF viewer. Dropping xrefs during CURIE parsing would silently kill
+/// both downstreams.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Xref {
     /// which external coding system this reference points into
