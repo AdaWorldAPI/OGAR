@@ -20,6 +20,7 @@ members = [
     "crates/ogar-render-askama",
     "crates/ogar-fma-skeleton",
     "crates/ogar-fma",
+    "crates/ogar-obo",
     "crates/ogar-cpic",
     "crates/ogar-adapter-python",
     "crates/ogar-adapter-csharp",

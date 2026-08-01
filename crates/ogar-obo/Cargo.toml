@@ -1,0 +1,19 @@
+[package]
+name = "ogar-obo"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+description = "OBO-core reference bake — MONDO (disease) · HPO (phenotype) · Uberon (anatomy) · PATO (quality) · RO (relations) parsed to a canon 512-byte SoA NodeRow buffer (key|edges|value LE) the lance-graph loader reads zero-copy, plus the OWL-EL completion subset (is_a saturation + transitive-role existential propagation) the OBO EL profile actually exercises. Pure public CC-BY reference; never PHI."
+
+[features]
+default = []
+serde = ["dep:serde"]
+
+[dependencies]
+ogar-vocab = { path = "../ogar-vocab" }
+serde = { workspace = true, optional = true }
+
+[dev-dependencies]
