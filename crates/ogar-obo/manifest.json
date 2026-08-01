@@ -1,0 +1,93 @@
+{
+  "bake": "ogar-obo / obo-core.soa",
+  "pass": "1 (structural) + EL saturation",
+  "layout": "canon 512-byte NodeRow (key|edges|value LE); loader = lance_graph_contract::canonical_node::node_rows_from_le_bytes",
+  "row_stride": 512,
+  "sources": [
+    {
+      "name": "mondo",
+      "file": "mondo.obo",
+      "version": "releases/2026-07-06",
+      "spdx": "CC-BY-4.0",
+      "upstream": "http://purl.obolibrary.org/obo/mondo.obo",
+      "redistribute": true,
+      "sha256": "75c51066741e04c0ec4751210911d29e17e16431ed2ba5b8a46fc6a37ff5b00e",
+      "bytes": 52967808
+    },
+    {
+      "name": "hp",
+      "file": "hp.obo",
+      "version": "hp/releases/2026-06-23",
+      "spdx": "HPO-custom-open",
+      "upstream": "http://purl.obolibrary.org/obo/hp.obo",
+      "redistribute": true,
+      "sha256": "a5092cbdf605f568403cf7380d9173014015692433b2cc631bc5c1b053876b1b",
+      "bytes": 11222341
+    },
+    {
+      "name": "uberon",
+      "file": "uberon.obo",
+      "version": "releases/2026-06-19",
+      "spdx": "CC-BY-3.0",
+      "upstream": "http://purl.obolibrary.org/obo/uberon.obo",
+      "redistribute": true,
+      "sha256": "7f06d8e8442008a67132a1599b652e86fe0c52d75c8d6bc5b0cc36a0031e6b3f",
+      "bytes": 22414082
+    },
+    {
+      "name": "pato",
+      "file": "pato.obo",
+      "version": "releases/2025-05-14",
+      "spdx": "CC-BY-4.0",
+      "upstream": "http://purl.obolibrary.org/obo/pato.obo",
+      "redistribute": true,
+      "sha256": "9b65efdf7d8d96bafd54637041cc615404ac2c88608efbcf54efa0a369bb1f75",
+      "bytes": 725388
+    },
+    {
+      "name": "ro",
+      "file": "ro.obo",
+      "version": "releases/2025-12-17",
+      "spdx": "CC-BY-4.0",
+      "upstream": "http://purl.obolibrary.org/obo/ro.obo",
+      "redistribute": true,
+      "sha256": "e34a2ea60fc15114edd4494c912ac0558ae51d31a1e5d62c6c0db0dac9e90449",
+      "bytes": 454026
+    },
+    {
+      "name": "hp-base",
+      "file": "hp-base.owl",
+      "version": "hp/releases/2026-06-23",
+      "spdx": "HPO-custom-open",
+      "upstream": "http://purl.obolibrary.org/obo/hp/hp-base.owl",
+      "redistribute": true,
+      "sha256": "8aab8c4d7f11189def5d4e64c17190dfc90a495fe9f49a451ea2caefc174e153",
+      "bytes": 49479533
+    }
+  ],
+  "artifact": {
+    "file": "obo-core.soa",
+    "sha256": "16fb28cbea9bcf26e429684750e49e7606b055662f31172e475c5e2c6b9e9f91",
+    "bytes": 35224064,
+    "rows": 68797
+  },
+  "validation": {
+    "is_a_cycles": 0,
+    "dangling": 0,
+    "fidelity": "lossless parse",
+    "backbone": {
+      "MONDO->HP": 1299,
+      "HP->UBERON": 6514,
+      "HP->PATO": 12486
+    },
+    "xrefs_preserved": 212345,
+    "mesh_bearings": 9200,
+    "el_saturation": {
+      "is_a_subsumption_pairs": 738651,
+      "part_of_pairs": 1634977,
+      "existential_inferred": 9437429,
+      "unsatisfiable": 0
+    }
+  },
+  "note": "Public CC-BY OBO reference. Sources re-hostable frozen; the .soa is the derived release asset (gitignored). Zero PHI, zero consumer-private reference. classids: 0x03 Ontology domain (mondo 0x0301 / hpo 0x0302 / uberon 0x0303 / pato 0x0304 / ro 0x0305)."
+}
