@@ -40,6 +40,7 @@
 
 #![deny(missing_docs)]
 
+pub mod crosswalk;
 pub mod reason;
 
 /// Row stride of the canonical SoA node — `key(16) + edges(16) + value(480)`.
