@@ -13,9 +13,8 @@
 //! producer / codebook) next to [`ogar_vocab`], `ogar-fma`, `ogar-cpic`, and
 //! carries **no patient data and no consumer-private codebook** — a consumer
 //! wires it exactly as it wires `ogar-fma`. The Anatomy-vs-Health firewall
-//! ([`ogar_vocab`] `canonical_concept` docs) holds: anatomy/phenotype/disease
-//! *reference* is public (`0x0A` / `0x0B` domains), never the `0x09` Health
-//! PHI domain.
+//! ([`ogar_vocab`] `canonical_concept` docs) holds: the OBO reference lives in
+//! the public `0x03` Ontology domain, never the `0x09` Health PHI domain.
 //!
 //! ## The loader connection is a BYTE-LAYOUT contract, not a code dep
 //!
@@ -59,16 +58,16 @@ pub const ENTITY_TYPE_SLAB_OFFSET: usize = 96;
 /// The five OBO-core namespaces this bake carries.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Namespace {
-    /// MONDO — disease (public reference; `0x0B01` disease-reference domain).
+    /// MONDO — disease (`0x0301`, the `0x03` OBO Ontology domain).
     Mondo,
-    /// HPO — human phenotype / clinical symptom (`0x0B02` phenotype-reference).
+    /// HPO — human phenotype / clinical symptom (`0x0302`).
     Hpo,
-    /// Uberon — anatomy spine (`0x0A02`, the public Anatomy domain, sibling of
-    /// FMA `0x0A01`).
+    /// Uberon — anatomy spine (`0x0303`). Cross-references FMA (`ogar-fma`,
+    /// `0x0A` Anatomy) by edge, not by shared domain byte.
     Uberon,
-    /// PATO — phenotypic quality (`0x0B03` quality-reference).
+    /// PATO — phenotypic quality (`0x0304`).
     Pato,
-    /// RO — relations ontology (predicate classes; `0x0B04`). Predicates ride
+    /// RO — relations ontology (predicate classes; `0x0305`). Predicates ride
     /// the [`Predicate`] byte palette on edges, not as node classids, but RO
     /// term nodes are still baked for completeness.
     Ro,
@@ -101,20 +100,21 @@ impl Namespace {
     }
 
     /// The canonical hi-u16 **concept id** (`0xDDCC`, domain `DD` · slot `CC`)
-    /// this namespace routes on — the public-reference assignment. Uberon
-    /// rides the `0x0A` Anatomy domain (public, never PHI); disease /
-    /// phenotype / quality / relations take the `0x0B` OBO-clinical-reference
-    /// domain. These are the CANON assignments; registering them in
-    /// [`ogar_vocab`] `canonical_concept` is the follow-up (surfaced, not
-    /// silently minted).
+    /// this namespace routes on — the public-reference assignment. All five
+    /// OBO namespaces live in the `0x03` **Ontology** domain (public reference,
+    /// firewall-separated from `0x09` Health PHI). The domain is reserved in
+    /// [`ogar_vocab`] as `ConceptDomain::Ontology` with **zero shared CODEBOOK
+    /// rows** — these concept ids are authoritative here, kept plug-and-play so
+    /// only consumers that dep `ogar-obo` compile them (ERP / project consumers
+    /// never pull them in).
     #[must_use]
     pub const fn concept_id(self) -> u16 {
         match self {
-            Namespace::Uberon => 0x0A02,
-            Namespace::Mondo => 0x0B01,
-            Namespace::Hpo => 0x0B02,
-            Namespace::Pato => 0x0B03,
-            Namespace::Ro => 0x0B04,
+            Namespace::Mondo => 0x0301,
+            Namespace::Hpo => 0x0302,
+            Namespace::Uberon => 0x0303,
+            Namespace::Pato => 0x0304,
+            Namespace::Ro => 0x0305,
         }
     }
 
@@ -703,9 +703,9 @@ mod tests {
         let t = TermId::parse("MONDO:0007739").unwrap();
         assert_eq!(t.namespace(), Namespace::Mondo);
         assert_eq!(t.num, 7739);
-        // canon-high: (0x0B01 << 16) | app_prefix
-        assert_eq!(Namespace::Mondo.render_classid(0x0000), 0x0B01_0000);
-        assert_eq!(Namespace::Uberon.render_classid(0x00AB), 0x0A02_00AB);
+        // canon-high: (0x0301 << 16) | app_prefix ; all five in the 0x03 domain
+        assert_eq!(Namespace::Mondo.render_classid(0x0000), 0x0301_0000);
+        assert_eq!(Namespace::Uberon.render_classid(0x00AB), 0x0303_00AB);
         // out-of-scope / malformed
         assert!(TermId::parse("CHEBI:12345").is_none());
         assert!(TermId::parse("MONDO:99999999").is_none()); // > 24-bit

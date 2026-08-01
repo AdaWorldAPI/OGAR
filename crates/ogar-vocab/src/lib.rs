@@ -1102,7 +1102,7 @@ impl Class {
 ///   0x00XX  reserved          (0x0000 = NodeGuid::CLASSID_DEFAULT)
 ///   0x01XX  project-mgmt      (OP ↔ Redmine fork lineage)
 ///   0x02XX  commerce / ERP    (OSB ↔ Odoo cross-curator)
-///   0x03XX  unassigned
+///   0x03XX  Ontology          (OBO biomedical reference: MONDO/HPO/Uberon/PATO/RO — zero rows here; concepts in ogar-obo)
 ///   0x04XX  unassigned
 ///   0x05XX  unassigned
 ///   0x06XX  unassigned
@@ -1204,6 +1204,19 @@ const CODEBOOK: &[(&str, u16)] = &[
     ("pricelist", 0x0209),
     ("pricelist_rule", 0x020A),
     ("unit_of_measure", 0x020B),
+    // ── 0x03XX — Ontology domain: ZERO vocabulary rows BY DESIGN ──
+    // Public OBO biomedical reference ontologies (MONDO disease · HPO
+    // phenotype · Uberon anatomy · PATO quality · RO relations). Same posture
+    // as the 0x07XX OSINT and 0x0EXX Genetics blocks: the domain slot is
+    // RESERVED (`ConceptDomain::Ontology`) so `canonical_concept_domain`
+    // returns a stable tag, but the concept ids are NOT minted as shared
+    // CODEBOOK rows — they live in the producer crate `ogar-obo`
+    // (`Namespace::concept_id`: mondo 0x0301 · hpo 0x0302 · uberon 0x0303 ·
+    // pato 0x0304 · ro 0x0305). This keeps the OBO reference PLUG-AND-PLAY:
+    // only a consumer that deps `ogar-obo` compiles the concepts; ERP / project
+    // consumers (odoo-rs, openproject-nexgen-rs, …) never pull them into their
+    // concept space. Public reference, firewall-separated from `0x09` Health
+    // PHI — same reference≠PHI split as Anatomy (0x0A). Do NOT mint rows here.
     // ── 0x07XX — OSINT domain: ZERO vocabulary rows BY DESIGN (operator
     // ruling 2026-07-02, corrects PR #145's two hallucinated concept mints
     // `osint_system@0x0700` / `osint_person@0x0701`). Within the OSINT domain
@@ -1382,6 +1395,15 @@ pub enum ConceptDomain {
     ProjectMgmt,
     /// `0x02XX` — commerce / billing / ERP (OSB ↔ Odoo).
     Commerce,
+    /// `0x03XX` — Ontology (OBO biomedical reference: MONDO / HPO / Uberon /
+    /// PATO / RO). Carries ZERO shared vocabulary rows — same posture as
+    /// [`Osint`](Self::Osint) / [`Genetics`](Self::Genetics): the domain slot
+    /// is reserved so `canonical_concept_domain` returns a stable tag, but the
+    /// concept ids live in the producer crate `ogar-obo`
+    /// (`Namespace::concept_id`), so the OBO reference stays plug-and-play and
+    /// never pulls into ERP / project consumers. Public reference, NOT PHI —
+    /// same reference≠PHI split as [`Anatomy`](Self::Anatomy).
+    Ontology,
     /// `0x07XX` — OSINT (open-source intelligence).
     Osint,
     /// `0x08XX` — OCR (optical character recognition / document
@@ -1434,7 +1456,7 @@ pub enum ConceptDomain {
     /// geodata, NOT PHI; same public-reference posture as
     /// [`Anatomy`](Self::Anatomy).
     Geo,
-    /// Any high-byte slot not yet assigned a domain (`0x03XX`–`0x06XX`,
+    /// Any high-byte slot not yet assigned a domain (`0x04XX`–`0x06XX`,
     /// `0x10XX`+).
     Unassigned,
 }
@@ -1447,6 +1469,7 @@ pub fn canonical_concept_domain(id: u16) -> ConceptDomain {
         0x00 => ConceptDomain::Reserved,
         0x01 => ConceptDomain::ProjectMgmt,
         0x02 => ConceptDomain::Commerce,
+        0x03 => ConceptDomain::Ontology,
         0x07 => ConceptDomain::Osint,
         0x08 => ConceptDomain::Ocr,
         0x09 => ConceptDomain::Health,
@@ -5473,8 +5496,12 @@ mod tests {
         // Automation block (0x0C) — HIRO IT-automation stack.
         assert_eq!(canonical_concept_domain(0x0C00), ConceptDomain::Automation);
         assert_eq!(canonical_concept_domain(0x0C09), ConceptDomain::Automation);
-        // Unassigned blocks (3-6).
-        assert_eq!(canonical_concept_domain(0x0300), ConceptDomain::Unassigned);
+        // Ontology block (0x03) — reserved, zero concept rows (OBO reference
+        // lives in ogar-obo; plug-and-play, never pulls into ERP consumers).
+        assert_eq!(canonical_concept_domain(0x0300), ConceptDomain::Ontology);
+        assert_eq!(canonical_concept_domain(0x03AB), ConceptDomain::Ontology);
+        // Unassigned blocks (4-6).
+        assert_eq!(canonical_concept_domain(0x0400), ConceptDomain::Unassigned);
         assert_eq!(canonical_concept_domain(0x0600), ConceptDomain::Unassigned);
         // HR block (0x0D).
         assert_eq!(canonical_concept_domain(0x0D00), ConceptDomain::HR);

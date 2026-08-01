@@ -67,7 +67,7 @@
   ],
   "artifact": {
     "file": "obo-core.soa",
-    "sha256": "d843ec06830cb0f22f698a25447812e16ac024ca2169ec96a4a649fc20382e87",
+    "sha256": "16fb28cbea9bcf26e429684750e49e7606b055662f31172e475c5e2c6b9e9f91",
     "bytes": 35224064,
     "rows": 68797
   },
@@ -89,5 +89,5 @@
       "unsatisfiable": 0
     }
   },
-  "note": "Public CC-BY OBO reference. Sources re-hostable frozen; the .soa is the derived release asset (gitignored). Zero PHI, zero consumer-private reference."
+  "note": "Public CC-BY OBO reference. Sources re-hostable frozen; the .soa is the derived release asset (gitignored). Zero PHI, zero consumer-private reference. classids: 0x03 Ontology domain (mondo 0x0301 / hpo 0x0302 / uberon 0x0303 / pato 0x0304 / ro 0x0305)."
 }
