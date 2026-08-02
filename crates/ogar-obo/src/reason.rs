@@ -16,8 +16,8 @@
 //! base `.obo` does not carry, so [`ElStats::unsatisfiable`] is reported `0`
 //! with that caveat — closing it is the `hp-base.owl` / disjointness pass.
 
-use crate::{Predicate, TermId, Triple};
-use std::collections::HashMap;
+use crate::{Namespace, OboNode, Predicate, TermId, Triple};
+use std::collections::{HashMap, HashSet};
 
 /// Count `is_a` cycles (strongly-connected components of size > 1) — must be 0
 /// on a clean OBO core. Iterative Tarjan so a deep chain can't blow the stack.
@@ -220,10 +220,92 @@ pub fn saturate(triples: &[Triple]) -> ElStats {
     }
 }
 
+// ── per-term reasoning walk over parse_obo output ──────────────────────────
+//
+// `saturate` gives the aggregate EL closure; a consumer resolving ONE entity
+// (a disease → its anatomy site + phenotypes) needs the per-term walk. These
+// operate directly on [`crate::parse_obo`]'s `id -> node` map, applying the
+// same is_a-saturation + existential-propagation rules to a single subject.
+
+/// Transitive `is_a` ancestry of `id` over [`crate::parse_obo`] output (the
+/// term itself excluded), deduped, in deterministic order, depth-capped. The
+/// start id is pre-marked seen, so a cyclic `is_a` (incl. a self-parent) can
+/// never re-emit the query term.
+#[must_use]
+pub fn ancestors(nodes: &HashMap<TermId, OboNode>, id: TermId) -> Vec<TermId> {
+    let mut seen = HashSet::new();
+    seen.insert(id);
+    let mut out = Vec::new();
+    let mut frontier = vec![id];
+    for _ in 0..64 {
+        frontier.sort_unstable();
+        let mut next = Vec::new();
+        for f in frontier.drain(..) {
+            if let Some(n) = nodes.get(&f) {
+                for &p in &n.is_a {
+                    if seen.insert(p) {
+                        out.push(p);
+                        next.push(p);
+                    }
+                }
+            }
+        }
+        if next.is_empty() {
+            break;
+        }
+        frontier = next;
+    }
+    out
+}
+
+/// Every `pred` target reachable from `id` OR any of its `is_a` ancestors — the
+/// existential-role propagation up the subsumption spine, for a single subject.
+/// Deduped, deterministic (term-local edges first, then up the ancestry).
+#[must_use]
+pub fn related_via_ancestry(
+    nodes: &HashMap<TermId, OboNode>,
+    id: TermId,
+    pred: Predicate,
+) -> Vec<TermId> {
+    let mut chain = vec![id];
+    chain.extend(ancestors(nodes, id));
+    let mut seen = HashSet::new();
+    let mut out = Vec::new();
+    for c in chain {
+        if let Some(n) = nodes.get(&c) {
+            for &(p, obj) in &n.rel {
+                if p == pred && seen.insert(obj) {
+                    out.push(obj);
+                }
+            }
+        }
+    }
+    out
+}
+
+/// The term's anatomy sites (`disease_has_location` → Uberon, classified by the
+/// Mondo→Uberon namespace pair), propagated up the `is_a` ancestry.
+#[must_use]
+pub fn anatomy_of(nodes: &HashMap<TermId, OboNode>, id: TermId) -> Vec<TermId> {
+    related_via_ancestry(nodes, id, Predicate::HasLocation)
+        .into_iter()
+        .filter(|t| t.namespace() == Namespace::Uberon)
+        .collect()
+}
+
+/// The term's phenotypes (`has_phenotype` / `disease_has_feature` → HPO,
+/// classified by the Mondo→Hpo namespace pair), propagated up the ancestry.
+#[must_use]
+pub fn phenotypes_of(nodes: &HashMap<TermId, OboNode>, id: TermId) -> Vec<TermId> {
+    related_via_ancestry(nodes, id, Predicate::HasPhenotype)
+        .into_iter()
+        .filter(|t| t.namespace() == Namespace::Hpo)
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::Namespace;
 
     fn t(sns: Namespace, s: u32, p: Predicate, ons: Namespace, o: u32) -> Triple {
         Triple {
@@ -284,5 +366,37 @@ mod tests {
             s.existential_inferred, 3,
             "HP:9 grounds to UBERON:{{200,300}} and 100 part_of 300 chains"
         );
+    }
+
+    #[test]
+    fn per_term_walk_resolves_ancestry_anatomy_phenotype() {
+        // A disease with its anatomy edge on an is_a PARENT — the walk must
+        // inherit it up the subsumption spine.
+        let obo = "[Term]\n\
+id: MONDO:0005249\n\
+name: pneumonia\n\
+is_a: MONDO:0000270 ! lower respiratory tract disorder\n\
+relationship: disease_has_feature HP:0012735 ! Cough\n\
+\n\
+[Term]\n\
+id: MONDO:0000270\n\
+name: lower respiratory tract disorder\n\
+relationship: disease_has_location UBERON:0001558 ! lower respiratory tract\n";
+        let nodes = crate::parse_obo(obo);
+        let pneu = TermId::parse("MONDO:0005249").unwrap();
+        assert!(
+            ancestors(&nodes, pneu).contains(&TermId::parse("MONDO:0000270").unwrap()),
+            "is_a ancestry"
+        );
+        assert!(
+            anatomy_of(&nodes, pneu).contains(&TermId::parse("UBERON:0001558").unwrap()),
+            "disease_has_location → Uberon, inherited from the is_a parent"
+        );
+        assert!(
+            phenotypes_of(&nodes, pneu).contains(&TermId::parse("HP:0012735").unwrap()),
+            "disease_has_feature → HPO (own edge)"
+        );
+        // self excluded from its own ancestry (cycle-safe)
+        assert!(!ancestors(&nodes, pneu).contains(&pneu));
     }
 }
