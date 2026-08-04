@@ -118,7 +118,7 @@ each, including D4's reversal.
 **Also in W1:** app-prefix mint for `blockly-rs` in `ogar-vocab::ports` (small,
 same review path as #234).
 
-### W2 — Klickwege wiring into a2ui-rs
+### W2 — Klickwege wiring into a2ui-rs — **DONE**
 
 **This is the wave the goal names, and the key finding is that most of it
 already exists.**
@@ -196,7 +196,43 @@ different actions.
 3. A `Skin::Grid` renders placed tiles from `position` addresses, and hit-test →
    ordinal → `ActionInvoke` fires by address (never an inline handler).
 
-### W3 — the second skin (PowerAutomate-shaped)
+**Consumer side landed** (a2ui-rs #18). All three named gaps closed, and the
+audit above was **corrected on two points** by reading the source:
+
+- Gap 2's "symmetric with Form/Flow" was generous. Form and Flow do not map
+  the address at all — they place by ITERATION ORDER and copy `position`
+  through only so hit-test can round-trip it. `Grid` is the FIRST skin where
+  `position` is genuinely a coordinate, which makes it more novel than
+  "symmetric" and is why its falsifier uses a position GAP (0, 1, 3): with
+  contiguous positions the two placement rules coincide and the test would
+  pass with `place_flow` substituted.
+- Gap 3's framing was wrong. `FACET_LEN = 12` is not a facet COUNT — it is the
+  byte width of one V3 facet. (The prior withdrawn "truncation defect" died on
+  exactly this confusion; it must not be resurrected under a new name.) The
+  capacity deferral is real and already documented upstream as fail-safe.
+
+**But the audit MISSED a real defect, and it is the more important find.**
+`apply_node_delta`'s loop was `if pos < FACET_LEN` with no `else`: an
+out-of-range mask position consumed no value byte and raised no error, so a
+field the sender declared vanished while `apply` returned `Ok`. The same loop
+was already loud on the UNDER-supply side (`ValueUnderrun`) and silent on the
+over-range side — and the wire is wide-native (`a2ui-core` round-trips
+positions 40 and 64), so such frames are well-formed and only unrenderable at
+the client. Now `PositionOutOfRange`.
+
+**The >255 ceiling does not bind this arc.** `FieldView.position` is `u8`; a
+lowered body is at most 180 calls (`Pairs`) or 90 (`Quads`). No upstream OGAR
+widening is needed — recorded so it is not re-derived.
+
+The palette is `(parent, slot) → Vec<ClassId>`, the structural twin of
+`child_links`; the pair is the whole palette/canvas distinction with no third
+concept (**available = offered but not linked; placed = linked**). Captions
+resolve through `ClientClass.title`, so it stores addresses and reads names
+rather than carrying names of its own — which is why it cannot mint a second
+vocabulary. A pick is an ordinary `ActionInvoke` through the unmodified
+up-wire path: no new `Frame` variant, no wire change.
+
+### W3 — the second skin (PowerAutomate-shaped) — **DONE**
 
 Operator-set: the same ABI, a low-code editor surface, **also** Mario-editor
 ergonomics over `ClassView : WideFieldMask` projections. Two skins, one ABI —
@@ -206,7 +242,20 @@ applied at editor scale.
 Gate: the identical rows render under both skins with no ABI change and no
 second vocabulary.
 
-### W4 — execution (`scratch-rs`, GPL leaf)
+**GREEN, and it needed no new type** (a2ui-rs #18). `Grid { cols: 1 }` IS the
+PowerAutomate-shaped vertical step list; `Grid { cols: 4 }` is the block
+canvas. Same variant, different column count — the strongest available form of
+the T1 discipline, since a second surface did not even require a second skin.
+
+The gate asserts one `NodeDelta` → one resolved surface → four skins with
+identical row sets, field ADDRESSES, and action ordinals, and byte-identical
+ABI afterwards (rendering is a read). Its anti-vacuity half is what makes it
+worth having: the four skins must actually DIFFER in geometry, checked
+pairwise — four skins producing identical rects would satisfy everything else
+while "one surface, many skins" quietly collapsed to "one skin". Verified by
+injection.
+
+### W4 — execution (`scratch-rs`, GPL leaf) — **DONE**
 
 `.sb3` import via `rash_loader_sb3`; SoA calls → `rash_vm::ScratchBlock` →
 Cranelift. Audit finding: **nothing in rash's IR forbids this** — `Ptr` is a
@@ -217,11 +266,72 @@ Reciprocity: contribute the rash TODO gaps we need anyway (`Wait`, `Wait Until`,
 `Stop all`, `Ceiling`, `ASin/ACos/ATan`, `Ln/Log`, Lists, Broadcasts) upstream,
 where GPL is already the license.
 
-### W5 — grammar projection
+**SHIPPED** (`scratch-rs`, two crates). **D5's leaf-crate ruling holds and is
+now mechanically checkable**: `cargo tree -p scratch-abi | grep -c rash` is 0.
+The licence is not a choice — rash's workspace carries a GPLv3 repo-root
+LICENSE and **no `license` field in any of its six `Cargo.toml` files**, so no
+per-crate override exists to appeal to and every crate linking `rash_vm` is
+GPL. Exactly one does.
+
+- `scratch-abi` (MIT) — `nest` / `nest_all` / `flatten`, the exact inverse of
+  the cast's post-order emission. Arity is read from blockly-abi's table,
+  deliberately not a second copy: two tables that disagreed would produce two
+  different trees from one program, silently.
+- `scratch-jit` (GPL-3.0-only) — `to_scratch_block`. A **rename, not a
+  translation**: rash's `Input` is `Obj(literal) | Block(nested)`, exactly the
+  leaf/branch distinction a `CallTree` node makes, so no evaluation order is
+  chosen and no operand reordered.
+
+**The refusal is the load-bearing part.** Where the palette has no
+`ScratchBlock` counterpart the mapping refuses rather than composing one from
+several rash ops — `NEQ` as `not(cmp)` would be the adapter acquiring
+semantics of its own, which is the parallel-object-model anti-pattern the
+Core-First doctrine names. rash's operator set is Scratch's, so the gaps are
+the Blockly operations Scratch lacks (`LN`/`LOG10`/`EXP`, inverse trig,
+`NEQ`/`LTE`/`GTE`, `CEIL`, `POW`); `unmapped_functions()` enumerates them and
+each is asserted to really refuse, so the list cannot rot into documentation
+nothing checks.
+
+The comparison fold carries both halves on purpose: `LT`/`GT`/`EQ` fold into
+rash's single `OpCmp`-with-`Ordering`, AND `NEQ`/`LTE`/`GTE` stay refused —
+without the second half the first could quietly become "every comparison maps".
+
+**Falsifier state, honestly:** the gate as written ("a `.sb3` project produces
+identical output through rash-native loading and through the SoA path") is
+**not** met — no `.sb3` is imported yet. What IS proven end-to-end is the
+lowering: Blockly record → ABI body → operand tree → rash IR, through three
+crates' public surfaces, asserted structurally. The `.sb3` arm needs
+`rash_loader_sb3::ProjectLoader` and a fixture project, and is the remaining
+W4 work.
+
+### W5 — grammar projection — **DONE**
 
 `A = B + C` rendered from and parsed back into the call stream. Storage
 unchanged (the W0 ruling). This is where lance-graph's grammar machinery
 becomes relevant, not before.
+
+**SHIPPED** (`blockly-abi::projection`). The load-bearing claim is proven
+rather than argued: `5 + 3` typed as text and `5 + 3` built as blocks produce
+**byte-identical** bodies, with a different program asserted not to match so
+the equality is not free.
+
+It needs arity for the same reason `scratch-abi` does, and refuses for the
+same reason. Statement-level functions (`IF`, `REPEAT`, `PROC_DEF`) are
+deliberately outside the table — they nest by reference, which is the
+*statement* projection, a separate surface.
+
+**Both halves of the gate, and the asymmetry that makes the second real:**
+the call stream round-trips byte for byte in the direction that matters
+(`body → text → body`; parsing is many-to-one, so `text → body → text` would
+be the weaker claim). Whitespace, redundant parens, and every trace of
+geometry explicitly do NOT survive — five spacings of `1 + 2 * 3` must yield
+identical bytes, and the render is canonical rather than reproducing what was
+typed. If spacing ever survived, the ABI would be carrying a layout decision.
+Two-sided: parens that are NOT redundant must survive, or "spacing does not
+matter" would be indistinguishable from "parens are ignored".
+
+Precedence and associativity are pinned by stack ORDER, not by round-trip — a
+parser that ignored precedence would still round-trip its own output.
 
 ---
 
@@ -234,6 +344,12 @@ becomes relevant, not before.
 | **D3** | Palette drift detection against upstream Apache-2.0 sources | **hand-curation + drift test** (~half a day). ruff has NO JS/TS parser; a `ruff_ts_spo` is multi-week for a 228-definition harvest. `ruff_spo_address`'s mint half is confirmed language-agnostic if that changes | any |
 | **D4** | Constant pool home for wide literals (`WAIT:1.5`, strings) | ~~Inventory SoA is the natural host — it is already the label codebook~~ **REVERSED, see below** | W1 (only when a literal exceeds a byte) |
 | **D5** | `scratch-rs` licensing: whole-repo GPL-3.0, or GPL leaf crate + permissive siblings? | **leaf crate** — maximum optionality at zero cost | W4 |
+
+**D1 · D2 · D5 — all RESOLVED as recommended**, no reversals. D1: the W1 cast
+is a library the shim drives, and the falsifier was reached without the wire.
+D2: a pick travels as an ordinary `ActionInvoke` at an ordinal — no third
+`FrameKind` was needed, and the palette added zero `Frame` variants. D5: the
+leaf crate is shipped and its containment is `cargo tree`-checkable.
 
 ### D3 — RESOLVED (`blockly-rs` `e4b5e7e`)
 
