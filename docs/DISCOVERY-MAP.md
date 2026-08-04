@@ -1608,3 +1608,28 @@ isolation. The map's job is to keep them visible.
   page ↔ Revision/Snapshot); compiling `.typ`→PDF stays a consumer egress
   (deliberately no compiler dep). Deferred, named: `DocOp` (editor authority),
   Lance-versioned `Revision(n)` lookup, `FieldView` enum widening.
+
+- **[D-BLOCKS-DOMAIN] `0x17XX` reserved as ConceptDomain::Blocks — the shared
+  visual block-programming opcode vocabulary, ONE canon domain under two app
+  prefixes** — `[G]` (CODED, reserved-empty, 2026-08-04, operator-chosen slot)
+  — home: `ogar-vocab::ConceptDomain::Blocks` + `canonical_concept_domain`
+  (0x17 arm) — depends: D-CLASSID-CANON-HIGH-FLIP (canon hi u16 = the shared
+  concept; custom lo u16 = the per-app render skin). Zero concept rows today —
+  same reserved posture as `Osint` / `Genetics`: the slot returns a stable
+  domain tag before any opcode mints. **Two fences carried in the variant
+  doc.** (1) *Naming*: the domain names the shared OPCODE concept, never a
+  renderer — `blockly-rs` (editor/ABI half) and `scratch-rs` (opcode +
+  `.sb3` + JIT half) are two app prefixes over ONE vocabulary, so a block's
+  behaviour stays a property of the Core node the classid resolves to
+  (`ActionDef`+`KausalSpec`), never of the address. (2) *Provenance*: mints
+  must derive from permissively-licensed or specification sources (Apache-2.0
+  Blockly block definitions; the public project file-format spec), NEVER by
+  transcribing a GPL/AGPL implementation — this keeps the public codebook
+  unencumbered while a GPL consumer links it freely, and is what lets the
+  GPL boundary sit entirely in the consumer repo. The `0x10`–`0x16` gap is
+  DELIBERATE (operator-chosen slot, not next-free); a pinned test asserts the
+  gap stays `Unassigned` so a later pass cannot "tidy" the domain downward.
+  Same commit corrects two stale doc lines: the CODEBOOK table said
+  `0x0FXX+ unassigned` while `0x0FXX` Geo is fully populated (10 OSM
+  concepts, `osm_node` 0x0F01 … `osm_user` 0x0F0A), and a domain test comment
+  said "trailing unassigned tail (0x0F+)".
