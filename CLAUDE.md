@@ -256,14 +256,19 @@ alignment costs. Until measured: 3×4 stands.
    3 brutally-honest reviewers). Run it before any claim enters the
    canon. Theorem-checker rule 0: **pin the unit system first** (bits
    vs hex vs bytes — born from a real failure).
-   **Base case (added 2026-08-04, recursion sweep):** the council's own
-   ratified verdict enters the canon WITHOUT a second council — one pass
-   (savants → consolidate → reviewers on the consolidated draft ONLY →
-   ratified result lands) discharges the obligation. Read literally,
-   "before any claim" required a council on the council's output, forever
-   — an unconditional per-claim rule whose discharge is itself a claim
-   has no bottom unless the base case is stated. This matches how the
-   pattern has always actually run; only the wording was unbounded.
+   **Sequencing + base case (operator-ruled 2026-08-04, recursion
+   sweep):** the pass is STRICTLY ordered — **the 5 first streamline the
+   open points into a hardened draft; only then do the 3 attack the
+   already-hardened draft; what they catch is fixed; and if necessary the
+   5+3 can deliberately rule AGAIN on the result.** Never the 3 in
+   parallel with (or ahead of) the 5: most sessions' raw output is not
+   yet hardened, and attacking unhardened material invites hallucinated,
+   deflected, reactive coding — the reviewers must have a consolidated
+   object to break, not a moving one. The recursion bound follows from
+   the same ordering: each cycle terminates (streamline → attack → fix →
+   land), and a further full pass is a *deliberate re-invocation* when
+   warranted, never an automatic obligation — read literally, "before
+   any claim" required a council on the council's own verdict, forever.
    (Test + provenance: lance-graph `E-THE-HYGIENE-RULE-RECURSED-1`.)
 
 ## Non-negotiables
