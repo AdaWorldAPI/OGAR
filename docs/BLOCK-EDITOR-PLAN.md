@@ -78,7 +78,7 @@ never propagates into OGAR, lance-graph, or ndarray.
 #234, #235, #236 merged. Nothing below may re-open these rulings without a new
 operator ruling and a ledger correction.
 
-### W1 — the POC cast (`blockly-rs`) — **DONE**
+### W1 — the POC cast (`blockly-rs`) — **DONE (one mint outstanding)**
 
 The operator's original brief, unchanged: *reuse the existing; materialize the
 ABI-shaped SoA the way a JSON would, but without serialization, by casting into
@@ -115,8 +115,19 @@ encoding, both D3 drift anchors, the D4 constant pool (opt-in, pending
 mint), and the Klickwege address producer — see § Open decisions for
 each, including D4's reversal.
 
-**Also in W1:** app-prefix mint for `blockly-rs` in `ogar-vocab::ports` (small,
-same review path as #234).
+**⚠ NOT done in W1: the app-prefix mint.** It is moved to § Remaining —
+operator mints, below. Codex flagged the contradiction on #238 (a wave marked
+DONE while its own section named unfinished work), and it was right to: the
+risk it named — someone reading "done" and hardcoding an unallocated prefix —
+was **already instantiated**. `blockly-abi`'s Klickwege tests used `0x1000`,
+which `ogar-vocab::ports` RESERVES for the V3-adoption monitor marker, with a
+test asserting it "must never be allocatable as a port's `APP_PREFIX`".
+
+Fixed in `blockly-rs` `e53aefe`: the test constant is now an obviously-unreal
+`0xFF00` so it cannot be mistaken for the answer. No library code was
+affected — `app_prefix` is a **parameter** on every public function in
+`klickweg`, and nothing in the crate names a prefix. That parameterisation is
+what kept a documentation contradiction from becoming a stored collision.
 
 ### W2 — Klickwege wiring into a2ui-rs — **DONE**
 
@@ -440,6 +451,23 @@ entry.
 Widths measured against the Apache-2.0 definitions: largest set is 8
 (`math_on_list`), so the byte is not a squeeze. `math_on_list[RANDOM]`
 is absent from its table by construction — it is one of the three gaps.
+
+## Remaining — operator mints (the only open work)
+
+Every wave's code is shipped and every gate is green. What is left is three
+decisions that are the operator's by standing rule (*"codebook ids are
+permanent; a mint is an operator decision with a ledger entry, never a
+drive-by"*), so none has been taken here.
+
+| # | mint | blocks | notes |
+|---|---|---|---|
+| **M1** | `blockly-rs` app prefix in `ogar-vocab::ports` | nothing today; W2 address work if a second consumer appears | Allocated so far: `0x0000` core, `0x0001`–`0x0005`, `0x0007`. `0x0006` and `0x0008+` look free. **`0x1000` is RESERVED** (V3-adoption monitor) and must never be chosen. No value is proposed here. |
+| **M2** | the three codebook gaps — `math_on_list[RANDOM]`, `lists_reverse`, `lists_getIndex[GET_REMOVE]` | W4 coverage of those blocks | Each resolves to `None` today and the cast refuses. `lists_getIndex[GET_REMOVE]` is compound (read AND delete), so it is a design question, not just an id. |
+| **M3** | the constant-pool facet concepts | wide literals in stored data | Proposed `0x1703` `ConstantPool` / `0x1704` `ConstF64` / `0x1705` `ConstUtf8Inline`. The pool is opt-in in code until this lands, with deliberately invalid placeholder classids, so no placeholder can reach stored data. |
+
+None of the three blocks any shipped falsifier: M1 because the prefix is a
+parameter, M2 because the gaps refuse rather than guess, M3 because the pool is
+opt-in.
 
 ## Falsifiers (each must be able to FAIL)
 
