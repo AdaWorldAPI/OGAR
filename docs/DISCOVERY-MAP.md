@@ -1731,3 +1731,40 @@ isolation. The map's job is to keep them visible.
   *projection* that renders from and parses back into the pair stream —
   never the storage format (preserves positional addressing, the SIMD sweep,
   and single-pass lowering into rash's `Input` tree).
+
+- **[D-BLOCKS-KLICKWEGE] the block editor wires into a2ui-rs through the
+  Klickwege structure — editing a program IS a Klickweg stream, zero new
+  vocabulary** — `[H]` (PLAN, 2026-08-04, operator-directed; W0 substrate is
+  `[G]`/CODED, the wiring is unbuilt) — home: `docs/BLOCK-EDITOR-PLAN.md` (the
+  finalized wave plan W0–W5 + gates + open decisions D1–D5) — depends:
+  D-BLOCKS-DOMAIN, D-BLOCKS-PALETTE, D-A2UI-SCREEN-ADDRESSING (charter
+  #204/#205), a2ui-rs #209 lowering. **The claim:** placing a block, connecting
+  two blocks, and clicking a placed block are each a click **by ordinal
+  address**, so each is already a `KlickwegEdge` under charter C1.6 ("a click
+  IS a `navigates_to`/`ActionInvocation` edge") and lowers through the SHIPPED
+  `receive_action → KlickwegEdge → lower_action_fire → ActionInvocation` path
+  (pure compile-time value construction, warden COMPILE-TIME-CLEAN, 34 tests).
+  Edit telemetry and harvested-app telemetry therefore unify in ONE closed
+  predicate set — the ruff UI-navigation plane (`navigates_to` / `selects_view`
+  / `invokes_action` / `renders_as`), room map (`surfaces_concept` /
+  `handles_event` / `contains_control`) and Klickwege rail (`part_of` /
+  `purpose` / `guarded_by_permission`) — with **no new predicate** (the
+  `Predicate` enum is count-locked at 79; extending it is a gated ontology
+  change, not a consequence of this arc). Nesting maps 1:1: the `ObjectSlot`
+  "A3 Klickwege brick" recursion `desktop → window → region → widget` becomes
+  `canvas → script → block → input`, which `a2ui-wasm::resolve_nested` walks
+  unchanged. **Measured gaps (audit, not assumption):** interaction→edge and
+  nested addressing EXIST; a palette-of-pickables, 2-D placement
+  (`Skin::{Form,Flow}` are both 1-D list renderers), and multi-facet body
+  ingest (`a2ui-wasm` implements ONE 12-byte facet; a body is 30) are ABSENT —
+  none charter-forbidden, but the editor tier is a real build, not wiring.
+  Drag/connect is the one T2-pressure point: local drag state is fine, the
+  RESULT must travel as an address-carried write. **Open decision D2** (in the
+  plan): "place tile at slot N" rides `ActionInvoke{ordinal: PLACE, args:[N,
+  fn]}` — `args` is explicitly ClassView/ActionDef-carved, so it is an
+  address-carried write rather than a third `FrameKind` widening a deliberately
+  closed vocabulary. Roadmap order is operator-set: ABI-shaped Blockly/Scratch
+  first (W1, falsifier: a drag produces ZERO SoA writes, an operand change
+  EXACTLY ONE), Klickwege wiring second (W2), PowerAutomate-shaped skin third
+  (W3) — both skins Mario-editor ergonomics over `ClassView : WideFieldMask`,
+  which is T1 applied at editor scale.
