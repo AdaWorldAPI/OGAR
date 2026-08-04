@@ -1633,3 +1633,46 @@ isolation. The map's job is to keep them visible.
   `0x0FXX+ unassigned` while `0x0FXX` Geo is fully populated (10 OSM
   concepts, `osm_node` 0x0F01 … `osm_user` 0x0F0A), and a domain test comment
   said "trailing unassigned tail (0x0F+)".
+
+- **[D-BLOCKS-PALETTE] the block vocabulary is ONE BYTE, and a function body is
+  360 of them in one node — `ogar-blockly`** — `[G]` (CODED, 10 tests + 2
+  disable-the-guard falsifier runs, 2026-08-04, operator-designed) — home:
+  NEW crate `ogar-blockly` (`PaletteOp` / `FunctionBody` / `BlockConcept` /
+  `SoaSplit`) — depends: D-BLOCKS-DOMAIN (the `0x17XX` reservation), the
+  512-byte node canon (`GUIDS_PER_NODE == 32`), the 2026-06-29 Tetris doctrine.
+  **Three collapses, each of which retired a design question rather than
+  answering it.** (1) *Vocabulary → one byte.* Commands and concepts share a
+  256-slot palette; two frontends rendering the same operation land on the SAME
+  slot (`logic_compare[LT]` ≡ `operator_lt` ≡ `PaletteOp::LT`), which is where
+  the convergence is real rather than nominal. Measured harvest from the two
+  Apache-2.0 sources: Blockly **57 block types / 71 operation codes**,
+  scratch-blocks **171 opcodes** (59 shared-core + 108 device + 4 menu helpers);
+  deduplicated union **≈190 ≤ 256**, against a naive sum of 330. (2) *Content →
+  ONE classid.* Operations are payload bytes, not concept ids, so the
+  per-operation concept space — and the 255-slot ceiling an earlier pass
+  computed for it — does not need to exist. `BlockConcept` has two variants
+  total. (3) *Body budget → derived, not chosen.* `value(480)/16 = 30` facet
+  slots × `16-4 = 12` payload bytes = **`OPS_PER_FUNCTION` = 360**, compile-
+  asserted. A longer function is **split**, never a wider row — the canon's
+  *scale is the next cascade level, never field-widening* applied to program
+  structure, and it makes "does this fit?" checkable before writing.
+  **Storage:** inventory SoA + N content SoAs partitioned by function
+  (`SoaSplit`) — the V3 mailbox doctrine, not a storage preference: one
+  function = one owner = its own SoA, so a registry read never touches a body.
+  **Rejected alternative** (operator, same session): a Lance sidecar carrying a
+  header whose schema defines the blob reading — rejected because it
+  reintroduces decode-before-address, the exact cost the key exists to avoid.
+  **Palette ranges are prefix-routable:** shared computational core below
+  `DEVICE_FAMILY_FLOOR = 0x90`, sprite/stage families above it, so
+  "is this op frontend-specific?" is one compare and no table lookup; the
+  device range is RESERVED-not-allocated (108 measured, mint on demand).
+  `0x00` = `NOP` = the zero-fallback, so a partially-filled body needs no
+  length field on the wire. **Provenance fence enforced in the module docs:**
+  entries derive only from the Apache-2.0 Blockly + scratch-blocks
+  definitions, never from AGPL `scratch-vm` — which is what lets a GPL
+  consumer link this public codebook and keeps the GPL boundary inside the
+  consumer repo. Falsifiers verified by breaking what they guard (an injected
+  palette collision and a cap loosened by one both fail the suite); the second
+  run surfaced a real latent defect — `from_ops` derived `len` from the
+  caller's length rather than the copied count, making the guard solely
+  responsible for keeping `ops()` in bounds — now hardened.
