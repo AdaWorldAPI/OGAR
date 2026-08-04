@@ -78,7 +78,7 @@ never propagates into OGAR, lance-graph, or ndarray.
 #234, #235, #236 merged. Nothing below may re-open these rulings without a new
 operator ruling and a ledger correction.
 
-### W1 — the POC cast (`blockly-rs`) — **NEXT**
+### W1 — the POC cast (`blockly-rs`) — **DONE**
 
 The operator's original brief, unchanged: *reuse the existing; materialize the
 ABI-shaped SoA the way a JSON would, but without serialization, by casting into
@@ -102,6 +102,18 @@ No bytecode, no ISA — the encoding question was settled in W0.
 
 If that fails, the projection thesis is wrong and everything above W1 is
 decoration. It is cheap to run and must run first.
+
+**Gate result: GREEN**, `blockly-rs` `4d39590`. Both halves route through
+`Workspace::apply`, so a handler that let a drag reach the record fails
+the test — verified by injecting exactly that leak and confirming two
+tests fail. Without the apply step "a drag changes nothing" would have
+been `f(x) == f(x)`, which is how the first version of this falsifier
+was written and why it was rewritten.
+
+**Also landed in W1** (`31e18fb`, `e4b5e7e`): the ValueParam byte
+encoding, both D3 drift anchors, the D4 constant pool (opt-in, pending
+mint), and the Klickwege address producer — see § Open decisions for
+each, including D4's reversal.
 
 **Also in W1:** app-prefix mint for `blockly-rs` in `ogar-vocab::ports` (small,
 same review path as #234).
@@ -155,9 +167,31 @@ tree today, unchanged, via `child_links: (parent_key, slot) → child_key`.
 | multi-facet body ingest | **absent** — `a2ui-wasm` implements ONE facet (`FACET_LEN = 12`, the V3 payload); a body is 30 | none; unimplemented capacity, not a defect |
 | drag/connect semantics | **absent** | **T2 pressure** — local drag state is fine, but the RESULT must travel as an address-carried write |
 
+**Producer side landed** (`blockly-rs` `e4b5e7e`, `blockly_abi::klickweg`).
+Three of `KlickwegEdge`'s five fields are a property of the program and are
+produced there: `class_id` (canon-high under the app prefix), `ordinal`, and
+`predicate`. `from_key` and `seq` belong to the session, not to the cast, so
+they stay a2ui-side. Neither repo imports the other.
+
+**The ordinal is the CALL INDEX** — where `lower_script` put that block's
+`Call` — so `raise_calls(body)[ordinal]` IS the clicked block's call, by
+construction. That makes an address checkable against the ABI rather than
+merely self-consistent, which is what its falsifier does. A block id is editor
+state and a position is presentation; neither survives the trip, and Blockly's
+tree order is not the program's order. Verified non-vacuous by injection: a
+pre-order walk still yields unique, dense, plausible ordinals — and fails two
+tests, because they index the real lowered body.
+
+T2 holds structurally rather than by assertion: nothing in that module returns
+anything invocable, so an `onClick` lambda cannot be expressed through it even
+by accident. The predicate carries a Selector code (`math_arithmetic[ADD]`) and
+never a ValueParam code, so two clicks on one action cannot read as two
+different actions.
+
 **W2 gates:**
 1. One block placed in a2ui-rs produces exactly one `KlickwegEdge` that
    `lower_action_fire` turns into a valid `ActionInvocation` — no new predicate.
+   *(Producer half done; the a2ui-side consumption is what remains.)*
 2. `resolve_nested` walks `canvas → script → block` on real rows.
 3. A `Skin::Grid` renders placed tiles from `position` addresses, and hit-test →
    ordinal → `ActionInvoke` fires by address (never an inline handler).
@@ -198,8 +232,82 @@ becomes relevant, not before.
 | **D1** | POC drives JS Blockly via a thin WASM shim in `blockly-rs`, or over the a2ui-server wire? | **shim** — reaches the W1 falsifier fastest; the wire is W2's job | W1 |
 | **D2** | Does "place tile at slot N" travel as `ActionInvoke{ordinal: PLACE, args: [N, fn]}`, or does it need a third `FrameKind`? | **`ActionInvoke` args** — `args` is explicitly ClassView/ActionDef-carved, so this is an address-carried write, which is what T2 mandates. A third kind widens a deliberately closed vocabulary | W2 |
 | **D3** | Palette drift detection against upstream Apache-2.0 sources | **hand-curation + drift test** (~half a day). ruff has NO JS/TS parser; a `ruff_ts_spo` is multi-week for a 228-definition harvest. `ruff_spo_address`'s mint half is confirmed language-agnostic if that changes | any |
-| **D4** | Constant pool home for wide literals (`WAIT:1.5`, strings) | Inventory SoA is the natural host — it is already the label codebook | W1 (only when a literal exceeds a byte) |
+| **D4** | Constant pool home for wide literals (`WAIT:1.5`, strings) | ~~Inventory SoA is the natural host — it is already the label codebook~~ **REVERSED, see below** | W1 (only when a literal exceeds a byte) |
 | **D5** | `scratch-rs` licensing: whole-repo GPL-3.0, or GPL leaf crate + permissive siblings? | **leaf crate** — maximum optionality at zero cost | W4 |
+
+### D3 — RESOLVED (`blockly-rs` `e4b5e7e`)
+
+Two drift anchors shipped in `blockly-abi`, because the obvious one was
+not sufficient:
+
+- `the_palette_byte_values_are_pinned` pins the **bytes**. The
+  pre-existing census compared against `FnIndex::LT` — the *symbol* — so
+  an upstream renumber would have left every symbolic assertion passing
+  while every stored program changed meaning. The pins are also asserted
+  mutually distinct, so a collapsed palette cannot be matched by a
+  collapsed expectation table.
+- `the_value_param_option_sets_are_pinned` pins the 17 argument-dropdown
+  option sets in source order, harvested from the Apache-2.0
+  definitions.
+
+### D4 — RESOLVED, and the recommendation above is REVERSED
+
+The Inventory recommendation is **withdrawn**. It conflates two
+codebooks: Inventory indexes *functions*, which are shared by
+definition; constants are *per-function data*, which are owned by
+definition. Putting a per-function pool in the one table every function
+shares makes a shared-mutable sink with N writers.
+
+**Shipped instead: a sibling pool node** — same 30 content slots, same
+16-byte stride, identity inherited from the owning function, and a
+**per-facet classid naming the constant's type**, because an `f64` and a
+UTF-8 string are different readings of 12 bytes and "your classid
+defines the schema, period" forbids a discriminant byte inside the
+payload. Index arithmetic `(idx-1)/30` and `(idx-1)%30`; `0` reserved as
+the zero-fallback so a zeroed value byte reads as *no constant* rather
+than *constant zero*.
+
+Two further options were considered and killed by specific constraints,
+recorded so they are not re-proposed:
+
+- **Literal as a run of calls** (no pool) — killed by the W1 falsifier:
+  the call count would track the literal's width, so editing `255` to
+  `1000000` would shift every later call and rewrite the tail of the
+  body. An operand edit must produce ONE write.
+- **Steal content slots from the body node** — legal under the substrate
+  (per-facet classids make a mixed node schema-honest), but it makes the
+  call budget per-function, so "add one string" can make a program that
+  fit stop fitting, with the overflow blaming the calls.
+
+Capacity, explicit: 255 usable indices, 30 per node, 9 nodes. The 256th
+returns `PoolFull` and the remedy is a **function split**, never a wider
+index. `PoolFull` is reachable only under `Quads` (270 addressable value
+bytes > 255); `Pairs` (180) and `Triples` (240) cannot exhaust it.
+
+**Still gated on an operator mint.** The pool is opt-in:
+`lower_script` still refuses a wide literal, and only
+`lower_script_with_pool` interns — under caller-supplied classids, with
+deliberately invalid placeholders in the interim, so a placeholder
+cannot reach stored data before the concepts exist. Proposed mints
+(`ConstantPool` / `ConstF64` / `ConstUtf8Inline` at `0x1703..0x1705`)
+are a **proposal**, not an assumption. The explicitly rejected cheap
+alternative — one concept with a type-tag byte in the payload — is
+named here so it is refused on the record rather than rediscovered.
+
+### ValueParam encoding — RESOLVED (`blockly-rs` `31e18fb`)
+
+A `ValueParam` dropdown code encodes as its **ordinal in the codebook's
+own pinned table**, keyed on `(block type, field name)`. Deliberately
+not Blockly's live array order: reordering an options array is cosmetic
+upstream and would silently reinterpret every stored program here, so
+anchoring the ordinal in the codebook converts that hazard into a loud
+drift-test failure. Keyed on the field and not the type alone because
+`text_getSubstring`'s `WHERE1`/`WHERE2` differ only in their third
+entry.
+
+Widths measured against the Apache-2.0 definitions: largest set is 8
+(`math_on_list`), so the byte is not a squeeze. `math_on_list[RANDOM]`
+is absent from its table by construction — it is one of the three gaps.
 
 ## Falsifiers (each must be able to FAIL)
 
