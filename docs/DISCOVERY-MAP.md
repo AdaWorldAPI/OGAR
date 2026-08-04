@@ -1676,3 +1676,22 @@ isolation. The map's job is to keep them visible.
   run surfaced a real latent defect — `from_ops` derived `len` from the
   caller's length rather than the copied count, making the guard solely
   responsible for keeping `ops()` in bounds — now hardened.
+  **Correction, same session (operator-raised density pass):** the first cut's
+  `as_payload_bytes` doc claimed "the value slab is these bytes, in this
+  order" — **false**, and the exact defect it would have caused is a consumer
+  writing `slab[..360].copy_from_slice(..)`, shredding the first 22½ facets'
+  classids. The slab is 480 B of `30 × (classid 4 + payload 12)`, so operation
+  `i` lives at **stride 16, +4** (`slab_offset(i) = (i/12)*16 + 4 + i%12`) and
+  the 360 operation bytes are never a contiguous run — the gathered array and
+  the slab layout are different things. Renamed to `as_ops_bytes` (execution
+  order), added `slab_offset` / `write_into_value_slab` /
+  `read_from_value_slab` and the zero-copy `op_in_slab` lens (one indexed byte
+  read, never materialising the other 359). Pinned by a falsifier that fails
+  if scatter and contiguous-copy ever coincide, plus a classid-sentinel test
+  proving the write touches no addressing byte; both verified by breaking the
+  scatter. **Measured density** (`examples/density.rs`, re-runnable): whole-node
+  amortized `512/360 = 1.422 B/op` at full occupancy, 2.844 at 180 ops, 5.689
+  at 90, 17.067 at 30 — against ~100-200 B/block for Scratch project JSON and
+  ~16-32 B/op for a compact conventional AST. `FunctionBody` is **362 B in
+  memory** (`[u8; 360]` + `u16 len`) but exactly **360 B on the wire**: the len
+  is deliberately not written, because NOP padding IS the length signal.

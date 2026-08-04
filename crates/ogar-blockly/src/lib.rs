@@ -95,8 +95,21 @@ pub const BLOCKS_DOMAIN_HI: u8 = 0x17;
 /// Value-slab facet slots in a 512-byte node: `value(480) / 16` = **30**.
 pub const CONTENT_SLOTS: usize = 30;
 
+/// Bytes of one facet slot: the V3 16-byte facet stride.
+pub const SLOT_STRIDE: usize = 16;
+
+/// Bytes of a facet's classid prefix.
+pub const CLASSID_BYTES: usize = 4;
+
 /// Payload bytes in one 16-byte facet: `16 - classid(4)` = **12**.
-pub const PAYLOAD_BYTES_PER_SLOT: usize = 12;
+pub const PAYLOAD_BYTES_PER_SLOT: usize = SLOT_STRIDE - CLASSID_BYTES;
+
+/// Bytes of a node's value slab: `30 × 16` = **480**.
+///
+/// Note the asymmetry that catches people: the slab is **480** bytes but only
+/// [`OPS_PER_FUNCTION`] = 360 of them are operations. The other 120 are the 30
+/// facets' 4-byte classids, interleaved — never a contiguous run.
+pub const VALUE_SLAB_LEN: usize = CONTENT_SLOTS * SLOT_STRIDE;
 
 /// Operations one function body carries: `30 × 12` = **360**.
 ///
@@ -544,14 +557,93 @@ impl FunctionBody {
         OPS_PER_FUNCTION - self.len as usize
     }
 
-    /// The body as the raw 360 payload bytes a node's value slab carries —
-    /// the LE view, zero-copy, `NOP`-padded past [`len`](Self::len).
+    /// The body's 360 operation bytes in **execution order**, `NOP`-padded past
+    /// [`len`](Self::len).
     ///
-    /// This IS the wire form: the value slab is these bytes, in this order.
+    /// # This is the GATHERED form, NOT the slab layout
+    ///
+    /// These bytes are **not** contiguous in a node's value slab. The slab is
+    /// `CONTENT_SLOTS × 16` = 480 bytes of `classid(4) + payload(12)` facets, so
+    /// operation `i` lives at slab offset
+    /// [`slab_offset(i)`](Self::slab_offset) — stride 16, `+4` into each facet,
+    /// never at offset `i`.
+    ///
+    /// Copying this array over the front of a slab would overwrite the first
+    /// 22½ facets' classids *and* payloads. Use
+    /// [`write_into_value_slab`](Self::write_into_value_slab) to place it, or
+    /// [`op_in_slab`] to read one operation in place without gathering at all.
     #[must_use]
-    pub const fn as_payload_bytes(&self) -> &[u8; OPS_PER_FUNCTION] {
+    pub const fn as_ops_bytes(&self) -> &[u8; OPS_PER_FUNCTION] {
         &self.ops
     }
+
+    /// Byte offset of operation `index` within a node's **480-byte value slab**.
+    ///
+    /// `(index / 12) * 16 + 4 + (index % 12)` — pick the facet, skip its
+    /// 4-byte classid, then index within its 12-byte payload lane.
+    ///
+    /// # Panics
+    ///
+    /// When `index >= OPS_PER_FUNCTION`.
+    #[must_use]
+    pub const fn slab_offset(index: usize) -> usize {
+        assert!(index < OPS_PER_FUNCTION, "operation index out of range");
+        let facet = index / PAYLOAD_BYTES_PER_SLOT;
+        let within = index % PAYLOAD_BYTES_PER_SLOT;
+        facet * SLOT_STRIDE + CLASSID_BYTES + within
+    }
+
+    /// Scatter the body into a node's value slab, writing **only** the 12-byte
+    /// payload lane of each facet.
+    ///
+    /// The 4-byte classid of every facet is left untouched — this writes the
+    /// operations, never the addressing.
+    pub fn write_into_value_slab(&self, slab: &mut [u8; VALUE_SLAB_LEN]) {
+        for facet in 0..CONTENT_SLOTS {
+            let src = facet * PAYLOAD_BYTES_PER_SLOT;
+            let dst = facet * SLOT_STRIDE + CLASSID_BYTES;
+            slab[dst..dst + PAYLOAD_BYTES_PER_SLOT]
+                .copy_from_slice(&self.ops[src..src + PAYLOAD_BYTES_PER_SLOT]);
+        }
+    }
+
+    /// Gather a body back out of a node's value slab — the inverse of
+    /// [`write_into_value_slab`](Self::write_into_value_slab).
+    ///
+    /// `len` is recovered as the position after the last non-`NOP` byte, since
+    /// the wire form carries no length field (that is the whole point of the
+    /// zero-fallback padding — the 362-byte in-memory `FunctionBody` has a
+    /// `u16 len`, the 360-byte wire form deliberately does not).
+    #[must_use]
+    pub fn read_from_value_slab(slab: &[u8; VALUE_SLAB_LEN]) -> Self {
+        let mut body = Self::new();
+        for facet in 0..CONTENT_SLOTS {
+            let src = facet * SLOT_STRIDE + CLASSID_BYTES;
+            let dst = facet * PAYLOAD_BYTES_PER_SLOT;
+            body.ops[dst..dst + PAYLOAD_BYTES_PER_SLOT]
+                .copy_from_slice(&slab[src..src + PAYLOAD_BYTES_PER_SLOT]);
+        }
+        body.len = body
+            .ops
+            .iter()
+            .rposition(|&b| b != PaletteOp::NOP.0)
+            .map_or(0, |last| last as u16 + 1);
+        body
+    }
+}
+
+/// Read one operation **in place** from a node's value slab — no gather, no
+/// copy, one indexed byte read.
+///
+/// This is the zero-copy read the substrate wants: a consumer that needs
+/// operation `i` never materialises the other 359.
+///
+/// # Panics
+///
+/// When `index >= OPS_PER_FUNCTION`.
+#[must_use]
+pub const fn op_in_slab(slab: &[u8; VALUE_SLAB_LEN], index: usize) -> PaletteOp {
+    PaletteOp(slab[FunctionBody::slab_offset(index)])
 }
 
 /// How block content is partitioned across SoA tables.
@@ -659,15 +751,126 @@ mod tests {
     }
 
     #[test]
-    fn payload_bytes_are_the_wire_form_nop_padded() {
+    fn ops_bytes_are_execution_order_nop_padded() {
         let body = FunctionBody::from_ops(&[PaletteOp::IF, PaletteOp::LT]).unwrap();
-        let bytes = body.as_payload_bytes();
+        let bytes = body.as_ops_bytes();
         assert_eq!(bytes.len(), OPS_PER_FUNCTION);
         assert_eq!(bytes[0], PaletteOp::IF.0);
         assert_eq!(bytes[1], PaletteOp::LT.0);
         // Everything past len is the zero-fallback, so a partially-filled body
         // needs no length field on the wire.
         assert!(bytes[2..].iter().all(|&b| b == PaletteOp::NOP.0));
+    }
+
+    #[test]
+    fn the_slab_interleaves_classids_so_ops_are_not_contiguous() {
+        // The defect this guards: the gathered array is NOT the slab layout.
+        // Op i lives at stride 16, +4 into each facet — never at offset i.
+        assert_eq!(FunctionBody::slab_offset(0), 4);
+        assert_eq!(FunctionBody::slab_offset(11), 15); // last byte of facet 0
+        assert_eq!(FunctionBody::slab_offset(12), 20); // facet 1 skips its classid
+        assert_eq!(FunctionBody::slab_offset(OPS_PER_FUNCTION - 1), 479);
+
+        // Anti-vacuity: the mapping must be a genuine permutation, not identity.
+        let identity_matches = (0..OPS_PER_FUNCTION)
+            .filter(|&i| FunctionBody::slab_offset(i) == i)
+            .count();
+        assert_eq!(
+            identity_matches, 0,
+            "no operation may sit at its own index; the slab interleaves"
+        );
+
+        // Every offset lands inside a payload lane, never on a classid byte.
+        for i in 0..OPS_PER_FUNCTION {
+            let off = FunctionBody::slab_offset(i);
+            assert!(
+                off % SLOT_STRIDE >= CLASSID_BYTES,
+                "op {i} at slab offset {off} lands on a classid byte"
+            );
+            assert!(off < VALUE_SLAB_LEN);
+        }
+    }
+
+    #[test]
+    fn scatter_gather_round_trips_and_never_touches_a_classid() {
+        let ops: Vec<PaletteOp> = (0..40u8).map(|i| PaletteOp(i.max(1))).collect();
+        let body = FunctionBody::from_ops(&ops).unwrap();
+
+        // Pre-stamp every facet's classid with a sentinel; the write must
+        // leave all 120 of those bytes untouched — it writes operations, not
+        // addressing.
+        let mut slab = [0u8; VALUE_SLAB_LEN];
+        for facet in 0..CONTENT_SLOTS {
+            for b in 0..CLASSID_BYTES {
+                slab[facet * SLOT_STRIDE + b] = 0xC1;
+            }
+        }
+        body.write_into_value_slab(&mut slab);
+
+        for facet in 0..CONTENT_SLOTS {
+            for b in 0..CLASSID_BYTES {
+                assert_eq!(
+                    slab[facet * SLOT_STRIDE + b],
+                    0xC1,
+                    "facet {facet} classid byte {b} was overwritten"
+                );
+            }
+        }
+
+        // In-place read agrees with the gathered order, op by op.
+        for (i, op) in ops.iter().enumerate() {
+            assert_eq!(op_in_slab(&slab, i), *op, "op {i} misplaced in the slab");
+        }
+
+        // And the gather is the exact inverse.
+        let back = FunctionBody::read_from_value_slab(&slab);
+        assert_eq!(back.len(), ops.len());
+        assert_eq!(back.as_ops_bytes(), body.as_ops_bytes());
+    }
+
+    #[test]
+    fn a_naive_contiguous_copy_is_detectably_wrong() {
+        // This is the bug an earlier doc comment would have caused: treating
+        // the gathered 360 bytes as the front of the slab. It must be
+        // observably different from the correct scatter, or the distinction
+        // this API draws carries no information.
+        let ops: Vec<PaletteOp> = (1..=30u8).map(PaletteOp).collect();
+        let body = FunctionBody::from_ops(&ops).unwrap();
+
+        let mut correct = [0u8; VALUE_SLAB_LEN];
+        body.write_into_value_slab(&mut correct);
+
+        let mut naive = [0u8; VALUE_SLAB_LEN];
+        naive[..OPS_PER_FUNCTION].copy_from_slice(body.as_ops_bytes());
+
+        assert_ne!(
+            correct, naive,
+            "scatter and contiguous copy must not coincide"
+        );
+        // Concretely: the naive copy puts op 0 on facet 0's FIRST classid byte.
+        assert_eq!(naive[0], ops[0].0);
+        assert_eq!(correct[0], 0, "facet 0's classid must stay untouched");
+        assert_eq!(correct[FunctionBody::slab_offset(0)], ops[0].0);
+    }
+
+    #[test]
+    fn in_memory_body_is_larger_than_the_wire_form() {
+        // 362 = [u8; 360] + u16 len. The len is deliberately NOT written to the
+        // slab — zero padding is the length signal — so the wire form is
+        // exactly 360 and this gap must stay visible rather than surprising a
+        // consumer that assumed size_of == payload size.
+        assert_eq!(core::mem::size_of::<FunctionBody>(), 362);
+        assert_eq!(body_wire_len(), OPS_PER_FUNCTION);
+        assert_eq!(OPS_PER_FUNCTION, 360);
+        assert_eq!(VALUE_SLAB_LEN, 480);
+        assert_eq!(
+            VALUE_SLAB_LEN - OPS_PER_FUNCTION,
+            CONTENT_SLOTS * CLASSID_BYTES
+        );
+    }
+
+    const fn body_wire_len() -> usize {
+        core::mem::size_of::<[u8; OPS_PER_FUNCTION]>()
     }
 
     #[test]
