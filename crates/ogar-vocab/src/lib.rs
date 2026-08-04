@@ -1114,7 +1114,11 @@ impl Class {
 ///   0x0CXX  Automation        (HIRO IT-automation: MARS CMDB + actuators)
 ///   0x0DXX  HR                (employment / org / contracts)
 ///   0x0EXX  reserved: Genetics (CPIC pharmacogenomics, consumed by q2)
-///   0x0FXX+ unassigned
+///   0x0FXX  Geo               (OpenStreetMap geodata reference ontology)
+///   0x10XX–0x16XX unassigned
+///   0x17XX  reserved: Blocks  (visual block-programming vocabulary; consumed
+///                              by blockly-rs / scratch-rs)
+///   0x18XX+ unassigned
 /// ```
 ///
 /// **Anatomy vs Health (the firewall split).** `0x0AXX` Anatomy is the
@@ -1456,8 +1460,29 @@ pub enum ConceptDomain {
     /// geodata, NOT PHI; same public-reference posture as
     /// [`Anatomy`](Self::Anatomy).
     Geo,
+    /// `0x17XX` — Blocks (visual block-programming vocabulary: the opcode
+    /// concepts a block-based editor renders and a compiler lowers —
+    /// statement / operator / control / event / reporter families). Carries
+    /// ZERO vocabulary rows today — same reserved posture as
+    /// [`Osint`](Self::Osint) / [`Genetics`](Self::Genetics): the domain slot
+    /// is reserved so `canonical_concept_domain` returns a stable tag before
+    /// any concept mints (operator ruling, 2026-08-04).
+    ///
+    /// The domain names the **shared opcode concept**, never a renderer: the
+    /// canon hi u16 is `0x17` ++ slot, and each consumer selects its own
+    /// render skin in the custom lo u16 (`blockly-rs` and `scratch-rs` are
+    /// two app prefixes over ONE vocabulary). Per the consumer doctrine, a
+    /// block's *behaviour* is never in the address — it is a property of the
+    /// Core node the classid resolves to (`ActionDef` + `KausalSpec`).
+    ///
+    /// **Provenance fence:** concepts minted here must be derived from
+    /// permissively-licensed or specification sources (the Apache-2.0 Blockly
+    /// block definitions, the public project file-format spec) — never by
+    /// transcribing a GPL/AGPL implementation, so this public codebook stays
+    /// unencumbered while GPL consumers link it freely.
+    Blocks,
     /// Any high-byte slot not yet assigned a domain (`0x04XX`–`0x06XX`,
-    /// `0x10XX`+).
+    /// `0x10XX`–`0x16XX`, `0x18XX`+).
     Unassigned,
 }
 
@@ -1479,6 +1504,7 @@ pub fn canonical_concept_domain(id: u16) -> ConceptDomain {
         0x0D => ConceptDomain::HR,
         0x0E => ConceptDomain::Genetics,
         0x0F => ConceptDomain::Geo,
+        0x17 => ConceptDomain::Blocks,
         _ => ConceptDomain::Unassigned,
     }
 }
@@ -5509,7 +5535,18 @@ mod tests {
         // mint, `docs/DISCOVERY-MAP.md` D-CLASSID-CANON-HIGH-FLIP).
         assert_eq!(canonical_concept_domain(0x0E01), ConceptDomain::Genetics);
         assert_eq!(canonical_concept_domain(0x0EFF), ConceptDomain::Genetics);
-        // Trailing unassigned tail (0x0F+).
+        // Geo block (0x0F) — populated (10 OSM concepts).
+        assert_eq!(canonical_concept_domain(0x0F01), ConceptDomain::Geo);
+        // Blocks block (0x17) — reserved, zero concept rows today (operator
+        // ruling 2026-08-04). The gap 0x10-0x16 stays unassigned BY INTENT:
+        // 0x17 was chosen deliberately, not as the next free slot, so a later
+        // pass must not "tidy" it down.
+        assert_eq!(canonical_concept_domain(0x1000), ConceptDomain::Unassigned);
+        assert_eq!(canonical_concept_domain(0x1600), ConceptDomain::Unassigned);
+        assert_eq!(canonical_concept_domain(0x1701), ConceptDomain::Blocks);
+        assert_eq!(canonical_concept_domain(0x17FF), ConceptDomain::Blocks);
+        assert_eq!(canonical_concept_domain(0x1800), ConceptDomain::Unassigned);
+        // Trailing unassigned tail (0x18+).
         assert_eq!(canonical_concept_domain(0xFFFF), ConceptDomain::Unassigned);
     }
 
@@ -5711,6 +5748,10 @@ mod tests {
         // under q2) — reserved, zero concept rows until an operator ruling
         // mints one — see the CODEBOOK 0x0EXX section note.
         assert_eq!(concepts_in_domain(ConceptDomain::Genetics).count(), 0);
+        // Same posture for the Blocks domain (0x17, visual block-programming
+        // opcodes) — reserved 2026-08-04, zero concept rows until the opcode
+        // vocabulary is minted from Apache-2.0 / spec sources.
+        assert_eq!(concepts_in_domain(ConceptDomain::Blocks).count(), 0);
     }
 
     #[test]
