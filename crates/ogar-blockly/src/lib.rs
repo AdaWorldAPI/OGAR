@@ -43,6 +43,33 @@
 //! pass sized a per-operation concept space and hit an imagined 255-slot
 //! ceiling; that space does not need to exist.
 //!
+//! # ⚠ What this does NOT yet encode: operands
+//!
+//! **The palette names WHICH operation, never its operands.** A body of bare
+//! palette bytes cannot distinguish `WAIT(1)` from `WAIT(10)`, and
+//! [`PaletteOp::NUMBER`] says *a literal is here* without saying which literal.
+//! So a [`FunctionBody`] as it stands is the **vocabulary layer of a program,
+//! not a complete program**: enough to say what a function does, not enough to
+//! execute or round-trip it.
+//!
+//! This is a **named gap, deliberately open** — raised on OGAR #235 and not
+//! yet resolved, because the resolution is an architecture decision rather than
+//! an implementation detail. The two candidates:
+//!
+//! - **Immediates in the stream** — the 360 bytes are a byte-coded instruction
+//!   stream in which some palette entries are followed by operand bytes (a
+//!   constant-pool index, a variable slot). Keeps 360 as an upper bound on
+//!   *bytes*, lowers the effective operation count, and needs a home for the
+//!   constant pool.
+//! - **`(opcode : operand)` pairs** — read each 12-byte lane as the LE
+//!   contract's L4 `6 × (u8:u8)` rail, giving 6 pairs per facet and **180**
+//!   pairs per node. Operands become palette-addressed in the same byte space,
+//!   at the cost of halving the op budget. This is a sanctioned payload layout,
+//!   not a new invention.
+//!
+//! Until one is chosen, treat a `FunctionBody` as an **opcode skeleton**, and
+//! do NOT advertise it as a lossless program encoding.
+//!
 //! # Storage shape — inventory SoA + N content SoAs, split by function
 //!
 //! Functions are not pooled into one table. There is an **inventory** SoA (the
@@ -462,6 +489,14 @@ impl core::error::Error for BodyOverflow {}
 /// The cap is enforced at every entry point, so a `FunctionBody` that exists is
 /// a function that fits in one 512-byte node. There is no partially-valid
 /// state and no runtime surprise at write time.
+///
+/// # ⚠ Opcode skeleton, not a complete program
+///
+/// This carries **operations only** — no operands. `WAIT(1)` and `WAIT(10)`
+/// produce identical bodies. See the crate-level *"What this does NOT yet
+/// encode"* section: the operand layer is a named open decision (OGAR #235),
+/// and until it lands a `FunctionBody` must not be advertised as a lossless
+/// program encoding.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FunctionBody {
     /// Stored as raw bytes, not `[PaletteOp; N]`, so
