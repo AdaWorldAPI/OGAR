@@ -296,13 +296,29 @@ The comparison fold carries both halves on purpose: `LT`/`GT`/`EQ` fold into
 rash's single `OpCmp`-with-`Ordering`, AND `NEQ`/`LTE`/`GTE` stay refused —
 without the second half the first could quietly become "every comparison maps".
 
-**Falsifier state, honestly:** the gate as written ("a `.sb3` project produces
-identical output through rash-native loading and through the SoA path") is
-**not** met — no `.sb3` is imported yet. What IS proven end-to-end is the
-lowering: Blockly record → ABI body → operand tree → rash IR, through three
-crates' public surfaces, asserted structurally. The `.sb3` arm needs
-`rash_loader_sb3::ProjectLoader` and a fixture project, and is the remaining
-W4 work.
+**Gate: GREEN** (`scratch-rs` `tests/sb3_gate.rs`). A real `.sb3` — a genuine
+zip carrying `project.json` AND a costume asset, since rash resolves
+`currentCostume` and reads the asset's bytes — whose green-flag script computes
+`(3 + 4) * 2`. The native arm is `ProjectLoader::new(sb3).build()`: rash unzips,
+parses with its own serde types, lowers with its own `load_block`, compiles with
+Cranelift, and nothing of ours runs. The SoA arm is the same program as a call
+stream (`3, 4, ADD, 2, MUL`) through `to_scratch_block` into the same
+`Script`/`SpriteBuilder`/`ProjectBuilder` entry points rash's own loader uses.
+Both run; the values are compared.
+
+**The arms meet at EXECUTION, not at the IR, and that is the stronger check.**
+An IR diff is not available (`load_block` is public but takes a
+`CompileContext` with private fields and no public constructor) — but it would
+also be weaker: a structural diff is satisfied by two trees that are equal and
+both wrong. A run proves the same VALUE comes out of rash's own compiler either
+way.
+
+Both injections were run, because "identical output" is the easiest assertion
+in the world to satisfy with an inert harness: changing the fixture to
+`(3 + 4) * 9` makes the native arm read **63**, proving rash really parses and
+runs OUR fixture rather than returning a cached or default value; lowering
+`MUL` to `OpAdd` makes it **native 14 vs SoA 9**, proving the SoA arm really
+feeds the comparison.
 
 ### W5 — grammar projection — **DONE**
 
