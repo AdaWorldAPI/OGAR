@@ -1695,3 +1695,39 @@ isolation. The map's job is to keep them visible.
   ~16-32 B/op for a compact conventional AST. `FunctionBody` is **362 B in
   memory** (`[u8; 360]` + `u16 len`) but exactly **360 B on the wire**: the len
   is deliberately not written, because NOP padding IS the length signal.
+  **Correction 2 + supersession, operator-ruled (2026-08-04, the
+  `(function : value)` call model):** the body is NOT a flat opcode stream —
+  every 12-byte lane is carved per the V3 `6 × (u8:u8)` reading, **indexed**
+  against a label codebook, and the unit is a **call**: `function : value`.
+  Three consequences, each retiring an earlier defect or claim IN PLACE.
+  (1) *The "nesting gap" is withdrawn* — an earlier correction recorded the
+  absence of a stream delimiter as a real defect; that was an artifact of
+  treating the body as self-delimiting bytecode. Nesting is **by reference**
+  (a function index names another function's node), exactly as SB3 nests via
+  block ids — the question does not arise under the call model. (2) *The
+  operand gap (codex P1) closes* — the value byte is the immediate
+  (`WAIT:10`); computed arguments use a stack discipline
+  (`(NUMBER:5)(NUMBER:3)(ADD:_)`); wide literals spend the value byte as a
+  constant-pool index (pool = named follow-up). (3) *Arity is a classid
+  property* — `LaneShape` (mirroring `CascadeShape` G6D2/G4D3/G3D4) carves
+  the same 360 bytes as 180 pairs / 120 triples / 90 quads; a function
+  needing more immediates picks a wider CARVING, never a wider field.
+  `PaletteOp` → `FnIndex` (there is no opcode/function distinction — one
+  `<256` codebook, primitives in the low range, user functions resolved via
+  the Inventory registry = the label codebook). Narrowing is LOUD:
+  `BodyError::ValueBeyondShape` refuses a call the shape would truncate
+  (falsifier-verified, as is call-level len recovery — the byte-level
+  rposition regression is caught per-shape). **Also retired here: the
+  edge-block slot-1 design** (12 in-family + 4 out-of-family) — operator-
+  deprecated this session; slot 1 is reserved-zeroed and relations ride the
+  payload rails as indexed calls. This crate's docs no longer carry the
+  edges language (the lance-graph CLAUDE.md canon block still does — its
+  `⊘ SUPERSEDED` banner is the operator's, in another session).
+  **Roadmap, operator-set (baby steps):** (i) ABI-shaped Blockly/Scratch
+  first; (ii) later a PowerAutomate-shaped low-code editor — BOTH
+  Mario-editor ergonomics over `ClassView : WideFieldMask` projections, two
+  skins over one ABI. **Grammar ruling:** operator chose LITERAL storage
+  (shape-carved calls) over grammar-parsed lines (`A = B + C`); grammar is a
+  *projection* that renders from and parses back into the pair stream —
+  never the storage format (preserves positional addressing, the SIMD sweep,
+  and single-pass lowering into rash's `Input` tree).
