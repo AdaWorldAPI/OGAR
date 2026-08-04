@@ -256,6 +256,15 @@ alignment costs. Until measured: 3×4 stands.
    3 brutally-honest reviewers). Run it before any claim enters the
    canon. Theorem-checker rule 0: **pin the unit system first** (bits
    vs hex vs bytes — born from a real failure).
+   **Base case (added 2026-08-04, recursion sweep):** the council's own
+   ratified verdict enters the canon WITHOUT a second council — one pass
+   (savants → consolidate → reviewers on the consolidated draft ONLY →
+   ratified result lands) discharges the obligation. Read literally,
+   "before any claim" required a council on the council's output, forever
+   — an unconditional per-claim rule whose discharge is itself a claim
+   has no bottom unless the base case is stated. This matches how the
+   pattern has always actually run; only the wording was unbounded.
+   (Test + provenance: lance-graph `E-THE-HYGIENE-RULE-RECURSED-1`.)
 
 ## Non-negotiables
 
