@@ -58,7 +58,7 @@
 //! **2. The stack carries nested expressions.** Immediates are what the value
 //! bytes hold; *computed* arguments come from a stack discipline — each call
 //! consumes its operands and pushes its result, so `5 + 3` is
-//! `(CONST:5) (CONST:3) (ADD:0)` in any shape. That is what lowers cleanly into
+//! `(NUMBER:5) (NUMBER:3) (ADD:0)` in any shape. That is what lowers cleanly into
 //! a recursive `Input` tree, which is how Scratch operands nest.
 //!
 //! Either way every call stays **independently readable**: call `i` is at a
@@ -162,8 +162,9 @@ pub const PAYLOAD_BYTES_PER_SLOT: usize = SLOT_STRIDE - CLASSID_BYTES;
 /// Bytes of a node's value slab: `30 × 16` = **480**.
 ///
 /// Note the asymmetry that catches people: the slab is **480** bytes but only
-/// [`OPS_PER_FUNCTION`] = 360 of them are operations. The other 120 are the 30
-/// facets' 4-byte classids, interleaved — never a contiguous run.
+/// [`BODY_BYTES`] = 360 of them are call payload (180 / 120 / 90 calls,
+/// depending on the [`LaneShape`]). The other 120 are the 30 facets' 4-byte
+/// classids, interleaved — never a contiguous run.
 pub const VALUE_SLAB_LEN: usize = CONTENT_SLOTS * SLOT_STRIDE;
 
 /// Payload bytes one function body carries: `30 × 12` = **360**.
