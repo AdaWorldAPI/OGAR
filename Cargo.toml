@@ -30,6 +30,7 @@ members = [
     "crates/ogar-a2ui-frame",
     "crates/ogar-from-docv1",
     "crates/ogar-render-typst",
+    "crates/ogar-blockly",
 ]
 
 [workspace.package]

@@ -1633,3 +1633,65 @@ isolation. The map's job is to keep them visible.
   `0x0FXX+ unassigned` while `0x0FXX` Geo is fully populated (10 OSM
   concepts, `osm_node` 0x0F01 … `osm_user` 0x0F0A), and a domain test comment
   said "trailing unassigned tail (0x0F+)".
+
+- **[D-BLOCKS-PALETTE] the block vocabulary is ONE BYTE, and a function body is
+  360 of them in one node — `ogar-blockly`** — `[G]` (CODED, 10 tests + 2
+  disable-the-guard falsifier runs, 2026-08-04, operator-designed) — home:
+  NEW crate `ogar-blockly` (`PaletteOp` / `FunctionBody` / `BlockConcept` /
+  `SoaSplit`) — depends: D-BLOCKS-DOMAIN (the `0x17XX` reservation), the
+  512-byte node canon (`GUIDS_PER_NODE == 32`), the 2026-06-29 Tetris doctrine.
+  **Three collapses, each of which retired a design question rather than
+  answering it.** (1) *Vocabulary → one byte.* Commands and concepts share a
+  256-slot palette; two frontends rendering the same operation land on the SAME
+  slot (`logic_compare[LT]` ≡ `operator_lt` ≡ `PaletteOp::LT`), which is where
+  the convergence is real rather than nominal. Measured harvest from the two
+  Apache-2.0 sources: Blockly **57 block types / 71 operation codes**,
+  scratch-blocks **171 opcodes** (59 shared-core + 108 device + 4 menu helpers);
+  deduplicated union **≈190 ≤ 256**, against a naive sum of 330. (2) *Content →
+  ONE classid.* Operations are payload bytes, not concept ids, so the
+  per-operation concept space — and the 255-slot ceiling an earlier pass
+  computed for it — does not need to exist. `BlockConcept` has two variants
+  total. (3) *Body budget → derived, not chosen.* `value(480)/16 = 30` facet
+  slots × `16-4 = 12` payload bytes = **`OPS_PER_FUNCTION` = 360**, compile-
+  asserted. A longer function is **split**, never a wider row — the canon's
+  *scale is the next cascade level, never field-widening* applied to program
+  structure, and it makes "does this fit?" checkable before writing.
+  **Storage:** inventory SoA + N content SoAs partitioned by function
+  (`SoaSplit`) — the V3 mailbox doctrine, not a storage preference: one
+  function = one owner = its own SoA, so a registry read never touches a body.
+  **Rejected alternative** (operator, same session): a Lance sidecar carrying a
+  header whose schema defines the blob reading — rejected because it
+  reintroduces decode-before-address, the exact cost the key exists to avoid.
+  **Palette ranges are prefix-routable:** shared computational core below
+  `DEVICE_FAMILY_FLOOR = 0x90`, sprite/stage families above it, so
+  "is this op frontend-specific?" is one compare and no table lookup; the
+  device range is RESERVED-not-allocated (108 measured, mint on demand).
+  `0x00` = `NOP` = the zero-fallback, so a partially-filled body needs no
+  length field on the wire. **Provenance fence enforced in the module docs:**
+  entries derive only from the Apache-2.0 Blockly + scratch-blocks
+  definitions, never from AGPL `scratch-vm` — which is what lets a GPL
+  consumer link this public codebook and keeps the GPL boundary inside the
+  consumer repo. Falsifiers verified by breaking what they guard (an injected
+  palette collision and a cap loosened by one both fail the suite); the second
+  run surfaced a real latent defect — `from_ops` derived `len` from the
+  caller's length rather than the copied count, making the guard solely
+  responsible for keeping `ops()` in bounds — now hardened.
+  **Correction, same session (operator-raised density pass):** the first cut's
+  `as_payload_bytes` doc claimed "the value slab is these bytes, in this
+  order" — **false**, and the exact defect it would have caused is a consumer
+  writing `slab[..360].copy_from_slice(..)`, shredding the first 22½ facets'
+  classids. The slab is 480 B of `30 × (classid 4 + payload 12)`, so operation
+  `i` lives at **stride 16, +4** (`slab_offset(i) = (i/12)*16 + 4 + i%12`) and
+  the 360 operation bytes are never a contiguous run — the gathered array and
+  the slab layout are different things. Renamed to `as_ops_bytes` (execution
+  order), added `slab_offset` / `write_into_value_slab` /
+  `read_from_value_slab` and the zero-copy `op_in_slab` lens (one indexed byte
+  read, never materialising the other 359). Pinned by a falsifier that fails
+  if scatter and contiguous-copy ever coincide, plus a classid-sentinel test
+  proving the write touches no addressing byte; both verified by breaking the
+  scatter. **Measured density** (`examples/density.rs`, re-runnable): whole-node
+  amortized `512/360 = 1.422 B/op` at full occupancy, 2.844 at 180 ops, 5.689
+  at 90, 17.067 at 30 — against ~100-200 B/block for Scratch project JSON and
+  ~16-32 B/op for a compact conventional AST. `FunctionBody` is **362 B in
+  memory** (`[u8; 360]` + `u16 len`) but exactly **360 B on the wire**: the len
+  is deliberately not written, because NOP padding IS the length signal.

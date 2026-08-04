@@ -1,0 +1,17 @@
+[package]
+name = "ogar-blockly"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+description = "Visual block-programming vocabulary — the 256-slot command/concept palette shared by Blockly and Scratch frontends (the Blocks domain, 0x17XX). One content classid; a function body is 360 palette bytes in one 512-byte node. Plug-and-play: concept ids are authoritative here, never in the shared codebook."
+
+[features]
+default = []
+serde = ["dep:serde", "ogar-vocab/serde"]
+
+[dependencies]
+ogar-vocab = { path = "../ogar-vocab" }
+serde = { workspace = true, optional = true }
