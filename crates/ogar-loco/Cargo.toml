@@ -1,0 +1,16 @@
+[package]
+name = "ogar-loco"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+description = "The low-code program surface — the vocabulary-agnostic call ABI every block/template/flow frontend shares. One 512-byte node per function; calls as (function:value) rails over a <256 codebook; nesting by reference; shared computational core defined once; sibling vocabularies plug in via the Vocabulary trait. Zero-dep."
+
+[features]
+default = []
+serde = ["dep:serde"]
+
+[dependencies]
+serde = { workspace = true, optional = true }

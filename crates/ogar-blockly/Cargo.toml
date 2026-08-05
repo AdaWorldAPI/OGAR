@@ -6,12 +6,13 @@ license.workspace = true
 repository.workspace = true
 authors.workspace = true
 rust-version.workspace = true
-description = "Visual block-programming vocabulary — the 256-slot command/concept palette shared by Blockly and Scratch frontends (the Blocks domain, 0x17XX). One content classid; a function body is 360 palette bytes in one 512-byte node. Plug-and-play: concept ids are authoritative here, never in the shared codebook."
+description = "Visual block-programming vocabulary — the 256-slot command/concept palette shared by Blockly and Scratch frontends (the Blocks domain, 0x17XX), over the vocabulary-agnostic call ABI in ogar-loco. One content classid; a function body is 360 palette bytes in one 512-byte node. Plug-and-play: concept ids are authoritative here, never in the shared codebook."
 
 [features]
 default = []
-serde = ["dep:serde", "ogar-vocab/serde"]
+serde = ["dep:serde", "ogar-vocab/serde", "ogar-loco/serde"]
 
 [dependencies]
+ogar-loco = { path = "../ogar-loco" }
 ogar-vocab = { path = "../ogar-vocab" }
 serde = { workspace = true, optional = true }
