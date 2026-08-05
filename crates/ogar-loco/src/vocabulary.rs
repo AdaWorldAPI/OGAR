@@ -313,6 +313,35 @@ pub mod shared_core {
     }
 }
 
+/// A basin-local codebook a call's value bytes are drawn from.
+///
+/// Most calls' value bytes are literal numbers ([`FnIndex::NUMBER`]) or
+/// function indices ([`Vocabulary::body_refs`]). A relation call is neither:
+/// its operands are IDs into a **basin-local target codebook** — a codebook
+/// scoped to the classid prefix the call's own body lives under, not a
+/// vocabulary-wide table. `part_of(subject, object)` in one basin and
+/// `part_of(subject, object)` in a sibling basin can legally resolve their
+/// object byte against two different codebooks; the call itself is agnostic
+/// to which.
+///
+/// This is advisory metadata, not a shape constraint: declaring a codebook
+/// does not change `stack_arity`/`body_refs`/`min_shape`, it tells a
+/// renderer, oracle-schema generator, or fuzzer WHICH table to resolve a
+/// call's operand bytes against instead of guessing "probably a literal."
+/// Default `None` everywhere (shared core AND undeclared domain calls) —
+/// declaring it is opt-in, paid only by a vocabulary that has basin-scoped
+/// operands (W-RO-3, `ogar-ro`'s relation predicates being the first user).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ValueCodebook {
+    /// The codebook's id, meaningful only within the basin the call's own
+    /// body lives under — never a global registry key. Interpreted by
+    /// whatever consumer owns that basin.
+    pub id: u8,
+    /// The codebook's canonical name, for legends and oracle schemas —
+    /// mirrors [`FnSpec::name`]'s role for the call itself.
+    pub name: &'static str,
+}
+
 /// A sibling codebook over the shared surface.
 ///
 /// Implementations answer for the **domain range** (bytes at/above
@@ -410,6 +439,24 @@ pub trait Vocabulary {
             self.domain_name(f)
         }
     }
+
+    /// The basin-local codebook `f`'s value bytes are drawn from, if any
+    /// (W-RO-3). Default `None` — most calls carry literals or body
+    /// references, not codebook ids, so the default costs nothing.
+    fn domain_value_codebook(&self, _f: FnIndex) -> Option<ValueCodebook> {
+        None
+    }
+
+    /// The codebook `f`'s operands resolve against — shared core is always
+    /// `None` (the computational core has no basin-scoped operands), domain
+    /// hook above the floor.
+    fn value_codebook(&self, f: FnIndex) -> Option<ValueCodebook> {
+        if f.0 < DOMAIN_FLOOR {
+            None
+        } else {
+            self.domain_value_codebook(f)
+        }
+    }
 }
 
 // ── The canonical data form ─────────────────────────────────────────────────
@@ -440,6 +487,9 @@ pub struct FnSpec {
     /// OQ-1 answered toward "the table stays the single artifact": a legend
     /// is then a serialization of the validated table, nothing beside it.
     pub name: Option<&'static str>,
+    /// The basin-local codebook this call's value bytes resolve against;
+    /// `None` = literal/body-reference operands, the common case (W-RO-3).
+    pub value_codebook: Option<ValueCodebook>,
 }
 
 impl FnSpec {
@@ -450,6 +500,7 @@ impl FnSpec {
         min_shape: LaneShape::Pairs,
         pushes_result: None,
         name: None,
+        value_codebook: None,
     };
 }
 
@@ -481,6 +532,7 @@ impl VocabularyTable {
                     min_shape: shared_core::min_shape(f),
                     pushes_result: shared_core::pushes_result(f),
                     name: shared_core::name(f),
+                    value_codebook: None,
                 }
             } else {
                 FnSpec {
@@ -489,6 +541,7 @@ impl VocabularyTable {
                     min_shape: v.min_shape(f),
                     pushes_result: v.domain_pushes_result(f),
                     name: v.domain_name(f),
+                    value_codebook: v.domain_value_codebook(f),
                 }
             };
         }
@@ -535,6 +588,13 @@ impl VocabularyTable {
     #[must_use]
     pub fn name(&self, f: FnIndex) -> Option<&'static str> {
         self.spec(f).name
+    }
+
+    /// The basin-local codebook `f`'s operands resolve against; `None` = no
+    /// codebook (literal or body-reference operands) — the common case.
+    #[must_use]
+    pub fn value_codebook(&self, f: FnIndex) -> Option<ValueCodebook> {
+        self.spec(f).value_codebook
     }
 }
 
@@ -663,6 +723,12 @@ pub mod conformance {
         fn name(&self, f: FnIndex) -> Option<&'static str> {
             self.table.name(f)
         }
+        fn domain_value_codebook(&self, f: FnIndex) -> Option<super::ValueCodebook> {
+            self.vocab.domain_value_codebook(f)
+        }
+        fn value_codebook(&self, f: FnIndex) -> Option<super::ValueCodebook> {
+            self.table.value_codebook(f)
+        }
     }
 
     /// Validate a vocabulary and, on success, return the proof-carrying
@@ -735,6 +801,12 @@ pub mod conformance {
                 }
                 if v.name(f) != shared_core::name(f) {
                     return Err(ConformanceError::SharedCoreDrift { f, what: "name" });
+                }
+                if v.value_codebook(f).is_some() {
+                    return Err(ConformanceError::SharedCoreDrift {
+                        f,
+                        what: "value_codebook",
+                    });
                 }
             }
             // Everywhere: the reported minimum shape must actually hold the
