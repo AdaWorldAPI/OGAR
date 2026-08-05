@@ -132,7 +132,7 @@ pub use program::{Program, branches_of};
 pub use statements::{StatementBounds, StatementError, statement_bounds};
 pub use telemetry::{FunnelTally, RefusalGate};
 pub use vocabulary::conformance::CheckedVocabulary;
-pub use vocabulary::{FnSpec, Vocabulary, VocabularyTable};
+pub use vocabulary::{FnSpec, ValueCodebook, Vocabulary, VocabularyTable};
 
 // ── The function-body budget ────────────────────────────────────────────────
 

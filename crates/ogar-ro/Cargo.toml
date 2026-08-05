@@ -1,0 +1,18 @@
+[package]
+name = "ogar-ro"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+description = "Relation Ontology (RO) predicates as a callable ogar-loco Vocabulary — a small, curated palette of binary relation predicates (part_of, has_part, regulates, …) addressable as Call bytes in the vocabulary-agnostic ABI, so an elixir-shaped template can assert typed edges the same way a Blockly body asserts arithmetic. Cross-references real RO CURIEs via ogar-obo::Namespace::Ro; mints nothing in the shared ogar-vocab codebook."
+
+[features]
+default = []
+serde = ["dep:serde", "ogar-loco/serde"]
+
+[dependencies]
+ogar-loco = { path = "../ogar-loco" }
+ogar-obo = { path = "../ogar-obo" }
+serde = { workspace = true, optional = true }
