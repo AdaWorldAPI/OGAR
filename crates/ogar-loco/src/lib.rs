@@ -122,13 +122,15 @@ use serde::{Deserialize, Serialize};
 pub mod node;
 pub mod pool;
 pub mod program;
+pub mod statements;
 pub mod vocabulary;
 
 pub use node::FunctionNode;
 pub use pool::{Constant, ConstantPool, PoolError};
 pub use program::{Program, branches_of};
-pub use vocabulary::Vocabulary;
+pub use statements::{StatementBounds, StatementError, statement_bounds};
 pub use vocabulary::conformance::CheckedVocabulary;
+pub use vocabulary::{FnSpec, Vocabulary, VocabularyTable};
 
 // ── The function-body budget ────────────────────────────────────────────────
 
