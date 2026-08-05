@@ -64,10 +64,24 @@ serde = { version = "1.0", features = ["derive"] }
 # "kv-lance lance 6.0.0 -> =7.0.0, lancedb 0.29.0 -> =0.30.0";
 # surrealdb fork's surrealdb-core uses the same pins under the
 # kv-lance feature.
+#
+# 2026-08-05 — realigned 7.0.0/0.30.0/df53 → 9.0.0/0.33.0/df54 to track the
+# measured lance-graph bump (probe: lance-graph
+# `.claude/plans/lance9-datafusion54-upgrade-probe-v1.md`). NOTE: there is no
+# `lancedb` 0.34-0.36 Rust crate — the registry tops out at 0.33.0, which IS
+# the lance-9 pairing (it pins `lance = "=9.0.0"`); 0.36 is the PyPI package,
+# versioned independently. arrow stays 58 and object_store 0.13.2 across this
+# bump — only datafusion crosses a major. These pins are still DORMANT (no
+# OGAR crate consumes them yet), so this realignment cannot break a build; it
+# keeps the "canonical, matches the rest of the AdaWorldAPI ecosystem" claim
+# above TRUE rather than silently stale. Per the lance-graph operator ruling
+# `E-LANCE-IS-UPSTREAM-AUTHORITATIVE-1`, this family is consumed from
+# crates.io upstream and NEVER from a fork — the AdaWorldAPI/lance and
+# /lancedb repos exist but are deliberately not depended on.
 # ─────────────────────────────────────────────────────────────────────
-lance        = "=7.0.0"
-lancedb      = "=0.30.0"
-datafusion   = "53"
+lance        = "=9.0.0"
+lancedb      = "=0.33.0"
+datafusion   = "54"
 arrow        = "58"
 arrow-array  = "58"
 arrow-schema = "58"
