@@ -169,6 +169,36 @@ pub mod shared_core {
             _ => LaneShape::Quads,
         }
     }
+
+    /// Whether a covered shared-core call **pushes a result** onto the stack.
+    ///
+    /// `Some(true)` for every covered expression (leaves, unary, binary);
+    /// `Some(false)` for the covered control calls and `BREAK`/`CONTINUE`,
+    /// which act and push nothing; `None` for anything the core does not
+    /// cover — the same refuse-don't-guess rule as [`stack_arity`].
+    ///
+    /// This is the column statement segmentation
+    /// ([`crate::statements::statement_bounds`]) runs on: a statement ends
+    /// where the stack returns to empty after a non-pushing call. A wrong
+    /// guess here would mis-group statements silently, which is why the
+    /// uncovered answer is `None` and never a default.
+    #[must_use]
+    pub fn pushes_result(f: FnIndex) -> Option<bool> {
+        stack_arity(f)?;
+        Some(!matches!(
+            f,
+            FnIndex::IF
+                | FnIndex::IF_ELSE
+                | FnIndex::REPEAT
+                | FnIndex::WHILE
+                | FnIndex::REPEAT_UNTIL
+                | FnIndex::FOREVER
+                | FnIndex::FOR_EACH
+                | FnIndex::FOR_RANGE
+                | FnIndex::BREAK
+                | FnIndex::CONTINUE
+        ))
+    }
 }
 
 /// A sibling codebook over the shared surface.
@@ -230,11 +260,145 @@ pub trait Vocabulary {
             _ => LaneShape::Quads,
         }
     }
+
+    /// Whether a covered domain-range function pushes a result — the column
+    /// statement segmentation runs on.
+    ///
+    /// The default is `None` — "not declared" — which makes segmentation
+    /// REFUSE bodies using such functions rather than mis-group them. A
+    /// vocabulary that wants its bodies statement-segmentable (templates
+    /// masking by `StepMask` position, most importantly) declares the column
+    /// for its verbs; a vocabulary that never segments pays nothing.
+    fn domain_pushes_result(&self, _f: FnIndex) -> Option<bool> {
+        None
+    }
+
+    /// Whether `f` pushes a result — shared core first, domain hook above
+    /// the floor.
+    fn pushes_result(&self, f: FnIndex) -> Option<bool> {
+        if f.0 < DOMAIN_FLOOR {
+            shared_core::pushes_result(f)
+        } else {
+            self.domain_pushes_result(f)
+        }
+    }
+}
+
+// ── The canonical data form ─────────────────────────────────────────────────
+
+/// One codebook slot's semantics, as data.
+///
+/// The data-first ruling (R4 of the ratified design rulings): the
+/// authoritative truth about a vocabulary is a TABLE — inspectable by
+/// compilers, renderers, fuzzers, and oracle schemas, validated once as a
+/// whole, incapable of the mutual inconsistency separate methods can drift
+/// into. The trait's methods are the authoring/access surface; the composed
+/// [`VocabularyTable`] inside a
+/// [`CheckedVocabulary`](conformance::CheckedVocabulary) is what everything
+/// downstream actually reads.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FnSpec {
+    /// Operands popped from the stack; `None` = not covered (refused).
+    pub stack_arity: Option<u8>,
+    /// Value bytes that are function indices this call branches to.
+    pub body_refs: u8,
+    /// The narrowest lane carving that can hold this call.
+    pub min_shape: LaneShape,
+    /// Whether the call pushes a result; `None` = not declared, so
+    /// statement segmentation refuses rather than guesses.
+    pub pushes_result: Option<bool>,
+}
+
+impl FnSpec {
+    /// The uncovered slot — refused everywhere.
+    pub const REFUSED: FnSpec = FnSpec {
+        stack_arity: None,
+        body_refs: 0,
+        min_shape: LaneShape::Pairs,
+        pushes_result: None,
+    };
+}
+
+/// The composed 256-slot semantic table of one vocabulary.
+///
+/// [`compose`](Self::compose) stamps the shared-core half from
+/// [`shared_core`]'s own tables — **never** from the vocabulary — so a
+/// sibling cannot even EXPRESS a divergent opinion about a shared byte in
+/// the table consumers read. The domain half is sampled from the
+/// vocabulary's hooks once, at composition time.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct VocabularyTable {
+    specs: [FnSpec; 256],
+}
+
+impl VocabularyTable {
+    /// Compose a vocabulary's full table: shared core below the floor
+    /// (unforgeable — read from the core, not the vocabulary), the
+    /// vocabulary's hooks above it.
+    #[must_use]
+    pub fn compose<V: Vocabulary>(v: &V) -> Self {
+        let mut specs = [FnSpec::REFUSED; 256];
+        for (b, spec) in specs.iter_mut().enumerate() {
+            let f = FnIndex(b as u8);
+            *spec = if f.0 < DOMAIN_FLOOR {
+                FnSpec {
+                    stack_arity: shared_core::stack_arity(f),
+                    body_refs: shared_core::body_refs(f),
+                    min_shape: shared_core::min_shape(f),
+                    pushes_result: shared_core::pushes_result(f),
+                }
+            } else {
+                FnSpec {
+                    stack_arity: v.domain_stack_arity(f),
+                    body_refs: v.domain_body_refs(f),
+                    min_shape: v.min_shape(f),
+                    pushes_result: v.domain_pushes_result(f),
+                }
+            };
+        }
+        Self { specs }
+    }
+
+    /// The spec for one slot.
+    #[must_use]
+    pub fn spec(&self, f: FnIndex) -> &FnSpec {
+        &self.specs[usize::from(f.0)]
+    }
+
+    /// Operands `f` pops; `None` = refused.
+    #[must_use]
+    pub fn stack_arity(&self, f: FnIndex) -> Option<u8> {
+        self.spec(f).stack_arity
+    }
+
+    /// Function-index value bytes `f` carries.
+    #[must_use]
+    pub fn body_refs(&self, f: FnIndex) -> u8 {
+        self.spec(f).body_refs
+    }
+
+    /// Whether `f` references a body at all.
+    #[must_use]
+    pub fn branches(&self, f: FnIndex) -> bool {
+        self.spec(f).body_refs > 0
+    }
+
+    /// The narrowest shape holding `f`.
+    #[must_use]
+    pub fn min_shape(&self, f: FnIndex) -> LaneShape {
+        self.spec(f).min_shape
+    }
+
+    /// Whether `f` pushes a result; `None` = not declared.
+    #[must_use]
+    pub fn pushes_result(&self, f: FnIndex) -> Option<bool> {
+        self.spec(f).pushes_result
+    }
 }
 
 /// Mechanical conformance: what every vocabulary crate's tests must run.
 pub mod conformance {
-    use super::{DOMAIN_FLOOR, FnIndex, Vocabulary, shared_core};
+    use super::{DOMAIN_FLOOR, FnIndex, Vocabulary, VocabularyTable, shared_core};
 
     /// A way a vocabulary violates the sharing discipline.
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -244,7 +408,8 @@ pub mod conformance {
         SharedCoreDrift {
             /// The byte that drifted.
             f: FnIndex,
-            /// Which table drifted: `"stack_arity"` or `"body_refs"`.
+            /// Which table drifted: `"stack_arity"`, `"body_refs"`, or
+            /// `"pushes_result"`.
             what: &'static str,
         },
         /// `min_shape` reports a shape too narrow to hold the function's own
@@ -291,49 +456,70 @@ pub mod conformance {
     ///
     /// [`Program::references_are_resolvable`]: crate::Program::references_are_resolvable
     /// [`branches_of`]: crate::branches_of
+    ///
+    /// # Table-backed since the data-first ruling (R4)
+    ///
+    /// The wrapper stores the [`VocabularyTable`] composed at validation and
+    /// answers every semantic query FROM that table — not by delegating to
+    /// the inner vocabulary. Delegation left one pathological gap (a
+    /// vocabulary whose methods answer differently across calls); the stored
+    /// table closes it: what was validated is, byte for byte, what is read.
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-    pub struct CheckedVocabulary<V: Vocabulary>(V);
+    pub struct CheckedVocabulary<V: Vocabulary> {
+        vocab: V,
+        table: VocabularyTable,
+    }
 
     impl<V: Vocabulary> CheckedVocabulary<V> {
         /// Borrow the validated vocabulary.
         pub fn inner(&self) -> &V {
-            &self.0
+            &self.vocab
         }
 
         /// Unwrap, discarding the proof.
         pub fn into_inner(self) -> V {
-            self.0
+            self.vocab
+        }
+
+        /// The composed, validated semantic table — the authoritative data
+        /// form everything downstream reads.
+        pub fn table(&self) -> &VocabularyTable {
+            &self.table
         }
     }
 
     impl<V: Vocabulary> Vocabulary for CheckedVocabulary<V> {
         fn domain_stack_arity(&self, f: FnIndex) -> Option<u8> {
-            self.0.domain_stack_arity(f)
+            self.vocab.domain_stack_arity(f)
         }
         fn domain_body_refs(&self, f: FnIndex) -> u8 {
-            self.0.domain_body_refs(f)
+            self.vocab.domain_body_refs(f)
         }
-        // The composed methods delegate too — conformance validated the
-        // COMPOSED answers, so the wrapper must forward them rather than
-        // re-derive from the hooks (a vocabulary with overridden composed
-        // methods would otherwise answer differently through the wrapper
-        // than it was validated as).
+        fn domain_pushes_result(&self, f: FnIndex) -> Option<bool> {
+            self.vocab.domain_pushes_result(f)
+        }
+        // The composed methods read the VALIDATED TABLE, never the inner
+        // vocabulary: what was checked is what answers.
         fn stack_arity(&self, f: FnIndex) -> Option<u8> {
-            self.0.stack_arity(f)
+            self.table.stack_arity(f)
         }
         fn body_refs(&self, f: FnIndex) -> u8 {
-            self.0.body_refs(f)
+            self.table.body_refs(f)
         }
         fn branches(&self, f: FnIndex) -> bool {
-            self.0.branches(f)
+            self.table.branches(f)
         }
         fn min_shape(&self, f: FnIndex) -> crate::LaneShape {
-            self.0.min_shape(f)
+            self.table.min_shape(f)
+        }
+        fn pushes_result(&self, f: FnIndex) -> Option<bool> {
+            self.table.pushes_result(f)
         }
     }
 
     /// Validate a vocabulary and, on success, return the proof-carrying
-    /// wrapper program traversal requires.
+    /// wrapper program traversal requires — carrying the composed
+    /// [`VocabularyTable`] it was validated as.
     ///
     /// # Errors
     ///
@@ -342,7 +528,8 @@ pub mod conformance {
     /// assertion without taking ownership.
     pub fn validate<V: Vocabulary>(v: V) -> Result<CheckedVocabulary<V>, ConformanceError> {
         check(&v)?;
-        Ok(CheckedVocabulary(v))
+        let table = VocabularyTable::compose(&v);
+        Ok(CheckedVocabulary { vocab: v, table })
     }
 
     /// Check a vocabulary against the sharing discipline, over the full
@@ -368,6 +555,12 @@ pub mod conformance {
                     return Err(ConformanceError::SharedCoreDrift {
                         f,
                         what: "body_refs",
+                    });
+                }
+                if v.pushes_result(f) != shared_core::pushes_result(f) {
+                    return Err(ConformanceError::SharedCoreDrift {
+                        f,
+                        what: "pushes_result",
                     });
                 }
             }
@@ -618,6 +811,73 @@ mod tests {
             check(&NarrowShapeVocab),
             Err(ConformanceError::ShapeTooNarrowForRefs {
                 f: FnIndex::IF_ELSE
+            })
+        );
+    }
+
+    #[test]
+    fn the_composed_tables_shared_half_is_unforgeable() {
+        // The data-first strengthening: compose() reads the shared half from
+        // the core, never from the vocabulary — so even the DRIFTING
+        // vocabulary's table carries the correct ADD. The drift exists only
+        // in its methods, where check() still rejects it. Both facts
+        // together: the table cannot express the defect, and the vocabulary
+        // that tries never gets a table.
+        let table = VocabularyTable::compose(&DriftingVocab);
+        assert_eq!(table.stack_arity(FnIndex::ADD), Some(2));
+        assert_eq!(DriftingVocab.stack_arity(FnIndex::ADD), Some(1));
+        assert!(conformance::validate(DriftingVocab).is_err());
+    }
+
+    #[test]
+    fn the_checked_wrapper_answers_from_its_validated_table() {
+        let checked = conformance::validate(DomainVocab).expect("DomainVocab conforms");
+        // Shared core through the table: expressions push, control does not,
+        // uncovered stays None.
+        assert_eq!(checked.pushes_result(FnIndex::ADD), Some(true));
+        assert_eq!(checked.pushes_result(FnIndex::REPEAT), Some(false));
+        assert_eq!(checked.pushes_result(FnIndex::WAIT), None);
+        // Domain half sampled from the hooks; the undeclared pushes column
+        // defaults to None (refused by segmentation, never guessed).
+        assert_eq!(checked.table().stack_arity(FnIndex(0x90)), Some(1));
+        assert_eq!(checked.table().pushes_result(FnIndex(0x90)), None);
+        // Table and composed methods agree byte-for-byte — the methods READ
+        // the table, so disagreement is unrepresentable.
+        for b in 0..=255u8 {
+            let f = FnIndex(b);
+            assert_eq!(checked.stack_arity(f), checked.table().stack_arity(f));
+            assert_eq!(checked.body_refs(f), checked.table().body_refs(f));
+        }
+    }
+
+    #[test]
+    fn conformance_fires_on_a_pushes_drift_too() {
+        // The new column is a new drift channel; it must be guarded like the
+        // other two. ADD claiming to push nothing would silently break
+        // statement segmentation for every consumer.
+        struct PushDriftVocab;
+        impl Vocabulary for PushDriftVocab {
+            fn domain_stack_arity(&self, _f: FnIndex) -> Option<u8> {
+                None
+            }
+            fn domain_body_refs(&self, _f: FnIndex) -> u8 {
+                0
+            }
+            fn pushes_result(&self, f: FnIndex) -> Option<bool> {
+                if f == FnIndex::ADD {
+                    Some(false)
+                } else if f.0 < DOMAIN_FLOOR {
+                    shared_core::pushes_result(f)
+                } else {
+                    None
+                }
+            }
+        }
+        assert_eq!(
+            check(&PushDriftVocab),
+            Err(ConformanceError::SharedCoreDrift {
+                f: FnIndex::ADD,
+                what: "pushes_result",
             })
         );
     }

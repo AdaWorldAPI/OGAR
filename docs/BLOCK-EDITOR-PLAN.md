@@ -579,3 +579,83 @@ panic edge, and fixing it surfaced a second defect the review had not seen:
    universal forever, `0x90..=0xFF` vocabulary-local forever — moving the
    floor would reinterpret persisted programs. Documented on the constant
    and pinned by a `const` assert whose message says why the "fix" is wrong.
+
+## Design rulings R1–R9 — ratified via the operator's external-review loop (2026-08-05)
+
+The nine open questions from the reusable-surface brief came back ruled.
+Recorded here as the arc's canon; items marked *(operator)* stay gated.
+
+1. **R1** — `ogar-loco` is the authoritative shared ABI; vocabulary crates
+   carry only domain extensions and membranes.
+2. **R2** — `0x00..=0x8F` is universal permanent ABI; `0x90..=0xFF` is
+   sibling-local. (Already pinned in code by the `DOMAIN_FLOOR` const
+   assert.) A sibling may EXTEND, never REINTERPRET, the low range.
+3. **R3** — the **full classid** selects the vocabulary, not merely the
+   concept domain: multiple semantic skins per domain are permitted; the
+   payload never becomes self-describing.
+4. **R4** — vocabulary semantics are **canonical const data**, validated
+   into `CheckedVocabulary`. Landed additively (see grounding note below):
+   `FnSpec` + `VocabularyTable::compose` (shared half stamped from the
+   core — a sibling cannot even EXPRESS a divergent shared-core opinion in
+   the table consumers read) + the wrapper now answering from its stored
+   validated table, never by delegation.
+5. **R5** — `StepMask` addresses **statements, not calls**. Landed:
+   `statements::statement_bounds` (`statement ordinal → [first_call,
+   call_count]`), refusing uncovered/underflowing/dangling bodies, with the
+   new `pushes_result` column (`None` = undeclared = segmentation refuses;
+   a vocabulary that wants maskable bodies declares the column). This
+   dissolves the 64-mask/180-call mismatch: masks address statements.
+6. **R6** — PA `runAfter` semantics lower into **explicit structured
+   calls** or are refused with a diagnostic naming the unsupported edge;
+   never substrate edge-annotations. First implementation: linear
+   `Succeeded` chains + Condition/Switch/Foreach/Until/Scope; refuse real
+   parallel joins and status-dependent branches until the structured
+   vocabulary exists. **Proposed mints *(operator)*:** `PARALLEL(refs…)`,
+   `JOIN(policy)`, `TRY(body)`, `CATCH(status mask, body)`,
+   `FINALLY(body)` — candidate bytes exist in the unallocated shared-core
+   control range (`0x0F..0x1F`); the ids are the operator's, none assumed.
+7. **R7** — stored bodies are the graph authority; graph-flow executes
+   them (`GraphBuilder` = disposable lowering/cache, never the persisted
+   authority). Arbitrary `GoTo` stays a graph-flow facility or is refused
+   at lowering; stored control is structured (calls + body references).
+8. **R8** — sessions are substrate rows + storage versions; replay = load
+   program version, load session version, resume from statement ordinal,
+   **re-run gates** (never replay an old verdict), record oracle
+   consultations (request/result hashes, grading, compiled-template id).
+9. **R9** — oracle output is admitted ONLY through the same
+   parse/cast/conformance path as human-authored programs; grammar
+   constraint improves yield, validation remains the authority; large
+   shortcode spaces ship as scope-local codebooks + Inventory minting,
+   never a flat 4000-entry enum.
+
+**Deliberately still operator-gated:** the rung-2 144-atom unification —
+choosing which catalogue becomes byte-stable canon is semantic
+legislation, not implementation cleanup. The template vocabulary mint
+waits on it.
+
+**Grain-of-salt grounding on R4 (measured, not asserted):** the trait
+break ChatGPT sketched (`const DOMAIN` table as the only authoring form)
+was NOT taken. Blast radius today is tiny (only `BlocklyVocabulary` and
+in-crate tests implement the trait), but the soundness property — one
+validated table, methods that cannot disagree with it — lands fully
+additively via `compose()` + the table-backed wrapper, and `ogar-blockly`
+compiles UNTOUCHED as the non-breakage proof. The const-table *authoring*
+surface is deferred until the first real domain vocabulary exists to
+ground it; deciding an authoring API with zero real authors is the
+ungrounded break the grain-of-salt directive forbids.
+
+**The projection-engine reframe (recorded framing, 2026-08-05):** the
+companion review's sharpest observation — this surface has no AST and no
+compiler middle: the fixed-size call body IS the semantic object, the
+ClassView is the schema, and every syntax (Blockly, elixir-shaped text,
+forms, JSON, future Cypher/Mermaid) is an interchangeable **projection
+adapter** (`dto_to_X` / `X_to_dto`) over the one canonical DTO. Edits are
+field-local (no parser invalidation, no AST rebuild). The blockly-rs
+inverse cast (stored calls → Blockly JSON) is the first `dto_to_blocks`
+adapter and the template text is "an editable pretty-printer." One
+precision correction so the framing doesn't calcify wrong: the DTO is not
+`command[256] + payload[256]` — it is 30 lanes × `classid(4)+payload(12)`
+carved into ≤180/120/90 `(function:value)` calls; 256 is the codebook
+cardinality, not the array length. A possible rename of `ogar-loco` to
+reflect the projection-engine role is deferred to the pre-flip window
+(the cheapest moment; blockly-rs does not yet dep the crate directly).
