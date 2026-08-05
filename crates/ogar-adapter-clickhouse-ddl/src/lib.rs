@@ -227,7 +227,7 @@ fn quote_ch_ident(name: &str) -> String {
         && name
             .chars()
             .next()
-            .map_or(false, |c| c.is_ascii_alphabetic() || c == '_')
+            .is_some_and(|c| c.is_ascii_alphabetic() || c == '_')
         && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_');
     if bare {
         name.to_string()

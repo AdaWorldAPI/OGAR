@@ -55,10 +55,7 @@
 
 use std::path::Path;
 
-use ogar_vocab::{
-    ActionDef, ActionSubject, Association, AssociationKind, Attribute, Class, EnterEffect,
-    GuardFailurePolicy, KausalSpec, Language, ModalSpec, TemporalSpec,
-};
+use ogar_vocab::{ActionDef, Class};
 
 /// The namespace prefix for OGIT-Elixir mappings.
 ///
@@ -285,6 +282,10 @@ fn extract_oban_actions(_module: &ElixirModule) -> Vec<ActionDef> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use ogar_vocab::{
+        ActionSubject, Association, AssociationKind, Attribute, EnterEffect, GuardFailurePolicy,
+        KausalSpec, Language, ModalSpec, TemporalSpec,
+    };
 
     /// Locked-shape test for an Ecto.Schema:
     ///

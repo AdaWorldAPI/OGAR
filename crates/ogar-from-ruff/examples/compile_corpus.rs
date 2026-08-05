@@ -27,7 +27,7 @@
 //! Port examples: "healthcare", "odoo", "woa", "q2"
 
 use std::fs::File;
-use std::io::{BufRead, BufReader, Write};
+use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 
 use ogar_from_ruff::mint::compile_graph_csharp;
@@ -41,7 +41,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<String> = std::env::args().collect();
 
     if args.len() < 3 {
-        eprintln!("Usage: {} <corpus.ndjson[.gz]> <domain> <port> [output.json[.gz]]", args[0]);
+        eprintln!(
+            "Usage: {} <corpus.ndjson[.gz]> <domain> <port> [output.json[.gz]]",
+            args[0]
+        );
         eprintln!("  Domain:   medcare | odoo | woa | q2 | ...");
         eprintln!("  Port:     healthcare | odoo | woa | q2 | ...");
         std::process::exit(1);
@@ -65,8 +68,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     eprintln!("loaded ndjson file ({} bytes)", ndjson_text.len());
 
     // Parse ndjson into Triple objects (validates predicate vocabulary).
-    let triples = from_ndjson(&ndjson_text)
-        .map_err(|e| format!("failed to parse ndjson: {}", e))?;
+    let triples =
+        from_ndjson(&ndjson_text).map_err(|e| format!("failed to parse ndjson: {}", e))?;
     eprintln!("parsed {} triples", triples.len());
 
     // Reassemble into a ModelGraph (arguments: triples first, then namespace/domain).
@@ -74,11 +77,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     eprintln!("reassembled {} classes", graph.models.len());
 
     let total_fields: usize = graph.models.iter().map(|m| m.fields.len()).sum();
-    let total_associations: usize = graph
-        .models
-        .iter()
-        .flat_map(|m| &m.associations)
-        .count();
+    let total_associations: usize = graph.models.iter().flat_map(|m| &m.associations).count();
     eprintln!(
         "        {} total fields, {} total associations",
         total_fields, total_associations
@@ -101,8 +100,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     // Report facet distribution.
-    let n_nonzero_classid = compiled.iter().filter(|c| c.facet.facet_classid() != 0).count();
-    eprintln!("facet:      {} → classid 0x00000000, {} non-zero", compiled.len() - n_nonzero_classid, n_nonzero_classid);
+    let n_nonzero_classid = compiled
+        .iter()
+        .filter(|c| c.facet.facet_classid() != 0)
+        .count();
+    eprintln!(
+        "facet:      {} → classid 0x00000000, {} non-zero",
+        compiled.len() - n_nonzero_classid,
+        n_nonzero_classid
+    );
 
     // Serialize to JSON if output path is provided and serde feature is enabled.
     #[cfg(feature = "serde")]
@@ -116,9 +122,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     #[cfg(not(feature = "serde"))]
     {
         if output_path.is_some() {
-            eprintln!(
-                "ERROR: JSON output requested, but serde feature is not enabled."
-            );
+            eprintln!("ERROR: JSON output requested, but serde feature is not enabled.");
             eprintln!("Rebuild with: cargo run --features serde -- ...");
             std::process::exit(1);
         }
@@ -145,7 +149,7 @@ fn read_ndjson_corpus(path: &Path) -> Result<String, Box<dyn std::error::Error>>
                         path.display(),
                         gz_path.display()
                     )
-                    .into())
+                    .into());
                 }
             }
         }

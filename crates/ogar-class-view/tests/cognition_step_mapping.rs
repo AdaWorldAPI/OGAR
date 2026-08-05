@@ -32,12 +32,12 @@ use ogar_vocab::ActionDef;
 /// Lower an `ActionDef` onto the `UnifiedStep` shape. Total on the fields
 /// `UnifiedStep` needs from an action:
 ///   - `step_id`    <- `a.identity` (the numeric `StepId` is FNV-1a-derived
-///                     downstream via `UnifiedStep::id`, not stored here).
+///     downstream via `UnifiedStep::id`, not stored here).
 ///   - `step_type`  <- `a.predicate`.
 ///   - `status`     <- `StepStatus::Pending` (the real initial variant; a
-///                     freshly lifted action has not started executing).
+///     freshly lifted action has not started executing).
 ///   - `depends_on` <- `[]` (a.reads could seed this in a follow-up; out of
-///                     scope for this probe).
+///     scope for this probe).
 fn action_to_step(a: &ActionDef) -> UnifiedStep {
     UnifiedStep {
         step_id: a.identity.clone(),
