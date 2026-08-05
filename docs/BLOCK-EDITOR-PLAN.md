@@ -721,3 +721,34 @@ All five landed; nothing on #241's gated list was touched.
 Open questions the handover left, both resolved here: **OQ-1** (name
 placement) → in `FnSpec`. **OQ-2** (144 shared slots = 144 rung-2 atoms) →
 left as recorded numerology; not addressed, not ruled on.
+
+## PROBE-ORACLE-FUNNEL Stage 0 — the funnel discriminates (measured, 2026-08-05)
+
+Harness: `crates/ogar-loco/examples/funnel_probe.rs` (deterministic, SplitMix64
+seed `0x9E3779B97F4A7C15`, N=1000/arm, Pairs, len 1..=16). Pre-registration
+with expectations E1–E4 written BEFORE the run lives consumer-side (lance-graph
+`.claude/plans/oracle-funnel-probe-v1.md`); the probe consumes only shipped
+gates — `validate` (W-1 path), `statement_bounds` (R5), `FunnelTally` (W-4),
+the empty-domain blockly core. No LLM, no API, no mints.
+
+Measured (all four pre-registered expectations met):
+
+| arm | model of the generator | survived | dominant refusal |
+|---|---|---|---|
+| R (floor) | uniform random bytes | 5/1000 (0.5%) | `StatementUncovered` 831 |
+| G (mid) | knows the legend, not the grammar | 25/1000 (2.5%) | `StatementUnderflow` 970 |
+| W (ceiling) | stack-aware walk | 1000/1000 (100%) | — (stmts mean 2.32, max 8) |
+
+- **E4 (the KILL) passes wide:** R↔W spread 99.5 points ≥ 50 — the
+  refuse-don't-guess firewall genuinely discriminates; an LLM arm (Stage 1,
+  consumer-side, gated) is justified on this vocabulary.
+- **The extra finding: the legend is not the grammar.** Arm G sits at the
+  floor (2.5% vs 0.5%), not midway — vocabulary knowledge buys almost
+  nothing; ~all constraint lives in the stack discipline. A Stage-1 prompt
+  must teach the postfix discipline, not merely list the table.
+- **Legend cost anchor:** 50 named+covered slots → 1531 bytes ≈ 382 tokens
+  (bytes/4 estimate) — negligible prompt overhead.
+- **Honest boundary:** bodies ≤16 calls / Pairs / single-byte immediates, so
+  `BodyError` (entry gate) is structurally unexercised; Stage 0 measures the
+  segmentation gate. `FunnelTally`'s gate-identity mapping spot-checked
+  (underflow lands on `StatementUnderflow`).
