@@ -41,7 +41,8 @@
 //! the substrate's, per vocabulary. A `Program` carries bodies and the caller
 //! supplies keys — the same boundary [`crate::node`] draws.
 
-use crate::{Call, FunctionBody, Vocabulary};
+use crate::vocabulary::conformance::CheckedVocabulary;
+use crate::{Call, FunctionBody, MAX_VALUES_PER_CALL, Vocabulary};
 
 /// One script's functions. Index `0` is the entry.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -81,12 +82,25 @@ impl Program {
     /// The vocabulary is a parameter because *which value bytes are
     /// references* is a per-function fact ([`Vocabulary::body_refs`]) — the
     /// same bytes under a different vocabulary could be plain immediates.
+    /// It must arrive as a [`CheckedVocabulary`] because this walk indexes a
+    /// call's fixed three value bytes by `body_refs`: an unvalidated
+    /// vocabulary claiming more references than a call can carry would drive
+    /// that indexing out of bounds. Validation bounds it (`body_refs ≤ 3`
+    /// everywhere), so holding the wrapper IS the proof — see
+    /// [`crate::vocabulary::conformance::validate`].
     #[must_use]
-    pub fn references_are_resolvable<V: Vocabulary>(&self, v: &V) -> bool {
+    pub fn references_are_resolvable<V: Vocabulary>(&self, v: &CheckedVocabulary<V>) -> bool {
         for body in &self.functions {
             for call in body.calls() {
-                let n = v.body_refs(call.function);
-                for slot in 0..usize::from(n) {
+                let n = usize::from(v.body_refs(call.function));
+                // Guaranteed by validation; asserted so a hypothetical
+                // non-deterministic vocabulary fails loudly in debug builds
+                // instead of panicking on the index below.
+                debug_assert!(
+                    n <= MAX_VALUES_PER_CALL,
+                    "validated body_refs exceeds a call"
+                );
+                for slot in 0..n {
                     let idx = usize::from(call.values[slot]);
                     if idx == 0 || idx >= self.functions.len() {
                         return false;
@@ -103,12 +117,22 @@ impl Program {
 ///
 /// Useful to a consumer walking a program: it says *which* bytes are function
 /// indices without re-deriving [`Vocabulary::body_refs`] call by call.
+/// Requires a [`CheckedVocabulary`] for the same reason as
+/// [`Program::references_are_resolvable`]: the slice below is bounded by the
+/// validated `body_refs ≤ 3` guarantee.
 #[must_use]
-pub fn branches_of<V: Vocabulary>(v: &V, body: &FunctionBody) -> Vec<(usize, Call, Vec<u8>)> {
+pub fn branches_of<V: Vocabulary>(
+    v: &CheckedVocabulary<V>,
+    body: &FunctionBody,
+) -> Vec<(usize, Call, Vec<u8>)> {
     body.calls()
         .enumerate()
         .filter_map(|(i, c)| {
             let n = usize::from(v.body_refs(c.function));
+            debug_assert!(
+                n <= MAX_VALUES_PER_CALL,
+                "validated body_refs exceeds a call"
+            );
             (n > 0).then(|| (i, c, c.values[..n].to_vec()))
         })
         .collect()
@@ -160,7 +184,7 @@ mod tests {
 
     #[test]
     fn every_reference_resolves_and_none_points_at_the_entry() {
-        let v = EmptyVocab;
+        let v = crate::vocabulary::conformance::validate(EmptyVocab).unwrap();
         let prog = repeat_ten();
         assert!(prog.references_are_resolvable(&v));
         assert_eq!(prog.len(), 2);
@@ -217,14 +241,16 @@ mod tests {
             ],
         };
         // Under the empty vocabulary 0x90's value byte is a plain immediate.
-        assert!(prog.references_are_resolvable(&EmptyVocab));
+        let empty = crate::vocabulary::conformance::validate(EmptyVocab).unwrap();
+        assert!(prog.references_are_resolvable(&empty));
         // Under a vocabulary where 0x90 branches, 7 is a dangling reference.
-        assert!(!prog.references_are_resolvable(&BranchyDomain));
+        let branchy = crate::vocabulary::conformance::validate(BranchyDomain).unwrap();
+        assert!(!prog.references_are_resolvable(&branchy));
     }
 
     #[test]
     fn branches_of_reports_which_bytes_are_function_indices() {
-        let v = EmptyVocab;
+        let v = crate::vocabulary::conformance::validate(EmptyVocab).unwrap();
         let prog = repeat_ten();
         let b = branches_of(&v, prog.entry());
         assert_eq!(b.len(), 1, "one branching call in the entry");

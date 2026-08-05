@@ -158,12 +158,15 @@ pub mod shared_core {
     /// `Pairs` — a one-byte immediate would truncate the else arm into
     /// nothing, and the program would run its then-branch and silently skip
     /// the else. A cast refuses rather than narrowing; this is what it
-    /// consults.
+    /// consults. (No shared-core function carries three references today;
+    /// the `Quads` arm exists so the mapping is total by construction
+    /// rather than by the current table's accident.)
     #[must_use]
     pub fn min_shape(f: FnIndex) -> LaneShape {
         match body_refs(f) {
             0 | 1 => LaneShape::Pairs,
-            _ => LaneShape::Triples,
+            2 => LaneShape::Triples,
+            _ => LaneShape::Quads,
         }
     }
 }
@@ -213,10 +216,18 @@ pub trait Vocabulary {
     }
 
     /// The narrowest shape that can hold `f`'s body references.
+    ///
+    /// Three references are LEGAL (they fit `Quads` exactly), so the default
+    /// maps them there rather than to `Triples` — an earlier draft's
+    /// `_ => Triples` would have made [`conformance::check`] wrongly reject a
+    /// conforming three-reference domain function. Four or more references
+    /// fit no shape; the default still answers `Quads` and the conformance
+    /// shape check is what refuses them.
     fn min_shape(&self, f: FnIndex) -> LaneShape {
         match self.body_refs(f) {
             0 | 1 => LaneShape::Pairs,
-            _ => LaneShape::Triples,
+            2 => LaneShape::Triples,
+            _ => LaneShape::Quads,
         }
     }
 }
@@ -261,6 +272,78 @@ pub mod conformance {
     }
 
     impl core::error::Error for ConformanceError {}
+
+    /// A vocabulary that has PASSED [`check`] — the proof-carrying form.
+    ///
+    /// Program traversal ([`Program::references_are_resolvable`],
+    /// [`branches_of`]) requires this wrapper rather than a bare
+    /// [`Vocabulary`], because those walks index a call's fixed three value
+    /// bytes by `body_refs` — under an unvalidated vocabulary claiming more
+    /// than three references that indexing would panic. The wrapper turns
+    /// "every consumer remembers to run the conformance test" into a type:
+    /// it cannot be constructed except through [`validate`], so holding one
+    /// IS the proof that `body_refs ≤ 3` everywhere (the shape check bounds
+    /// it: no [`LaneShape`](crate::LaneShape) holds more than three value
+    /// bytes).
+    ///
+    /// It implements [`Vocabulary`] by delegation, so it composes anywhere a
+    /// vocabulary is accepted.
+    ///
+    /// [`Program::references_are_resolvable`]: crate::Program::references_are_resolvable
+    /// [`branches_of`]: crate::branches_of
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub struct CheckedVocabulary<V: Vocabulary>(V);
+
+    impl<V: Vocabulary> CheckedVocabulary<V> {
+        /// Borrow the validated vocabulary.
+        pub fn inner(&self) -> &V {
+            &self.0
+        }
+
+        /// Unwrap, discarding the proof.
+        pub fn into_inner(self) -> V {
+            self.0
+        }
+    }
+
+    impl<V: Vocabulary> Vocabulary for CheckedVocabulary<V> {
+        fn domain_stack_arity(&self, f: FnIndex) -> Option<u8> {
+            self.0.domain_stack_arity(f)
+        }
+        fn domain_body_refs(&self, f: FnIndex) -> u8 {
+            self.0.domain_body_refs(f)
+        }
+        // The composed methods delegate too — conformance validated the
+        // COMPOSED answers, so the wrapper must forward them rather than
+        // re-derive from the hooks (a vocabulary with overridden composed
+        // methods would otherwise answer differently through the wrapper
+        // than it was validated as).
+        fn stack_arity(&self, f: FnIndex) -> Option<u8> {
+            self.0.stack_arity(f)
+        }
+        fn body_refs(&self, f: FnIndex) -> u8 {
+            self.0.body_refs(f)
+        }
+        fn branches(&self, f: FnIndex) -> bool {
+            self.0.branches(f)
+        }
+        fn min_shape(&self, f: FnIndex) -> crate::LaneShape {
+            self.0.min_shape(f)
+        }
+    }
+
+    /// Validate a vocabulary and, on success, return the proof-carrying
+    /// wrapper program traversal requires.
+    ///
+    /// # Errors
+    ///
+    /// The first [`ConformanceError`] found, naming the byte and the defect
+    /// — same gate as [`check`], which remains available for test-time
+    /// assertion without taking ownership.
+    pub fn validate<V: Vocabulary>(v: V) -> Result<CheckedVocabulary<V>, ConformanceError> {
+        check(&v)?;
+        Ok(CheckedVocabulary(v))
+    }
 
     /// Check a vocabulary against the sharing discipline, over the full
     /// 256-byte codebook.
@@ -471,6 +554,61 @@ mod tests {
                 what: "stack_arity",
             })
         );
+    }
+
+    #[test]
+    fn three_body_references_are_legal_and_default_to_quads() {
+        // The default min_shape must map 3 refs to Quads (they fit exactly).
+        // An earlier draft mapped everything >=2 to Triples, which would have
+        // wrongly rejected this conforming vocabulary — surfaced while
+        // hardening the >3 panic edge, pinned here so it cannot regress.
+        struct TripleRefVocab;
+        impl Vocabulary for TripleRefVocab {
+            fn domain_stack_arity(&self, f: FnIndex) -> Option<u8> {
+                (f.0 == 0x90).then_some(0)
+            }
+            fn domain_body_refs(&self, f: FnIndex) -> u8 {
+                if f.0 == 0x90 { 3 } else { 0 }
+            }
+        }
+        assert_eq!(
+            TripleRefVocab.min_shape(FnIndex(0x90)),
+            LaneShape::Quads,
+            "three refs fit Quads exactly"
+        );
+        assert_eq!(check(&TripleRefVocab), Ok(()));
+    }
+
+    #[test]
+    fn validate_refuses_a_vocabulary_whose_refs_exceed_a_calls_capacity() {
+        // The panic edge the proof-carrying wrapper closes: body_refs beyond
+        // MAX_VALUES_PER_CALL would drive `call.values[slot]` out of bounds
+        // in program traversal. No LaneShape holds more than three value
+        // bytes, so even a min_shape override answering Quads cannot make
+        // 200 references conform — validate must refuse, and traversal is
+        // unreachable without the wrapper it refused to construct.
+        struct HostileVocab;
+        impl Vocabulary for HostileVocab {
+            fn domain_stack_arity(&self, _f: FnIndex) -> Option<u8> {
+                Some(0)
+            }
+            fn domain_body_refs(&self, f: FnIndex) -> u8 {
+                if f.0 == 0x90 { 200 } else { 0 }
+            }
+            fn min_shape(&self, _f: FnIndex) -> LaneShape {
+                LaneShape::Quads
+            }
+        }
+        assert_eq!(
+            conformance::validate(HostileVocab).err(),
+            Some(ConformanceError::ShapeTooNarrowForRefs { f: FnIndex(0x90) })
+        );
+        // Silence twin: validate hands back the proof for conforming
+        // vocabularies, and the wrapper answers exactly as the inner one.
+        let checked = conformance::validate(EmptyVocab).expect("EmptyVocab conforms");
+        assert_eq!(checked.stack_arity(FnIndex::ADD), Some(2));
+        assert_eq!(checked.body_refs(FnIndex::IF_ELSE), 2);
+        assert_eq!(checked.inner().body_refs(FnIndex::IF_ELSE), 2);
     }
 
     #[test]

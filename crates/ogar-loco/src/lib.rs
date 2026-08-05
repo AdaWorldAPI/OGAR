@@ -128,6 +128,7 @@ pub use node::FunctionNode;
 pub use pool::{Constant, ConstantPool, PoolError};
 pub use program::{Program, branches_of};
 pub use vocabulary::Vocabulary;
+pub use vocabulary::conformance::CheckedVocabulary;
 
 // ── The function-body budget ────────────────────────────────────────────────
 
@@ -241,12 +242,31 @@ const _: () = assert!(LaneShape::Quads.calls_per_function() == 90);
 /// one-compare test for "this op is vocabulary-specific", which a renderer,
 /// validator, or compiler can branch on without a table lookup.
 ///
+/// # This boundary is PERMANENT, not today's allocation
+///
+/// `0x00..=0x8F` is the universal ABI **forever**; `0x90..=0xFF` is
+/// vocabulary-local **forever**. Stored programs encode the boundary
+/// implicitly in every function byte they carry: moving the floor would
+/// silently reinterpret persisted bytes — a shared-core opcode becoming
+/// vocabulary-local (or the reverse) under a reader that never changed the
+/// data. That is the same layout-reclaim hazard the substrate's
+/// reserve-don't-reclaim rule exists to forbid. Unallocated shared-core
+/// slots (`0x0F..0x1F` gaps, `0x86..0x8F`, …) stay reserved for the CORE to
+/// mint; unallocated domain slots stay reserved for each vocabulary. Neither
+/// side ever annexes the other's range.
+///
 /// In the first vocabulary (`ogar-blockly`) the domain range hosts the
 /// Scratch-style *device families* (motion, looks, sound, …) and the constant
-/// is re-exported there under its historical name `DEVICE_FAMILY_FLOOR`. The
-/// range above the floor is **reserved, not allocated** — entries mint when a
-/// vocabulary needs them. Reserve, don't reclaim.
+/// is re-exported there under its historical name `DEVICE_FAMILY_FLOOR`.
 pub const DOMAIN_FLOOR: u8 = 0x90;
+
+// The permanence pin: changing the floor MUST fail compilation here, and the
+// failure message must say why the "fix" is wrong.
+const _: () = assert!(
+    DOMAIN_FLOOR == 0x90,
+    "DOMAIN_FLOOR is stored-byte ABI: moving it reinterprets every persisted \
+     program; mint inside the existing ranges instead"
+);
 
 /// An index into the **function codebook** — one byte that names any callable
 /// thing in scope.
