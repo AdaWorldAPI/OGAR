@@ -555,3 +555,27 @@ Gates: fmt / clippy `-D warnings` / tests (36 loco + 7 blockly) / rustdoc
    direction call.
 5. All mints stay operator-gated: M1–M3 above, plus the template/flow
    concept domains.
+
+### W6 hardening — proof-carrying vocabularies + the permanent floor (post-#239 review)
+
+External review of #239 (operator's design-discussion loop) surfaced a real
+panic edge, and fixing it surfaced a second defect the review had not seen:
+
+1. **The `>3 body_refs` panic edge — closed by type.** Program traversal
+   indexed `call.values[slot]` with `slot` driven by `v.body_refs()`; an
+   unvalidated vocabulary claiming more than three references panicked.
+   `conformance::validate(v) → CheckedVocabulary<V>` is now the only way to
+   construct the wrapper `Program::references_are_resolvable` and
+   `branches_of` accept — holding it IS the proof `body_refs ≤ 3` everywhere
+   (the shape check bounds it; no `LaneShape` holds more than three value
+   bytes). "Socially and mechanically enforced" became type-enforced.
+2. **The default `min_shape` wrongly rejected THREE references.** The trait
+   default mapped everything ≥2 to `Triples`, so a legal three-reference
+   domain function (fits `Quads` exactly) failed conformance unless the
+   vocabulary overrode `min_shape`. Fixed (`2 → Triples`, `3+ → Quads`) and
+   pinned two-sided: `three_body_references_are_legal_and_default_to_quads`
+   plus the hostile 200-ref vocabulary that `validate` must refuse.
+3. **`DOMAIN_FLOOR` is declared PERMANENT stored-byte ABI.** `0x00..=0x8F`
+   universal forever, `0x90..=0xFF` vocabulary-local forever — moving the
+   floor would reinterpret persisted programs. Documented on the constant
+   and pinned by a `const` assert whose message says why the "fix" is wrong.
