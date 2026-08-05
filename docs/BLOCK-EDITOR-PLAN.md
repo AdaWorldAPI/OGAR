@@ -659,3 +659,24 @@ carved into ≤180/120/90 `(function:value)` calls; 256 is the codebook
 cardinality, not the array length. A possible rename of `ogar-loco` to
 reflect the projection-engine role is deferred to the pre-flip window
 (the cheapest moment; blockly-rs does not yet dep the crate directly).
+
+### Watch item W-PUSHES-1 — `pushes_result` may need a richer closure role (post-#241 review)
+
+The external review of #241 endorsed the statement-boundary rule
+(stack-returns-to-zero after a non-pushing call) and flagged the pressure
+point to watch, not fix: a future domain vocabulary may carry a call that
+**pushes a result AND is legally a complete statement with that result
+discarded** — e.g. a connector invocation that sends an email and returns a
+message id. `pushes_result: Option<bool>` cannot express "produces a
+discardable value", so such a verb would refuse segmentation (safe) or force
+an artificial consumer (awkward), but never mis-group (the refusal path
+protects correctness).
+
+**Ruling: do NOT change now.** No demonstrated consumer requires it; the
+refusal path is the protection. When the pressure arrives — most likely the
+Power-Automate/action vocabulary — the candidate shapes are a
+`ResultBehavior { NoResult, ProducesValue, ProducesDiscardableValue }`
+column or a separate `statement_terminal: bool`. Whichever is chosen must
+land as a new `FnSpec` column with the same `None`-refuses discipline, and
+the trap to avoid is letting "discardable" become a silent default that
+swallows genuinely dangling operands.
