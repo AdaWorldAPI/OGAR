@@ -491,3 +491,67 @@ opt-in.
   what it retires (see `D-BLOCKS-PALETTE` corrections 1 and 2).
 - **The charter traps hold** (a2ui-rs T1/T2/T3): no second vocabulary, behavior
   by address only, no serialization in the hot path.
+
+## W6 — the reusable surface hoist: `ogar-loco` (2026-08-05)
+
+**Operator direction** (verbatim intent): *"Elixir should become just a
+rails-shaped semantic over classid index, 256:256. Not much different than
+blockly, just different vocabulary. It should be a reusable surface for any
+other purposes."* Named next consumers: lance-graph's elixir-shaped compiled
+templates, then Power-Automate-style flows; end state, connecting
+rs-graph-llm (with Rig) + OGAR + lance-graph so execution is replayable.
+
+**What shipped.** The vocabulary-agnostic half of `ogar-blockly` moved one
+level down into a new zero-dep crate **`crates/ogar-loco`**:
+
+- The call ABI: `FnIndex` / `Call` / `LaneShape` / `FunctionBody` /
+  `call_in_slab`, the layout constants, and the budgets — moved verbatim
+  (bytes, semantics, and tests unchanged).
+- `DEVICE_FAMILY_FLOOR` is generalized to **`DOMAIN_FLOOR`**: below =
+  shared computational core (byte-stable across every vocabulary), at/above
+  = the classid-selected vocabulary's own range. `ogar-blockly` re-exports
+  the constant under its historical name.
+- **`vocabulary::shared_core`** — the shared core's `stack_arity` /
+  `body_refs` / `branches` / `min_shape` tables, defined ONCE (transcribed
+  from the proven `blockly-rs` tables: the two-quantity split and the
+  expression arities). Uncovered shared-core bytes (WAIT, STOP, RETURN, …)
+  refuse everywhere; coverage grows here, for everyone.
+- **`trait Vocabulary`** — the seam a sibling codebook implements
+  (`domain_stack_arity` / `domain_body_refs`); composed methods route by the
+  floor. **`vocabulary::conformance::check`** is the mechanical no-drift
+  gate every vocabulary crate must run (verified able to fire: a drifted
+  ADD arity and a truncating `min_shape` are both caught by name).
+- **`node`** (512-B `FunctionNode` round-trip, reserved slot pinned zero),
+  **`pool`** (constant pool, classids still caller-supplied — M3 unchanged),
+  **`program`** (`Program`, `references_are_resolvable` and `branches_of`
+  now vocabulary-parameterized) — hoisted from `blockly-abi`, tests ported.
+- `ogar-blockly` is now the **Blockly/Scratch vocabulary crate over the
+  core**: re-exports the old surface unchanged (census test doubles as the
+  re-export completeness proof; `blockly-rs` compiles with zero changes),
+  keeps `BlockConcept`/`SoaSplit`/`BLOCKS_DOMAIN`, and adds
+  **`BlocklyVocabulary`** (domain hooks empty-and-refusing until device
+  families mint — honest: the device range is reserved, not allocated).
+
+Gates: fmt / clippy `-D warnings` / tests (36 loco + 7 blockly) / rustdoc
+`-D warnings` / density example — all green.
+
+**What the other side wires (deliberately NOT taken here):**
+
+1. The **template vocabulary crate** (sibling of `ogar-blockly`) — gated on
+   the lance-graph rung-2 144-verb unification (its O7 finding: the two
+   shipped 144-vocabularies diverge; an ordinal-pinned codebook forces the
+   ruling) and on its concept-domain mint.
+2. The **flow vocabulary crate** (Power Automate) — plus the structured
+   PARALLEL/JOIN + try/catch-shaped control mints its `runAfter` semantics
+   need. Sequential-subset-first with loud refusal is the recorded stance.
+3. The **`blockly-rs` flip**: `blockly-abi` still carries its own local
+   `node`/`flow`/`program`/`pool` copies (typed on the palette). The float
+   is transient BY OBLIGATION — the flip PR deletes them in favour of the
+   hoisted core + `BlocklyVocabulary`, or the no-second-vocabulary trap
+   stands violated. Until the flip, `ogar-loco`'s copies are the canonical
+   ones (they are the ones a second vocabulary may consume).
+4. How **lance-graph consumes** the core: direct dep on this crate vs the
+   precedented mirror-with-drift-test — an operator-level dependency-
+   direction call.
+5. All mints stay operator-gated: M1–M3 above, plus the template/flow
+   concept domains.
