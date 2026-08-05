@@ -680,3 +680,44 @@ column or a separate `statement_terminal: bool`. Whichever is chosen must
 land as a new `FnSpec` column with the same `None`-refuses discipline, and
 the trap to avoid is letting "discardable" become a silent default that
 swallows genuinely dangling operands.
+
+## Consumer wishlist W-1..W-5 — implemented (lance-graph/rig session, 2026-08-05)
+
+Source: `.claude/handovers/2026-08-05-1430-lance-graph-orchestrator-to-ogar-loco.md`
+(consumer-priority order, from the seat that will consume the loco ABI:
+lance-graph's rig/rs-graph-llm oracle loop + the compiled-template stack).
+All five landed; nothing on #241's gated list was touched.
+
+- **W-1 (closes finding F-1)** — `validate()` now composes the table FIRST
+  and re-checks the shape invariant on the STORED table, not only through
+  the method sweep. The prior order sampled the domain hooks twice
+  (`check` then `compose`), so a phase-unstable vocabulary could pass on
+  one set of answers while the frozen table carried another — including a
+  `body_refs` beyond a call's capacity, reopening the traversal edge
+  `CheckedVocabulary`'s proof exists to close. Two-directional can-fire
+  test: poisoning EITHER sampling is caught, by whichever gate sees it.
+- **W-2** — the `name` column: `shared_core::name` + `Vocabulary::name`/
+  `domain_name`, landing IN `FnSpec` (OQ-1 answered toward "the table
+  stays the single artifact" — a legend is a serialization of the
+  validated table, not a second lookup). Names are NOT coverage: refused
+  entries (`WAIT`, `STOP`, …) are named so a legend can say
+  "exists, refused." A fourth drift channel, guarded like the other three.
+- **W-3** — deferred, as the handover itself specified (ids operator-gated).
+  Its two forcing constraints are now on record for whoever mints: the
+  domain range's 112 slots force recipes over atoms; `pushes_result` must
+  be declared per verb AT mint time, with the silent-mask-coarsening
+  can-fire test (W-PUSHES-1, docs/#242) riding in alongside it.
+- **W-4** — `telemetry::FunnelTally` / `RefusalGate`: a plain data tally
+  over a generate-and-filter batch's outcomes (`ConformanceError` /
+  `StatementError` / `PoolError` → gate → count). Validity feedback only,
+  by design — no scoring, no ranking, no fitness scalar; that boundary
+  stays lance-graph's (the observer-effect payload law).
+- **W-5** — doc-only, in `statements.rs`: the split unit is a sibling
+  function (never a widened mask — `StepMask` stays `u64` forever),
+  statement ordinals restart at 0 per split function, the cut falls on a
+  `statement_bounds` boundary, and which call enters the sibling is the
+  vocabulary's decision — this crate mints no such call.
+
+Open questions the handover left, both resolved here: **OQ-1** (name
+placement) → in `FnSpec`. **OQ-2** (144 shared slots = 144 rung-2 atoms) →
+left as recorded numerology; not addressed, not ruled on.

@@ -170,6 +170,118 @@ pub mod shared_core {
         }
     }
 
+    /// The canonical name of a shared-core slot — the prompt-legend /
+    /// oracle-schema column (wishlist W-2).
+    ///
+    /// Names are NOT coverage: refused-but-real palette entries (`WAIT`,
+    /// `STOP`, …) are named so a legend can say "exists, refused" instead of
+    /// omitting them into apparent nonexistence. [`FnIndex::NOP`] is not an
+    /// operation and has no name. Defined once here so no consumer
+    /// hand-rolls a name map that can drift — a legend becomes a
+    /// serialization of the validated table itself, at the membrane where
+    /// serialization is legal.
+    #[must_use]
+    pub fn name(f: FnIndex) -> Option<&'static str> {
+        Some(match f {
+            FnIndex::IF => "IF",
+            FnIndex::IF_ELSE => "IF_ELSE",
+            FnIndex::REPEAT => "REPEAT",
+            FnIndex::REPEAT_UNTIL => "REPEAT_UNTIL",
+            FnIndex::WHILE => "WHILE",
+            FnIndex::FOREVER => "FOREVER",
+            FnIndex::FOR_EACH => "FOR_EACH",
+            FnIndex::FOR_RANGE => "FOR_RANGE",
+            FnIndex::WAIT => "WAIT",
+            FnIndex::WAIT_UNTIL => "WAIT_UNTIL",
+            FnIndex::STOP => "STOP",
+            FnIndex::BREAK => "BREAK",
+            FnIndex::CONTINUE => "CONTINUE",
+            FnIndex::RETURN => "RETURN",
+            FnIndex::AND => "AND",
+            FnIndex::OR => "OR",
+            FnIndex::NOT => "NOT",
+            FnIndex::TRUE => "TRUE",
+            FnIndex::FALSE => "FALSE",
+            FnIndex::NULL => "NULL",
+            FnIndex::TERNARY => "TERNARY",
+            FnIndex::EQ => "EQ",
+            FnIndex::NEQ => "NEQ",
+            FnIndex::LT => "LT",
+            FnIndex::LTE => "LTE",
+            FnIndex::GT => "GT",
+            FnIndex::GTE => "GTE",
+            FnIndex::ADD => "ADD",
+            FnIndex::SUB => "SUB",
+            FnIndex::MUL => "MUL",
+            FnIndex::DIV => "DIV",
+            FnIndex::POW => "POW",
+            FnIndex::MOD => "MOD",
+            FnIndex::NUMBER => "NUMBER",
+            FnIndex::ABS => "ABS",
+            FnIndex::NEG => "NEG",
+            FnIndex::ROUND => "ROUND",
+            FnIndex::FLOOR => "FLOOR",
+            FnIndex::CEIL => "CEIL",
+            FnIndex::SQRT => "SQRT",
+            FnIndex::LN => "LN",
+            FnIndex::LOG10 => "LOG10",
+            FnIndex::EXP_E => "EXP_E",
+            FnIndex::EXP_10 => "EXP_10",
+            FnIndex::SIN => "SIN",
+            FnIndex::COS => "COS",
+            FnIndex::TAN => "TAN",
+            FnIndex::ASIN => "ASIN",
+            FnIndex::ACOS => "ACOS",
+            FnIndex::ATAN => "ATAN",
+            FnIndex::ATAN2 => "ATAN2",
+            FnIndex::RANDOM_INT => "RANDOM_INT",
+            FnIndex::RANDOM_FLOAT => "RANDOM_FLOAT",
+            FnIndex::CONSTRAIN => "CONSTRAIN",
+            FnIndex::NUMBER_PROPERTY => "NUMBER_PROPERTY",
+            FnIndex::CONSTANT => "CONSTANT",
+            FnIndex::ON_LIST => "ON_LIST",
+            FnIndex::TEXT => "TEXT",
+            FnIndex::JOIN => "JOIN",
+            FnIndex::LENGTH => "LENGTH",
+            FnIndex::CHAR_AT => "CHAR_AT",
+            FnIndex::INDEX_OF => "INDEX_OF",
+            FnIndex::IS_EMPTY => "IS_EMPTY",
+            FnIndex::SUBSTRING => "SUBSTRING",
+            FnIndex::CHANGE_CASE => "CHANGE_CASE",
+            FnIndex::TRIM => "TRIM",
+            FnIndex::CONTAINS => "CONTAINS",
+            FnIndex::APPEND => "APPEND",
+            FnIndex::PRINT => "PRINT",
+            FnIndex::PROMPT => "PROMPT",
+            FnIndex::COUNT => "COUNT",
+            FnIndex::REPLACE => "REPLACE",
+            FnIndex::REVERSE => "REVERSE",
+            FnIndex::LIST_EMPTY => "LIST_EMPTY",
+            FnIndex::LIST_WITH => "LIST_WITH",
+            FnIndex::LIST_REPEAT => "LIST_REPEAT",
+            FnIndex::LIST_LENGTH => "LIST_LENGTH",
+            FnIndex::LIST_IS_EMPTY => "LIST_IS_EMPTY",
+            FnIndex::LIST_INDEX_OF => "LIST_INDEX_OF",
+            FnIndex::LIST_GET => "LIST_GET",
+            FnIndex::LIST_SET => "LIST_SET",
+            FnIndex::LIST_INSERT => "LIST_INSERT",
+            FnIndex::LIST_ADD => "LIST_ADD",
+            FnIndex::LIST_DELETE => "LIST_DELETE",
+            FnIndex::LIST_DELETE_ALL => "LIST_DELETE_ALL",
+            FnIndex::LIST_SUBLIST => "LIST_SUBLIST",
+            FnIndex::LIST_SPLIT => "LIST_SPLIT",
+            FnIndex::LIST_SORT => "LIST_SORT",
+            FnIndex::LIST_CONTAINS => "LIST_CONTAINS",
+            FnIndex::VAR_GET => "VAR_GET",
+            FnIndex::VAR_SET => "VAR_SET",
+            FnIndex::VAR_CHANGE => "VAR_CHANGE",
+            FnIndex::PROC_DEF => "PROC_DEF",
+            FnIndex::PROC_CALL => "PROC_CALL",
+            FnIndex::PROC_ARG => "PROC_ARG",
+            _ => return None,
+        })
+    }
+
     /// Whether a covered shared-core call **pushes a result** onto the stack.
     ///
     /// `Some(true)` for every covered expression (leaves, unary, binary);
@@ -282,6 +394,22 @@ pub trait Vocabulary {
             self.domain_pushes_result(f)
         }
     }
+
+    /// The canonical name of a domain-range function, for legends and
+    /// oracle schemas. Default `None` — an unnamed slot appears in no
+    /// legend, which is honest for reserved space.
+    fn domain_name(&self, _f: FnIndex) -> Option<&'static str> {
+        None
+    }
+
+    /// The name of `f` — shared core first, domain hook above the floor.
+    fn name(&self, f: FnIndex) -> Option<&'static str> {
+        if f.0 < DOMAIN_FLOOR {
+            shared_core::name(f)
+        } else {
+            self.domain_name(f)
+        }
+    }
 }
 
 // ── The canonical data form ─────────────────────────────────────────────────
@@ -307,6 +435,11 @@ pub struct FnSpec {
     /// Whether the call pushes a result; `None` = not declared, so
     /// statement segmentation refuses rather than guesses.
     pub pushes_result: Option<bool>,
+    /// The canonical mnemonic, for legends and oracle schemas; `None` = an
+    /// unnamed (reserved) slot, absent from any legend. Lives IN the spec —
+    /// OQ-1 answered toward "the table stays the single artifact": a legend
+    /// is then a serialization of the validated table, nothing beside it.
+    pub name: Option<&'static str>,
 }
 
 impl FnSpec {
@@ -316,6 +449,7 @@ impl FnSpec {
         body_refs: 0,
         min_shape: LaneShape::Pairs,
         pushes_result: None,
+        name: None,
     };
 }
 
@@ -346,6 +480,7 @@ impl VocabularyTable {
                     body_refs: shared_core::body_refs(f),
                     min_shape: shared_core::min_shape(f),
                     pushes_result: shared_core::pushes_result(f),
+                    name: shared_core::name(f),
                 }
             } else {
                 FnSpec {
@@ -353,6 +488,7 @@ impl VocabularyTable {
                     body_refs: v.domain_body_refs(f),
                     min_shape: v.min_shape(f),
                     pushes_result: v.domain_pushes_result(f),
+                    name: v.domain_name(f),
                 }
             };
         }
@@ -393,6 +529,12 @@ impl VocabularyTable {
     #[must_use]
     pub fn pushes_result(&self, f: FnIndex) -> Option<bool> {
         self.spec(f).pushes_result
+    }
+
+    /// The canonical mnemonic of `f`; `None` = unnamed (reserved) slot.
+    #[must_use]
+    pub fn name(&self, f: FnIndex) -> Option<&'static str> {
+        self.spec(f).name
     }
 }
 
@@ -515,20 +657,48 @@ pub mod conformance {
         fn pushes_result(&self, f: FnIndex) -> Option<bool> {
             self.table.pushes_result(f)
         }
+        fn domain_name(&self, f: FnIndex) -> Option<&'static str> {
+            self.vocab.domain_name(f)
+        }
+        fn name(&self, f: FnIndex) -> Option<&'static str> {
+            self.table.name(f)
+        }
     }
 
     /// Validate a vocabulary and, on success, return the proof-carrying
     /// wrapper program traversal requires — carrying the composed
     /// [`VocabularyTable`] it was validated as.
     ///
+    /// # Compose-then-check (W-1, closing finding F-1)
+    ///
+    /// The table is composed FIRST, and the shape invariant is then checked
+    /// on the **stored table itself** — not only through the method sweep.
+    /// The earlier order (`check` then `compose`) sampled the domain hooks
+    /// twice, so a phase-unstable vocabulary could pass the check on one set
+    /// of answers while the table froze another — including a `body_refs`
+    /// beyond a call's capacity, re-opening the traversal edge the wrapper's
+    /// proof exists to close. Now the artifact everything reads is the
+    /// proven object, to zero resamplings: [`check`]'s method sweep still
+    /// runs (drift detection inherently reads the methods), and whichever
+    /// sampling a hostile vocabulary poisons, one of the two gates fires.
+    ///
     /// # Errors
     ///
-    /// The first [`ConformanceError`] found, naming the byte and the defect
-    /// — same gate as [`check`], which remains available for test-time
-    /// assertion without taking ownership.
+    /// The first [`ConformanceError`] found, naming the byte and the defect.
+    /// [`check`] remains available for test-time assertion without taking
+    /// ownership.
     pub fn validate<V: Vocabulary>(v: V) -> Result<CheckedVocabulary<V>, ConformanceError> {
-        check(&v)?;
         let table = VocabularyTable::compose(&v);
+        check(&v)?;
+        // The stored table is the proven object: re-assert the shape
+        // invariant on the exact bytes the wrapper will carry.
+        for b in 0..=255u8 {
+            let f = FnIndex(b);
+            let spec = table.spec(f);
+            if spec.min_shape.values_per_call() < usize::from(spec.body_refs) {
+                return Err(ConformanceError::ShapeTooNarrowForRefs { f });
+            }
+        }
         Ok(CheckedVocabulary { vocab: v, table })
     }
 
@@ -562,6 +732,9 @@ pub mod conformance {
                         f,
                         what: "pushes_result",
                     });
+                }
+                if v.name(f) != shared_core::name(f) {
+                    return Err(ConformanceError::SharedCoreDrift { f, what: "name" });
                 }
             }
             // Everywhere: the reported minimum shape must actually hold the
@@ -848,6 +1021,120 @@ mod tests {
             assert_eq!(checked.stack_arity(f), checked.table().stack_arity(f));
             assert_eq!(checked.body_refs(f), checked.table().body_refs(f));
         }
+    }
+
+    #[test]
+    fn validate_catches_a_phase_unstable_vocabulary_in_either_phase() {
+        // THE F-1 regression (wishlist W-1). A vocabulary whose hooks answer
+        // differently between validate's two samplings must be caught no
+        // matter WHICH sampling it poisons. Under the old check-then-compose
+        // order, poisoning the SECOND sampling slipped through: check passed
+        // on clean answers, then compose froze body_refs=200 into the table
+        // the wrapper carried — the exact traversal edge the proof fences.
+        struct UnstableVocab {
+            poison_on_poll: u32,
+            polls: core::cell::Cell<u32>,
+        }
+        impl Vocabulary for UnstableVocab {
+            fn domain_stack_arity(&self, _f: FnIndex) -> Option<u8> {
+                Some(0)
+            }
+            fn domain_body_refs(&self, f: FnIndex) -> u8 {
+                if f.0 != 0x90 {
+                    return 0;
+                }
+                let n = self.polls.get();
+                self.polls.set(n + 1);
+                if n == self.poison_on_poll { 200 } else { 0 }
+            }
+            fn min_shape(&self, _f: FnIndex) -> LaneShape {
+                // Quads, so ONLY a poisoned 200 (never a clean 0) can fail
+                // the shape invariant — the test isolates instability.
+                LaneShape::Quads
+            }
+        }
+        let poison_first = UnstableVocab {
+            poison_on_poll: 0, // compose's sampling gets 200 → stored-table gate
+            polls: core::cell::Cell::new(0),
+        };
+        assert_eq!(
+            conformance::validate(poison_first).err(),
+            Some(ConformanceError::ShapeTooNarrowForRefs { f: FnIndex(0x90) }),
+            "a poisoned TABLE sampling must be caught by the stored-table gate"
+        );
+        let poison_second = UnstableVocab {
+            poison_on_poll: 1, // check's sampling gets 200 → method gate
+            polls: core::cell::Cell::new(0),
+        };
+        assert_eq!(
+            conformance::validate(poison_second).err(),
+            Some(ConformanceError::ShapeTooNarrowForRefs { f: FnIndex(0x90) }),
+            "a poisoned METHOD sampling must be caught by the method gate"
+        );
+        // Silence twin: the same shape with NO poison validates fine.
+        let stable = UnstableVocab {
+            poison_on_poll: u32::MAX,
+            polls: core::cell::Cell::new(0),
+        };
+        assert!(conformance::validate(stable).is_ok());
+    }
+
+    #[test]
+    fn the_name_column_serves_the_legend_and_cannot_drift() {
+        // W-2: names are not coverage — refused-but-real entries are named
+        // so a legend can say "exists, refused" rather than omitting them.
+        assert_eq!(shared_core::name(FnIndex::ADD), Some("ADD"));
+        assert_eq!(shared_core::name(FnIndex::WAIT), Some("WAIT"));
+        assert_eq!(shared_core::stack_arity(FnIndex::WAIT), None);
+        assert_eq!(shared_core::name(FnIndex::NOP), None, "NOP is not an op");
+        assert_eq!(shared_core::name(FnIndex(0x1F)), None, "reserved = unnamed");
+
+        // Composed: shared names ride the table; an undeclared domain slot
+        // stays unnamed; a declared one is served through the table.
+        struct NamedDomain;
+        impl Vocabulary for NamedDomain {
+            fn domain_stack_arity(&self, f: FnIndex) -> Option<u8> {
+                (f.0 == 0x90).then_some(0)
+            }
+            fn domain_body_refs(&self, _f: FnIndex) -> u8 {
+                0
+            }
+            fn domain_name(&self, f: FnIndex) -> Option<&'static str> {
+                (f.0 == 0x90).then_some("OBSERVE")
+            }
+        }
+        let checked = conformance::validate(NamedDomain).unwrap();
+        assert_eq!(checked.table().name(FnIndex::IF_ELSE), Some("IF_ELSE"));
+        assert_eq!(checked.table().name(FnIndex(0x90)), Some("OBSERVE"));
+        assert_eq!(checked.table().name(FnIndex(0x91)), None);
+
+        // The name is a drift channel like the other three: a vocabulary
+        // renaming a shared-core op is caught by name.
+        struct RenamingVocab;
+        impl Vocabulary for RenamingVocab {
+            fn domain_stack_arity(&self, _f: FnIndex) -> Option<u8> {
+                None
+            }
+            fn domain_body_refs(&self, _f: FnIndex) -> u8 {
+                0
+            }
+            fn name(&self, f: FnIndex) -> Option<&'static str> {
+                if f == FnIndex::ADD {
+                    Some("PLUS")
+                } else if f.0 < DOMAIN_FLOOR {
+                    shared_core::name(f)
+                } else {
+                    None
+                }
+            }
+        }
+        assert_eq!(
+            check(&RenamingVocab),
+            Err(ConformanceError::SharedCoreDrift {
+                f: FnIndex::ADD,
+                what: "name",
+            })
+        );
     }
 
     #[test]
