@@ -211,10 +211,7 @@ mod tests {
             actions: vec![
                 AdapterAction {
                     predicate: "PostInvoice".to_string(),
-                    writes: vec![
-                        "Invoice.state".to_string(),
-                        "Invoice.posted_at".to_string(),
-                    ],
+                    writes: vec!["Invoice.state".to_string(), "Invoice.posted_at".to_string()],
                     reads: vec!["Invoice.lines".to_string()],
                 },
                 AdapterAction {
