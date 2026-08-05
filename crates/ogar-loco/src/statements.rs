@@ -15,6 +15,44 @@
 //! A template wanting more than 64 statements is a split signal, not a
 //! mask-widening use case.
 //!
+//! # The >64-statement split contract (wishlist W-5)
+//!
+//! `statement_bounds` reports the count; it has no opinion on what a
+//! lowerer does past 64, because that choice belongs to the vocabulary, not
+//! the core. What IS fixed, so N lowerers do not converge on N divergent
+//! conventions:
+//!
+//! - **The split unit is a function, never the mask.** `StepMask` stays a
+//!   `u64` forever (see `lance_graph_contract::step_mask`); it is never
+//!   widened to reach a 65th statement. A body over 64 statements is lowered
+//!   as **two (or more) sibling function bodies**, referenced the same way
+//!   any nested body is referenced — by index, in the value bytes of a
+//!   dispatching call in the FIRST body. This is literally the same
+//!   overflow remedy the ABI uses everywhere else (`BodyError::Overflow`,
+//!   `PoolError::Full`): split, never widen.
+//! - **Statement ordinals restart at 0 in each split function.** A `StepMask`
+//!   is scoped to the function it selects over, exactly like it already is
+//!   for a single body — a global statement numbering across the split
+//!   would smuggle a second addressing scheme past the classid.
+//! - **The split point falls on a statement boundary, never mid-statement.**
+//!   `statement_bounds` already gives the lowerer exactly the boundaries
+//!   `[first_call, call_count]` a split must respect — cutting inside one
+//!   would separate an operand run from its consumer, the same
+//!   desynchronization masking a raw call would cause.
+//! - **Whether the sibling body is entered by an unconditional dispatch
+//!   call (a `CONTINUATION`-shaped hop, always taken) or the vocabulary's
+//!   own control flow (e.g. a template's own sequencing verb) is a
+//!   vocabulary decision** — this crate does not mint that call. What is
+//!   fixed is only the shape (function split, statement-aligned, forward
+//!   reference) so every vocabulary's split is interoperable at the level a
+//!   generic tool (a renderer, a step-mask dispatcher) needs to reason
+//!   about it.
+//!
+//! A 65-statement body is therefore never a hard error at this layer — it
+//! is a signal a vocabulary-side lowering pass must act on, the same way
+//! `BodyError::Overflow` is a signal `Program`'s caller must act on rather
+//! than something this crate resolves for it.
+//!
 //! # The segmentation rule
 //!
 //! Walk the calls simulating stack depth (`depth -= arity; depth += 1` if
