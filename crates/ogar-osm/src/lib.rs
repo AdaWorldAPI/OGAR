@@ -45,10 +45,12 @@
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]
 
+use ogar_vocab::app::render_classid;
 use ogar_vocab::capability_registry::{
     CapabilityRegistration, RegistrationDrift, verify_registration,
 };
 use ogar_vocab::class_ids;
+use ogar_vocab::ports::{OsmPort, PortSpec};
 
 /// The Geo domain's high byte — `ogar_vocab::ConceptDomain::Geo`.
 ///
@@ -67,11 +69,11 @@ pub const CLASSVIEW_V3_SUBSTRATE: u16 = 0x1000;
 /// ClassView (low u16) for the **OSM web render** skin — the same concepts,
 /// an HTML field view instead of a slab reading.
 ///
-/// `0x0008` is the next free APP-prefix slot in the `APP-CLASS-CODEBOOK-LAYOUT.md`
-/// §2 allocation table (`0x0001` OpenProject … `0x0007` Redmine). Reserving a
-/// prefix costs nothing: no private codebook materialises until the app mints
-/// a private class, and OSM mints none — it maps entirely onto core `0x0FXX`.
-pub const CLASSVIEW_OSM_WEB: u16 = 0x0008;
+/// **Pulled from [`OsmPort::APP_PREFIX`]**, never restated. An earlier version
+/// of this crate declared the literal `0x0008` here while the port declared it
+/// too — the same prefix twice, in one crate, added in one PR. That is the
+/// second-source-of-truth defect the port exists to prevent.
+pub const CLASSVIEW_OSM_WEB: u16 = OsmPort::APP_PREFIX;
 
 /// Compose a full 32-bit classid from a canonical concept and a ClassView.
 ///
@@ -79,9 +81,15 @@ pub const CLASSVIEW_OSM_WEB: u16 = 0x0008;
 /// the 2026-07-02 flip. The hi half names the **shared concept** (RBAC +
 /// ontology); the lo half picks the **render skin**. Neither half carries
 /// behaviour — that is a property of the node the address resolves to.
+///
+/// **Delegates to [`render_classid`]** rather than re-deriving the shift. That
+/// module's doc states its purpose exactly: consumers "re-export ONE source of
+/// the bit math instead of each re-implementing
+/// `((concept as u32) << 16) | prefix`" — which is what this function used to
+/// contain, verbatim.
 #[must_use]
 pub const fn classid(concept: u16, classview: u16) -> u32 {
-    ((concept as u32) << 16) | (classview as u32)
+    render_classid(classview, concept)
 }
 
 /// Every Geo concept, in codebook order, with its Rails source class(es).
@@ -574,6 +582,29 @@ mod tests {
                  must not introduce concepts"
             );
         }
+    }
+
+    #[test]
+    fn composition_goes_through_ogar_vocab_not_local_bit_math() {
+        // The plug-and-play pin: naming the PORT must give the same id as
+        // naming its prefix, because both compose through `render_classid`.
+        // If this crate ever re-derives the shift, the two drift apart.
+        use ogar_vocab::app::{app_of, concept_of, render_classid_for};
+        for concept in [class_ids::OSM_NODE, class_ids::OSM_WAY, class_ids::OSM_USER] {
+            let via_port = render_classid_for::<OsmPort>(concept);
+            assert_eq!(classid(concept, CLASSVIEW_OSM_WEB), via_port);
+            // And ogar-vocab's own decomposition recovers both halves, so the
+            // routing key (`classid as u16`) is the port's prefix.
+            assert_eq!(app_of(via_port), OsmPort::APP_PREFIX);
+            assert_eq!(concept_of(via_port), concept);
+        }
+        // Anti-vacuity: a DIFFERENT ClassView really does produce a different
+        // id, so the agreement above is about the prefix and not about
+        // `classid` ignoring its second argument.
+        assert_ne!(
+            classid(class_ids::OSM_NODE, CLASSVIEW_V3_SUBSTRATE),
+            render_classid_for::<OsmPort>(class_ids::OSM_NODE)
+        );
     }
 
     #[test]
