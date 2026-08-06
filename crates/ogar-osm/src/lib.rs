@@ -344,6 +344,40 @@ pub const RESERVED_SLOTS: usize = 2;
 /// records three stale-offset incidents for.
 pub const GEO_IDENTITY_SLOT: usize = RESERVED_SLOTS;
 
+/// The value slot carrying the geo **slope facet** — the helix Place/Residue
+/// companion to the HHTL cascade.
+///
+/// **Proposed, pending a ClassView**, like [`GEO_IDENTITY_SLOT`]. Addressed by
+/// slot INDEX; a consumer multiplies by 16 rather than hardcoding an offset.
+///
+/// # What a slope facet holds
+///
+/// The 12-byte payload is read as `FacetSchema::Pair48` — **two 6-byte codes**
+/// (`lance_graph_contract::facet_schema`, which names `helix` `Signed360` as
+/// exactly this shape). The helix ladder underneath:
+///
+/// | helix type | bits | meaning |
+/// |---|---|---|
+/// | `ResidueEdge` | 24 | ONE hemisphere point — Poincaré-like hemisphere, golden spiral, Fisher-Z. An exact spatial direction: the **tilt axis**. |
+/// | `Signed360` | 48 | TWO hemispheres = the **full sphere**. Reads as an entry-angle/exit-angle agreement, a **bent** angle, or a signed `-x..+x`. |
+/// | `Pair48` payload | 96 | two `Signed360` — two such full-sphere measures per facet. |
+///
+/// So a road segment's bend is one `Signed360`: how it is entered and how it
+/// is left. That is the reading the geo domain wants; the substrate stores the
+/// bytes and never interprets them.
+///
+/// This crate declares the ADDRESS only. It cannot carry the accessors —
+/// `FacetCascade` lives in `lance-graph-contract` and this crate deps only
+/// `ogar-vocab` (a 2-node tree, deliberately). A consumer that already has the
+/// contract reads the slot with `FacetCascade::{from_pair48, as_pair48}`.
+pub const GEO_SLOPE_SLOT: usize = RESERVED_SLOTS + 1;
+
+// Compile-time: the slope slot is a real value slot — never inside the key or
+// edge block, never past the stride. A const assert rather than a runtime one,
+// since both operands are constants (clippy correctly flags the runtime form).
+const _: () = assert!(GEO_SLOPE_SLOT >= RESERVED_SLOTS);
+const _: () = assert!(GEO_SLOPE_SLOT < ROW_SLOTS);
+
 /// The carving of the identity facet's 12-byte payload: **`LegacyOutlier::WideQuad`
 /// (G3, `3 × u32` contiguous)** — sanctioned, and deliberately marked as debt.
 ///
@@ -421,6 +455,30 @@ pub const GEO_IDENTITY: &[GeoIdentityGroup] = &[
 #[must_use]
 pub fn identity_group(predicate: &str) -> Option<&'static GeoIdentityGroup> {
     GEO_IDENTITY.iter().find(|g| g.predicate == predicate)
+}
+
+/// The classid stamped on a row's **slope** facet — dynamic per row, for the
+/// same reason [`geo_identity_classid`] is: the element kind is what the
+/// facet's classid should say.
+///
+/// # The schema field is provisional, so the reading is caller-known
+///
+/// `FacetSchema::of_classid` resolves the schema from `(classid >> 24) & 0b11`
+/// and its own doc calls that a **"Provisional field position"** pending
+/// ratification. A Geo classid has `0x0F` in that byte, so `& 0b11 == 3`,
+/// which the resolver maps to the `TierCascade` default — **not** `Pair48`.
+///
+/// That is not a defect to route around: the same doc says *"callers that know
+/// their schema should prefer the explicit `as_*` / `from_*` accessors"*. So a
+/// slope facet is written and read through `from_pair48`/`as_pair48` directly,
+/// and the schema is a property of the SLOT rather than something recovered
+/// from the classid. When the field position is ratified this comment is the
+/// place to revisit.
+///
+/// Returns `None` for a concept outside the Geo domain.
+#[must_use]
+pub fn geo_slope_classid(concept: u16) -> Option<u32> {
+    geo_identity_classid(concept)
 }
 
 /// The classid stamped on a row's identity facet — **dynamic, per row**.
@@ -664,6 +722,41 @@ mod tests {
 
         // Can-fire half — the port discriminates rather than accepting all.
         assert!(plug_in("some-other-crate", GEO_SUBJECT_CLASSIDS, GEO_ACTION_NAMES).is_err());
+    }
+
+    #[test]
+    fn the_slope_slot_is_a_distinct_value_slot_from_the_identity_slot() {
+        // Two facets, two slots. Sharing one would silently overwrite: both
+        // are 16-byte writes at a slot-derived offset, so a collision is not
+        // a compile error, it is a corrupt row.
+        assert_ne!(GEO_SLOPE_SLOT, GEO_IDENTITY_SLOT);
+    }
+
+    #[test]
+    fn a_slope_classid_types_itself_per_kind_and_refuses_non_geo() {
+        let node = geo_slope_classid(class_ids::OSM_NODE).unwrap();
+        let way = geo_slope_classid(class_ids::OSM_WAY).unwrap();
+        assert_ne!(node, way, "the slot must type itself per element kind");
+        assert_eq!((node >> 16) as u16, class_ids::OSM_NODE);
+        // Closed outside the domain, with a can-fire half.
+        assert!(geo_slope_classid(class_ids::PROJECT_WORK_ITEM).is_none());
+        assert!(geo_slope_classid(class_ids::OSM_RELATION).is_some());
+    }
+
+    #[test]
+    fn the_provisional_schema_resolver_does_not_report_pair48_for_a_geo_classid() {
+        // Pins the caveat rather than leaving it as prose. `FacetSchema::
+        // of_classid` reads `(classid >> 24) & 0b11`; a Geo classid has 0x0F
+        // there, so `& 0b11 == 3`, which the provisional resolver maps to the
+        // TierCascade default. That is exactly why a slope facet is written
+        // and read through the explicit `from_pair48`/`as_pair48` accessors
+        // and treats the schema as a property of the SLOT.
+        //
+        // If this assertion ever fails, the field position was ratified and
+        // `geo_slope_classid`'s doc needs revisiting.
+        let cid = geo_slope_classid(class_ids::OSM_WAY).unwrap();
+        assert_eq!((cid >> 24) & 0b11, 3, "Geo's 0x0F byte masks to 3");
+        assert_ne!((cid >> 24) & 0b11, 2, "3 is not the Pair48 discriminant");
     }
 
     #[test]
