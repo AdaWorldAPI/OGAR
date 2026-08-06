@@ -24,9 +24,11 @@
 //! 2. [`GEO_V3_FACET`] — the 12-byte V3 facet field table: one [`OsmField`]
 //!    per mask position, with the label a `FieldView` renders and the
 //!    `(rail, axis)` reading the tier carving gives it.
-//! 3. [`osm_capabilities`] — the authoritative capability table a geo
-//!    executor registers against ([`verify_osm_registration`]), the
-//!    plug-and-play roundtrip [`ogar_vocab::capability_registry`] defines.
+//! 3. [`plug_in`] — the pass-through to the OGAR port
+//!    ([`resolve_hotplug`](ogar_vocab::capability_registry::resolve_hotplug)).
+//!    The capability TABLE itself lives in [`ogar_vocab::geo_actions`], where
+//!    `domain_tables()` can resolve it; this crate re-exports it so a consumer
+//!    reaches the whole OSM plug through one place.
 //!
 //! # The facet reading is canon, not a local convention
 //!
@@ -46,9 +48,7 @@
 #![deny(missing_docs)]
 
 use ogar_vocab::app::render_classid;
-use ogar_vocab::capability_registry::{
-    CapabilityRegistration, RegistrationDrift, verify_registration,
-};
+use ogar_vocab::capability_registry::{HotplugActivation, HotplugDrift, resolve_hotplug};
 use ogar_vocab::class_ids;
 use ogar_vocab::ports::{OsmPort, PortSpec};
 
@@ -447,105 +447,43 @@ pub fn geo_identity_classid(concept: u16) -> Option<u32> {
         .then(|| classid(concept, CLASSVIEW_V3_SUBSTRATE))
 }
 
-// ── The capability table ────────────────────────────────────────────
+// ── The capability surface — RE-EXPORTED, never restated ────────────
 
-/// One geo capability declaration — name, the concept it acts on, and its
-/// name-level effect facts.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub struct OsmCapability {
-    /// Capability name — the consumer's dispatch arm.
-    pub name: &'static str,
-    /// The canonical concept this capability acts on (its `object_class`).
-    pub subject: u16,
-    /// Input names (effect annotation, mandatory + optional collapsed).
-    pub reads: &'static [&'static str],
-    /// Output names this capability produces.
-    pub writes: &'static [&'static str],
-}
+// This crate's purpose is the reusable patterns a consumer needs to plug OSM
+// in. The capability TABLE is not one of those: it must live inside
+// `ogar-vocab` for `domain_tables()` to resolve it at compile time, and it is
+// declared there as real `ActionDef`s (`ogar_vocab::geo_actions`).
+//
+// An earlier version of this crate declared its own `OSM_CAPABILITIES` /
+// `OSM_SUBJECT_CLASSIDS` / `verify_osm_registration` here — a parallel
+// registry beside the port, which verified itself against itself and passed
+// while `resolve_hotplug` answered `NoCapabilitiesFor(0x0F01)`. Measured, not
+// inferred. It is gone; these re-exports are the one source, surfaced here so
+// a consumer reaches the whole OSM plug through this crate.
+pub use ogar_vocab::geo_actions::{
+    GEO_ACTION_NAMES, GEO_EXPECTED_EXECUTORS, GEO_SUBJECT_CLASSIDS, geo_actions,
+};
 
-/// The authoritative geo capability table.
+/// Plug this consumer's geo classids into the OGAR port and activate.
 ///
-/// Every entry corresponds to a primitive that **exists in the consumer
-/// today** — the roundtrip checks coverage in both directions, so declaring an
-/// aspirational capability here would fail the consumer's own registration
-/// test rather than quietly describing work that was never done.
-pub const OSM_CAPABILITIES: &[OsmCapability] = &[
-    OsmCapability {
-        name: "locate_point",
-        subject: class_ids::OSM_NODE,
-        reads: &["lon", "lat"],
-        writes: &["morton", "heel", "hip", "twig", "leaf"],
-    },
-    OsmCapability {
-        name: "locate_tile",
-        subject: class_ids::OSM_NODE,
-        reads: &["z", "x", "y"],
-        writes: &["row_range"],
-    },
-    OsmCapability {
-        name: "locate_fragment",
-        subject: class_ids::OSM_NODE,
-        reads: &["morton_lo", "morton_hi"],
-        writes: &["fragment_ids"],
-    },
-    OsmCapability {
-        name: "project_fields",
-        subject: class_ids::OSM_NODE,
-        reads: &["row", "surface_mask", "role_mask"],
-        writes: &["positions", "bytes"],
-    },
-    OsmCapability {
-        name: "street_edges",
-        subject: class_ids::OSM_WAY,
-        reads: &["junction_row", "name"],
-        writes: &["edge_mask"],
-    },
-    OsmCapability {
-        name: "polyline_length",
-        subject: class_ids::OSM_WAY,
-        reads: &["points"],
-        writes: &["metres"],
-    },
-];
-
-/// Every capability name, in table order — the `const`-evaluable fingerprint
-/// for a cheap exhaustiveness fuse.
-pub const OSM_CAPABILITY_NAMES: &[&str] = &[
-    "locate_point",
-    "locate_tile",
-    "locate_fragment",
-    "project_fields",
-    "street_edges",
-    "polyline_length",
-];
-
-/// The subject concepts [`OSM_CAPABILITIES`] acts on, deduplicated.
-///
-/// A registering consumer must activate exactly this set — no more, no fewer.
-pub const OSM_SUBJECT_CLASSIDS: &[u16] = &[class_ids::OSM_NODE, class_ids::OSM_WAY];
-
-/// Consumers expected to execute this table.
-pub const OSM_EXPECTED_EXECUTORS: &[&str] = &["osm-soa-bake"];
-
-/// Verify a consumer's self-registration against the geo capability table.
-///
-/// The plug-and-play roundtrip: the table declares WHAT exists and WHO is
-/// expected to execute it; the consumer exports a [`CapabilityRegistration`]
-/// and asserts this in its own tests. Drift bangs once — a capability added
-/// here without a consumer arm, a consumer arm for a capability this table
-/// dropped, or a wrong activated-concept set.
+/// A thin pass-through to
+/// [`resolve_hotplug`](ogar_vocab::capability_registry::resolve_hotplug) — the
+/// USB socket. The consumer names itself, the classids it is plugging in, and
+/// the capability arms it covers; OGAR verifies every id is minted, that each
+/// contributes at least one capability, that this consumer is expected, and
+/// that coverage holds in both directions — then returns the activated vocab
+/// rows and capability names.
 ///
 /// # Errors
 ///
-/// Returns the [`RegistrationDrift`] the registry detected.
-pub fn verify_osm_registration(reg: &CapabilityRegistration) -> Result<(), RegistrationDrift> {
-    verify_registration(
-        reg,
-        OSM_CAPABILITY_NAMES,
-        OSM_SUBJECT_CLASSIDS,
-        OSM_EXPECTED_EXECUTORS,
-    )
+/// The [`HotplugDrift`](ogar_vocab::capability_registry::HotplugDrift) the port
+/// reported.
+pub fn plug_in(
+    consumer: &str,
+    classids: &[u16],
+    covered: &[&str],
+) -> Result<HotplugActivation, HotplugDrift> {
+    resolve_hotplug(consumer, classids, covered)
 }
 
 #[cfg(test)]
@@ -714,6 +652,21 @@ mod tests {
     }
 
     #[test]
+    fn plugging_in_activates_through_the_real_port() {
+        // The whole point of the rewrite: this crate no longer verifies
+        // itself against itself. `plug_in` reaches `resolve_hotplug`, which
+        // resolves the geo table out of `domain_tables()`.
+        let (concepts, capabilities) =
+            plug_in("osm-soa-bake", GEO_SUBJECT_CLASSIDS, GEO_ACTION_NAMES)
+                .expect("the geo domain must activate through the port");
+        assert_eq!(capabilities.len(), GEO_ACTION_NAMES.len());
+        assert_eq!(concepts.len(), GEO_SUBJECT_CLASSIDS.len());
+
+        // Can-fire half — the port discriminates rather than accepting all.
+        assert!(plug_in("some-other-crate", GEO_SUBJECT_CLASSIDS, GEO_ACTION_NAMES).is_err());
+    }
+
+    #[test]
     fn the_row_is_thirty_two_uniform_facet_slots() {
         // 512-byte row / 16-byte slot. The key and the edge block are slots
         // like any other — that uniformity is what makes the ABI transparent.
@@ -764,81 +717,5 @@ mod tests {
         assert!(geo_identity_classid(0x0FFF).is_none());
         // Can-fire half, so the guard is not "always None".
         assert!(geo_identity_classid(class_ids::OSM_NOTE).is_some());
-    }
-
-    #[test]
-    fn the_capability_names_fingerprint_matches_the_table() {
-        assert_eq!(OSM_CAPABILITIES.len(), OSM_CAPABILITY_NAMES.len());
-        for (cap, name) in OSM_CAPABILITIES.iter().zip(OSM_CAPABILITY_NAMES) {
-            assert_eq!(&cap.name, name, "fingerprint drifted from the table");
-            assert!(!cap.reads.is_empty(), "{name} declares no inputs");
-            assert!(!cap.writes.is_empty(), "{name} declares no outputs");
-        }
-    }
-
-    #[test]
-    fn the_declared_subjects_are_exactly_the_subjects_the_table_uses() {
-        let mut used: Vec<u16> = OSM_CAPABILITIES.iter().map(|c| c.subject).collect();
-        used.sort_unstable();
-        used.dedup();
-        let mut declared = OSM_SUBJECT_CLASSIDS.to_vec();
-        declared.sort_unstable();
-        assert_eq!(used, declared);
-    }
-
-    fn good_registration() -> CapabilityRegistration {
-        CapabilityRegistration {
-            consumer: "osm-soa-bake",
-            covered: OSM_CAPABILITY_NAMES,
-            subject_classids: OSM_SUBJECT_CLASSIDS,
-        }
-    }
-
-    #[test]
-    fn a_complete_registration_roundtrips() {
-        assert!(verify_osm_registration(&good_registration()).is_ok());
-    }
-
-    #[test]
-    fn the_roundtrip_catches_drift_in_every_direction() {
-        // Wrong consumer.
-        let mut reg = good_registration();
-        reg.consumer = "some-other-crate";
-        assert!(matches!(
-            verify_osm_registration(&reg),
-            Err(RegistrationDrift::UnexpectedConsumer(_))
-        ));
-
-        // A declared capability with no consumer arm.
-        let mut reg = good_registration();
-        reg.covered = &["locate_point"];
-        assert!(matches!(
-            verify_osm_registration(&reg),
-            Err(RegistrationDrift::Uncovered(_))
-        ));
-
-        // A consumer arm for a capability this table does not declare.
-        let mut reg = good_registration();
-        reg.covered = &[
-            "locate_point",
-            "locate_tile",
-            "locate_fragment",
-            "project_fields",
-            "street_edges",
-            "polyline_length",
-            "teleport",
-        ];
-        assert!(matches!(
-            verify_osm_registration(&reg),
-            Err(RegistrationDrift::Undeclared(_))
-        ));
-
-        // A wrong activated-concept set.
-        let mut reg = good_registration();
-        reg.subject_classids = &[class_ids::OSM_NODE];
-        assert!(matches!(
-            verify_osm_registration(&reg),
-            Err(RegistrationDrift::ClassidMismatch { .. })
-        ));
     }
 }
