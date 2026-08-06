@@ -287,11 +287,33 @@ fn pack_key(classid: u32, identity: u32) -> [u8; 16] {
     let mut k = [0u8; 16];
     k[0..4].copy_from_slice(&classid.to_le_bytes());
     // 4..10 HEEL/HIP/TWIG = 0 (dormant cascade)
-    // 10..13 family = 0 (dormant basin)
-    let id = identity.to_le_bytes(); // low 3 bytes are the 24-bit identity
-    k[13] = id[0];
-    k[14] = id[1];
-    k[15] = id[2];
+    // 10..12 leaf = 0 (dormant 4th HHTL tier — RESERVE, DON'T RECLAIM)
+    //
+    // V3 tail (`canonical_node::NodeGuid::new_v2`): leaf:u16 @10..12,
+    // family:u16 @12..14, identity:u16 @14..16. This was the V1 u24 tail
+    // (identity's low 3 bytes at 13..16, family zeroed) until 2026-08-05;
+    // migrated because the contract defaults to `guid-v3-tail` and there are
+    // no pre-flip rows of this bake to preserve.
+    //
+    // The CURIE numeric does NOT fit `identity` alone — OBO ids run past
+    // 65_535 (MONDO:0700092 = 700_092), and `mint_for`'s V2/V3 arm asserts
+    // `identity <= 0xFFFF` rather than truncating. So the 24-bit numeric is
+    // carried by the family:identity RAIL, high half in `family`:
+    //   family   = num >> 16      (0..=255 for a 24-bit CURIE)
+    //   identity = num & 0xFFFF
+    // That is the point of V3 over the flat u24 — a u24 has no axis and
+    // cannot carry an `X:Y` rail; this pair can, and it is lossless for the
+    // full 24 bits with 8 bits of headroom left in `family`.
+    //
+    // Sort order is UNCHANGED: `family` holds the high bits, so ordering by
+    // (classid, family, identity) is ordering by (classid, num) — the
+    // binary-search-by-key invariant over the baked artifact survives.
+    let f = ((identity >> 16) as u16).to_le_bytes();
+    let i = ((identity & 0xFFFF) as u16).to_le_bytes();
+    k[12] = f[0];
+    k[13] = f[1];
+    k[14] = i[0];
+    k[15] = i[1];
     k
 }
 
@@ -598,8 +620,12 @@ pub fn rows_from_le_bytes(bytes: &[u8]) -> Option<&[Row512]> {
 #[must_use]
 pub fn decode_key(row: &Row512) -> (u32, u32) {
     let classid = u32::from_le_bytes([row.0[0], row.0[1], row.0[2], row.0[3]]);
-    let identity = u32::from_le_bytes([row.0[13], row.0[14], row.0[15], 0]);
-    (classid, identity)
+    // V3 tail: reassemble the CURIE numeric from the family:identity rail
+    // (family @12..14 = high half, identity @14..16 = low half). See
+    // `pack_key` for why the numeric spans the pair rather than one field.
+    let family = u16::from_le_bytes([row.0[12], row.0[13]]);
+    let ident = u16::from_le_bytes([row.0[14], row.0[15]]);
+    (classid, (u32::from(family) << 16) | u32::from(ident))
 }
 
 const _: () = assert!(core::mem::size_of::<Row512>() == 512);
@@ -697,6 +723,52 @@ mod tests {
 
     fn n(ns: Namespace, num: u32) -> TermId {
         TermId { ns: ns as u8, num }
+    }
+
+    /// The V3 tail carries the CURIE numeric on the `family:identity` RAIL,
+    /// and this test is the reason the rail exists rather than a bare
+    /// `identity`.
+    ///
+    /// **What would make it fail:** putting the numeric in `identity` alone.
+    /// Real OBO ids run past `u16` (MONDO:0700092 = 700_092), so a single-field
+    /// tail either truncates to 41_500 or trips `mint_for`'s
+    /// `identity <= 0xFFFF` assert. A small id like the `9` the existing
+    /// round-trip test uses cannot distinguish those layouts — it fits either.
+    ///
+    /// Also pins the byte positions against `NodeGuid::new_v2`
+    /// (leaf @10..12, family @12..14, identity @14..16) so a silent
+    /// re-carve of the tail is caught here and not at a consumer.
+    #[test]
+    fn v3_tail_carries_oversize_curie_numerics_on_the_family_identity_rail() {
+        // Above u16 — the case a bare `identity` cannot hold.
+        let big = 700_092u32;
+        assert!(big > u32::from(u16::MAX), "fixture must exceed the u16 the rail exists for");
+        let k = pack_key(Namespace::Mondo.render_classid(0x0000), big);
+
+        // Byte positions, per new_v2.
+        assert_eq!(&k[10..12], &[0, 0], "leaf stays dormant (RESERVE, DON'T RECLAIM)");
+        let family = u16::from_le_bytes([k[12], k[13]]);
+        let identity = u16::from_le_bytes([k[14], k[15]]);
+        assert_eq!(u32::from(family), big >> 16, "family holds the high half");
+        assert_eq!(u32::from(identity), big & 0xFFFF, "identity holds the low half");
+
+        // Lossless through the public reader.
+        let mut row = Row512::zeroed();
+        row.0[0..16].copy_from_slice(&k);
+        let (cid, num) = decode_key(&row);
+        assert_eq!(num, big, "the rail round-trips the full 24-bit numeric");
+        assert_eq!(cid, Namespace::Mondo.render_classid(0x0000));
+
+        // The V1 read of the SAME bytes must NOT agree — proof the tail really
+        // moved, not that both layouts happen to coincide on this fixture.
+        let v1_read = u32::from_le_bytes([row.0[13], row.0[14], row.0[15], 0]);
+        assert_ne!(v1_read, big, "a V1 u24 read of a V3 row must be observably wrong");
+
+        // Ordering is preserved: family is the HIGH half, so (family, identity)
+        // sorts as the numeric does. This is what keeps binary-search-by-key
+        // valid over the sorted bake.
+        let lo = pack_key(Namespace::Mondo.render_classid(0x0000), 5_148);
+        assert!(lo[12..16] < k[12..16], "tail bytes order as the numeric orders");
     }
 
     #[test]
