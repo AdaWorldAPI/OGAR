@@ -45,6 +45,7 @@ pub mod capability_registry;
 /// Healthcare capability surface — the medcare-rs authoritative action
 /// table (parity-plan P3; hand-authored, harvest-informed — see the
 /// module doc for why the mechanical lift was falsified by the corpus).
+pub mod geo_actions;
 pub mod healthcare_actions;
 pub mod ocr_actions;
 /// The general loose-ends-as-DTO residual ([`residual::ResidualRepresentation`])
