@@ -314,6 +314,131 @@ pub fn rail_positions(rail: u8) -> Option<[u8; 2]> {
     (rail < FACET_RAILS).then(|| [rail * 2, rail * 2 + 1])
 }
 
+// ── The value-lane reading ──────────────────────────────────────────
+
+/// Sixteen-byte facet slots in one 512-byte row (`GUIDS_PER_NODE`).
+///
+/// The row is **32 lanes of `classid(4) + 12`** — uniformly, key included. Slot
+/// 0 is the key facet, slot 1 the edge block, and slots 2..32 are the value
+/// slab read the same way. That uniformity is what makes the ABI transparent:
+/// every slot is self-describing, so a reader resolves any lane from its own
+/// classid without decoding the row.
+pub const ROW_SLOTS: usize = 32;
+
+/// Slots consumed by the key and the edge block, before the value slab.
+pub const RESERVED_SLOTS: usize = 2;
+
+/// The value slot carrying the geo **identity facet**.
+///
+/// **Proposed, pending a ClassView** — the same honesty `osm-soa-bake`'s
+/// `NAME_SLOT` carries. It is addressed as a slot INDEX; a consumer multiplies
+/// by 16 rather than hardcoding a byte offset, which is the drift `tenants.md`
+/// records three stale-offset incidents for.
+pub const GEO_IDENTITY_SLOT: usize = RESERVED_SLOTS;
+
+/// The carving of the identity facet's 12-byte payload: **`LegacyOutlier::WideQuad`
+/// (G3, `3 × u32` contiguous)** — sanctioned, and deliberately marked as debt.
+///
+/// **This is NOT [`CascadeShape::G3D4`].** G3D4 is the *axis-grouped*
+/// `3×(u8:u8:u8:u8)` quad with a per-byte rail; G3 is three contiguous `u32`
+/// integers with **no rail at all**. Conflating them is exactly the mistake
+/// the grace-period amendment exists to prevent, and this doc named the wrong
+/// one before the canon was re-read.
+///
+/// # Why the discouraged carving is nonetheless right here
+///
+/// The amendment calls a wide carving *"strongly discouraged if
+/// god-object-related or lacking proper bucket rollover"*, and an OSM id is
+/// squarely the second case: a **monotonic global counter**, opaque, with no
+/// axis and no bucketing. It cannot be decomposed onto the byte axis because
+/// there is nothing to decompose — successive ids share no meaningful prefix.
+///
+/// The canon's usual remedy — *"migrate to cosine-replacement palette256
+/// (L4)"* — does **not** apply either: palette quantisation is lossy, and the
+/// entire reason to carry this field is exact round-trip to upstream OSM. An
+/// approximate `osm_id` is worse than none.
+///
+/// So this is real debt with no current migration, recorded rather than
+/// disguised. A consumer writes it through
+/// `lance_graph_contract::legacy_outliers::LegacyOutlier::write_wide_quad`
+/// and reads it back with `read_wide_quad` — **never hand-rolled byte
+/// arithmetic**, which is the whole point of that module existing.
+///
+/// [`CascadeShape::G3D4`]: https://docs.rs/lance-graph-contract
+pub const GEO_IDENTITY_SHAPE: &str = "LegacyOutlier::WideQuad";
+
+/// One `u32` group of the identity facet's G3 (`3 × u32`) payload.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct GeoIdentityGroup {
+    /// Group index within the G3 (`3 × u32`) carving (`0..3`).
+    pub group: u8,
+    /// Display label.
+    pub label: &'static str,
+    /// Stable key behind the label.
+    pub predicate: &'static str,
+}
+
+/// The geo ClassView's reading of the identity facet's three G3 `u32` groups.
+///
+/// `osm_id` occupies groups 0 and 1 (little-endian low, high) and is read as
+/// **`i64`, signed** — negative ids are the convention for elements not yet
+/// uploaded (JOSM/iD drafts), so reading them as `u64` would silently mangle
+/// exactly the rows an editor round-trips.
+///
+/// Group 2 is **RESERVE-DON'T-RECLAIM**, not padding. OSM elements also carry
+/// `version` and `changeset`, but those live in the PBF's optional `Info`
+/// block which extracts routinely omit — declaring fields for data nobody
+/// writes would describe fiction. A zero group reads as *not asserted*, and a
+/// later `version` lands in group 2 with no migration.
+pub const GEO_IDENTITY: &[GeoIdentityGroup] = &[
+    GeoIdentityGroup {
+        group: 0,
+        label: "OSM id (low)",
+        predicate: "osm:id.lo",
+    },
+    GeoIdentityGroup {
+        group: 1,
+        label: "OSM id (high)",
+        predicate: "osm:id.hi",
+    },
+    GeoIdentityGroup {
+        group: 2,
+        label: "Reserved",
+        predicate: "osm:identity.reserved",
+    },
+];
+
+/// The identity-facet group with this predicate, if the reading declares one.
+#[must_use]
+pub fn identity_group(predicate: &str) -> Option<&'static GeoIdentityGroup> {
+    GEO_IDENTITY.iter().find(|g| g.predicate == predicate)
+}
+
+/// The classid stamped on a row's identity facet — **dynamic, per row**.
+///
+/// A slot's classid is data, not a constant: it is written per row and read
+/// back to decide the reading. Here that is load-bearing rather than
+/// decorative — the element's KIND is exactly what the identity facet's
+/// classid should say, so `osm_node` / `osm_way` / `osm_relation` stamp
+/// different classids into the same slot.
+///
+/// The consequence is a lane removed, not added. A geo row previously needed
+/// the `EntityType` tenant to say what it was; with the kind carried by the
+/// identity slot's own classid the slot is **readable standalone** — resolve
+/// the classid, get the ClassView, read the 12 bytes — and `EntityType`
+/// becomes a duplicate of information the slot already carries.
+///
+/// Returns `None` for a concept outside the Geo domain, so a non-geo classid
+/// cannot be stamped into a geo identity slot.
+#[must_use]
+pub fn geo_identity_classid(concept: u16) -> Option<u32> {
+    OSM_CONCEPTS
+        .iter()
+        .any(|(_, id, _)| *id == concept)
+        .then(|| classid(concept, CLASSVIEW_V3_SUBSTRATE))
+}
+
 // ── The capability table ────────────────────────────────────────────
 
 /// One geo capability declaration — name, the concept it acts on, and its
@@ -555,6 +680,59 @@ mod tests {
                 "{name} diverged from the shared spatial carving"
             );
         }
+    }
+
+    #[test]
+    fn the_row_is_thirty_two_uniform_facet_slots() {
+        // 512-byte row / 16-byte slot. The key and the edge block are slots
+        // like any other — that uniformity is what makes the ABI transparent.
+        assert_eq!(ROW_SLOTS, 32);
+        assert_eq!(ROW_SLOTS * 16, 512);
+        assert_eq!(RESERVED_SLOTS, 2);
+    }
+
+    #[test]
+    fn the_identity_facet_uses_the_g3_wide_quad_waiting_room() {
+        assert_eq!(GEO_IDENTITY.len(), 3);
+        assert_eq!(GEO_IDENTITY.len() * 4, FACET_PAYLOAD_BYTES as usize);
+        for (i, g) in GEO_IDENTITY.iter().enumerate() {
+            assert_eq!(g.group as usize, i, "groups must be ordered and complete");
+        }
+        // An i64 id spans exactly two groups; the third is reserved, not padding.
+        assert_eq!(identity_group("osm:id.lo").map(|g| g.group), Some(0));
+        assert_eq!(identity_group("osm:id.hi").map(|g| g.group), Some(1));
+        assert_eq!(
+            identity_group("osm:identity.reserved").map(|g| g.group),
+            Some(2)
+        );
+        assert!(identity_group("osm:version").is_none());
+    }
+
+    #[test]
+    fn the_identity_slot_types_itself_per_element_kind() {
+        // The dynamic-classid case: three kinds stamp three DIFFERENT classids
+        // into the same slot, so the slot is readable standalone.
+        let node = geo_identity_classid(class_ids::OSM_NODE).unwrap();
+        let way = geo_identity_classid(class_ids::OSM_WAY).unwrap();
+        let rel = geo_identity_classid(class_ids::OSM_RELATION).unwrap();
+        assert_ne!(node, way);
+        assert_ne!(way, rel);
+        assert_ne!(node, rel);
+        // Each still resolves back to its concept, so the kind is recoverable
+        // from the slot alone — which is what lets EntityType go.
+        assert_eq!((node >> 16) as u16, class_ids::OSM_NODE);
+        assert_eq!((way >> 16) as u16, class_ids::OSM_WAY);
+        // And they share the ClassView half: one reading, many kinds.
+        assert_eq!(node as u16, CLASSVIEW_V3_SUBSTRATE);
+        assert_eq!(way as u16, CLASSVIEW_V3_SUBSTRATE);
+    }
+
+    #[test]
+    fn a_non_geo_concept_cannot_be_stamped_into_a_geo_identity_slot() {
+        assert!(geo_identity_classid(class_ids::PROJECT_WORK_ITEM).is_none());
+        assert!(geo_identity_classid(0x0FFF).is_none());
+        // Can-fire half, so the guard is not "always None".
+        assert!(geo_identity_classid(class_ids::OSM_NOTE).is_some());
     }
 
     #[test]
