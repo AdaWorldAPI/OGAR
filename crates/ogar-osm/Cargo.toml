@@ -1,0 +1,17 @@
+[package]
+name = "ogar-osm"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+description = "OpenStreetMap geodata reference surface — the render half of the Geo domain (0x0FXX). The concepts are already minted in ogar-vocab; this crate carries what a consumer needs to READ a baked geo row: the classid spelling, the 12-byte V3 facet field table (position -> label, the mask address a FieldView carries), and the capability table a geo executor registers against."
+
+[features]
+default = []
+serde = ["dep:serde", "ogar-vocab/serde"]
+
+[dependencies]
+ogar-vocab = { path = "../ogar-vocab" }
+serde = { workspace = true, optional = true }

@@ -549,6 +549,74 @@ pub const ODOO_ALIASES: &[(&str, u16)] = &[
     ("account.analytic.line", class_ids::BILLABLE_WORK_ENTRY),
 ];
 
+// ── OpenStreetMap port ──────────────────────────────────────────────
+
+/// OpenStreetMap's `PortSpec` — maps the `openstreetmap-website` Rails
+/// model names (`Node`, `Way`, `Relation`, …) onto the shared OGAR
+/// codebook's Geo domain (`0x0FXX`).
+///
+/// Unlike every other port here, OSM's concepts were **harvested
+/// mechanically** rather than curated: `ruff_ruby_spo` walked the real
+/// `app/models` tree (50 classes) and `ogar_from_ruff::lift_model_graph`
+/// lifted them, which is why the alias table below reads as Rails class
+/// names verbatim. See `.claude/harvest/osm-website-rs/`.
+///
+/// The render surface for these concepts lives in the `ogar-osm` crate
+/// (`GEO_V3_FACET` — the 12-byte facet field table).
+pub struct OsmPort;
+
+impl PortSpec for OsmPort {
+    const NAMESPACE: &'static str = "OpenStreetMap";
+    const BRIDGE_ID: &'static str = "osm";
+    /// `0x0008` — OSM render prefix (§2 allocation table; next free slot
+    /// after Redmine `0x0007`). No private codebook: OSM maps entirely
+    /// onto the core Geo domain.
+    const APP_PREFIX: u16 = 0x0008;
+    fn aliases() -> &'static [(&'static str, u16)] {
+        OSM_ALIASES
+    }
+}
+
+/// The OSM port's `(Rails class name, canonical class_id)` alias slice.
+///
+/// The **versioned `Old*` classes ground to their base concept** — a
+/// `OldNode` is a `Node` at an earlier version, and the temporal axis is a
+/// Lance version, not a second identity. This is the same collapse
+/// OpenProject's `Principal`/`User`/`Group` STI chain gets: several Rails
+/// classes, one canonical id, so a consumer dispatching on
+/// `entity_type_id()` reaches the same arm either way.
+///
+/// Thirty of the fifty harvested classes have **no minted concept** —
+/// `DiaryEntry`, `Issue`, `UserBlock`, `Tracepoint`, `ChangesetTag` and the
+/// rest of the web-application surface. They are deliberately absent rather
+/// than forced onto an approximate id: the Geo block was minted for the
+/// *element model*, and minting the remainder is an operator ruling, not a
+/// port's decision.
+pub const OSM_ALIASES: &[(&str, u16)] = &[
+    ("Node", class_ids::OSM_NODE),
+    ("OldNode", class_ids::OSM_NODE),
+    ("Way", class_ids::OSM_WAY),
+    ("OldWay", class_ids::OSM_WAY),
+    ("Relation", class_ids::OSM_RELATION),
+    ("OldRelation", class_ids::OSM_RELATION),
+    ("Changeset", class_ids::OSM_CHANGESET),
+    // Every element-tag join table collapses to one concept: the `k=v`
+    // pair is the same thing whichever element carries it.
+    ("NodeTag", class_ids::OSM_ELEMENT_TAG),
+    ("WayTag", class_ids::OSM_ELEMENT_TAG),
+    ("RelationTag", class_ids::OSM_ELEMENT_TAG),
+    ("OldNodeTag", class_ids::OSM_ELEMENT_TAG),
+    ("OldWayTag", class_ids::OSM_ELEMENT_TAG),
+    ("OldRelationTag", class_ids::OSM_ELEMENT_TAG),
+    ("RelationMember", class_ids::OSM_RELATION_MEMBER),
+    ("OldRelationMember", class_ids::OSM_RELATION_MEMBER),
+    ("WayNode", class_ids::OSM_WAY_NODE),
+    ("OldWayNode", class_ids::OSM_WAY_NODE),
+    ("Note", class_ids::OSM_NOTE),
+    ("Trace", class_ids::OSM_GPX_TRACE),
+    ("User", class_ids::OSM_USER),
+];
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1215,6 +1283,116 @@ mod tests {
                 "{app}Port::class_id(\"{name}\") must resolve to BILLABLE_WORK_ENTRY \
                  (0x{target:04X}) — the planner⟷ERP convergence pin from \
                  APP-CODEBOOK-MIGRATION-PLAN.md W0+W1+W2+W3",
+            );
+        }
+    }
+
+    // ── OSM port ────────────────────────────────────────────────────
+
+    #[test]
+    fn osm_namespace_and_bridge_id_match_canonical_strings() {
+        assert_eq!(OsmPort::NAMESPACE, "OpenStreetMap");
+        assert_eq!(OsmPort::BRIDGE_ID, "osm");
+        assert_eq!(OsmPort::APP_PREFIX, 0x0008);
+    }
+
+    #[test]
+    fn osm_render_prefix_collides_with_no_other_port() {
+        let prefixes = [
+            OpenProjectPort::APP_PREFIX,
+            RedminePort::APP_PREFIX,
+            HealthcarePort::APP_PREFIX,
+            WoaPort::APP_PREFIX,
+            SmbPort::APP_PREFIX,
+            OdooPort::APP_PREFIX,
+            OsmPort::APP_PREFIX,
+        ];
+        let mut sorted = prefixes;
+        sorted.sort_unstable();
+        let before = sorted.len();
+        let mut deduped = sorted.to_vec();
+        deduped.dedup();
+        assert_eq!(deduped.len(), before, "two ports share a render prefix");
+    }
+
+    #[test]
+    fn osm_elements_resolve_into_the_geo_domain() {
+        for name in [
+            "Node",
+            "Way",
+            "Relation",
+            "Changeset",
+            "NodeTag",
+            "RelationMember",
+            "WayNode",
+            "Note",
+            "Trace",
+            "User",
+        ] {
+            let id = OsmPort::class_id(name)
+                .unwrap_or_else(|| panic!("OsmPort::class_id(\"{name}\") must resolve"));
+            assert_eq!(
+                id >> 8,
+                0x0F,
+                "{name} resolved to {id:#06x}, outside the Geo domain"
+            );
+        }
+    }
+
+    #[test]
+    fn versioned_old_classes_ground_to_their_base_concept() {
+        // The temporal axis is a Lance version, not a second identity — the
+        // same collapse the Principal/User/Group STI chain gets.
+        for (current, old) in [
+            ("Node", "OldNode"),
+            ("Way", "OldWay"),
+            ("Relation", "OldRelation"),
+            ("RelationMember", "OldRelationMember"),
+            ("WayNode", "OldWayNode"),
+        ] {
+            assert_eq!(
+                OsmPort::class_id(current),
+                OsmPort::class_id(old),
+                "{old} must ground to {current}'s concept"
+            );
+        }
+    }
+
+    #[test]
+    fn every_element_tag_table_collapses_to_one_concept() {
+        let target = Some(class_ids::OSM_ELEMENT_TAG);
+        for name in [
+            "NodeTag",
+            "WayTag",
+            "RelationTag",
+            "OldNodeTag",
+            "OldWayTag",
+            "OldRelationTag",
+        ] {
+            assert_eq!(OsmPort::class_id(name), target, "{name} must collapse");
+        }
+        // Anti-vacuity: the collapse is not "everything maps to one id".
+        assert_ne!(OsmPort::class_id("Node"), target);
+    }
+
+    #[test]
+    fn unminted_osm_web_classes_resolve_to_none_rather_than_an_approximate_id() {
+        // Thirty of the fifty harvested classes have no minted concept. They
+        // must be ABSENT, not forced onto a near-enough id — the same posture
+        // the Genetics block's "do NOT mint without an operator ruling" takes.
+        for name in [
+            "DiaryEntry",
+            "Issue",
+            "UserBlock",
+            "Tracepoint",
+            "ChangesetTag",
+            "Message",
+            "Redaction",
+        ] {
+            assert_eq!(
+                OsmPort::class_id(name),
+                None,
+                "{name} is not minted and must not resolve"
             );
         }
     }

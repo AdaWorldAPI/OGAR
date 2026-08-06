@@ -145,6 +145,7 @@ materialised until the app mints its first private class).
 | `0x0005` | **Medcare / medcare-rs** | `0x09` health | **escape hatch only** (see §3) |
 | `0x0006` | q2 (Gotham / aiwar / neo4j) | `0x07` osint (+ TBD) | **TBD** — port not yet authored |
 | `0x0007` | Redmine | `0x01` project-mgmt | **no** — same concepts as OpenProject, own templates |
+| `0x0008` | OpenStreetMap (openstreetmap-website-rs) | `0x0F` geo | **no** — maps entirely onto core |
 | `0x00A0` | (reserved) future app block | — | — |
 
 > **OpenProject (`0x0001`) and Redmine (`0x0007`) are the showcase:**
