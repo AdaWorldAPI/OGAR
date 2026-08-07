@@ -24,7 +24,7 @@ fn one_hub_routes_two_vocabularies_by_classid_alone() {
 
     // Two stored nodes under DIFFERENT app prefixes — routing must ignore
     // the lo u16 (render skin) and read only the hi u16 (concept).
-    let blockly_node = ogar_blockly::BlockConcept::Content.render_classid(0x1000);
+    let blockly_node = ogar_blockly::BlockConcept::Palette.render_classid(0x1000);
     let relation_node = ogar_ro::relation_body_render_classid(0xBEEF);
 
     let blocks = hub.resolve_classid(blockly_node).expect("blocks plugged");
@@ -48,7 +48,7 @@ fn the_shared_core_is_identical_across_every_plugged_device() {
     // you happened to load.
     let hub = boot();
     let blocks = hub
-        .resolve_classid(ogar_blockly::BlockConcept::Content.render_classid(0x1000))
+        .resolve_classid(ogar_blockly::BlockConcept::Palette.render_classid(0x1000))
         .unwrap();
     let relations = hub
         .resolve_classid(ogar_ro::relation_body_render_classid(0x1000))
@@ -74,10 +74,13 @@ fn an_unplugged_concept_resolves_to_nothing_rather_than_a_default() {
     // answered *something* for every classid would carry no information.
     let hub = boot();
     assert!(hub.resolve_classid(0x0999_1000).is_none());
-    // …and the inventory concept is deliberately NOT plugged: registry rows
-    // are not function bodies, so they carry no call vocabulary.
-    let inventory = ogar_blockly::BlockConcept::Inventory.render_classid(0x1000);
-    assert!(hub.resolve_classid(inventory).is_none());
+    // …and a node SHAPE concept is deliberately NOT plugged: `LocoConcept`
+    // says what a row IS (a body, a registry entry); a palette id says which
+    // vocabulary resolves its bytes. Only the latter carries a table.
+    let shape = ogar_loco::LocoConcept::Inventory.render_classid(0x1000);
+    assert!(hub.resolve_classid(shape).is_none());
+    let body = ogar_loco::LocoConcept::FunctionBody.render_classid(0x1000);
+    assert!(hub.resolve_classid(body).is_none());
 }
 
 #[test]

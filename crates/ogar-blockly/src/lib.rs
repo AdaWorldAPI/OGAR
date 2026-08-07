@@ -30,7 +30,9 @@
 //! - the palette constants' *meanings* (documented on [`FnIndex`]'s
 //!   associated constants, re-exported from the core where the shared
 //!   computational range is defined once for every vocabulary),
-//! - the Blocks concept domain (`0x17XX`) and its two concept ids,
+//! - the Blocks concept domain (`0x17XX`) and its ONE concept id (`0x1717`),
+//!   which names the PALETTE; the node shapes it stores into are
+//!   [`ogar_loco::LocoConcept`]'s (`0x1701` / `0x1702`), globally owned,
 //! - the [`SoaSplit`] storage partitioning,
 //! - [`BlocklyVocabulary`], this palette's [`Vocabulary`] implementation.
 //!
@@ -51,6 +53,10 @@
 //! the V3 mailbox doctrine, not a storage preference: one function = one owner
 //! = its own SoA, so every write is owned and no singleton table accumulates
 //! writers.
+//!
+//! The split belongs to the SUBSTRATE, not to this palette: both partitions
+//! resolve to [`ogar_loco::LocoConcept`], because a registry row and a
+//! function body are the same two shapes for every vocabulary.
 //!
 //! # Provenance fence (load-bearing, not decorative)
 //!
@@ -111,28 +117,52 @@ pub const DEVICE_FAMILY_FLOOR: u8 = DOMAIN_FLOOR;
 
 // ── Concept ids (authoritative here, NOT in the shared codebook) ────────────
 
-/// The concepts this crate owns inside `0x17XX`.
+/// The **one** concept this crate owns: `0x1717`.
 ///
-/// Deliberately small. The operations are palette **bytes**, not concepts — the
-/// classid names the schema, and one content schema is all a function body
-/// needs.
+/// # Why exactly one, and why not `0x1701`/`0x1702`
+///
+/// The node shapes a block program stores into — the function body and the
+/// inventory row — are NOT Blockly's. They are described entirely in
+/// `ogar-loco`'s own vocabulary ([`FunctionBody`], [`LaneShape`], the value
+/// slab), and an elixir-shaped thinking template or an RO relation body is
+/// the same shape with a different palette. So they belong to the substrate
+/// and live at [`ogar_loco::LocoConcept`] (`0x1701` / `0x1702`) — **global
+/// interest**, because thinking orchestration rides the same call ABI.
+///
+/// This crate previously owned those two ids, which read as though a
+/// frontend owned the universal shape. It doesn't. What is genuinely
+/// Blockly's is ONE thing: *which palette resolves the bytes* — and that
+/// needs exactly one classid.
+///
+/// # This crate is a CONSUMER inside loco's domain
+///
+/// `0x17` belongs to the substrate, not to block programming (operator,
+/// 2026-08-07). This palette is **seated at `0x1717`** — deliberately high,
+/// so `0x1703`–`0x1716` stays contiguous headroom for `ogar-loco`'s own
+/// growth (uplifting, Klickwege, whatever the ABI needs next). One slot is
+/// the whole allocation: if a block frontend ever outgrows it, it gets its
+/// **own domain** rather than expanding into the substrate's headroom.
+///
+/// The operations themselves are palette **bytes**, never concepts: 256
+/// `FnIndex` slots resolved through this crate's [`BlocklyVocabulary`], not
+/// 256 codebook rows. That is why one id suffices, and why the shared
+/// codebook stays at zero `0x17XX` rows — this palette is **plug-and-play**,
+/// activated only in a build that actually contains a block frontend.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[non_exhaustive]
 pub enum BlockConcept {
-    /// `0x1701` — a **function body**: identity names the function, the value
-    /// slab carries up to [`LaneShape::calls_per_function`] calls. The one
-    /// content classid.
-    Content,
-    /// `0x1702` — the **inventory** row: the function registry entry (which
-    /// functions exist, addressed by identity). Reads never touch a body.
-    Inventory,
+    /// `0x1717` — **the Blockly/Scratch palette**: the classid that says
+    /// "resolve this node's call bytes through [`BlocklyVocabulary`]". The
+    /// node's SHAPE comes from [`ogar_loco::LocoConcept`]; this names the
+    /// vocabulary, not the shape.
+    Palette,
 }
 
 impl BlockConcept {
     /// Every concept, in id order — the enumeration hook a consumer uses to
     /// inherit the full set instead of hand-maintaining a parallel list.
-    pub const ALL: [BlockConcept; 2] = [BlockConcept::Content, BlockConcept::Inventory];
+    pub const ALL: [BlockConcept; 1] = [BlockConcept::Palette];
 
     /// This concept's canonical id inside the `0x17XX` Blocks domain.
     ///
@@ -141,8 +171,7 @@ impl BlockConcept {
     #[must_use]
     pub const fn concept_id(self) -> u16 {
         match self {
-            BlockConcept::Content => 0x1701,
-            BlockConcept::Inventory => 0x1702,
+            BlockConcept::Palette => 0x1717,
         }
     }
 
@@ -177,12 +206,19 @@ pub enum SoaSplit {
 }
 
 impl SoaSplit {
-    /// The concept whose classid this partition's rows carry.
+    /// The **`ogar-loco`** concept whose classid this partition's rows carry.
+    ///
+    /// The split is the substrate's, not this palette's: a registry row and a
+    /// function body are the same two shapes for every vocabulary, so they
+    /// resolve to [`ogar_loco::LocoConcept`], never to [`BlockConcept`]. This
+    /// crate's own id ([`BlockConcept::Palette`], `0x1717`) says which
+    /// vocabulary resolves the call bytes — a different question from which
+    /// shape the row is.
     #[must_use]
-    pub const fn concept(self) -> BlockConcept {
+    pub const fn concept(self) -> ogar_loco::LocoConcept {
         match self {
-            SoaSplit::Inventory => BlockConcept::Inventory,
-            SoaSplit::Content => BlockConcept::Content,
+            SoaSplit::Inventory => ogar_loco::LocoConcept::Inventory,
+            SoaSplit::Content => ogar_loco::LocoConcept::FunctionBody,
         }
     }
 }
@@ -216,14 +252,15 @@ impl Vocabulary for BlocklyVocabulary {
 
 /// Validate this palette and plug it into a consumer's
 /// [`VocabularyRegistry`] under the Blocks **content** concept
-/// ([`BlockConcept::Content`]) — the USB handshake for this device.
+/// ([`BlockConcept::Palette`]) — the USB handshake for this device.
 ///
 /// A consumer (blockly-rs, lance-graph) builds ONE registry at boot and
 /// calls each vocabulary crate's `plug_into`; every stored function node
 /// then resolves through `registry.resolve_classid(node_classid)`, with no
 /// consumer-side "this node must be Blockly" branch. Only the CONTENT
-/// concept is plugged: [`BlockConcept::Inventory`] rows are registry
-/// entries, not function bodies, so they carry no call vocabulary.
+/// concept is plugged: it names WHICH vocabulary resolves a node's call
+/// bytes. The node SHAPES ([`ogar_loco::LocoConcept`]) are the substrate's
+/// and are not this palette's to register.
 ///
 /// # Errors
 ///
@@ -237,7 +274,7 @@ impl Vocabulary for BlocklyVocabulary {
 pub fn plug_into(registry: &mut VocabularyRegistry) -> Result<(), RegistryError> {
     let checked = ogar_loco::vocabulary::conformance::validate(BlocklyVocabulary)
         .expect("BlocklyVocabulary conforms; pinned by this crate's tests");
-    registry.plug(BlockConcept::Content.concept_id(), &checked)
+    registry.plug(BlockConcept::Palette.concept_id(), &checked)
 }
 
 #[cfg(test)]
@@ -270,9 +307,9 @@ mod tests {
     #[test]
     fn render_classid_is_canon_high() {
         // canon concept HIGH, app render prefix LOW (D-CLASSID-CANON-HIGH-FLIP).
-        let id = BlockConcept::Content.render_classid(0x1000);
-        assert_eq!(id, 0x1701_1000);
-        assert_eq!(id >> 16, u32::from(BlockConcept::Content.concept_id()));
+        let id = BlockConcept::Palette.render_classid(0x1000);
+        assert_eq!(id, 0x1717_1000);
+        assert_eq!(id >> 16, u32::from(BlockConcept::Palette.concept_id()));
         assert_eq!(id & 0xFFFF, 0x1000);
     }
 
@@ -280,8 +317,14 @@ mod tests {
     fn soa_split_maps_each_partition_to_its_own_concept() {
         // Inventory and Content must NOT share a classid — the whole point of
         // the split is that a registry read never touches a body.
-        assert_eq!(SoaSplit::Inventory.concept(), BlockConcept::Inventory);
-        assert_eq!(SoaSplit::Content.concept(), BlockConcept::Content);
+        assert_eq!(
+            SoaSplit::Inventory.concept(),
+            ogar_loco::LocoConcept::Inventory
+        );
+        assert_eq!(
+            SoaSplit::Content.concept(),
+            ogar_loco::LocoConcept::FunctionBody
+        );
         assert_ne!(
             SoaSplit::Inventory.concept().concept_id(),
             SoaSplit::Content.concept().concept_id()
