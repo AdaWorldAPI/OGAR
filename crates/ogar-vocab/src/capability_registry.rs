@@ -186,11 +186,6 @@ pub fn domain_tables() -> Vec<DomainTable> {
             expected_executors: crate::healthcare_actions::HEALTHCARE_EXPECTED_EXECUTORS,
             entries: healthcare_entries,
         },
-        DomainTable {
-            domain: "blocks",
-            expected_executors: crate::blocks_actions::BLOCKS_EXPECTED_EXECUTORS,
-            entries: blocks_entries,
-        },
     ]
 }
 
@@ -329,12 +324,6 @@ fn ocr_entries() -> Vec<(String, u16)> {
 /// through the same generic [`entries_from_actions`] path as OCR.
 fn geo_entries() -> Vec<(String, u16)> {
     entries_from_actions(&crate::geo_actions::geo_actions())
-}
-
-/// Blocks domain rows ([`crate::blocks_actions`], the blockly-abi table),
-/// derived through the same generic [`entries_from_actions`] path as OCR.
-fn blocks_entries() -> Vec<(String, u16)> {
-    entries_from_actions(&crate::blocks_actions::blocks_actions())
 }
 
 /// Healthcare domain rows ([`crate::healthcare_actions`], the medcare-rs
