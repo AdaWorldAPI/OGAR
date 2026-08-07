@@ -132,42 +132,67 @@ sibling on every push.
    `domain_tables()` entry + a `<STYLES>_EXPECTED_EXECUTORS` list arms
    the thinking-style table for whichever engine executes styles —
    same recipe as step 1 above, zero new machinery.
-5. **Universal domain knowledge vs a particular codebook — the Blocks
-   case (operator, 2026-08-07; deferred, NOT a defect today).** Two
-   things got conflated when blockly-rs was migrated, and the
-   distinction is worth keeping sharp for every future plug:
+5. **Universal substrate vs a particular palette — the Blocks case
+   (operator-ruled 2026-08-07).** The distinction every future plug needs,
+   and the one a first attempt got wrong in both directions.
 
-   | | what it is | where it belongs |
+   | | what it is | who owns it |
    |---|---|---|
-   | **`ogar-loco`** | the call ABI + the shared-core arity/`pushes_result` discipline every sibling vocabulary rides | **universal** — one home, every consumer |
-   | **the Blocks codebook** (`0x17XX` concepts) | one frontend family's particular schema | **particular** — properly the plug's, not the shared codebook's |
+   | **`ogar-loco`** | the call ABI + the node SHAPES (`0x1701` function body, `0x1702` inventory) | **global** — thinking orchestration rides the same ABI, so this is global interest |
+   | **a frontend palette** | which vocabulary resolves a node's call bytes (`ogar-blockly` = `0x1717`) | **particular** — one id, activated only in a build containing that frontend |
 
-   What shipped: `block_function` (`0x1701`) + `block_inventory`
-   (`0x1702`) are minted into `class_ids::ALL` + `CODEBOOK`, because
-   `resolve_hotplug` joins a plugged classid against `class_ids::ALL`
-   and answers `UnknownClassid` otherwise. The forcing constraint is a
-   dependency direction: **`ogar-blockly` deps `ogar-vocab`, so
-   `ogar-vocab` cannot read `0x1701` from `ogar-blockly`.** A permanent
-   mint was the only thing that made the join resolve.
+   The tell that `0x1701`/`0x1702` are the substrate's: they are described
+   entirely in `ogar-loco`'s vocabulary — `FunctionBody`, `LaneShape`, the
+   value slab. An elixir-shaped thinking template and an RO relation body are
+   the SAME shape with a different palette. A frontend that owns them is
+   claiming the universal shape as its property.
 
-   Operator ruling: **the mint is fine as-is — two rows is tiny.** It is
-   NOT to be reverted. But the shape to move toward later is
-   *pull*, not *mint*: `ogar-vocab` on the authority side and
-   `lance-graph-ogar` on the other, with **plug-and-play as the
-   trigger** — i.e. the codebook is CONSULTED by an activation rather
-   than permanently carrying every frontend's particular concepts. The
-   natural mechanism is the classid travelling in the plug itself
-   (`lance_graph_contract::hotplug`), so `resolve_hotplug` tries
-   `class_ids::ALL` first (canonical domains unchanged) and falls back
-   to the plug's own rows instead of refusing.
+   Consequently a frontend needs exactly **one** classid, naming its
+   vocabulary — not one per node shape. `ogar-blockly` is `0x1717`; the 256
+   operations are `FnIndex` palette BYTES resolved through its `Vocabulary`,
+   never codebook rows.
 
-   Why it is deferred rather than done: the cost today is 2 rows and a
-   `COUNT_FUSE` bump; the fix touches the socket type, the resolver,
-   and both mirror halves. Revisit when a frontend family wants its
-   FULL palette addressable — the reserve that keeps 256 opcode bytes
-   out of the shared codebook is the same pressure one level up, and
-   that is the point at which mint-vs-pull stops being cosmetic.
+   **What NOT to do (burned 2026-08-07, reverted same day).** Do not mint a
+   particular palette's concepts into `ogar_vocab::class_ids::ALL` to make
+   `resolve_hotplug` accept them. `class_ids::ALL` is mirrored into
+   `lance_graph_contract::ogar_codebook` under a **compile-time** count fuse
+   (`lance_graph_ogar::parity::COUNT_FUSE`), so anything added there is by
+   construction a lance-graph change — it turned lance-graph red against
+   OGAR `main` and dragged in `ogar-class-view`, `all_promoted_classes`,
+   `domains_agree` and both fuse halves. Registering a frontend's codebook in
+   lance-graph is an OGAR concern that has leaked; the shared codebook is
+   **global** surface only.
 
-   Tripwire that says it is time: `concepts_in_domain(Blocks).count()`
-   climbing past a handful, or a second frontend family (scratch-rs)
-   needing its own particular rows minted the same way.
+   **The shape instead:** the shared codebook is *triggered*, not
+   pre-minted — the classid travels with the plug and is activated by Cargo
+   presence when the frontend is actually in the build graph (the same
+   "auto-activation = Cargo presence, no runtime detection" rule
+   `lance-graph-ogar` documents), with `ogar-vocab` detecting the classid as
+   the trigger. `ConceptDomain::Blocks` (`0x17`) is already reserved with
+   ZERO rows precisely so `canonical_concept_domain(0x1717)` routes today
+   without any mint — the reserved-domain posture was the mechanism all
+   along.
+
+   **The `0x17` layout (operator, 2026-08-07).** The domain is the
+   SUBSTRATE's, not one frontend's: `0x1701`/`0x1702` are loco's node shapes,
+   `0x1703`–`0x1716` is loco's reserved headroom (uplifting, Klickwege,
+   whatever the ABI needs next), and consumers are seated from `0x1717`
+   upward — one slot per frontend palette. Consumers sit HIGH on purpose so
+   the substrate keeps contiguous room beneath them; a frontend that outgrows
+   its slot gets its **own domain** rather than eating that headroom (the
+   same "scale = the next cascade level, never field-widening" rule as the
+   GUID canon). The `ConceptDomain::Blocks` label on `0x17` predates this and
+   now reads too narrowly — renaming a reserved domain is a canon change,
+   left to the operator; nothing depends on the label, only the `id >> 8`
+   route.
+
+   **Status:** the ownership split is shipped (`LocoConcept` in `ogar-loco`,
+   `BlockConcept::Palette` = `0x1717` in `ogar-blockly`). Whether
+   `ogar-loco`'s `0x1701`/`0x1702` are additionally promoted into the shared
+   codebook as the global registration is an **open operator decision**, not
+   done here — and `ogar-loco` is written so nothing breaks if they never
+   are. The conditional activation path for a frontend palette
+   (`resolve_hotplug` accepting a plug-carried classid) is likewise **not yet
+   built**; a blockly plug at `0x1717` still receives `UnknownClassid` until
+   it is. Both are named-pending, deliberately, rather than described as
+   shipped.

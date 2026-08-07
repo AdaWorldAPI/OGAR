@@ -136,6 +136,86 @@ pub use telemetry::{FunnelTally, RefusalGate};
 pub use vocabulary::conformance::CheckedVocabulary;
 pub use vocabulary::{FnSpec, ValueCodebook, Vocabulary, VocabularyTable};
 
+// ── The universal node concepts ─────────────────────────────────────────────
+
+/// The **global** concepts this crate owns: the node shapes EVERY sibling
+/// vocabulary stores into, whatever palette it speaks.
+///
+/// These are not a frontend's property. A Blockly script body, an
+/// elixir-shaped thinking template, and an RO relation body are all the same
+/// [`FunctionBody`] in the same 512-byte [`FunctionNode`] — they differ only
+/// in which [`Vocabulary`] resolves their bytes. So the classid that names
+/// *"a function body"* belongs here, at the substrate, and a frontend
+/// references it rather than minting its own.
+///
+/// This is the global half of the split: `ogar-loco` is global interest
+/// (thinking orchestration rides the same call ABI), whereas a particular
+/// palette — Blockly/Scratch opcodes, `ogar-blockly`'s `0x1717` — is
+/// activated only in a build that actually contains that frontend.
+///
+/// # `0x17` is LOCO's domain, and consumers are seated above
+///
+/// The whole `0x17XX` block belongs to this substrate (operator, 2026-08-07).
+/// The layout inside it:
+///
+/// | range | who | for what |
+/// |---|---|---|
+/// | `0x1701` / `0x1702` | **loco** | the node shapes — body + inventory |
+/// | `0x1703`–`0x1716` | **loco, reserved** | headroom for the substrate's own growth — uplifting, Klickwege, whatever the ABI needs next |
+/// | `0x1717`+ | **consumers** | one slot per frontend palette (`ogar-blockly` = `0x1717`) |
+///
+/// Consumers were deliberately seated *high* so the substrate keeps
+/// contiguous room beneath them. A frontend that outgrows a single slot gets
+/// its **own domain** rather than eating into that headroom — the same
+/// "scale = the next cascade level, never field-widening" rule the GUID canon
+/// uses.
+///
+/// The `ogar_vocab::ConceptDomain::Blocks` label on `0x17` predates this and
+/// now reads narrowly (the domain is the substrate's, not one frontend's).
+/// Renaming a reserved domain is a canon change and is left to the operator;
+/// nothing here depends on the label, only on the `id >> 8` route.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[non_exhaustive]
+pub enum LocoConcept {
+    /// `0x1701` — a **function body**: identity names the function, the value
+    /// slab carries up to [`LaneShape::calls_per_function`] calls. The one
+    /// content classid, shared by every vocabulary.
+    FunctionBody,
+    /// `0x1702` — the **inventory** row: the function registry entry (which
+    /// functions exist, addressed by identity). A registry read never touches
+    /// a body — the V3 mailbox split, and it is the same split regardless of
+    /// palette.
+    Inventory,
+}
+
+impl LocoConcept {
+    /// Every concept, in id order — the enumeration hook a consumer uses
+    /// instead of hand-maintaining a parallel list.
+    pub const ALL: [LocoConcept; 2] = [LocoConcept::FunctionBody, LocoConcept::Inventory];
+
+    /// This concept's canonical id.
+    ///
+    /// Authoritative HERE. Whether these are additionally promoted into
+    /// `ogar_vocab`'s shared codebook is a separate, operator-ruled canon
+    /// decision — this crate does not assume it, and nothing here breaks if
+    /// they are not.
+    #[must_use]
+    pub const fn concept_id(self) -> u16 {
+        match self {
+            LocoConcept::FunctionBody => 0x1701,
+            LocoConcept::Inventory => 0x1702,
+        }
+    }
+
+    /// The full V3 render classid under a consumer's app prefix — canon-high
+    /// `(concept as u32) << 16 | app_prefix`.
+    #[must_use]
+    pub const fn render_classid(self, app_prefix: u16) -> u32 {
+        ((self.concept_id() as u32) << 16) | (app_prefix as u32)
+    }
+}
+
 // ── The function-body budget ────────────────────────────────────────────────
 
 /// Value-slab facet slots in a 512-byte node: `value(480) / 16` = **30**.
