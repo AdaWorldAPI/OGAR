@@ -192,7 +192,7 @@ impl<'a> EdgeLanes<'a> {
     /// Walks lanes in order, consuming `degree(p)` links per predicate in
     /// ascending predicate order; a `0` slot means the lane is spent (no OBO
     /// CURIE numeric is 0) and the walk advances to the next lane.
-    pub fn links(&self) -> impl Iterator<Item = (Predicate, Link)> + '_ {
+    pub fn links(self) -> impl Iterator<Item = (Predicate, Link)> + 'a {
         LinkIter {
             row: self.row,
             lane: 0,
@@ -204,7 +204,7 @@ impl<'a> EdgeLanes<'a> {
 
     /// Only the links carried by one predicate — the traversal hot path
     /// (`is_a` for the subsumption spine, `part_of` for the anatomy backbone).
-    pub fn links_of(&self, p: Predicate) -> impl Iterator<Item = Link> + '_ {
+    pub fn links_of(self, p: Predicate) -> impl Iterator<Item = Link> + 'a {
         self.links().filter(move |(q, _)| *q == p).map(|(_, l)| l)
     }
 }
@@ -281,6 +281,36 @@ const PREDICATES: [Predicate; 8] = [
 #[must_use]
 pub const fn target_classid(ns: Namespace, app_prefix: u16) -> u32 {
     ns.render_classid(app_prefix)
+}
+
+/// This row's own address as a [`Link`] — the same `(classid, identity)` shape
+/// a target carries, because a subject and a target are the same kind of thing.
+#[must_use]
+pub const fn subject(row: &[u8; NODE_ROW_STRIDE]) -> Link {
+    let (classid, num) = crate::unpack_key(row);
+    Link { classid, num }
+}
+
+/// The **subsumption projection** over baked rows: `(subclass, superclass)`
+/// pairs, `is_a` only.
+///
+/// This is the adapter a post-bake EL reasoner consumes. It reads the baked
+/// artifact and nothing else — no file, no CURIE, no label — and the `is_a`
+/// filter is the point rather than a convenience: walking subsumption together
+/// with `part_of` derives FALSE ancestors (`A part_of B` and `B ⊑ C` does not
+/// give `A ⊑ C`), so a reasoner without role composition must never be handed
+/// the mixed set. Filtering here means a caller cannot make that mistake by
+/// forgetting to.
+///
+/// Borrows throughout: the pairs are decoded from the rows as the iterator
+/// walks, nothing is gathered.
+pub fn subsumptions(rows: &[crate::Row512]) -> impl Iterator<Item = (Link, Link)> + '_ {
+    rows.iter().flat_map(|row| {
+        let s = subject(&row.0);
+        EdgeLanes::new(&row.0)
+            .links_of(Predicate::IsA)
+            .map(move |p| (s, p))
+    })
 }
 
 #[cfg(test)]
@@ -430,6 +460,55 @@ mod tests {
             EdgeLanes::new(&row).links().count(),
             1,
             "row_ptr is load-bearing: a wrong degree must change the walk"
+        );
+    }
+
+    #[test]
+    fn the_subsumption_projection_drops_every_non_is_a_edge() {
+        // A row with both an is_a and a part_of parent. Handing the mixed set
+        // to a reasoner without role composition derives false ancestors, so
+        // the projection must yield ONLY the is_a edge.
+        let mut row = row_with_degrees(&[(Predicate::IsA, 1), (Predicate::PartOf, 1)]);
+        row[0..16].copy_from_slice(&crate::pack_key(0x0303_0000, 2244));
+        let mut tg = vec![
+            (Predicate::IsA, t(Namespace::Uberon, 10)),
+            (Predicate::PartOf, t(Namespace::Uberon, 20)),
+        ];
+        pack_edges(&mut row, &mut tg, 0x0000);
+
+        // both edges are readable...
+        assert_eq!(EdgeLanes::new(&row).links().count(), 2);
+        // ...but only the subsumption is projected, and the subject is the row.
+        let rows = [crate::Row512(row)];
+        let got: Vec<_> = subsumptions(&rows).collect();
+        assert_eq!(
+            got,
+            vec![(
+                Link {
+                    classid: 0x0303_0000,
+                    num: 2244
+                },
+                Link {
+                    classid: 0x0303_0000,
+                    num: 10
+                }
+            )],
+            "part_of must not reach a reasoner that lacks role composition"
+        );
+    }
+
+    #[test]
+    fn a_row_key_round_trips_through_the_family_identity_rail() {
+        // an oversize CURIE (> u16) must survive: the numeric rides the rail,
+        // high half in `family`. A truncating decode would return 4556 here.
+        let mut row = [0u8; NODE_ROW_STRIDE];
+        row[0..16].copy_from_slice(&crate::pack_key(0x0301_0000, 700_092));
+        assert_eq!(
+            subject(&row),
+            Link {
+                classid: 0x0301_0000,
+                num: 700_092
+            }
         );
     }
 

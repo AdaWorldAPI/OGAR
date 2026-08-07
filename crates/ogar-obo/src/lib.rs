@@ -315,6 +315,19 @@ fn pack_key(classid: u32, identity: u32) -> [u8; 16] {
     k
 }
 
+/// Read a row's key back as `(classid, CURIE numeric)` — the inverse of
+/// `pack_key`, recombining the `family:identity` rail into the 24-bit numeric.
+///
+/// This is the *whole* prerender property in one call: a reader learns which
+/// class a row is and which instance, with **zero value decode**.
+#[must_use]
+pub const fn unpack_key(row: &[u8; NODE_ROW_STRIDE]) -> (u32, u32) {
+    let classid = u32::from_le_bytes([row[0], row[1], row[2], row[3]]);
+    let family = u16::from_le_bytes([row[12], row[13]]) as u32;
+    let identity = u16::from_le_bytes([row[14], row[15]]) as u32;
+    (classid, (family << 16) | identity)
+}
+
 /// Pack one node into its 512-byte row.
 ///
 /// The in-row `edges` block records the *degree* per predicate (a one-byte
