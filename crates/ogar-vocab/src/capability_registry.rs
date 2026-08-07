@@ -186,6 +186,14 @@ pub fn domain_tables() -> Vec<DomainTable> {
             expected_executors: crate::healthcare_actions::HEALTHCARE_EXPECTED_EXECUTORS,
             entries: healthcare_entries,
         },
+        // Feature-activated, not canon: present only when a block editor is
+        // actually in the build graph. Every table above ships in every build.
+        #[cfg(feature = "blocks")]
+        DomainTable {
+            domain: "blocks",
+            expected_executors: crate::blocks_actions::BLOCKS_EXPECTED_EXECUTORS,
+            entries: blocks_entries,
+        },
     ]
 }
 
@@ -229,7 +237,14 @@ fn derive_action_rows(actions: &[crate::ActionDef]) -> Vec<ActionRow> {
         .iter()
         .map(|def| {
             let concept = def.object_class.rsplit('/').next().unwrap_or_default();
-            match crate::canonical_concept_id(concept) {
+            // Canon first, then feature-activated rows — the SAME order as
+            // `resolve_concept_row`. Both sides of the join must consult the
+            // same set, or an activated concept resolves as a plugged classid
+            // (so the plug is accepted) while its capabilities silently land
+            // in the slag ledger, and the port answers `NoCapabilitiesFor` for
+            // a table that is right there. Measured, not hypothetical: that is
+            // exactly what this returned before the `or_else` arm.
+            match crate::canonical_concept_id(concept).or_else(|| activated_concept_id(concept)) {
                 Some(id) => ActionRow::Resolved(def.predicate.clone(), id),
                 None => ActionRow::Unminted(UnmintedRow {
                     capability: def.predicate.clone(),
@@ -326,6 +341,65 @@ fn geo_entries() -> Vec<(String, u16)> {
     entries_from_actions(&crate::geo_actions::geo_actions())
 }
 
+/// Blocks domain rows ([`crate::blocks_actions`], the blockly-abi table) —
+/// compiled ONLY under the `blocks` feature.
+#[cfg(feature = "blocks")]
+fn blocks_entries() -> Vec<(String, u16)> {
+    entries_from_actions(&crate::blocks_actions::blocks_actions())
+}
+
+/// Resolve one plugged classid to its `(concept, id)` row.
+///
+/// **The global codebook first, then whatever a feature ACTIVATED.** This is
+/// the "codebook triggered by plug-and-play" seam: `class_ids::ALL` is the
+/// canon every build carries (and the surface mirrored into lance-graph under
+/// a compile-time count fuse), while a particular frontend's codebook rides
+/// its own Cargo feature and is consulted only when that feature is compiled
+/// in — i.e. only when the consumer that owns it is actually in the build
+/// graph.
+///
+/// Auto-activation is **Cargo presence, not runtime detection** — the same
+/// rule `lance-graph-ogar` already documents. With the feature off these rows
+/// do not exist and a plug reports `UnknownClassid`, which is the honest
+/// answer: that vocabulary is not in this binary.
+///
+/// Order is deliberate: **canon wins.** A feature can ADD a concept the global
+/// codebook does not carry; it can never SHADOW one it does.
+fn resolve_concept_row(id: u16) -> Option<(&'static str, u16)> {
+    if let Some(&(name, cid)) = crate::class_ids::ALL.iter().find(|&&(_, cid)| cid == id) {
+        return Some((name, cid));
+    }
+    activated_concepts()
+        .iter()
+        .find(|&&(_, cid)| cid == id)
+        .copied()
+}
+
+/// Every concept row a compiled-in feature activates, beyond `class_ids::ALL`.
+///
+/// Empty in a default build — which is what keeps a consumer that never
+/// touches a block editor free of a block editor's codebook.
+/// The id of an activated concept BY NAME — the `derive_action_rows` half of
+/// the same lookup [`resolve_concept_row`] does by id. Both halves must
+/// consult the same set (see the call site).
+fn activated_concept_id(concept: &str) -> Option<u16> {
+    activated_concepts()
+        .iter()
+        .find(|&&(name, _)| name == concept)
+        .map(|&(_, id)| id)
+}
+
+fn activated_concepts() -> &'static [(&'static str, u16)] {
+    #[cfg(feature = "blocks")]
+    {
+        crate::blocks_actions::ACTIVATED_CONCEPTS
+    }
+    #[cfg(not(feature = "blocks"))]
+    {
+        &[]
+    }
+}
+
 /// Healthcare domain rows ([`crate::healthcare_actions`], the medcare-rs
 /// table — parity-plan P3), derived through the same generic
 /// [`entries_from_actions`] path as OCR.
@@ -353,8 +427,8 @@ pub fn resolve_hotplug(
 ) -> Result<HotplugActivation, HotplugDrift> {
     let mut concepts = Vec::new();
     for &id in classids {
-        match crate::class_ids::ALL.iter().find(|&&(_, cid)| cid == id) {
-            Some(&(name, cid)) => concepts.push((name, cid)),
+        match resolve_concept_row(id) {
+            Some((name, cid)) => concepts.push((name, cid)),
             None => return Err(HotplugDrift::UnknownClassid(id)),
         }
     }

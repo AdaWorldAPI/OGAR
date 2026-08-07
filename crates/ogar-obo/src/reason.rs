@@ -115,9 +115,7 @@ pub struct ElStats {
 /// Returns, per node, the sorted deduped set of all transitive ancestors.
 /// Assumes acyclic (run [`count_is_a_cycles`] first); a residual cycle is
 /// simply not expanded past a re-visit, never loops.
-fn ancestor_closure(
-    adj: &HashMap<TermId, Vec<TermId>>,
-) -> HashMap<TermId, Vec<TermId>> {
+fn ancestor_closure(adj: &HashMap<TermId, Vec<TermId>>) -> HashMap<TermId, Vec<TermId>> {
     // Kahn order over the parent graph, then DP bottom-up.
     // Build reverse (parent -> children) for indegree over child->parent edges.
     let mut all: Vec<TermId> = Vec::new();
@@ -309,9 +307,15 @@ mod tests {
 
     fn t(sns: Namespace, s: u32, p: Predicate, ons: Namespace, o: u32) -> Triple {
         Triple {
-            s: TermId { ns: sns as u8, num: s },
+            s: TermId {
+                ns: sns as u8,
+                num: s,
+            },
             p,
-            o: TermId { ns: ons as u8, num: o },
+            o: TermId {
+                ns: ons as u8,
+                num: o,
+            },
         }
     }
 
@@ -353,9 +357,27 @@ mod tests {
         //   UBERON:200 is_a    UBERON:300       (which is a kind of ...)
         // ⟹ HP:9 is grounded to UBERON:{200,300} too (2 inferred-beyond-asserted).
         let tr = vec![
-            t(Namespace::Hpo, 9, Predicate::HasAnatomy, Namespace::Uberon, 100),
-            t(Namespace::Uberon, 100, Predicate::PartOf, Namespace::Uberon, 200),
-            t(Namespace::Uberon, 200, Predicate::IsA, Namespace::Uberon, 300),
+            t(
+                Namespace::Hpo,
+                9,
+                Predicate::HasAnatomy,
+                Namespace::Uberon,
+                100,
+            ),
+            t(
+                Namespace::Uberon,
+                100,
+                Predicate::PartOf,
+                Namespace::Uberon,
+                200,
+            ),
+            t(
+                Namespace::Uberon,
+                200,
+                Predicate::IsA,
+                Namespace::Uberon,
+                300,
+            ),
         ];
         let s = saturate(&tr);
         // R∃ fires on BOTH existentials: HP:9→{200,300} (2) AND the part_of
