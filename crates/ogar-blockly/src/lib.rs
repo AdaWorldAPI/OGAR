@@ -83,7 +83,7 @@ pub use ogar_loco::{
     MAX_VALUES_PER_CALL, PAYLOAD_BYTES_PER_SLOT, SLOT_STRIDE, VALUE_SLAB_LEN, call_in_slab,
 };
 
-use ogar_loco::{DOMAIN_FLOOR, Vocabulary};
+use ogar_loco::{DOMAIN_FLOOR, RegistryError, Vocabulary, VocabularyRegistry};
 
 /// The reserved Blocks [`ConceptDomain`] every block node routes on. Live in
 /// `ogar_vocab` with zero shared codebook rows, so a consumer can branch on it
@@ -210,6 +210,34 @@ impl Vocabulary for BlocklyVocabulary {
     fn domain_body_refs(&self, _f: FnIndex) -> u8 {
         0
     }
+}
+
+// ── Plug-and-play ───────────────────────────────────────────────────────────
+
+/// Validate this palette and plug it into a consumer's
+/// [`VocabularyRegistry`] under the Blocks **content** concept
+/// ([`BlockConcept::Content`]) — the USB handshake for this device.
+///
+/// A consumer (blockly-rs, lance-graph) builds ONE registry at boot and
+/// calls each vocabulary crate's `plug_into`; every stored function node
+/// then resolves through `registry.resolve_classid(node_classid)`, with no
+/// consumer-side "this node must be Blockly" branch. Only the CONTENT
+/// concept is plugged: [`BlockConcept::Inventory`] rows are registry
+/// entries, not function bodies, so they carry no call vocabulary.
+///
+/// # Errors
+///
+/// [`RegistryError::ConceptTaken`] if something already claimed the Blocks
+/// content concept — refused loudly rather than silently overwritten.
+///
+/// # Panics
+///
+/// Never in practice: [`BlocklyVocabulary`] conformance is pinned by this
+/// crate's own tests, so `validate` cannot fail here.
+pub fn plug_into(registry: &mut VocabularyRegistry) -> Result<(), RegistryError> {
+    let checked = ogar_loco::vocabulary::conformance::validate(BlocklyVocabulary)
+        .expect("BlocklyVocabulary conforms; pinned by this crate's tests");
+    registry.plug(BlockConcept::Content.concept_id(), &checked)
 }
 
 #[cfg(test)]

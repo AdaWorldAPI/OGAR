@@ -87,7 +87,7 @@ pub use ogar_loco::{
     call_in_slab,
 };
 
-use ogar_loco::Vocabulary;
+use ogar_loco::{RegistryError, Vocabulary, VocabularyRegistry};
 
 /// The relation-body content classid's concept id — one slot past
 /// `ogar_obo::Namespace::Ro`'s term-node concept (`0x0305`) inside the
@@ -209,6 +209,33 @@ impl Vocabulary for RelationVocabulary {
     fn domain_value_codebook(&self, f: FnIndex) -> Option<ValueCodebook> {
         Self::minted(f).then_some(RELATION_TARGET_CODEBOOK)
     }
+}
+
+// ── Plug-and-play ───────────────────────────────────────────────────────────
+
+/// Validate this palette and plug it into a consumer's
+/// [`VocabularyRegistry`] under [`RELATION_BODY_CONCEPT_ID`] — the USB
+/// handshake for this device, identical in shape to
+/// `ogar_blockly::plug_into`.
+///
+/// A consumer deps whichever vocabulary crates it needs and calls each
+/// one's `plug_into` at boot; a stored relation node then resolves its
+/// table through `registry.resolve_classid(classid)` with no consumer-side
+/// knowledge that RO exists as a special case.
+///
+/// # Errors
+///
+/// [`RegistryError::ConceptTaken`] if something already claimed the
+/// relation-body concept.
+///
+/// # Panics
+///
+/// Never in practice: [`RelationVocabulary`] conformance is pinned by this
+/// crate's own tests, so `validate` cannot fail here.
+pub fn plug_into(registry: &mut VocabularyRegistry) -> Result<(), RegistryError> {
+    let checked = ogar_loco::vocabulary::conformance::validate(RelationVocabulary)
+        .expect("RelationVocabulary conforms; pinned by this crate's tests");
+    registry.plug(RELATION_BODY_CONCEPT_ID, &checked)
 }
 
 #[cfg(test)]
