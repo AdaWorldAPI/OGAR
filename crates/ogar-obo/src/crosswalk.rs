@@ -103,16 +103,17 @@ impl Crosswalk {
             // roll up: drop a trailing digit past the 3-char WHO stem, else the
             // sub-category dot, else give up.
             if let Some(pos) = c.rfind(|ch: char| ch.is_ascii_digit())
-                && (c.len() > 3 || (c.contains('.') && pos > c.find('.').unwrap())) {
-                    c.truncate(pos);
-                    if c.ends_with('.') {
-                        c.pop();
-                    }
-                    if c.is_empty() {
-                        return None;
-                    }
-                    continue;
+                && (c.len() > 3 || (c.contains('.') && pos > c.find('.').unwrap()))
+            {
+                c.truncate(pos);
+                if c.ends_with('.') {
+                    c.pop();
                 }
+                if c.is_empty() {
+                    return None;
+                }
+                continue;
+            }
             return None;
         }
     }
@@ -153,16 +154,31 @@ mod tests {
         let mut nodes: HashMap<TermId, OboNode> = HashMap::new();
         // MONDO:5148 (T2DM) xrefs ICD-10 E11 + MeSH D003924
         nodes.insert(
-            TermId { ns: Namespace::Mondo as u8, num: 5148 },
+            TermId {
+                ns: Namespace::Mondo as u8,
+                num: 5148,
+            },
             node_with_xrefs(vec![
-                Xref { source: XrefSource::Icd, id: "E11".into() },
-                Xref { source: XrefSource::Mesh, id: "D003924".into() },
+                Xref {
+                    source: XrefSource::Icd,
+                    id: "E11".into(),
+                },
+                Xref {
+                    source: XrefSource::Mesh,
+                    id: "D003924".into(),
+                },
             ]),
         );
         // UBERON:945 (stomach) xrefs FMA:7148
         nodes.insert(
-            TermId { ns: Namespace::Uberon as u8, num: 945 },
-            node_with_xrefs(vec![Xref { source: XrefSource::Other("FMA".into()), id: "7148".into() }]),
+            TermId {
+                ns: Namespace::Uberon as u8,
+                num: 945,
+            },
+            node_with_xrefs(vec![Xref {
+                source: XrefSource::Other("FMA".into()),
+                id: "7148".into(),
+            }]),
         );
         let baked = bake(&nodes, 0x0000);
         let cw = Crosswalk::from_bake(&baked);
@@ -187,8 +203,14 @@ mod tests {
         // roll up to it (measured: MONDO carries no ICD-10-GM).
         let mut nodes: HashMap<TermId, OboNode> = HashMap::new();
         nodes.insert(
-            TermId { ns: Namespace::Mondo as u8, num: 5148 },
-            node_with_xrefs(vec![Xref { source: XrefSource::Icd, id: "E11".into() }]),
+            TermId {
+                ns: Namespace::Mondo as u8,
+                num: 5148,
+            },
+            node_with_xrefs(vec![Xref {
+                source: XrefSource::Icd,
+                id: "E11".into(),
+            }]),
         );
         let cw = Crosswalk::from_bake(&bake(&nodes, 0x0000));
         // direct GM code fails, rollup succeeds — no separate GM table
