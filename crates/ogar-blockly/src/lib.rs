@@ -166,12 +166,22 @@ impl BlockConcept {
 
     /// This concept's canonical id inside the `0x17XX` Blocks domain.
     ///
-    /// Authoritative HERE; `ogar_vocab`'s shared CODEBOOK deliberately carries
-    /// zero `0x17XX` rows (plug-and-play, mirroring `ogar_obo::Namespace`).
+    /// **Read from `ogar_vocab`, never re-declared here.** The id is declared
+    /// once in [`ogar_vocab::blocks_actions::BLOCK_PALETTE`] — the crate that
+    /// also declares the capability table keyed by it — because this crate
+    /// depends on `ogar-vocab` and the reverse is impossible. Two constants
+    /// for one id is exactly the drift the classid join exists to catch.
+    ///
+    /// That row is **activated, not canon**: it lives behind `ogar-vocab`'s
+    /// `blocks` feature, which this crate's dependency turns on, so it exists
+    /// only in a build graph that actually contains a block editor. The shared
+    /// `class_ids::ALL` keeps zero `0x17XX` rows — that surface is mirrored
+    /// into lance-graph under a compile-time fuse, and a frontend's palette is
+    /// not lance-graph's concern.
     #[must_use]
     pub const fn concept_id(self) -> u16 {
         match self {
-            BlockConcept::Palette => 0x1717,
+            BlockConcept::Palette => ogar_vocab::blocks_actions::BLOCK_PALETTE,
         }
     }
 

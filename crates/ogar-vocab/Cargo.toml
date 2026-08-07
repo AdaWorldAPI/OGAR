@@ -11,6 +11,16 @@ description = "Open Graph of Active Record — canonical IR types for the AR-sha
 [features]
 default = []
 serde = ["dep:serde"]
+# The Blocks (visual block-programming) codebook — ACTIVATED, not canon.
+# Off by default, so a consumer that never touches a block editor carries
+# zero 0x17XX rows. `ogar-blockly` turns it on for its own dependents, which
+# makes activation Cargo presence rather than runtime detection (the same
+# rule `lance-graph-ogar` documents). The rows it adds are consulted by
+# `capability_registry::resolve_hotplug` ALONGSIDE `class_ids::ALL` and are
+# deliberately never merged into it — that surface is mirrored into
+# lance-graph under a compile-time count fuse, and a frontend's palette is
+# not lance-graph's concern.
+blocks = []
 
 [dependencies]
 serde = { workspace = true, optional = true }

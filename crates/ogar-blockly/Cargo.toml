@@ -14,5 +14,8 @@ serde = ["dep:serde", "ogar-vocab/serde", "ogar-loco/serde"]
 
 [dependencies]
 ogar-loco = { path = "../ogar-loco" }
-ogar-vocab = { path = "../ogar-vocab" }
+# `features = ["blocks"]` IS the activation: any build graph containing this
+# crate activates the Blocks codebook in ogar-vocab, and no other build does.
+# Cargo presence, not runtime detection.
+ogar-vocab = { path = "../ogar-vocab", features = ["blocks"] }
 serde = { workspace = true, optional = true }
