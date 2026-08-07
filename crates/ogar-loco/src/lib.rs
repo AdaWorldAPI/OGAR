@@ -3,7 +3,7 @@
 //!
 //! # What this is, and why it exists
 //!
-//! The block-editor arc (`ogar-blockly` + the `blockly-rs` consumers) proved a
+//! The block-editor arc (the `blockly-rs` consumers) proved a
 //! storage shape for programs on the V3 substrate. The operator direction that
 //! created this crate generalizes it: *elixir-shaped templates are "just a
 //! rails-shaped semantic over classid index, 256:256 — not much different than
@@ -17,7 +17,7 @@
 //!   budgets, the refuse-don't-truncate guards, the shared computational
 //!   core's tables, the constant pool, the program/reference rules, and the
 //!   [`Vocabulary`] seam a sibling codebook plugs into.
-//! - **A vocabulary crate per domain** (`ogar-blockly` is the first) — the
+//! - **A vocabulary per domain, declared by whoever owns it** — the
 //!   palette *meanings* above the shared core, value-parameter codebooks,
 //!   frontend membranes (Blockly JSON, a template DSL, flow JSON), and
 //!   lowering from that frontend's records.
@@ -107,7 +107,7 @@
 //!
 //! - **No concept mints.** Content/Inventory concept ids per domain are
 //!   operator decisions with ledger entries; vocabulary crates carry them
-//!   (`ogar-blockly`'s `0x1701`/`0x1702` are the precedent).
+//!   (this crate's own `0x1701`/`0x1702` are the precedent).
 //! - **No GUID minting.** [`node::FunctionNode`] round-trips an opaque key.
 //! - **No frontend lowering.** Casting a Blockly record / template DSL / flow
 //!   JSON into calls is the vocabulary crate's job; this crate holds the
@@ -150,7 +150,7 @@ pub use vocabulary::{FnSpec, ValueCodebook, Vocabulary, VocabularyTable};
 ///
 /// This is the global half of the split: `ogar-loco` is global interest
 /// (thinking orchestration rides the same call ABI), whereas a particular
-/// palette — Blockly/Scratch opcodes, `ogar-blockly`'s `0x1717` — is
+/// palette — Blockly/Scratch opcodes, `blockly-rs`'s `0x1717` — is
 /// activated only in a build that actually contains that frontend.
 ///
 /// # `0x17` is LOCO's domain, and consumers are seated above
@@ -162,7 +162,7 @@ pub use vocabulary::{FnSpec, ValueCodebook, Vocabulary, VocabularyTable};
 /// |---|---|---|
 /// | `0x1701` / `0x1702` | **loco** | the node shapes — body + inventory |
 /// | `0x1703`–`0x1716` | **loco, reserved** | headroom for the substrate's own growth — uplifting, Klickwege, whatever the ABI needs next |
-/// | `0x1717`+ | **consumers** | one slot per frontend palette (`ogar-blockly` = `0x1717`) |
+/// | `0x1717`+ | **consumers** | one slot per frontend palette (`blockly-rs` = `0x1717`) |
 ///
 /// Consumers were deliberately seated *high* so the substrate keeps
 /// contiguous room beneath them. A frontend that outgrows a single slot gets
@@ -341,7 +341,7 @@ const _: () = assert!(LaneShape::Quads.calls_per_function() == 90);
 /// mint; unallocated domain slots stay reserved for each vocabulary. Neither
 /// side ever annexes the other's range.
 ///
-/// In the first vocabulary (`ogar-blockly`) the domain range hosts the
+/// In the first vocabulary (the `blockly-rs` palette) the domain range hosts the
 /// Scratch-style *device families* (motion, looks, sound, …) and the constant
 /// is re-exported there under its historical name `DEVICE_FAMILY_FLOOR`.
 pub const DOMAIN_FLOOR: u8 = 0x90;
@@ -360,7 +360,7 @@ const _: () = assert!(
 /// There is no opcode/function distinction: the named constants below are the
 /// primitive low range (the shared computational core) of the same `<256`
 /// codebook that user-defined functions mint into, resolved through the
-/// vocabulary's inventory registry (see `ogar-blockly`'s `SoaSplit` for the
+/// vocabulary's inventory registry (see the `blockly-rs` `SoaSplit` for the
 /// first concrete registry split). A [`Call`]'s first byte is a `FnIndex`; an
 /// editor's pick-from palette is a *rendering* of this codebook.
 ///
@@ -601,7 +601,7 @@ impl FnIndex {
     /// Is this a **vocabulary-specific** operation — one whose meaning comes
     /// from the classid-selected vocabulary rather than the shared core?
     ///
-    /// (In the first vocabulary, `ogar-blockly`, this range hosts the
+    /// (In the first vocabulary, the `blockly-rs` palette, this range hosts the
     /// Scratch-style device families.)
     #[must_use]
     pub const fn is_domain_specific(self) -> bool {

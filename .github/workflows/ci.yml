@@ -30,37 +30,11 @@ jobs:
         run: cargo check --workspace --all-targets
       - name: cargo test --workspace
         run: cargo test --workspace
-      # The OFF half of the plug-and-play activation contract.
+      # (A crate-scoped `--no-default-features` step lived here for the
+      # `blocks` activation feature. Both are gone: there is one codebook, no
+      # feature adds to it, and the guards that replaced the OFF-half gate are
+      # always compiled — `cargo test --workspace` above reaches them.)
       #
-      # `--workspace` CANNOT test it: `ogar-ro` dev-deps `ogar-blockly`, so
-      # feature unification turns ogar-vocab's `blocks` feature ON for the
-      # whole workspace run. Crate-scoped, `ogar-blockly` is not in the graph,
-      # the feature is off, and the `cfg(not(feature = "blocks"))` tests in
-      # `capability_registry` become reachable — the ones asserting a default
-      # build activates NOTHING and a frontend classid does not resolve.
-      #
-      # Without this step the design is only ever tested in the triggered
-      # direction, which is the vacuous shape of a guard nobody watched stay
-      # silent.
-      # `--no-default-features` FORCES the off build, so this job still
-      # reaches the gate even if `blocks` were added to `[features] default`
-      # (codex P2 on #259: with a plain `cargo test -p ogar-vocab` the module
-      # would compile out, cargo would exit 0, and the regression the gate
-      # exists to catch would be invisible).
-      #
-      # Exit code alone is NOT evidence here — a filtered-out test suite exits
-      # 0 too. So assert the named tests actually RAN. `the_off_gate_cannot_be
-      # _switched_off` is the always-compiled companion that fails if any
-      # activating feature reaches the default set.
-      - name: cargo test -p ogar-vocab (OFF half — forced, and proven to run)
-        run: |
-          set -euo pipefail
-          out=$(cargo test -p ogar-vocab --no-default-features 2>&1 | tee /dev/stderr)
-          for t in default_build_carries_no_activated_rows \
-                   the_off_gate_cannot_be_switched_off; do
-            echo "$out" | grep -q "$t" \
-              || { echo "::error::OFF-half gate '$t' did not run — it compiled out"; exit 1; }
-          done
       # Exercise the feature-gated surrealql AST walk (lifts DDL ->
       # Class via the surrealdb-parser fork). Crate-scoped because the
       # parser dep is heavy and not needed by other workspace members;
