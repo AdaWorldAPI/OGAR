@@ -30,6 +30,20 @@ jobs:
         run: cargo check --workspace --all-targets
       - name: cargo test --workspace
         run: cargo test --workspace
+      # The OFF half of the plug-and-play activation contract.
+      #
+      # `--workspace` CANNOT test it: `ogar-ro` dev-deps `ogar-blockly`, so
+      # feature unification turns ogar-vocab's `blocks` feature ON for the
+      # whole workspace run. Crate-scoped, `ogar-blockly` is not in the graph,
+      # the feature is off, and the `cfg(not(feature = "blocks"))` tests in
+      # `capability_registry` become reachable — the ones asserting a default
+      # build activates NOTHING and a frontend classid does not resolve.
+      #
+      # Without this step the design is only ever tested in the triggered
+      # direction, which is the vacuous shape of a guard nobody watched stay
+      # silent.
+      - name: cargo test -p ogar-vocab (default features — the OFF half)
+        run: cargo test -p ogar-vocab
       # Exercise the feature-gated surrealql AST walk (lifts DDL ->
       # Class via the surrealdb-parser fork). Crate-scoped because the
       # parser dep is heavy and not needed by other workspace members;
