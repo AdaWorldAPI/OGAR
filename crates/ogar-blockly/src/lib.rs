@@ -136,13 +136,21 @@ impl BlockConcept {
 
     /// This concept's canonical id inside the `0x17XX` Blocks domain.
     ///
-    /// Authoritative HERE; `ogar_vocab`'s shared CODEBOOK deliberately carries
-    /// zero `0x17XX` rows (plug-and-play, mirroring `ogar_obo::Namespace`).
+    /// **Read from `ogar_vocab::class_ids`, never re-declared here.** The two
+    /// schema concepts minted upstream when the hot-plug arc landed: a
+    /// consumer plugs a classid and
+    /// `ogar_vocab::capability_registry::resolve_hotplug` joins it against
+    /// `class_ids::ALL`, so an id that lived only in this crate would answer
+    /// `UnknownClassid` at the port. Two constants for one id is exactly the
+    /// drift the join exists to catch — so this reads the codebook.
+    ///
+    /// The *opcode palette* stays out of the shared codebook (that reserve is
+    /// intact): an opcode is an [`FnIndex`] byte inside a body, not a classid.
     #[must_use]
     pub const fn concept_id(self) -> u16 {
         match self {
-            BlockConcept::Content => 0x1701,
-            BlockConcept::Inventory => 0x1702,
+            BlockConcept::Content => ogar_vocab::class_ids::BLOCK_FUNCTION,
+            BlockConcept::Inventory => ogar_vocab::class_ids::BLOCK_INVENTORY,
         }
     }
 

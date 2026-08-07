@@ -34,6 +34,10 @@ use serde::{Deserialize, Serialize};
 /// `<port>::<path>(<shape>)` grammar (`E-GRAMMAR-IS-THE-RECIPE-SHAPE`).
 pub mod recipe;
 
+/// Healthcare capability surface — the medcare-rs authoritative action
+/// table (parity-plan P3; hand-authored, harvest-informed — see the
+/// module doc for why the mechanical lift was falsified by the corpus).
+pub mod blocks_actions;
 /// The tesseract-rs OCR capability surface — a hand-authored, non-`lift_*`
 /// [`ActionDef`] table (tesseract-rs has no source AST to extract from; see
 /// the module doc for why this is the authoritative action table rather
@@ -42,9 +46,6 @@ pub mod recipe;
 /// `render_tsv` / `render_hocr` / `render_searchable_pdf`, each targeting a
 /// minted `0x08XX` [`class_ids`] concept.
 pub mod capability_registry;
-/// Healthcare capability surface — the medcare-rs authoritative action
-/// table (parity-plan P3; hand-authored, harvest-informed — see the
-/// module doc for why the mechanical lift was falsified by the corpus).
 pub mod geo_actions;
 pub mod healthcare_actions;
 pub mod ocr_actions;
@@ -1381,6 +1382,21 @@ const CODEBOOK: &[(&str, u16)] = &[
     ("osm_note", 0x0F08),
     ("osm_gpx_trace", 0x0F09),
     ("osm_user", 0x0F0A),
+    // ── 0x17XX — Blocks (visual block-programming) ──
+    // The two SCHEMA concepts a block node's classid carries — NOT the opcode
+    // palette. The 0x17XX reserve note below withholds the *opcode vocabulary*
+    // (256 Blockly/Scratch operation bytes) from this codebook, and that still
+    // holds: opcodes are `FnIndex` bytes inside a function body, resolved
+    // through `ogar_loco`'s vocabulary table, and minting 256 of them here
+    // would bloat every consumer's codebook for a palette only block frontends
+    // read. These two are the different thing the reserve never covered — the
+    // classids a stored node is addressed BY, exactly as `osm_node` /
+    // `osm_way` are for geodata — and they must live here because
+    // `capability_registry::resolve_hotplug` joins a consumer's plug against
+    // `class_ids::ALL`. Without them blockly-rs cannot hot-plug at all
+    // (`UnknownClassid(0x1701)`).
+    ("block_function", 0x1701),
+    ("block_inventory", 0x1702),
 ];
 
 /// Codebook **domain** — the high byte of a canonical id (see
@@ -1986,6 +2002,22 @@ pub mod class_ids {
     /// `osm_user` (`0x0F0A`) — a mapper account. Rails `User`.
     pub const OSM_USER: u16 = 0x0F0A;
 
+    // ── 0x17XX — Blocks domain (visual block-programming schema concepts) ──
+    //
+    // The two classids a stored block node is addressed BY. The opcode
+    // palette is deliberately NOT here — see the CODEBOOK 0x17XX note.
+
+    /// `block_function` (`0x1701`) — one **function body**: identity names the
+    /// function, the value slab carries the call stream. The content classid a
+    /// `FunctionNode` is stored under, and the only Blocks concept that binds
+    /// capabilities (`blocks_actions`).
+    pub const BLOCK_FUNCTION: u16 = 0x1701;
+    /// `block_inventory` (`0x1702`) — the **registry row**: which functions
+    /// exist, addressed by identity. A registry read never touches a body, so
+    /// this concept binds no capability (the mirror of the eight Geo concepts
+    /// that are minted and addressable but declare none).
+    pub const BLOCK_INVENTORY: u16 = 0x1702;
+
     // ── 0x07XX — OSINT domain: no concept constants (low byte = APPID,
     // domain-wise; q2 = 0x01 → `0x0701` is OSINT-for-q2, not a concept —
     // operator ruling 2026-07-02; see the CODEBOOK section note). ──
@@ -2096,6 +2128,9 @@ pub mod class_ids {
         ("osm_note", OSM_NOTE),
         ("osm_gpx_trace", OSM_GPX_TRACE),
         ("osm_user", OSM_USER),
+        // 0x17XX — Blocks (visual block-programming schema concepts)
+        ("block_function", BLOCK_FUNCTION),
+        ("block_inventory", BLOCK_INVENTORY),
     ];
 
     #[cfg(test)]
@@ -2159,7 +2194,7 @@ pub mod class_ids {
             // lance-graph mirror is rebuilt against it.
             assert_eq!(
                 ALL.len(),
-                90,
+                92,
                 "class_ids::ALL count changed — update this pin AND the \
                  lance-graph mirror COUNT_FUSE (crates/lance-graph-ogar/src/lib.rs) \
                  in the same PR",
@@ -3045,6 +3080,9 @@ pub fn all_promoted_classes() -> Vec<Class> {
         osm_note(),
         osm_gpx_trace(),
         osm_user(),
+        // 0x17XX — Blocks arm (visual block-programming schema concepts)
+        block_function(),
+        block_inventory(),
     ]
 }
 
@@ -4761,6 +4799,39 @@ pub fn osm_user() -> Class {
     c
 }
 
+// ─────────────────────────────────────────────────────────────────────
+// 0x17XX — Blocks domain builders (visual block-programming schema).
+// The two classids a stored block node is addressed BY — NOT the opcode
+// palette, which stays an `FnIndex` byte inside a body (see the CODEBOOK
+// 0x17XX note). Shapes grounded in the Apache-2.0 Blockly / scratch-blocks
+// block definitions via `ogar-blockly`.
+// ─────────────────────────────────────────────────────────────────────
+
+/// The `block_function` (`0x1701`) — one **function body**: identity names
+/// the function, the value slab carries its call stream. The content classid
+/// a stored `FunctionNode` carries, and the only Blocks concept that binds
+/// capabilities (`blocks_actions`).
+#[must_use]
+pub fn block_function() -> Class {
+    let mut c = Class::new("BlockFunction");
+    c.language = Language::Unknown;
+    c.canonical_concept = Some("block_function".to_string());
+    c.associations = vec![family_edge("calls", "BlockFunction")];
+    c
+}
+
+/// The `block_inventory` (`0x1702`) — the **registry row**: which functions
+/// exist, addressed by identity. One function = one owner = its own SoA, so a
+/// registry read never touches a body.
+#[must_use]
+pub fn block_inventory() -> Class {
+    let mut c = Class::new("BlockInventory");
+    c.language = Language::Unknown;
+    c.canonical_concept = Some("block_inventory".to_string());
+    c.associations = vec![family_edge("registers", "BlockFunction")];
+    c
+}
+
 // ── 0x0CXX — Automation domain builders (HIRO IT-automation stack) ──
 // The MARS structural CMDB (A→R→S→M `dependsOn` backbone) + the Automation
 // DO-arm actuators. Shapes grounded in the vendored OGIT TTL attributes
@@ -5749,10 +5820,18 @@ mod tests {
         // under q2) — reserved, zero concept rows until an operator ruling
         // mints one — see the CODEBOOK 0x0EXX section note.
         assert_eq!(concepts_in_domain(ConceptDomain::Genetics).count(), 0);
-        // Same posture for the Blocks domain (0x17, visual block-programming
-        // opcodes) — reserved 2026-08-04, zero concept rows until the opcode
-        // vocabulary is minted from Apache-2.0 / spec sources.
-        assert_eq!(concepts_in_domain(ConceptDomain::Blocks).count(), 0);
+        // The Blocks domain (0x17) is the ONE reserve that has since minted —
+        // and only partly, so the distinction is worth keeping sharp. The
+        // 2026-08-04 reserve withheld the *opcode vocabulary* (256 Blockly /
+        // Scratch operation bytes); that still holds and those are still zero
+        // here, because an opcode is an `FnIndex` inside a function body, not
+        // a classid. What DID mint are the two SCHEMA concepts a block node is
+        // addressed by — `block_function` / `block_inventory` — because
+        // `capability_registry::resolve_hotplug` joins a consumer's plug
+        // against `class_ids::ALL`, so blockly-rs could not hot-plug without
+        // them. Two, not 258: if this ever counts in the hundreds, the opcode
+        // palette leaked into the shared codebook and the reserve was broken.
+        assert_eq!(concepts_in_domain(ConceptDomain::Blocks).count(), 2);
     }
 
     #[test]
