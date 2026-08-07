@@ -16,3 +16,6 @@ serde = ["dep:serde", "ogar-loco/serde"]
 ogar-loco = { path = "../ogar-loco" }
 ogar-obo = { path = "../ogar-obo" }
 serde = { workspace = true, optional = true }
+
+[dev-dependencies]
+ogar-blockly = { path = "../ogar-blockly" }
