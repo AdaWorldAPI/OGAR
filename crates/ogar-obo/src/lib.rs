@@ -171,7 +171,10 @@ impl TermId {
         if num > 0x00FF_FFFF {
             return None;
         }
-        Some(TermId { ns: ns as u8, num })
+        Some(TermId {
+            ns: ns as u8,
+            num,
+        })
     }
 
     /// This term's namespace.
@@ -411,18 +414,16 @@ pub fn parse_obo(text: &str) -> std::collections::HashMap<TermId, OboNode> {
             // `relationship: <REL> <TARGET> ! label` — the target is the LAST
             // whitespace token before any `!`.
             if let Some(sid) = cur
-                && let Some(t) = last_curie(rest)
-            {
-                let p = classify(sid.namespace(), t.namespace());
-                nodes.entry(sid).or_default().rel.push((p, t));
-            }
+                && let Some(t) = last_curie(rest) {
+                    let p = classify(sid.namespace(), t.namespace());
+                    nodes.entry(sid).or_default().rel.push((p, t));
+                }
         } else if let Some(rest) = line.strip_prefix("intersection_of: ") {
             if let Some(sid) = cur
-                && let Some(t) = last_curie(rest)
-            {
-                let p = classify(sid.namespace(), t.namespace());
-                nodes.entry(sid).or_default().rel.push((p, t));
-            }
+                && let Some(t) = last_curie(rest) {
+                    let p = classify(sid.namespace(), t.namespace());
+                    nodes.entry(sid).or_default().rel.push((p, t));
+                }
         } else if let Some(rest) = line.strip_prefix("xref: ") {
             // `xref: <SOURCE>:<ID> ! label` — the projection-join / guideline
             // bearing. Kept verbatim; NEVER truncated (MeSH → Leitlinie spider).
@@ -430,14 +431,12 @@ pub fn parse_obo(text: &str) -> std::collections::HashMap<TermId, OboNode> {
                 let tok = rest.split('!').next().unwrap_or(rest).trim();
                 let tok = tok.split_whitespace().next().unwrap_or(tok);
                 if let Some((src, id)) = tok.split_once(':')
-                    && !src.is_empty()
-                    && !id.is_empty()
-                {
-                    nodes.entry(sid).or_default().xref.push(Xref {
-                        source: XrefSource::from_prefix(src),
-                        id: id.to_string(),
-                    });
-                }
+                    && !src.is_empty() && !id.is_empty() {
+                        nodes.entry(sid).or_default().xref.push(Xref {
+                            source: XrefSource::from_prefix(src),
+                            id: id.to_string(),
+                        });
+                    }
             }
         }
     }
@@ -447,22 +446,14 @@ pub fn parse_obo(text: &str) -> std::collections::HashMap<TermId, OboNode> {
 /// First whitespace token of a line (before any `!` comment) — the target of
 /// an `is_a:` line.
 fn first_curie(s: &str) -> &str {
-    s.split('!')
-        .next()
-        .unwrap_or(s)
-        .split_whitespace()
-        .next()
-        .unwrap_or("")
-        .trim()
+    s.split('!').next().unwrap_or(s).split_whitespace().next().unwrap_or("").trim()
 }
 
 /// Last CURIE-shaped token before any `!` — the object of a `relationship:` /
 /// `intersection_of:` line (the predicate is the earlier token).
 fn last_curie(s: &str) -> Option<TermId> {
     let head = s.split('!').next().unwrap_or(s);
-    head.split_whitespace()
-        .rfind(|t| t.contains(':'))
-        .and_then(TermId::parse)
+    head.split_whitespace().rfind(|t| t.contains(':')).and_then(TermId::parse)
 }
 
 // ── bake: nodes+edges → 512-byte rows + SPO triples + stats ────────────────
@@ -515,7 +506,10 @@ pub struct Bake {
 /// logical-def edges folded into the nodes' `rel`) into [`Bake`]. `app_prefix`
 /// is the lo-u16 render skin (`0x0000` = the canonical reference skin).
 #[must_use]
-pub fn bake(nodes: &std::collections::HashMap<TermId, OboNode>, app_prefix: u16) -> Bake {
+pub fn bake(
+    nodes: &std::collections::HashMap<TermId, OboNode>,
+    app_prefix: u16,
+) -> Bake {
     let mut ids: Vec<TermId> = nodes
         .iter()
         .filter(|(_, n)| !n.obsolete)
@@ -661,35 +655,22 @@ pub fn parse_hp_logical_defs(owl: &str) -> Vec<(TermId, Predicate, TermId)> {
             in_eq += 1;
         }
         if in_eq > 0
-            && let Some(sid) = cur
-        {
-            for uid in find_obo_ids(line, "UBERON_") {
-                out.push((
-                    TermId {
-                        ns: Namespace::Hpo as u8,
-                        num: sid,
-                    },
-                    Predicate::HasAnatomy,
-                    TermId {
-                        ns: Namespace::Uberon as u8,
-                        num: uid,
-                    },
-                ));
+            && let Some(sid) = cur {
+                for uid in find_obo_ids(line, "UBERON_") {
+                    out.push((
+                        TermId { ns: Namespace::Hpo as u8, num: sid },
+                        Predicate::HasAnatomy,
+                        TermId { ns: Namespace::Uberon as u8, num: uid },
+                    ));
+                }
+                for pid in find_obo_ids(line, "PATO_") {
+                    out.push((
+                        TermId { ns: Namespace::Hpo as u8, num: sid },
+                        Predicate::HasQuality,
+                        TermId { ns: Namespace::Pato as u8, num: pid },
+                    ));
+                }
             }
-            for pid in find_obo_ids(line, "PATO_") {
-                out.push((
-                    TermId {
-                        ns: Namespace::Hpo as u8,
-                        num: sid,
-                    },
-                    Predicate::HasQuality,
-                    TermId {
-                        ns: Namespace::Pato as u8,
-                        num: pid,
-                    },
-                ));
-            }
-        }
         if line.contains("</owl:equivalentClass>") {
             in_eq = (in_eq - 1).max(0);
         }
@@ -704,10 +685,7 @@ fn find_hp_about(line: &str) -> Option<u32> {
     let i = line.find("owl:Class rdf:about=")?;
     let rest = &line[i..];
     let j = rest.find("HP_")?;
-    let digits: String = rest[j + 3..]
-        .chars()
-        .take_while(char::is_ascii_digit)
-        .collect();
+    let digits: String = rest[j + 3..].chars().take_while(char::is_ascii_digit).collect();
     digits.parse().ok()
 }
 
@@ -719,10 +697,9 @@ fn find_obo_ids(line: &str, prefix: &str) -> Vec<u32> {
         let after = &hay[i + prefix.len()..];
         let digits: String = after.chars().take_while(char::is_ascii_digit).collect();
         if let Ok(n) = digits.parse::<u32>()
-            && n <= 0x00FF_FFFF
-        {
-            ids.push(n);
-        }
+            && n <= 0x00FF_FFFF {
+                ids.push(n);
+            }
         hay = &after[digits.len()..];
     }
     ids
@@ -765,26 +742,15 @@ mod tests {
     fn v3_tail_carries_oversize_curie_numerics_on_the_family_identity_rail() {
         // Above u16 — the case a bare `identity` cannot hold.
         let big = 700_092u32;
-        assert!(
-            big > u32::from(u16::MAX),
-            "fixture must exceed the u16 the rail exists for"
-        );
+        assert!(big > u32::from(u16::MAX), "fixture must exceed the u16 the rail exists for");
         let k = pack_key(Namespace::Mondo.render_classid(0x0000), big);
 
         // Byte positions, per new_v2.
-        assert_eq!(
-            &k[10..12],
-            &[0, 0],
-            "leaf stays dormant (RESERVE, DON'T RECLAIM)"
-        );
+        assert_eq!(&k[10..12], &[0, 0], "leaf stays dormant (RESERVE, DON'T RECLAIM)");
         let family = u16::from_le_bytes([k[12], k[13]]);
         let identity = u16::from_le_bytes([k[14], k[15]]);
         assert_eq!(u32::from(family), big >> 16, "family holds the high half");
-        assert_eq!(
-            u32::from(identity),
-            big & 0xFFFF,
-            "identity holds the low half"
-        );
+        assert_eq!(u32::from(identity), big & 0xFFFF, "identity holds the low half");
 
         // Lossless through the public reader.
         let mut row = Row512::zeroed();
@@ -796,19 +762,13 @@ mod tests {
         // The V1 read of the SAME bytes must NOT agree — proof the tail really
         // moved, not that both layouts happen to coincide on this fixture.
         let v1_read = u32::from_le_bytes([row.0[13], row.0[14], row.0[15], 0]);
-        assert_ne!(
-            v1_read, big,
-            "a V1 u24 read of a V3 row must be observably wrong"
-        );
+        assert_ne!(v1_read, big, "a V1 u24 read of a V3 row must be observably wrong");
 
         // Ordering is preserved: family is the HIGH half, so (family, identity)
         // sorts as the numeric does. This is what keeps binary-search-by-key
         // valid over the sorted bake.
         let lo = pack_key(Namespace::Mondo.render_classid(0x0000), 5_148);
-        assert!(
-            lo[12..16] < k[12..16],
-            "tail bytes order as the numeric orders"
-        );
+        assert!(lo[12..16] < k[12..16], "tail bytes order as the numeric orders");
     }
 
     #[test]
@@ -838,11 +798,7 @@ is_a: MONDO:0005015 ! diabetes mellitus\n";
         let t = n(Namespace::Mondo, 5148);
         let node = &nodes[&t];
         assert_eq!(node.xref.len(), 3, "all three xrefs kept");
-        assert!(
-            node.xref
-                .iter()
-                .any(|x| x.source == XrefSource::Mesh && x.id == "D003924")
-        );
+        assert!(node.xref.iter().any(|x| x.source == XrefSource::Mesh && x.id == "D003924"));
         let bake = bake(&nodes, 0x0000);
         assert_eq!(bake.stats.mesh_xrefs, 1, "MeSH bearing counted");
         assert_eq!(bake.stats.xrefs, 3);
