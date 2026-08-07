@@ -1768,3 +1768,33 @@ isolation. The map's job is to keep them visible.
   EXACTLY ONE), Klickwege wiring second (W2), PowerAutomate-shaped skin third
   (W3) — both skins Mario-editor ergonomics over `ClassView : WideFieldMask`,
   which is T1 applied at editor scale.
+
+- **D-ELK-FACTFINDER (`ogar-elk` — the EL subsumption closure as the third
+  factfinder; 2026-08-07; [G], CODED, operator-directed):** `ogar-obo` and
+  `ogar-ro` say what is **asserted**; nothing said what **follows**.
+  `ogar-elk` closes that gap with the smallest calculus that does the job —
+  three rules (R1 reflexivity, R2 transitivity, R3 merge-soundness) over
+  ABI-shaped `(classid, identity)` addresses. It answers exactly two
+  questions: does `A ⊑ B` follow, and is adding a set of axioms to an
+  existing closure sound. **Ungraded by construction** — an EL entailment is
+  a fact, so nothing here is scored, ranked or weighted; the thinking that
+  consumes these facts lives one layer out. **Addresses, never a file:** the
+  crate never parses an ontology, resolves a CURIE, or reads a label —
+  reasoning over the addressed form is the point of having addressed it.
+  **R3 is why this is a crate and not a transitive-closure helper:** two
+  independently authored sources can each be internally consistent and still
+  disagree about a relation's DIRECTION; merging then derives `A ⊑ B` and
+  `B ⊑ A` for classes neither calls equivalent, and that cycle — found at any
+  distance, including through chains no pairwise check would look at — is the
+  disagreement made mechanical. **Deliberate boundary, named in the crate
+  doc:** no existential restrictions, no role composition, no bottom
+  propagation, no conjunction/disjunction/complement. Each becomes necessary
+  the moment a typed cross-angle `ogar-ro` predicate enters the closure, and
+  at that point the correct move is to wrap a full reasoner (`whelk-rs`) —
+  not to grow the file. The hazard that boundary guards: without role
+  composition, walking subsumption and part-of together derives FALSE
+  ancestors (`A part_of B`, `B ⊑ C` does **not** give `A ⊑ C`), which is why
+  `Closure::from_asserted` takes a `Subsumption` type rather than raw pairs.
+  Zero-dependency, `forbid(unsafe_code)`, 8 tests each carrying the input
+  that would falsify it — depends: D-CLASSID-CANON-HIGH-FLIP (the address
+  form it consumes).
