@@ -132,3 +132,42 @@ sibling on every push.
    `domain_tables()` entry + a `<STYLES>_EXPECTED_EXECUTORS` list arms
    the thinking-style table for whichever engine executes styles —
    same recipe as step 1 above, zero new machinery.
+5. **Universal domain knowledge vs a particular codebook — the Blocks
+   case (operator, 2026-08-07; deferred, NOT a defect today).** Two
+   things got conflated when blockly-rs was migrated, and the
+   distinction is worth keeping sharp for every future plug:
+
+   | | what it is | where it belongs |
+   |---|---|---|
+   | **`ogar-loco`** | the call ABI + the shared-core arity/`pushes_result` discipline every sibling vocabulary rides | **universal** — one home, every consumer |
+   | **the Blocks codebook** (`0x17XX` concepts) | one frontend family's particular schema | **particular** — properly the plug's, not the shared codebook's |
+
+   What shipped: `block_function` (`0x1701`) + `block_inventory`
+   (`0x1702`) are minted into `class_ids::ALL` + `CODEBOOK`, because
+   `resolve_hotplug` joins a plugged classid against `class_ids::ALL`
+   and answers `UnknownClassid` otherwise. The forcing constraint is a
+   dependency direction: **`ogar-blockly` deps `ogar-vocab`, so
+   `ogar-vocab` cannot read `0x1701` from `ogar-blockly`.** A permanent
+   mint was the only thing that made the join resolve.
+
+   Operator ruling: **the mint is fine as-is — two rows is tiny.** It is
+   NOT to be reverted. But the shape to move toward later is
+   *pull*, not *mint*: `ogar-vocab` on the authority side and
+   `lance-graph-ogar` on the other, with **plug-and-play as the
+   trigger** — i.e. the codebook is CONSULTED by an activation rather
+   than permanently carrying every frontend's particular concepts. The
+   natural mechanism is the classid travelling in the plug itself
+   (`lance_graph_contract::hotplug`), so `resolve_hotplug` tries
+   `class_ids::ALL` first (canonical domains unchanged) and falls back
+   to the plug's own rows instead of refusing.
+
+   Why it is deferred rather than done: the cost today is 2 rows and a
+   `COUNT_FUSE` bump; the fix touches the socket type, the resolver,
+   and both mirror halves. Revisit when a frontend family wants its
+   FULL palette addressable — the reserve that keeps 256 opcode bytes
+   out of the shared codebook is the same pressure one level up, and
+   that is the point at which mint-vs-pull stops being cosmetic.
+
+   Tripwire that says it is time: `concepts_in_domain(Blocks).count()`
+   climbing past a handful, or a second frontend family (scratch-rs)
+   needing its own particular rows minted the same way.
