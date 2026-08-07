@@ -36,7 +36,7 @@
 //! # Who plugs in
 //!
 //! Each vocabulary crate ships a `plug_into(&mut registry)` helper —
-//! `ogar-blockly` plugs the Blocks content concept, `ogar-ro` plugs the
+//! `blockly-rs` plugs the Blockly palette (`0x1717`), `ogar-ro` plugs the
 //! relation-body concept — and a consumer (blockly-rs, lance-graph) builds
 //! ONE registry at boot from the crates it deps, then resolves every stored
 //! function node through it. Two frontends, one hub, no hardcoded "this

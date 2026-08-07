@@ -37,10 +37,6 @@ pub mod recipe;
 /// Healthcare capability surface — the medcare-rs authoritative action
 /// table (parity-plan P3; hand-authored, harvest-informed — see the
 /// module doc for why the mechanical lift was falsified by the corpus).
-/// The Blocks capability surface — **feature-activated**, never shared canon.
-/// Compiled only under `--features blocks`, which `ogar-blockly` turns on.
-#[cfg(feature = "blocks")]
-pub mod blocks_actions;
 /// The tesseract-rs OCR capability surface — a hand-authored, non-`lift_*`
 /// [`ActionDef`] table (tesseract-rs has no source AST to extract from; see
 /// the module doc for why this is the authoritative action table rather

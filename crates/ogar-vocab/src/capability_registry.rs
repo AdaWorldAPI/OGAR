@@ -169,6 +169,23 @@ pub struct DomainTable {
 
 /// Every registered authoritative domain table. Append-only: a new domain
 /// (thinking styles, …) adds one entry and is immediately resolvable.
+///
+/// **Every table here is unconditional, and that is the design — not an
+/// oversight.** Healthcare is the worked precedent: medcare-rs is a *private*
+/// consumer, yet its concepts (`0x09XX`) are minted in the canon codebook and
+/// `healthcare_actions` registers here in every build. Activation is Cargo
+/// presence of the consumer (`lance-graph-ogar`'s rule), never a feature that
+/// switches the codebook on — the consumer pulls addresses it does not own,
+/// which is exactly what makes them shared: RBAC and ontology both key on the
+/// canon half.
+///
+/// The shape that does NOT belong here is a **palette** — which bytes above
+/// `ogar-loco`'s shared floor mean what. That is a reading of a stored body,
+/// private to one frontend, and it plugs through
+/// `ogar_loco::registry::VocabularyRegistry` from the consumer's own crate.
+/// A `blocks` table briefly lived here behind a Cargo feature; it was a second
+/// activation mechanism for a case the registry already served, and it made
+/// the substrate name a consumer crate in another repository. Removed.
 pub fn domain_tables() -> Vec<DomainTable> {
     vec![
         DomainTable {
@@ -185,14 +202,6 @@ pub fn domain_tables() -> Vec<DomainTable> {
             domain: "healthcare",
             expected_executors: crate::healthcare_actions::HEALTHCARE_EXPECTED_EXECUTORS,
             entries: healthcare_entries,
-        },
-        // Feature-activated, not canon: present only when a block editor is
-        // actually in the build graph. Every table above ships in every build.
-        #[cfg(feature = "blocks")]
-        DomainTable {
-            domain: "blocks",
-            expected_executors: crate::blocks_actions::BLOCKS_EXPECTED_EXECUTORS,
-            entries: blocks_entries,
         },
     ]
 }
@@ -237,14 +246,7 @@ fn derive_action_rows(actions: &[crate::ActionDef]) -> Vec<ActionRow> {
         .iter()
         .map(|def| {
             let concept = def.object_class.rsplit('/').next().unwrap_or_default();
-            // Canon first, then feature-activated rows — the SAME order as
-            // `resolve_concept_row`. Both sides of the join must consult the
-            // same set, or an activated concept resolves as a plugged classid
-            // (so the plug is accepted) while its capabilities silently land
-            // in the slag ledger, and the port answers `NoCapabilitiesFor` for
-            // a table that is right there. Measured, not hypothetical: that is
-            // exactly what this returned before the `or_else` arm.
-            match crate::canonical_concept_id(concept).or_else(|| activated_concept_id(concept)) {
+            match crate::canonical_concept_id(concept) {
                 Some(id) => ActionRow::Resolved(def.predicate.clone(), id),
                 None => ActionRow::Unminted(UnmintedRow {
                     capability: def.predicate.clone(),
@@ -341,163 +343,56 @@ fn geo_entries() -> Vec<(String, u16)> {
     entries_from_actions(&crate::geo_actions::geo_actions())
 }
 
-/// Blocks domain rows ([`crate::blocks_actions`], the blockly-abi table) —
-/// compiled ONLY under the `blocks` feature.
-#[cfg(feature = "blocks")]
-fn blocks_entries() -> Vec<(String, u16)> {
-    entries_from_actions(&crate::blocks_actions::blocks_actions())
-}
-
-/// Resolve one plugged classid to its `(concept, id)` row.
+/// Resolve one plugged classid to its `(concept, id)` row — from
+/// `class_ids::ALL`, the canon every build carries and the exact surface
+/// mirrored into `lance-graph-contract` under a compile-time count fuse.
 ///
-/// **The global codebook first, then whatever a feature ACTIVATED.** This is
-/// the "codebook triggered by plug-and-play" seam: `class_ids::ALL` is the
-/// canon every build carries (and the surface mirrored into lance-graph under
-/// a compile-time count fuse), while a particular frontend's codebook rides
-/// its own Cargo feature and is consulted only when that feature is compiled
-/// in — i.e. only when the consumer that owns it is actually in the build
-/// graph.
-///
-/// Auto-activation is **Cargo presence, not runtime detection** — the same
-/// rule `lance-graph-ogar` already documents. With the feature off these rows
-/// do not exist and a plug reports `UnknownClassid`, which is the honest
-/// answer: that vocabulary is not in this binary.
-///
-/// Order is deliberate: **canon wins.** A feature can ADD a concept the global
-/// codebook does not carry; it can never SHADOW one it does.
+/// **There is one codebook, and a feature never adds to it.** An earlier
+/// arc grew a second, feature-activated concept set here so a frontend could
+/// hot-plug a palette id; it was the wrong seam, and healthcare is the proof.
+/// See [`domain_tables`] and the module docs for the two shapes that replace
+/// it.
 fn resolve_concept_row(id: u16) -> Option<(&'static str, u16)> {
-    if let Some(&(name, cid)) = crate::class_ids::ALL.iter().find(|&&(_, cid)| cid == id) {
-        return Some((name, cid));
-    }
-    activated_concepts()
+    crate::class_ids::ALL
         .iter()
         .find(|&&(_, cid)| cid == id)
         .copied()
 }
 
-/// Every concept row a compiled-in feature activates, beyond `class_ids::ALL`.
+/// The canon carries no palette rows — always compiled, in every feature
+/// configuration.
 ///
-/// Empty in a default build — which is what keeps a consumer that never
-/// touches a block editor free of a block editor's codebook.
-/// The id of an activated concept BY NAME — the `derive_action_rows` half of
-/// the same lookup [`resolve_concept_row`] does by id. Both halves must
-/// consult the same set (see the call site).
-fn activated_concept_id(concept: &str) -> Option<u16> {
-    activated_concepts()
-        .iter()
-        .find(|&&(name, _)| name == concept)
-        .map(|&(_, id)| id)
-}
-
-/// Guard on the guard — **always compiled**, in every feature configuration.
-///
-/// [`default_build_carries_no_activated_rows`] is `cfg(not(feature =
-/// "blocks"))`, which makes it a gate that can DISAPPEAR: put `blocks` into
-/// `[features] default` and the module compiles out, the job still exits 0,
-/// and the regression the gate exists to catch becomes invisible (codex P2 on
-/// #259 — correct, and the hole I had named in a check-in note without
-/// actually closing).
-///
-/// CI defends this with `--no-default-features`. That is necessary but not
-/// sufficient: it only forces the build a human remembered to write that way.
-/// This test is the part that cannot be forgotten or cfg'd away — it reads
-/// the crate's OWN manifest at compile time and fails if any activating
-/// feature has been added to the default set, in EVERY configuration,
-/// including the one where the OFF module is absent.
+/// `0x17` is `ogar-loco`'s domain: `0x1701`/`0x1702` are its node shapes,
+/// `0x1717`+ are consumer palette slots that live in the CONSUMER (blockly-rs
+/// declares its own and plugs it into `ogar_loco::registry::VocabularyRegistry`
+/// at boot). A palette row reaching `class_ids::ALL` would put a frontend's
+/// private reading into the globally-mirrored codebook and move the count the
+/// lance-graph fuse pins — so catch it on THIS side first.
 #[cfg(test)]
-mod the_off_gate_cannot_be_switched_off {
-    /// Every feature that activates codebook rows. A new activating feature
-    /// is added here in the same PR that introduces it.
-    const ACTIVATING: &[&str] = &["blocks"];
-
+mod the_canon_carries_no_palette_rows {
     #[test]
-    fn no_activating_feature_is_in_the_default_set() {
-        // Compile-time read of this crate's own Cargo.toml — no runtime I/O,
-        // and no way for a feature flag to hide it.
-        let manifest = include_str!("../Cargo.toml");
-        let default_line = manifest
-            .lines()
-            .map(str::trim)
-            .find(|l| l.starts_with("default"))
-            .expect("ogar-vocab must declare a `default` feature list");
-        for feature in ACTIVATING {
-            assert!(
-                !default_line.contains(feature),
-                "`{feature}` is in the DEFAULT feature set ({default_line}). \
-                 Every build would then carry that codebook, and the OFF-half \
-                 gate would silently compile out. Activation must stay opt-in, \
-                 turned on by the consumer that owns it."
-            );
+    fn no_0x17xx_row_reached_the_globally_mirrored_codebook() {
+        assert_eq!(crate::class_ids::ALL.len(), 90);
+        for (_, id) in crate::class_ids::ALL {
+            assert_ne!(*id >> 8, 0x17, "a 0x17XX row reached the codebook");
         }
     }
-}
-
-/// The OFF half of the activation contract — compiled ONLY when no feature
-/// activated anything.
-///
-/// The positive half (`blocks_actions::tests`) can only run with the feature
-/// ON, and a workspace build unifies it ON for every crate (`ogar-ro`
-/// dev-deps `ogar-blockly`). So `cargo test --workspace` **cannot** exercise
-/// the claim that a default build carries zero activated rows — the property
-/// the whole design rests on. This module is that gate: it is
-/// `cfg(not(...))`, so it vanishes the moment any activating feature is on,
-/// and CI runs `cargo test -p ogar-vocab` (no `ogar-blockly` in the graph) to
-/// reach it.
-///
-/// Without it, "the codebook is triggered by plug-and-play" would be tested
-/// only in the triggered direction — the vacuous shape of a guard nobody
-/// watched stay silent.
-///
-/// Verified to FAIL when it should: seeding one row into the `not(blocks)`
-/// arm of [`activated_concepts`] turns the first test red.
-#[cfg(all(test, not(feature = "blocks")))]
-mod default_build_carries_no_activated_rows {
-    use super::{HotplugDrift, activated_concepts, resolve_hotplug};
 
     #[test]
-    fn nothing_is_activated_and_a_frontend_classid_does_not_resolve() {
-        assert!(
-            activated_concepts().is_empty(),
-            "a default build must activate nothing"
-        );
-        // 0x1717 is the Blocks palette. No block editor is in THIS build, so
-        // the honest answer is that the vocabulary is absent.
+    fn a_palette_classid_does_not_resolve_as_a_hot_plug() {
+        // The honest answer for a palette: this is not a capability-authority
+        // concept at all, in any build. Vocabulary routing is a different
+        // seam (`VocabularyRegistry`), keyed by the consumer's own slot.
         assert!(matches!(
-            resolve_hotplug("blockly-abi", &[0x1717], &[]),
-            Err(HotplugDrift::UnknownClassid(0x1717))
+            super::resolve_hotplug("blockly-abi", &[0x1717], &[]),
+            Err(super::HotplugDrift::UnknownClassid(0x1717))
         ));
-        // …and the domain still routes on the reserved byte alone, which is
+        // …while the domain still routes on the reserved byte alone, which is
         // what lets a consumer branch on 0x17XX with no concept minted.
         assert_eq!(
             crate::canonical_concept_domain(0x1717),
             crate::ConceptDomain::Blocks
         );
-    }
-
-    #[test]
-    fn the_canon_is_untouched_by_the_activation_seam() {
-        // The count mirrored into lance-graph under the compile-time fuse. If
-        // an activated row ever leaks into `class_ids::ALL`, this moves and
-        // the lance-graph mirror breaks — catch it on THIS side first.
-        assert_eq!(crate::class_ids::ALL.len(), 90);
-        for (_, id) in crate::class_ids::ALL {
-            assert_ne!(
-                *id >> 8,
-                0x17,
-                "a 0x17XX row reached the globally-mirrored codebook"
-            );
-        }
-    }
-}
-
-fn activated_concepts() -> &'static [(&'static str, u16)] {
-    #[cfg(feature = "blocks")]
-    {
-        crate::blocks_actions::ACTIVATED_CONCEPTS
-    }
-    #[cfg(not(feature = "blocks"))]
-    {
-        &[]
     }
 }
 

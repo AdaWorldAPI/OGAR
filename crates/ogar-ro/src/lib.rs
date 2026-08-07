@@ -41,8 +41,8 @@
 //! [`CheckedVocabulary`](ogar_loco::CheckedVocabulary) proves the sharing
 //! discipline and the shape invariant — nothing more. It carries no
 //! "is this vocabulary actually invoked at runtime" marker, and none is
-//! needed here: `ogar-ro` is validated and read exactly like `ogar-blockly`
-//! is, whether or not any consumer ever executes a relation call. A
+//! needed here: `ogar-ro` is validated and read exactly like any other
+//! palette, whether or not any consumer ever executes a relation call. A
 //! callability flag would be a second, redundant proof for a property the
 //! type never claimed in the first place.
 //!
@@ -72,8 +72,8 @@
 //! in the shared `ogar_vocab` codebook: the relation-body content classid
 //! lives inside the already-reserved `ogar_vocab::ConceptDomain::Ontology`
 //! (`0x03XX`), one slot past `ogar_obo`'s own RO term-node concept
-//! (`0x0305`), the same plug-and-play posture `ogar-blockly` uses for the
-//! `Blocks` domain.
+//! (`0x0305`), the same plug-and-play posture every palette uses — the
+//! Blockly palette (`0x1717`) is declared in `blockly-rs`, its own consumer.
 
 #![warn(missing_docs)]
 #![forbid(unsafe_code)]
@@ -92,13 +92,13 @@ use ogar_loco::{RegistryError, Vocabulary, VocabularyRegistry};
 /// The relation-body content classid's concept id — one slot past
 /// `ogar_obo::Namespace::Ro`'s term-node concept (`0x0305`) inside the
 /// shared `Ontology` domain (`0x03XX`). Authoritative HERE, never minted in
-/// `ogar_vocab`'s codebook (plug-and-play, mirroring `ogar_blockly::BlockConcept`).
+/// `ogar_vocab`'s codebook — the codebook carries shared concepts, never a
+/// palette's private reading of a body.
 pub const RELATION_BODY_CONCEPT_ID: u16 = 0x0306;
 
 /// The full V3 render classid under a consumer's app prefix — canon-high
 /// `(concept << 16) | app_prefix`, the same idiom every sibling vocabulary
-/// uses (`ogar_blockly::BlockConcept::render_classid`,
-/// `ogar_vocab::render_classid`).
+/// uses (`ogar_vocab::render_classid`).
 #[must_use]
 pub const fn relation_body_render_classid(app_prefix: u16) -> u32 {
     ((RELATION_BODY_CONCEPT_ID as u32) << 16) | (app_prefix as u32)
@@ -140,8 +140,7 @@ macro_rules! relation_palette {
 
         /// Every predicate this palette mints, in slot order — the
         /// enumeration hook a consumer uses to inherit the full set instead
-        /// of hand-maintaining a parallel list (mirrors
-        /// `ogar_blockly::BlockConcept::ALL`).
+        /// of hand-maintaining a parallel list.
         pub const RELATIONS: &[RelationPredicate] = &[
             $(
                 RelationPredicate { index: $ident, name: $name, curie: $curie },
@@ -174,8 +173,8 @@ relation_palette! {
 /// Every minted predicate is a **binary assertion**: it pops two operands
 /// (subject, object), branches to nothing (`body_refs = 0` — a relation is a
 /// leaf, never a nested body), and pushes nothing (W-RO-2). Bytes above the
-/// mint (`0xA0..=0xFF`) are reserved, not allocated — the same posture
-/// `ogar-blockly` takes for its unminted device families: refused rather
+/// mint (`0xA0..=0xFF`) are reserved, not allocated — the same posture the
+/// Blockly palette takes for its unminted device families: refused rather
 /// than guessed, until a consumer needs the next predicate.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct RelationVocabulary;
@@ -215,8 +214,8 @@ impl Vocabulary for RelationVocabulary {
 
 /// Validate this palette and plug it into a consumer's
 /// [`VocabularyRegistry`] under [`RELATION_BODY_CONCEPT_ID`] — the USB
-/// handshake for this device, identical in shape to
-/// `ogar_blockly::plug_into`.
+/// handshake for this device, identical in shape to every other palette's
+/// own `plug_into`.
 ///
 /// A consumer deps whichever vocabulary crates it needs and calls each
 /// one's `plug_into` at boot; a stored relation node then resolves its

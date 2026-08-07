@@ -18,4 +18,3 @@ ogar-obo = { path = "../ogar-obo" }
 serde = { workspace = true, optional = true }
 
 [dev-dependencies]
-ogar-blockly = { path = "../ogar-blockly" }
