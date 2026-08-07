@@ -18,14 +18,29 @@
 //! [`ogar-obo`]: https://docs.rs/ogar-obo
 //! [`ogar-ro`]: https://docs.rs/ogar-ro
 //!
-//! # Addresses, never a file
+//! # Where this runs: BEFORE the bake, never after
 //!
-//! Input is `(classid, identity)` — the ABI-shaped address a baked row already
-//! carries. This crate never parses an ontology document, never resolves a
-//! CURIE, and never looks at a label. That is deliberate: reasoning over the
-//! addressed form is the whole point of having addressed it, and a reasoner
-//! that reached back for the source file would re-introduce the coupling the
-//! bake exists to remove.
+//! **The joins are pre-bake.** Reconciling independently authored sources —
+//! deciding which assertions corroborate, which enrich, and which contradict —
+//! is exactly the work that must finish before anything is baked, because the
+//! bake is what freezes the answer into positions. So this crate is a **stage**,
+//! not a layer: it runs once, upstream, and then it is done.
+//!
+//! Three consequences follow, and they are the whole design:
+//!
+//! 1. **Types are legal here.** [`ClassAddr`] and [`Subsumption`] exist because
+//!    a join needs a key and a directed edge. They are pre-bake scaffolding.
+//!    **Nothing this crate defines survives the bake** — afterwards there are
+//!    only classes, and a class is resolved by position, not by a type declared
+//!    here. If one of these types ever appears in a post-bake read path, that is
+//!    the leak, and it is this doc that says so.
+//! 2. **Nothing here is in the hot path**, so nothing here may pretend to be.
+//!    There is no serialization surface — not behind a feature, not optionally.
+//!    A join validator that could serialize its verdict would invite someone to
+//!    ship the verdict instead of the bake.
+//! 3. **No file, no CURIE, no label.** Input is already-joined addressed edges.
+//!    Reaching back for the source document would put parsing inside the
+//!    validator and re-introduce the coupling the bake exists to remove.
 //!
 //! # The fragment, stated precisely
 //!
@@ -70,13 +85,18 @@
 
 use std::collections::{HashMap, HashSet, VecDeque};
 
-/// A class address: `(classid, identity)`, exactly as a baked row carries it.
+/// The **join key** the pre-bake reconciliation uses: `(classid, identity)`.
+///
+/// Not an ABI address, and deliberately not documented as one — it is the pair
+/// the joiner has already agreed on for the two sides it is joining, which is
+/// all a closure needs to index by. What a *baked* row carries is a matter of
+/// position, resolved by the class, and this crate is finished long before that
+/// question is asked.
 ///
 /// Ordered and hashable so a closure can index by it without a side table. It
 /// carries no namespace, no CURIE and no label — resolving those is the
 /// caller's business and none of this crate's.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct ClassAddr {
     /// The row's classid.
     pub classid: u32,
@@ -98,7 +118,6 @@ impl ClassAddr {
 /// cannot hand this crate a `part_of` edge by accident — see the crate doc's
 /// false-ancestor hazard.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Subsumption {
     /// The subclass.
     pub sub: ClassAddr,
@@ -242,7 +261,6 @@ impl Closure {
 /// decides whether to accept the merge after seeing the verdict, which is the
 /// only order that makes the verdict useful.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct MergeVerdict {
     /// Axioms the closure already entailed. These corroborate the existing set
     /// and add nothing — the strongest possible outcome for an axiom, and the
