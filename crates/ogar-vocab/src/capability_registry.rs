@@ -389,6 +389,107 @@ fn activated_concept_id(concept: &str) -> Option<u16> {
         .map(|&(_, id)| id)
 }
 
+/// Guard on the guard — **always compiled**, in every feature configuration.
+///
+/// [`default_build_carries_no_activated_rows`] is `cfg(not(feature =
+/// "blocks"))`, which makes it a gate that can DISAPPEAR: put `blocks` into
+/// `[features] default` and the module compiles out, the job still exits 0,
+/// and the regression the gate exists to catch becomes invisible (codex P2 on
+/// #259 — correct, and the hole I had named in a check-in note without
+/// actually closing).
+///
+/// CI defends this with `--no-default-features`. That is necessary but not
+/// sufficient: it only forces the build a human remembered to write that way.
+/// This test is the part that cannot be forgotten or cfg'd away — it reads
+/// the crate's OWN manifest at compile time and fails if any activating
+/// feature has been added to the default set, in EVERY configuration,
+/// including the one where the OFF module is absent.
+#[cfg(test)]
+mod the_off_gate_cannot_be_switched_off {
+    /// Every feature that activates codebook rows. A new activating feature
+    /// is added here in the same PR that introduces it.
+    const ACTIVATING: &[&str] = &["blocks"];
+
+    #[test]
+    fn no_activating_feature_is_in_the_default_set() {
+        // Compile-time read of this crate's own Cargo.toml — no runtime I/O,
+        // and no way for a feature flag to hide it.
+        let manifest = include_str!("../Cargo.toml");
+        let default_line = manifest
+            .lines()
+            .map(str::trim)
+            .find(|l| l.starts_with("default"))
+            .expect("ogar-vocab must declare a `default` feature list");
+        for feature in ACTIVATING {
+            assert!(
+                !default_line.contains(feature),
+                "`{feature}` is in the DEFAULT feature set ({default_line}). \
+                 Every build would then carry that codebook, and the OFF-half \
+                 gate would silently compile out. Activation must stay opt-in, \
+                 turned on by the consumer that owns it."
+            );
+        }
+    }
+}
+
+/// The OFF half of the activation contract — compiled ONLY when no feature
+/// activated anything.
+///
+/// The positive half (`blocks_actions::tests`) can only run with the feature
+/// ON, and a workspace build unifies it ON for every crate (`ogar-ro`
+/// dev-deps `ogar-blockly`). So `cargo test --workspace` **cannot** exercise
+/// the claim that a default build carries zero activated rows — the property
+/// the whole design rests on. This module is that gate: it is
+/// `cfg(not(...))`, so it vanishes the moment any activating feature is on,
+/// and CI runs `cargo test -p ogar-vocab` (no `ogar-blockly` in the graph) to
+/// reach it.
+///
+/// Without it, "the codebook is triggered by plug-and-play" would be tested
+/// only in the triggered direction — the vacuous shape of a guard nobody
+/// watched stay silent.
+///
+/// Verified to FAIL when it should: seeding one row into the `not(blocks)`
+/// arm of [`activated_concepts`] turns the first test red.
+#[cfg(all(test, not(feature = "blocks")))]
+mod default_build_carries_no_activated_rows {
+    use super::{HotplugDrift, activated_concepts, resolve_hotplug};
+
+    #[test]
+    fn nothing_is_activated_and_a_frontend_classid_does_not_resolve() {
+        assert!(
+            activated_concepts().is_empty(),
+            "a default build must activate nothing"
+        );
+        // 0x1717 is the Blocks palette. No block editor is in THIS build, so
+        // the honest answer is that the vocabulary is absent.
+        assert!(matches!(
+            resolve_hotplug("blockly-abi", &[0x1717], &[]),
+            Err(HotplugDrift::UnknownClassid(0x1717))
+        ));
+        // …and the domain still routes on the reserved byte alone, which is
+        // what lets a consumer branch on 0x17XX with no concept minted.
+        assert_eq!(
+            crate::canonical_concept_domain(0x1717),
+            crate::ConceptDomain::Blocks
+        );
+    }
+
+    #[test]
+    fn the_canon_is_untouched_by_the_activation_seam() {
+        // The count mirrored into lance-graph under the compile-time fuse. If
+        // an activated row ever leaks into `class_ids::ALL`, this moves and
+        // the lance-graph mirror breaks — catch it on THIS side first.
+        assert_eq!(crate::class_ids::ALL.len(), 90);
+        for (_, id) in crate::class_ids::ALL {
+            assert_ne!(
+                *id >> 8,
+                0x17,
+                "a 0x17XX row reached the globally-mirrored codebook"
+            );
+        }
+    }
+}
+
 fn activated_concepts() -> &'static [(&'static str, u16)] {
     #[cfg(feature = "blocks")]
     {
