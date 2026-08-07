@@ -1,4 +1,4 @@
-//! `ogar-elk` — the EL subsumption closure as a **factfinder**.
+//! `ogar-elk` — the EL subsumption closure as an **observation over the bake**.
 //!
 //! # What this is, and the two questions it answers
 //!
@@ -6,9 +6,9 @@
 //! [`ogar-ro`] (the predicate palette). Those two say what is *asserted*; this
 //! one says what *follows*. It answers exactly two questions:
 //!
-//! 1. **Does `A ⊑ B` follow** from the asserted edges? ([`Closure::entails`])
+//! 1. **Does `A ⊑ B` follow** from the baked edges? ([`Spine::entails`])
 //! 2. **Is adding a set of axioms sound** — does the merged closure introduce
-//!    an equivalence cycle that was not already there? ([`Closure::merge`])
+//!    an equivalence cycle that was not already there? ([`Spine::merge`])
 //!
 //! Nothing here is graded, ranked, scored or weighted. An EL entailment is a
 //! **fact**: it follows necessarily from the asserted set, or it does not. The
@@ -18,29 +18,34 @@
 //! [`ogar-obo`]: https://docs.rs/ogar-obo
 //! [`ogar-ro`]: https://docs.rs/ogar-ro
 //!
-//! # Where this runs: BEFORE the bake, never after
+//! # Where this runs: AFTER the bake, over what the bake already holds
 //!
-//! **The joins are pre-bake.** Reconciling independently authored sources —
-//! deciding which assertions corroborate, which enrich, and which contradict —
-//! is exactly the work that must finish before anything is baked, because the
-//! bake is what freezes the answer into positions. So this crate is a **stage**,
-//! not a layer: it runs once, upstream, and then it is done.
+//! **The joins are pre-bake.** Reconciling which source says what, resolving a
+//! CURIE, deciding that two labels name one concept — all of that finishes
+//! upstream, and the bake freezes the result into positions. This crate runs on
+//! the far side of that line: it is the **observation** of what the baked spine
+//! entails, not a stage that produces one.
 //!
-//! Three consequences follow, and they are the whole design:
+//! Which is why it **borrows and never owns**. A [`Spine`] is a lens over a
+//! sorted slice the bake already emitted — `ogar_obo::Bake::triples` projected
+//! to its `is_a` edges. Parents are found by [`slice::binary_search`] over that
+//! slice and returned **as a subslice of it**; the crate allocates nothing that
+//! mirrors the substrate. Building a `HashMap<_, Vec<_>>` here would be a
+//! second copy of an adjacency the bake already laid out in order, and a second
+//! copy is a second thing that can be wrong.
 //!
-//! 1. **Types are legal here.** [`ClassAddr`] and [`Subsumption`] exist because
-//!    a join needs a key and a directed edge. They are pre-bake scaffolding.
-//!    **Nothing this crate defines survives the bake** — afterwards there are
-//!    only classes, and a class is resolved by position, not by a type declared
-//!    here. If one of these types ever appears in a post-bake read path, that is
-//!    the leak, and it is this doc that says so.
-//! 2. **Nothing here is in the hot path**, so nothing here may pretend to be.
-//!    There is no serialization surface — not behind a feature, not optionally.
-//!    A join validator that could serialize its verdict would invite someone to
-//!    ship the verdict instead of the bake.
-//! 3. **No file, no CURIE, no label.** Input is already-joined addressed edges.
-//!    Reaching back for the source document would put parsing inside the
-//!    validator and re-introduce the coupling the bake exists to remove.
+//! The one allocation a walk does make is its **frontier** — the set of nodes
+//! already visited. That is the algorithm's working set, bounded by the size of
+//! the answer, and it is not a duplicate of the data.
+//!
+//! # The one precondition
+//!
+//! Edges must be **sorted by subclass**. The bake emits them that way (its ids
+//! are sorted before rows are packed), so [`Spine::over`] takes that on trust
+//! and checks it in debug builds. A caller holding a slice of uncertain
+//! provenance uses [`Spine::try_over`], which verifies in release too — an
+//! unsorted slice makes the binary search silently miss parents, which would
+//! read as "not entailed" and is the one failure this crate must not have.
 //!
 //! # The fragment, stated precisely
 //!
@@ -61,6 +66,11 @@
 //! mechanical — and it is found at **any distance**, including cycles that close
 //! through a chain no pairwise comparison would think to check.
 //!
+//! Note what R3 is NOT a duplicate of: `ogar_obo::BakeStats::is_a_cycles`
+//! reports cycles **inside one** baked core. R3 asks what a *further* set of
+//! axioms would do to a spine already baked — the question you can only ask
+//! once you have the bake to ask it about.
+//!
 //! # What is deliberately NOT here
 //!
 //! - **Existential restrictions** (`∃r.C`)
@@ -77,25 +87,21 @@
 //! **The concrete hazard that boundary guards:** without role composition,
 //! walking subsumption and part-of edges together derives FALSE ancestors.
 //! `A part_of B` and `B ⊑ C` does not give `A ⊑ C`. This crate cannot make that
-//! mistake because it only ever ingests subsumptions — but a caller that feeds
-//! it a mixed edge set can, so [`Closure::from_asserted`] takes subsumptions by
-//! type rather than raw pairs.
+//! mistake because it only ever reads subsumptions — but a caller that projects
+//! a mixed edge set can, so [`Spine::over`] takes [`Subsumption`] by type rather
+//! than raw pairs: the projection from the baked triple table has to name the
+//! predicate it kept.
 
 #![forbid(unsafe_code)]
 
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::{HashSet, VecDeque};
 
-/// The **join key** the pre-bake reconciliation uses: `(classid, identity)`.
+/// The address a baked row carries: `(classid, identity)`.
 ///
-/// Not an ABI address, and deliberately not documented as one — it is the pair
-/// the joiner has already agreed on for the two sides it is joining, which is
-/// all a closure needs to index by. What a *baked* row carries is a matter of
-/// position, resolved by the class, and this crate is finished long before that
-/// question is asked.
-///
-/// Ordered and hashable so a closure can index by it without a side table. It
-/// carries no namespace, no CURIE and no label — resolving those is the
-/// caller's business and none of this crate's.
+/// Read off the row's key by position — `classid` at `[0,4)`, the identity rail
+/// in the V3 tail — never parsed and never resolved to a label. Ordered so a
+/// slice of edges can be sorted and binary-searched; that ordering is the whole
+/// access method.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ClassAddr {
     /// The row's classid.
@@ -112,11 +118,12 @@ impl ClassAddr {
     }
 }
 
-/// An asserted subsumption `sub ⊑ sup`.
+/// A baked subsumption `sub ⊑ sup`.
 ///
 /// A distinct type rather than a `(ClassAddr, ClassAddr)` tuple, so a caller
-/// cannot hand this crate a `part_of` edge by accident — see the crate doc's
-/// false-ancestor hazard.
+/// projecting the baked triple table cannot hand this crate a `part_of` edge by
+/// accident — see the crate doc's false-ancestor hazard. `Ord` sorts by `sub`
+/// first, which is the order [`Spine`] binary-searches in.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Subsumption {
     /// The subclass.
@@ -136,46 +143,77 @@ impl Subsumption {
 /// How deep a transitivity walk may go before it stops.
 ///
 /// A guard, not a tuning knob. A well-formed subsumption spine is acyclic and
-/// shallow, but this crate runs on real harvested data where a cycle would
-/// otherwise spin forever — and [`Closure::equivalence_cycles`] exists precisely
-/// because cycles DO occur. The cap is reported by [`Closure::depth_cap`] so a
-/// caller can tell "not entailed" from "we stopped looking", which are different
-/// answers and must not be conflated.
+/// shallow, but this crate runs on real baked data where a cycle would otherwise
+/// spin forever — and [`Spine::equivalence_cycles`] exists precisely because
+/// cycles DO occur. The cap is reported by [`Spine::depth_cap`] so a caller can
+/// tell "not entailed" from "we stopped looking", which are different answers
+/// and must not be conflated.
 pub const DEFAULT_DEPTH_CAP: usize = 64;
 
-/// The asserted subsumption graph, closed on demand.
+/// A **lens** over baked subsumption edges — borrowed, never owned.
 ///
-/// The closure is computed per query rather than materialised: a spine of N
-/// classes has an O(N²) transitive closure but only O(N) asserted edges, and
-/// almost every caller asks about a handful of classes. Materialising would
-/// trade a cheap walk for an expensive table nobody reads in full.
-#[derive(Debug, Clone, Default)]
-pub struct Closure {
-    parents: HashMap<ClassAddr, Vec<ClassAddr>>,
+/// Holds two sorted slices: the `base` spine (what the bake emitted) and an
+/// optional `overlay` (candidate axioms, for [`Self::merge`]). Both are borrowed
+/// from the caller; adding an overlay allocates nothing, which is what makes
+/// "what WOULD this merge do" cheap enough to ask before deciding.
+///
+/// The closure is walked per query rather than materialised: a spine of N
+/// classes has an O(N²) transitive closure but only O(N) baked edges, and almost
+/// every caller asks about a handful of classes. Materialising would trade a
+/// cheap walk over data that already exists for an expensive table nobody reads
+/// in full.
+#[derive(Debug, Clone, Copy)]
+pub struct Spine<'a> {
+    base: &'a [Subsumption],
+    overlay: &'a [Subsumption],
     depth_cap: usize,
 }
 
-impl Closure {
-    /// Build from asserted subsumptions.
+impl<'a> Spine<'a> {
+    /// Lens over a slice of baked edges, **sorted by `sub`**.
     ///
-    /// Duplicate assertions are kept as asserted — deduplicating here would
-    /// silently change what [`Self::asserted_len`] reports, and a caller
-    /// counting its own input has a right to get its own number back.
+    /// The bake emits them sorted, so this takes it on trust and only checks in
+    /// debug builds. Use [`Self::try_over`] for a slice whose provenance you do
+    /// not control.
     #[must_use]
-    pub fn from_asserted(edges: impl IntoIterator<Item = Subsumption>) -> Self {
-        let mut parents: HashMap<ClassAddr, Vec<ClassAddr>> = HashMap::new();
-        for e in edges {
-            parents.entry(e.sub).or_default().push(e.sup);
-        }
+    pub fn over(edges: &'a [Subsumption]) -> Self {
+        debug_assert!(is_sorted(edges), "Spine::over: edges must be sorted by sub");
         Self {
-            parents,
+            base: edges,
+            overlay: &[],
             depth_cap: DEFAULT_DEPTH_CAP,
         }
     }
 
+    /// Lens over a slice whose sortedness is **verified**, in release too.
+    ///
+    /// `None` means the slice is unsorted, which would make the binary search
+    /// miss parents and report "not entailed" for edges that are right there.
+    /// Returning `None` rather than sorting a copy is deliberate: sorting would
+    /// mean owning, and the caller who holds the real order should fix it.
+    #[must_use]
+    pub fn try_over(edges: &'a [Subsumption]) -> Option<Self> {
+        is_sorted(edges).then_some(Self {
+            base: edges,
+            overlay: &[],
+            depth_cap: DEFAULT_DEPTH_CAP,
+        })
+    }
+
+    /// A lens over `base ∪ overlay`, borrowing both. The overlay must be sorted
+    /// by `sub` on the same terms as the base.
+    #[must_use]
+    pub fn with_overlay(self, overlay: &'a [Subsumption]) -> Self {
+        debug_assert!(
+            is_sorted(overlay),
+            "Spine::with_overlay: overlay must be sorted by sub"
+        );
+        Self { overlay, ..self }
+    }
+
     /// Override the transitivity depth guard.
     #[must_use]
-    pub fn with_depth_cap(mut self, cap: usize) -> Self {
+    pub const fn with_depth_cap(mut self, cap: usize) -> Self {
         self.depth_cap = cap;
         self
     }
@@ -187,21 +225,26 @@ impl Closure {
         self.depth_cap
     }
 
-    /// Number of asserted edges.
+    /// Number of edges in view (base + overlay).
     #[must_use]
-    pub fn asserted_len(&self) -> usize {
-        self.parents.values().map(Vec::len).sum()
+    pub const fn len(&self) -> usize {
+        self.base.len() + self.overlay.len()
     }
 
-    /// Whether any edge is asserted.
+    /// Whether any edge is in view.
     #[must_use]
-    pub fn is_empty(&self) -> bool {
-        self.parents.is_empty()
+    pub const fn is_empty(&self) -> bool {
+        self.base.is_empty() && self.overlay.is_empty()
     }
 
-    /// Classes with at least one asserted superclass.
-    pub fn subclasses(&self) -> impl Iterator<Item = ClassAddr> + '_ {
-        self.parents.keys().copied()
+    /// The asserted parents of `c`, **as two subslices of the borrowed data**.
+    ///
+    /// This is the lookup the whole crate is built on: an equal-range binary
+    /// search by `sub`, returning a window into the caller's slice. Nothing is
+    /// copied, so a caller can hold the result as long as it holds the edges.
+    #[must_use]
+    pub fn parents_of(&self, c: ClassAddr) -> (&'a [Subsumption], &'a [Subsumption]) {
+        (equal_range(self.base, c), equal_range(self.overlay, c))
     }
 
     /// **R1 + R2** — every superclass of `c`, transitively.
@@ -209,6 +252,9 @@ impl Closure {
     /// Excludes `c` itself unless a cycle genuinely returns to it, which is the
     /// signal [`Self::equivalence_cycles`] reads. Breadth-first, so the walk
     /// terminates at `depth_cap` hops rather than at `depth_cap` nodes.
+    ///
+    /// The `HashSet` is the walk's frontier, not a copy of the spine: it holds
+    /// the answer, which is what the caller asked for.
     #[must_use]
     pub fn supers_of(&self, c: ClassAddr) -> HashSet<ClassAddr> {
         let mut seen = HashSet::new();
@@ -217,9 +263,10 @@ impl Closure {
             if depth >= self.depth_cap {
                 continue;
             }
-            for &p in self.parents.get(&node).into_iter().flatten() {
-                if seen.insert(p) {
-                    queue.push_back((p, depth + 1));
+            let (a, b) = self.parents_of(node);
+            for e in a.iter().chain(b) {
+                if seen.insert(e.sup) {
+                    queue.push_back((e.sup, depth + 1));
                 }
             }
         }
@@ -229,10 +276,24 @@ impl Closure {
     /// **The first question: does `sub ⊑ sup` follow?**
     ///
     /// Reflexive per R1: every class subsumes itself, which is a fact even when
-    /// no edge is asserted for it.
+    /// no edge is baked for it.
     #[must_use]
     pub fn entails(&self, sub: ClassAddr, sup: ClassAddr) -> bool {
         sub == sup || self.supers_of(sub).contains(&sup)
+    }
+
+    /// Every class with at least one baked parent, in sorted order and without
+    /// duplicates — the walk domain for [`Self::equivalence_cycles`].
+    fn subclasses(&self) -> Vec<ClassAddr> {
+        let mut v: Vec<ClassAddr> = self
+            .base
+            .iter()
+            .chain(self.overlay)
+            .map(|e| e.sub)
+            .collect();
+        v.sort_unstable();
+        v.dedup();
+        v
     }
 
     /// Classes that reach themselves — an equivalence cycle.
@@ -241,40 +302,51 @@ impl Closure {
     /// two classes an ontology models separately may be genuine synonyms. It IS
     /// always a finding, because a cycle makes the two mutually substitutable,
     /// and a consumer treating one as more specific than the other is then
-    /// relying on something the asserted set does not support.
+    /// relying on something the baked set does not support.
     #[must_use]
     pub fn equivalence_cycles(&self) -> Vec<ClassAddr> {
-        let mut out: Vec<ClassAddr> = self
-            .parents
-            .keys()
-            .copied()
+        self.subclasses()
+            .into_iter()
             .filter(|&c| self.supers_of(c).contains(&c))
-            .collect();
-        out.sort_unstable();
-        out
+            .collect()
     }
 }
 
-/// What merging a set of axioms into an existing closure would do.
+/// Sorted-by-`sub` check. Cheap enough to run in debug on every construction.
+fn is_sorted(edges: &[Subsumption]) -> bool {
+    edges.windows(2).all(|w| w[0].sub <= w[1].sub)
+}
+
+/// The window of `edges` whose `sub == c` — an equal-range binary search.
 ///
-/// Returned by [`Closure::merge`] **without mutating** the closure: a caller
-/// decides whether to accept the merge after seeing the verdict, which is the
-/// only order that makes the verdict useful.
+/// Returns a subslice of the input, which is the point: a parent lookup costs a
+/// `log n` probe and yields a borrowed view, never an allocation.
+fn equal_range(edges: &[Subsumption], c: ClassAddr) -> &[Subsumption] {
+    let lo = edges.partition_point(|e| e.sub < c);
+    let hi = edges.partition_point(|e| e.sub <= c);
+    &edges[lo..hi]
+}
+
+/// What merging a set of axioms into a baked spine would do.
+///
+/// Returned by [`Spine::merge`] **without applying anything** — a caller decides
+/// whether to accept the merge after seeing the verdict, which is the only order
+/// that makes the verdict useful. Nothing is mutated because nothing is owned.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct MergeVerdict {
-    /// Axioms the closure already entailed. These corroborate the existing set
-    /// and add nothing — the strongest possible outcome for an axiom, and the
-    /// one that carries no risk.
+    /// Axioms the baked spine already entailed. These corroborate it and add
+    /// nothing — the strongest possible outcome for an axiom, and the one that
+    /// carries no risk.
     pub corroborating: Vec<Subsumption>,
-    /// Axioms the closure did NOT entail, and which introduce no cycle. New
-    /// structure the existing set was silent about — **enrichment**, not
-    /// conflict. Silence is not disagreement.
+    /// Axioms the spine did NOT entail, and which introduce no cycle. New
+    /// structure the bake was silent about — **enrichment**, not conflict.
+    /// Silence is not disagreement.
     pub enriching: Vec<Subsumption>,
     /// Classes drawn into an equivalence cycle BY this merge. Empty means the
     /// merge is sound over this fragment.
     pub introduced_cycles: Vec<ClassAddr>,
-    /// Cycles that were already present before the merge — reported so the
-    /// merge cannot be blamed for them.
+    /// Cycles already present in the bake — reported so the merge cannot be
+    /// blamed for them.
     pub pre_existing_cycles: Vec<ClassAddr>,
 }
 
@@ -298,13 +370,16 @@ impl MergeVerdict {
     }
 }
 
-impl Closure {
+impl Spine<'_> {
     /// **The second question: is adding `axioms` sound?**
     ///
-    /// Splits them into corroborating and enriching, then closes the union and
-    /// reports any equivalence cycle the merge introduced. The receiver is
-    /// untouched; apply the merge yourself with [`Self::extended`] once the
-    /// verdict is acceptable.
+    /// Splits them into corroborating and enriching, then observes the spine
+    /// **with the enriching ones overlaid** and reports any equivalence cycle
+    /// that appears. The overlay is borrowed, so the "what would happen"
+    /// question costs a second lens and no copy of the spine.
+    ///
+    /// `axioms` must be sorted by `sub` — same precondition as the base, for
+    /// the same reason.
     #[must_use]
     pub fn merge(&self, axioms: &[Subsumption]) -> MergeVerdict {
         let pre: HashSet<ClassAddr> = self.equivalence_cycles().into_iter().collect();
@@ -319,10 +394,21 @@ impl Closure {
             }
         }
 
-        // Only the enriching axioms can change the closure, so only they are
-        // merged for the cycle check. Including the corroborating ones would
-        // cost a larger walk to reach an identical answer.
-        let merged = self.extended(&enriching);
+        // Only the enriching axioms can change what follows, so only they are
+        // overlaid for the cycle check. Including the corroborating ones would
+        // cost a wider walk to reach an identical answer.
+        //
+        // The overlay must be sorted on its own terms — `axioms` being sorted
+        // does not survive the filter's re-collection into a new Vec in general,
+        // so it is re-sorted here rather than assumed.
+        let mut overlay = enriching.clone();
+        overlay.sort_unstable();
+        let merged = Spine {
+            base: self.base,
+            overlay: &overlay,
+            depth_cap: self.depth_cap,
+        };
+
         let mut introduced: Vec<ClassAddr> = merged
             .equivalence_cycles()
             .into_iter()
@@ -338,20 +424,6 @@ impl Closure {
             enriching,
             introduced_cycles: introduced,
             pre_existing_cycles: pre_existing,
-        }
-    }
-
-    /// A copy with `axioms` added. Pairs with [`Self::merge`]: check first,
-    /// then extend.
-    #[must_use]
-    pub fn extended(&self, axioms: &[Subsumption]) -> Closure {
-        let mut parents = self.parents.clone();
-        for ax in axioms {
-            parents.entry(ax.sub).or_default().push(ax.sup);
-        }
-        Closure {
-            parents,
-            depth_cap: self.depth_cap,
         }
     }
 }
@@ -370,55 +442,84 @@ mod tests {
         Subsumption::new(c(a), c(b))
     }
 
-    /// R1 + R2: transitivity derives what is not asserted, and reflexivity
-    /// holds for a class with no edges at all.
+    /// Baked edges arrive sorted; the tests mirror that rather than pretending
+    /// the lens sorts for them.
+    fn baked(mut e: Vec<Subsumption>) -> Vec<Subsumption> {
+        e.sort_unstable();
+        e
+    }
+
+    /// R1 + R2: transitivity derives what is not baked, and reflexivity holds
+    /// for a class with no edges at all.
     ///
     /// The anti-vacuity half is `!entails(1, 9)`: without it, an `entails` that
     /// returned `true` unconditionally would pass every positive assertion here.
     #[test]
     fn transitivity_derives_and_reflexivity_holds() {
-        let cl = Closure::from_asserted([sub(1, 2), sub(2, 3), sub(3, 4)]);
-        assert!(cl.entails(c(1), c(2)), "asserted");
-        assert!(cl.entails(c(1), c(4)), "derived through two hops");
-        assert!(cl.entails(c(7), c(7)), "reflexive even with no edges");
+        let e = baked(vec![sub(1, 2), sub(2, 3), sub(3, 4)]);
+        let s = Spine::over(&e);
+        assert!(s.entails(c(1), c(2)), "baked");
+        assert!(s.entails(c(1), c(4)), "derived through two hops");
+        assert!(s.entails(c(7), c(7)), "reflexive even with no edges");
+        assert!(!s.entails(c(1), c(9)), "must NOT entail an unrelated class");
+        assert!(!s.entails(c(4), c(1)), "and must not run the wrong way");
+    }
+
+    /// The lens borrows: a parent lookup hands back a window into the caller's
+    /// own slice, and multiple parents land in one contiguous run.
+    #[test]
+    fn parents_are_a_borrowed_window_not_a_copy() {
+        let e = baked(vec![sub(1, 2), sub(1, 3), sub(4, 5)]);
+        let s = Spine::over(&e);
+        let (base, overlay) = s.parents_of(c(1));
+        assert_eq!(base.len(), 2, "both parents in one equal-range window");
+        assert!(overlay.is_empty(), "no overlay in view");
         assert!(
-            !cl.entails(c(1), c(9)),
-            "must NOT entail an unrelated class"
+            std::ptr::eq(base.as_ptr(), e.as_ptr()),
+            "the window points INTO the caller's slice — nothing was copied"
         );
-        assert!(!cl.entails(c(4), c(1)), "and must not run the wrong way");
+        assert!(s.parents_of(c(9)).0.is_empty(), "an absent class has none");
+    }
+
+    /// An unsorted slice is refused rather than silently mis-searched, and a
+    /// sorted one is accepted — the discriminating pair.
+    #[test]
+    fn try_over_refuses_unsorted_and_accepts_sorted() {
+        let bad = vec![sub(5, 6), sub(1, 2)];
+        assert!(Spine::try_over(&bad).is_none(), "unsorted must be refused");
+        let good = baked(bad);
+        assert!(Spine::try_over(&good).is_some(), "sorted must be accepted");
     }
 
     /// The depth cap is a real limit and is REPORTED, so "not entailed" stays
     /// distinguishable from "we stopped looking".
-    ///
-    /// Both directions are asserted: at cap 2 the far end is unreachable, at
-    /// the default it is reachable. A cap that did nothing would fail the first
-    /// assertion; one that clamped everything would fail the second.
     #[test]
     fn the_depth_cap_binds_and_is_visible() {
-        let chain: Vec<Subsumption> = (1..10).map(|i| sub(i, i + 1)).collect();
-        let shallow = Closure::from_asserted(chain.clone()).with_depth_cap(2);
+        let e = baked((1..10).map(|i| sub(i, i + 1)).collect());
+        let shallow = Spine::over(&e).with_depth_cap(2);
         assert_eq!(shallow.depth_cap(), 2);
         assert!(!shallow.entails(c(1), c(10)), "beyond the cap");
         assert!(shallow.entails(c(1), c(3)), "within the cap");
-        let deep = Closure::from_asserted(chain);
-        assert!(deep.entails(c(1), c(10)), "reachable at the default cap");
+        assert!(
+            Spine::over(&e).entails(c(1), c(10)),
+            "reachable at the default cap"
+        );
     }
 
-    /// A sound spine has no cycles; a two-way assertion produces one.
+    /// A sound spine has no cycles; a two-way edge produces one.
     ///
     /// The can-stay-silent half uses a NON-trivial acyclic graph — an empty
-    /// closure would prove only that emptiness has no cycles.
+    /// spine would prove only that emptiness has no cycles.
     #[test]
     fn cycles_are_detected_and_absent_when_they_should_be() {
-        let acyclic = Closure::from_asserted([sub(1, 2), sub(2, 3), sub(1, 3), sub(4, 3)]);
+        let ok = baked(vec![sub(1, 2), sub(2, 3), sub(1, 3), sub(4, 3)]);
         assert!(
-            acyclic.equivalence_cycles().is_empty(),
+            Spine::over(&ok).equivalence_cycles().is_empty(),
             "a real acyclic spine reports no cycle"
         );
-        let cyclic = Closure::from_asserted([sub(1, 2), sub(2, 1)]);
+        let bad = baked(vec![sub(1, 2), sub(2, 1)]);
         assert_eq!(
-            cyclic.equivalence_cycles(),
+            Spine::over(&bad).equivalence_cycles(),
             vec![c(1), c(2)],
             "both ends of the equivalence are named"
         );
@@ -428,43 +529,48 @@ mod tests {
     /// makes this a reasoner rather than a pairwise check.
     #[test]
     fn a_cycle_through_a_long_chain_is_found() {
-        let mut axioms: Vec<Subsumption> = (1..8).map(|i| sub(i, i + 1)).collect();
-        axioms.push(sub(8, 1)); // closes 1 → 8 → 1
-        let cl = Closure::from_asserted(axioms);
-        assert_eq!(cl.equivalence_cycles().len(), 8, "every class on the ring");
+        let mut v: Vec<Subsumption> = (1..8).map(|i| sub(i, i + 1)).collect();
+        v.push(sub(8, 1)); // closes 1 → 8 → 1
+        let e = baked(v);
+        assert_eq!(
+            Spine::over(&e).equivalence_cycles().len(),
+            8,
+            "every class on the ring"
+        );
     }
 
     /// **The merge verdict discriminates all three outcomes.** A verdict that
     /// answered one class for everything would carry no information.
     #[test]
     fn merge_splits_corroborating_enriching_and_conflicting() {
-        let base = Closure::from_asserted([sub(1, 2), sub(2, 3)]);
+        let e = baked(vec![sub(1, 2), sub(2, 3)]);
+        let s = Spine::over(&e);
 
         // Corroborating: already derivable through 1 ⊑ 2 ⊑ 3.
-        let v = base.merge(&[sub(1, 3)]);
+        let v = s.merge(&[sub(1, 3)]);
         assert_eq!(v.corroborating.len(), 1);
         assert!(v.enriching.is_empty());
         assert!(v.is_sound());
 
-        // Enriching: the base is SILENT about 4, not opposed to it.
-        let v = base.merge(&[sub(4, 3)]);
+        // Enriching: the bake is SILENT about 4, not opposed to it.
+        let v = s.merge(&[sub(4, 3)]);
         assert!(v.corroborating.is_empty());
         assert_eq!(v.enriching.len(), 1);
         assert!(v.is_sound(), "silence is not disagreement");
 
-        // Conflicting: the base says 1 ⊑ 3; the reverse closes a cycle.
-        let v = base.merge(&[sub(3, 1)]);
+        // Conflicting: the bake says 1 ⊑ 3; the reverse closes a cycle.
+        let v = s.merge(&[sub(3, 1)]);
         assert!(!v.is_sound(), "a direction conflict must NOT read as sound");
         assert_eq!(v.introduced_cycles, vec![c(1), c(2), c(3)]);
-        assert!(v.pre_existing_cycles.is_empty(), "the base was clean");
+        assert!(v.pre_existing_cycles.is_empty(), "the bake was clean");
     }
 
     /// Pre-existing cycles are never blamed on the merge — the control that
     /// makes `introduced_cycles` mean what it says.
     #[test]
     fn a_pre_existing_cycle_is_not_attributed_to_the_merge() {
-        let dirty = Closure::from_asserted([sub(1, 2), sub(2, 1)]);
-        let v = dirty.merge(&[sub(5, 6)]);
+        let e = baked(vec![sub(1, 2), sub(2, 1)]);
+        let v = Spine::over(&e).merge(&[sub(5, 6)]);
         assert_eq!(v.pre_existing_cycles, vec![c(1), c(2)]);
         assert!(
             v.introduced_cycles.is_empty(),
@@ -473,19 +579,19 @@ mod tests {
         assert!(v.is_sound());
     }
 
-    /// `merge` does not mutate; `extended` does. Checking first and applying
-    /// after is the only order in which a verdict is useful.
+    /// `merge` observes; the overlay applies. The base slice is untouched by
+    /// either, because the lens never had write access to begin with.
     #[test]
-    fn merge_inspects_and_extended_applies() {
-        let base = Closure::from_asserted([sub(1, 2)]);
-        let before = base.asserted_len();
-        let v = base.merge(&[sub(2, 3)]);
-        assert_eq!(base.asserted_len(), before, "merge left the closure alone");
-        assert!(!base.entails(c(1), c(3)));
-        let applied = base.extended(&v.enriching);
+    fn merge_observes_and_the_overlay_applies() {
+        let e = baked(vec![sub(1, 2)]);
+        let s = Spine::over(&e);
+        let v = s.merge(&[sub(2, 3)]);
+        assert_eq!(e.len(), 1, "the baked slice was not written to");
+        assert!(!s.entails(c(1), c(3)), "and the lens still sees only the bake");
+        let extra = baked(v.enriching.clone());
         assert!(
-            applied.entails(c(1), c(3)),
-            "and extended really applies it"
+            s.with_overlay(&extra).entails(c(1), c(3)),
+            "overlaying really applies it"
         );
     }
 
@@ -494,11 +600,12 @@ mod tests {
     #[test]
     fn identity_alone_does_not_make_two_classes_the_same() {
         let other = 0x0302_0000;
-        let cl = Closure::from_asserted([Subsumption::new(
+        let e = baked(vec![Subsumption::new(
             ClassAddr::new(NS, 1),
             ClassAddr::new(NS, 2),
         )]);
-        assert!(!cl.entails(ClassAddr::new(other, 1), ClassAddr::new(NS, 2)));
-        assert!(cl.entails(ClassAddr::new(NS, 1), ClassAddr::new(NS, 2)));
+        let s = Spine::over(&e);
+        assert!(!s.entails(ClassAddr::new(other, 1), ClassAddr::new(NS, 2)));
+        assert!(s.entails(ClassAddr::new(NS, 1), ClassAddr::new(NS, 2)));
     }
 }
