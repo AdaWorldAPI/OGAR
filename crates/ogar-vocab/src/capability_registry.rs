@@ -389,6 +389,49 @@ fn activated_concept_id(concept: &str) -> Option<u16> {
         .map(|&(_, id)| id)
 }
 
+/// Guard on the guard — **always compiled**, in every feature configuration.
+///
+/// [`default_build_carries_no_activated_rows`] is `cfg(not(feature =
+/// "blocks"))`, which makes it a gate that can DISAPPEAR: put `blocks` into
+/// `[features] default` and the module compiles out, the job still exits 0,
+/// and the regression the gate exists to catch becomes invisible (codex P2 on
+/// #259 — correct, and the hole I had named in a check-in note without
+/// actually closing).
+///
+/// CI defends this with `--no-default-features`. That is necessary but not
+/// sufficient: it only forces the build a human remembered to write that way.
+/// This test is the part that cannot be forgotten or cfg'd away — it reads
+/// the crate's OWN manifest at compile time and fails if any activating
+/// feature has been added to the default set, in EVERY configuration,
+/// including the one where the OFF module is absent.
+#[cfg(test)]
+mod the_off_gate_cannot_be_switched_off {
+    /// Every feature that activates codebook rows. A new activating feature
+    /// is added here in the same PR that introduces it.
+    const ACTIVATING: &[&str] = &["blocks"];
+
+    #[test]
+    fn no_activating_feature_is_in_the_default_set() {
+        // Compile-time read of this crate's own Cargo.toml — no runtime I/O,
+        // and no way for a feature flag to hide it.
+        let manifest = include_str!("../Cargo.toml");
+        let default_line = manifest
+            .lines()
+            .map(str::trim)
+            .find(|l| l.starts_with("default"))
+            .expect("ogar-vocab must declare a `default` feature list");
+        for feature in ACTIVATING {
+            assert!(
+                !default_line.contains(feature),
+                "`{feature}` is in the DEFAULT feature set ({default_line}). \
+                 Every build would then carry that codebook, and the OFF-half \
+                 gate would silently compile out. Activation must stay opt-in, \
+                 turned on by the consumer that owns it."
+            );
+        }
+    }
+}
+
 /// The OFF half of the activation contract — compiled ONLY when no feature
 /// activated anything.
 ///
