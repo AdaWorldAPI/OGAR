@@ -1,0 +1,16 @@
+[package]
+name = "ogar-elk"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+description = "The EL subsumption closure as a FACTFINDER over ABI-shaped addressed edges. Answers two questions and no others: does `A ⊑ B` follow from what is asserted, and is adding a set of axioms to an existing closure sound (does it introduce an equivalence cycle). Entailments are facts — they follow necessarily — so nothing here is graded, ranked, or scored. Zero-dependency; consumes `(classid, identity)` addresses, never a legacy ontology file."
+
+[features]
+default = []
+serde = ["dep:serde"]
+
+[dependencies]
+serde = { workspace = true, optional = true }
