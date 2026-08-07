@@ -62,7 +62,7 @@ pub use encryption::{aead, envelope, hash, kdf, sign};
 // ── Root-level convenience aliases, mirrored from `encryption`'s own root
 // re-exports (`envelope::{seal, open}` plus the envelope's error/parameter
 // types), so callers that used the upstream crate's short paths keep them.
-pub use encryption::{EnvelopeError, KdfParams, open, seal};
+pub use encryption::{open, seal, EnvelopeError, KdfParams};
 
 // ── The platform-CSPRNG-unavailable error, mirrored from `encryption`'s
 // crate root.
