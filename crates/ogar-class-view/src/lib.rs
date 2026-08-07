@@ -79,9 +79,6 @@ use ogar_vocab::{
     billable_work_entry,
     billing_party,
     blob,
-    // 0x17XX — blocks (visual block-programming schema concepts)
-    block_function,
-    block_inventory,
     bone,
     canonical_concept_id,
     charset,
@@ -269,12 +266,6 @@ fn all_canonical_classes() -> Vec<(&'static str, Class)> {
         ("osm_note", osm_note()),
         ("osm_gpx_trace", osm_gpx_trace()),
         ("osm_user", osm_user()),
-        // ── 0x17XX — Blocks (visual block-programming schema concepts) ──
-        // The two classids a stored block node is addressed BY. The opcode
-        // palette is deliberately NOT here — an opcode is an `FnIndex` byte
-        // inside a function body, never a classid, so it has no `ObjectView`.
-        ("block_function", block_function()),
-        ("block_inventory", block_inventory()),
     ]
 }
 
