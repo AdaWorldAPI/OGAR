@@ -89,6 +89,10 @@
 
 #![forbid(unsafe_code)]
 
+pub mod lens;
+
+pub use lens::{LensClosure, Parents};
+
 use std::collections::{HashMap, HashSet, VecDeque};
 
 /// The **join key** the pre-bake reconciliation uses: `(classid, identity)`.

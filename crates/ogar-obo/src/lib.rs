@@ -43,6 +43,7 @@
 pub mod crosswalk;
 pub mod edges;
 pub mod reason;
+pub mod spine;
 
 /// Row stride of the canonical SoA node — `key(16) + edges(16) + value(480)`.
 /// Mirrors `lance_graph_contract::canonical_node::NODE_ROW_STRIDE`.
@@ -281,7 +282,7 @@ impl Row512 {
 /// and family stay `0` in this first bake — the zero-fallback ladder means
 /// `identity` alone discriminates until an HHTL basin mint wakes routing
 /// (RESERVE, DON'T RECLAIM: fixed offsets, zero layout change later).
-fn pack_key(classid: u32, identity: u32) -> [u8; 16] {
+pub(crate) fn pack_key(classid: u32, identity: u32) -> [u8; 16] {
     let mut k = [0u8; 16];
     k[0..4].copy_from_slice(&classid.to_le_bytes());
     // 4..10 HEEL/HIP/TWIG = 0 (dormant cascade)
