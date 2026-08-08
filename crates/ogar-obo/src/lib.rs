@@ -42,6 +42,8 @@
 
 pub mod crosswalk;
 pub mod edges;
+#[cfg(feature = "rdf")]
+pub mod rdf;
 pub mod reason;
 pub mod registry;
 pub mod spine;

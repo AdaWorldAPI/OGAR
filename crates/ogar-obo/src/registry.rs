@@ -159,6 +159,77 @@ pub const OBO_CORE: NsRegistry = NsRegistry::new(&[
     },
 ]);
 
+/// The upper-level **meta-study spine** — the `is_a` skeleton a study-level
+/// bake grounds on. Continues the same `0x03` Ontology domain as [`OBO_CORE`],
+/// under the same local authority its concept-id docs describe.
+///
+/// ## Order is a convention, not a topological sort
+///
+/// The rows run roughly upper→applied, by which direction the cross-namespace
+/// edges dominate. That is **not** a dependency order in the strict sense: the
+/// import graph measured by `examples/probe_spine.rs` is cyclic — e.g. `OBI`
+/// and `IAO` reference each other (394 one way, 10 the other), as do `OBI` and
+/// `COB` (236 / 3) and `OBI` and `OBCS` (58 / 70).
+///
+/// Nothing depends on the order being acyclic: [`crate::bake`] takes the
+/// *union* of all namespaces and sorts rows by `(ns, num)`, so a cyclic import
+/// graph bakes fine. What the order does fix is the **row order**, and through
+/// it the artifact digest — so reordering this table re-bakes everything,
+/// exactly as for [`OBO_CORE`].
+///
+/// # ⚠ Gate: this table is NOT bakeable until the numeric-`0` pad collision is resolved
+///
+/// [`crate::edges`] packs edge targets into value lanes and uses the numeric
+/// `0` as the **pad** meaning *lane spent, advance*. Three of these namespaces
+/// contain a real term whose CURIE numeric is `0` — in at least one case the
+/// namespace's own root. An edge pointing at such a term is indistinguishable
+/// from a pad, so a reader's walk stops early and **silently**.
+///
+/// The fix is local to [`crate::edges`] — bias the stored numeric by `+1`
+/// (`store = num + 1`, `read = stored - 1`), which costs one value off the top
+/// of the range (2²⁴−2 addressable, against a measured maximum well below it).
+/// It is not applied here because it moves **every** shipped slab digest and
+/// forces a re-bake of all five core tables; that is an operator call, not a
+/// side effect of adding a table.
+///
+/// Until then: the rows below are config a driver may *read*, and
+/// `examples/probe_spine.rs` measures which namespaces actually trip the
+/// collision — but a bake over this table would be unsound for those.
+pub const META_STUDY_SPINE: NsRegistry = NsRegistry::new(&[
+    NsSpec {
+        prefix: "BFO",
+        concept_id: 0x0306,
+    },
+    NsSpec {
+        prefix: "COB",
+        concept_id: 0x0307,
+    },
+    NsSpec {
+        prefix: "IAO",
+        concept_id: 0x0308,
+    },
+    NsSpec {
+        prefix: "OBI",
+        concept_id: 0x0309,
+    },
+    NsSpec {
+        prefix: "OBCS",
+        concept_id: 0x030A,
+    },
+    NsSpec {
+        prefix: "SEPIO",
+        concept_id: 0x030B,
+    },
+    NsSpec {
+        prefix: "ECO",
+        concept_id: 0x030C,
+    },
+    NsSpec {
+        prefix: "FBbi",
+        concept_id: 0x030D,
+    },
+]);
+
 #[cfg(test)]
 mod tests {
     use super::*;
