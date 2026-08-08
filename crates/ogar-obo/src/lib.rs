@@ -537,6 +537,11 @@ pub struct BakeStats {
     pub links_dropped: usize,
     /// rows that overflowed the lane budget (must be 0 to ship)
     pub rows_overflowed: usize,
+    /// duplicate edges collapsed at bake time — the same `(predicate, object)`
+    /// asserted more than once for one subject, which a multi-source union
+    /// produces routinely. Reported rather than silent: it is the difference
+    /// between the degree histogram and the distinct edge count.
+    pub duplicates: usize,
 }
 
 /// The bake result: the 512-byte SoA rows (loader-facing) + the SPO triple
@@ -614,6 +619,25 @@ pub fn bake_with(
             n.is_a.retain(|t| tiled.contains(t));
             n.rel.retain(|(_, t)| tiled.contains(t));
             stats.dangling += before - (n.is_a.len() + n.rel.len());
+            // Deduplicate. A driver that unions several sources — `bake_obo`
+            // merges five `.obo` files with `extend` — concatenates the parent
+            // lists of a term that appears in more than one, so the same
+            // `is_a` lands twice. Measured on the shipped core: 15,128
+            // duplicate slots across 10,589 rows, 14 % of the is_a links
+            // written.
+            //
+            // Idempotent semantically (`A is_a B` twice is `A is_a B`), so it
+            // produces no wrong answer — but it spends lane budget and makes
+            // the degree histogram over-report a row's out-degree, which is
+            // what `resident_out_degree` reads. `rdf::parse_rdf` already
+            // dedups its own output; doing it here covers every driver instead
+            // of every driver having to remember.
+            let pre = n.is_a.len() + n.rel.len();
+            n.is_a.sort_unstable();
+            n.is_a.dedup();
+            n.rel.sort_unstable();
+            n.rel.dedup();
+            stats.duplicates += pre - (n.is_a.len() + n.rel.len());
             n
         };
         let node = &node;
