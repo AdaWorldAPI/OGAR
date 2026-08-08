@@ -219,7 +219,7 @@ mod tests {
                 )
             })
             .collect();
-        pack_edges(&mut r.0, &mut tg, 0x0000);
+        pack_edges(&mut r.0, &mut tg, 0x0000, &crate::registry::OBO_CORE);
         r
     }
 
@@ -251,7 +251,7 @@ mod tests {
                 },
             ),
         ];
-        pack_edges(&mut r.0, &mut tg, 0x0000);
+        pack_edges(&mut r.0, &mut tg, 0x0000, &crate::registry::OBO_CORE);
         let rows = vec![r];
         let lens = SpineLens::new(&rows);
 
@@ -284,7 +284,7 @@ mod tests {
                 num: 42,
             },
         )];
-        pack_edges(&mut r.0, &mut tg, 0x0000);
+        pack_edges(&mut r.0, &mut tg, 0x0000, &crate::registry::OBO_CORE);
         let rows = vec![r];
         let lens = SpineLens::new(&rows);
 

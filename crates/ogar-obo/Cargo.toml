@@ -25,3 +25,14 @@ oxrdfxml = { version = "0.2", optional = true }
 oxttl = { version = "0.2", optional = true }
 
 [dev-dependencies]
+
+# These drive the RDF front-end, so they cannot build without it. Declared
+# rather than #[cfg]-guarded so `cargo clippy --all-targets` on the default
+# feature set skips them instead of failing.
+[[example]]
+name = "probe_spine"
+required-features = ["rdf"]
+
+[[example]]
+name = "bake_spine"
+required-features = ["rdf"]

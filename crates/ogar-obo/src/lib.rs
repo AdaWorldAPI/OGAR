@@ -348,6 +348,7 @@ fn pack_row(
     id: &TermId,
     node: &OboNode,
     app_prefix: u16,
+    reg: &registry::NsRegistry,
 ) -> (Row512, edges::PackStats) {
     let mut row = Row512::zeroed();
     row.0[0..16].copy_from_slice(&pack_key(classid, id.num));
@@ -369,7 +370,7 @@ fn pack_row(
         Vec::with_capacity(node.is_a.len() + node.rel.len());
     targets.extend(node.is_a.iter().map(|t| (Predicate::IsA, *t)));
     targets.extend(node.rel.iter().copied());
-    let st = edges::pack_edges(&mut row.0, &mut targets, app_prefix);
+    let st = edges::pack_edges(&mut row.0, &mut targets, app_prefix, reg);
     (row, st)
 }
 
@@ -558,6 +559,23 @@ pub struct Bake {
 /// is the lo-u16 render skin (`0x0000` = the canonical reference skin).
 #[must_use]
 pub fn bake(nodes: &std::collections::HashMap<TermId, OboNode>, app_prefix: u16) -> Bake {
+    bake_with(nodes, app_prefix, &registry::OBO_CORE)
+}
+
+/// [`bake`] against an explicit namespace table.
+///
+/// This is the general form; `bake` is this against
+/// [`registry::OBO_CORE`]. A row's classid and every edge lane's classid come
+/// from `reg`, so a bake over a different namespace set needs no code change —
+/// only a different table. A target whose namespace is absent from `reg` has
+/// no classid to name it, so its link is reported in
+/// [`BakeStats::links_dropped`] rather than guessed at.
+#[must_use]
+pub fn bake_with(
+    nodes: &std::collections::HashMap<TermId, OboNode>,
+    app_prefix: u16,
+    reg: &registry::NsRegistry,
+) -> Bake {
     let mut ids: Vec<TermId> = nodes
         .iter()
         .filter(|(_, n)| !n.obsolete)
@@ -575,8 +593,10 @@ pub fn bake(nodes: &std::collections::HashMap<TermId, OboNode>, app_prefix: u16)
 
     for id in &ids {
         let node = &nodes[id];
-        let classid = id.namespace().render_classid(app_prefix);
-        let (row, pk) = pack_row(classid, id, node, app_prefix);
+        let Some(classid) = reg.render_classid(id.ns, app_prefix) else {
+            continue;
+        };
+        let (row, pk) = pack_row(classid, id, node, app_prefix, reg);
         rows.push(row);
         stats.links_packed += pk.written;
         stats.links_dropped += pk.dropped;

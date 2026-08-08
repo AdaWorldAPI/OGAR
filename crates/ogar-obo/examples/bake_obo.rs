@@ -64,6 +64,27 @@ fn main() {
         "  xrefs preserved        : {} (MeSH bearings: {})",
         s.xrefs, s.mesh_xrefs
     );
+    // The ship gate. These were computed but never printed, so a driver run
+    // could look clean while the artifact was missing edges — exactly the
+    // silent shape gate A1 was about. Print them, and refuse rather than warn.
+    println!("  links packed (col_idx) : {}", s.links_packed);
+    println!("  links DROPPED          : {}", s.links_dropped);
+    println!("  rows overflowed        : {}", s.rows_overflowed);
+    assert_eq!(
+        s.links_dropped, 0,
+        "refusing to write an artifact that is missing {} edge(s)",
+        s.links_dropped
+    );
+    assert_eq!(
+        s.rows_overflowed, 0,
+        "refusing to write an artifact with {} truncated row(s)",
+        s.rows_overflowed
+    );
+    assert_eq!(
+        s.links_packed, s.triples,
+        "every SPO triple must also be in-row: {} packed vs {} triples",
+        s.links_packed, s.triples
+    );
 
     // Per-namespace row census.
     let mut census: HashMap<u8, usize> = HashMap::new();

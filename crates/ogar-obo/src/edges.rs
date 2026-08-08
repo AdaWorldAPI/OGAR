@@ -42,14 +42,39 @@
 //! Targets are emitted ascending by `(predicate, target namespace, numeric)`,
 //! and **a lane never mixes target ontologies** — its classid names exactly
 //! one, so a namespace change starts a new lane even mid-predicate. Unused
-//! slots in a lane are `0`, which is unambiguous: no OBO CURIE numeric is 0
-//! (asserted by `probe_edge_capacity` A1 on the real sources).
+//! slots in a lane are all-zero bytes, and a reader treats a zero slot as
+//! "this lane is spent, advance".
+//!
+//! # The `+1` numeric bias (gate A1, applied 2026-08-08)
+//!
+//! An all-zero slot is the pad, so the slot encoding must have no *other*
+//! meaning for zero. The original contract achieved that by assertion —
+//! *"no OBO CURIE numeric is 0"* — which held for the five baked namespaces
+//! and **is false in general**. `probe_spine` measured a real term at numeric
+//! `0` in three further namespaces, one of them that namespace's own root. An
+//! edge into such a term was indistinguishable from a pad, so a reader's walk
+//! stopped early and *silently* — the worst failure shape available, because
+//! the artifact still validates and the traversal just returns less.
+//!
+//! The fix removes the assumption instead of documenting around it: the
+//! numeric is stored **biased by one** ([`encode_numeric`] / [`decode_numeric`]).
+//! Stored `0` now means pad and nothing else, by construction rather than by
+//! a property of the input.
+//!
+//! Cost: one value off the top of the range. [`MAX_LINK_NUMERIC`] is
+//! `2²⁴ − 2 = 16_777_214`, against a measured maximum of `9_999_994` across
+//! every namespace probed. A numeric above that is **reported as dropped**,
+//! never truncated (see [`PackStats::dropped`]).
+//!
+//! This changed every byte of every edge lane, so it re-baked all five core
+//! slabs and moved their digests. That was the price of the gate and it was
+//! paid deliberately, not absorbed.
 //!
 //! A reader walks lanes in order and consumes `degree(p)` targets for each
-//! predicate `p` in ascending order, treating a `0` slot as "this lane is
-//! spent, advance". That is [`EdgeLanes`], which borrows the row and decodes a
-//! u24 with a shift — no allocation, no gathered window.
+//! predicate `p` in ascending order. That is [`EdgeLanes`], which borrows the
+//! row and decodes a u24 with a shift — no allocation, no gathered window.
 
+use crate::registry::NsRegistry;
 use crate::{EDGES_OFFSET, NODE_ROW_STRIDE, Namespace, Predicate, TermId, VALUE_OFFSET};
 
 /// Bytes per lane — the one form (`classid(4) + content(12)`).
@@ -62,6 +87,28 @@ pub const EDGE_LANE_SLAB_OFFSET: usize = 112;
 pub const EDGE_LANE_COUNT: usize = 23;
 /// Total link slots per row.
 pub const EDGE_SLOT_COUNT: usize = EDGE_LANE_COUNT * LINKS_PER_LANE;
+
+/// The largest CURIE numeric an edge lane can carry.
+///
+/// One below the u24 ceiling, because the stored form is biased by one so that
+/// stored `0` can mean *pad* unconditionally (see the module docs, gate A1).
+/// Measured maximum across every namespace probed: `9_999_994`.
+pub const MAX_LINK_NUMERIC: u32 = 0x00FF_FFFF - 1;
+
+/// CURIE numeric → its stored form. Total on `0..=MAX_LINK_NUMERIC`.
+#[inline]
+#[must_use]
+pub const fn encode_numeric(num: u32) -> u32 {
+    num + 1
+}
+
+/// Stored form → CURIE numeric. `stored == 0` is the pad and has no numeric,
+/// so callers must test for it *before* decoding; [`EdgeLanes::links`] does.
+#[inline]
+#[must_use]
+pub const fn decode_numeric(stored: u32) -> u32 {
+    stored - 1
+}
 
 const _: () = assert!(EDGE_LANE_SLAB_OFFSET > crate::ENTITY_TYPE_SLAB_OFFSET);
 const _: () = assert!(
@@ -114,12 +161,15 @@ pub struct PackStats {
 /// it into the canonical `(predicate, namespace, numeric)` emit order itself,
 /// so callers cannot get the reader's contract wrong by accident.
 ///
-/// Returns the per-row stats. Links beyond [`EDGE_SLOT_COUNT`] are counted in
-/// [`PackStats::dropped`] and **not** written — never silently truncated.
+/// Returns the per-row stats. A link is counted in [`PackStats::dropped`] and
+/// **not** written — never silently truncated — when either the lane budget is
+/// exhausted or the numeric exceeds [`MAX_LINK_NUMERIC`]. Both mean the same
+/// thing to a driver: the artifact is missing an edge, so it must not ship.
 pub fn pack_edges(
     row: &mut [u8; NODE_ROW_STRIDE],
     targets: &mut [(Predicate, TermId)],
     app_prefix: u16,
+    reg: &NsRegistry,
 ) -> PackStats {
     let mut st = PackStats::default();
     targets.sort_unstable_by_key(|(p, t)| (*p as u8, t.ns, t.num));
@@ -129,25 +179,43 @@ pub fn pack_edges(
     let mut slot = LINKS_PER_LANE; // force a fresh lane on the first target
     let mut group: Option<(u8, u8)> = None;
 
-    for (p, t) in targets.iter() {
+    for (i, (p, t)) in targets.iter().enumerate() {
+        if t.num > MAX_LINK_NUMERIC {
+            // Unrepresentable under the +1 bias — the one numeric the biased
+            // u24 cannot hold. Reported, not truncated, and not allowed to
+            // consume a slot: a driver refuses to ship on `dropped != 0`.
+            st.dropped += 1;
+            st.rows_overflowed = 1;
+            continue;
+        }
         let g = (*p as u8, t.ns);
         if group != Some(g) || slot == LINKS_PER_LANE {
             group = Some(g);
             lane += 1;
             slot = 0;
             if lane > EDGE_LANE_COUNT {
-                // budget exhausted — count the remainder, write nothing more.
-                st.dropped = targets.len() - st.written;
+                // budget exhausted — count this one and every one after it,
+                // write nothing more.
+                st.dropped += targets.len() - i;
                 st.rows_overflowed = 1;
                 st.lanes = EDGE_LANE_COUNT;
                 return st;
             }
             let off = base + (lane - 1) * LANE_BYTES;
-            let classid = t.namespace().render_classid(app_prefix);
+            let Some(classid) = reg.render_classid(t.ns, app_prefix) else {
+                // A target whose namespace is not in this registry has no
+                // classid, so the lane could not name it. Report, never guess.
+                st.dropped += 1;
+                st.rows_overflowed = 1;
+                lane -= 1;
+                slot = LINKS_PER_LANE;
+                group = None;
+                continue;
+            };
             row[off..off + 4].copy_from_slice(&classid.to_le_bytes());
         }
         let off = base + (lane - 1) * LANE_BYTES + 4 + slot * 3;
-        put_u24_le(&mut row[off..off + 3], t.num);
+        put_u24_le(&mut row[off..off + 3], encode_numeric(t.num));
         slot += 1;
         st.written += 1;
     }
@@ -246,7 +314,8 @@ impl Iterator for LinkIter<'_> {
                 self.row[off + 6 + self.slot * 3],
             );
             if n == 0 {
-                // pad — the lane is spent, next lane
+                // Pad — the lane is spent, next lane. Unconditional under the
+                // +1 bias: no real target encodes to 0, whatever its numeric.
                 self.lane += 1;
                 self.slot = 0;
                 continue;
@@ -260,7 +329,13 @@ impl Iterator for LinkIter<'_> {
             self.slot += 1;
             self.remaining -= 1;
             let p = PREDICATES[self.pred as usize];
-            return Some((p, Link { classid, num: n }));
+            return Some((
+                p,
+                Link {
+                    classid,
+                    num: decode_numeric(n),
+                },
+            ));
         }
     }
 }
@@ -341,7 +416,7 @@ mod tests {
     fn a_single_link_round_trips_with_its_target_classid() {
         let mut row = row_with_degrees(&[(Predicate::IsA, 1)]);
         let mut tg = vec![(Predicate::IsA, t(Namespace::Mondo, 5015))];
-        let st = pack_edges(&mut row, &mut tg, 0x0000);
+        let st = pack_edges(&mut row, &mut tg, 0x0000, &crate::registry::OBO_CORE);
         assert_eq!(st.written, 1);
         assert_eq!(st.dropped, 0);
 
@@ -369,7 +444,7 @@ mod tests {
             (Predicate::Other, t(Namespace::Mondo, 1)),
             (Predicate::Other, t(Namespace::Hpo, 2)),
         ];
-        let st = pack_edges(&mut row, &mut tg, 0x0000);
+        let st = pack_edges(&mut row, &mut tg, 0x0000, &crate::registry::OBO_CORE);
         assert_eq!(st.written, 2);
         assert_eq!(st.lanes, 2, "a namespace change must start a new lane");
 
@@ -395,7 +470,7 @@ mod tests {
         let mut tg: Vec<_> = (1..=5)
             .map(|n| (Predicate::IsA, t(Namespace::Uberon, n)))
             .collect();
-        let st = pack_edges(&mut row, &mut tg, 0x0000);
+        let st = pack_edges(&mut row, &mut tg, 0x0000, &crate::registry::OBO_CORE);
         assert_eq!(st.written, 5);
         assert_eq!(st.lanes, 2);
         let got: Vec<_> = EdgeLanes::new(&row)
@@ -415,7 +490,7 @@ mod tests {
             (Predicate::IsA, t(Namespace::Uberon, 100)),
             (Predicate::IsA, t(Namespace::Uberon, 200)),
         ];
-        pack_edges(&mut row, &mut tg, 0x0000);
+        pack_edges(&mut row, &mut tg, 0x0000, &crate::registry::OBO_CORE);
         let got: Vec<_> = EdgeLanes::new(&row)
             .links()
             .map(|(p, l)| (p, l.num))
@@ -438,7 +513,7 @@ mod tests {
         let mut tg: Vec<_> = (1..=over as u32)
             .map(|n| (Predicate::IsA, t(Namespace::Hpo, n)))
             .collect();
-        let st = pack_edges(&mut row, &mut tg, 0x0000);
+        let st = pack_edges(&mut row, &mut tg, 0x0000, &crate::registry::OBO_CORE);
         assert_eq!(st.rows_overflowed, 1);
         assert_eq!(st.dropped, over - EDGE_SLOT_COUNT);
         assert_eq!(st.written, EDGE_SLOT_COUNT);
@@ -452,7 +527,7 @@ mod tests {
         let mut tg: Vec<_> = (1..=3)
             .map(|n| (Predicate::IsA, t(Namespace::Pato, n)))
             .collect();
-        pack_edges(&mut row, &mut tg, 0x0000);
+        pack_edges(&mut row, &mut tg, 0x0000, &crate::registry::OBO_CORE);
         assert_eq!(EdgeLanes::new(&row).links().count(), 3);
 
         row[EDGES_OFFSET + Predicate::IsA as usize] = 1;
@@ -474,7 +549,7 @@ mod tests {
             (Predicate::IsA, t(Namespace::Uberon, 10)),
             (Predicate::PartOf, t(Namespace::Uberon, 20)),
         ];
-        pack_edges(&mut row, &mut tg, 0x0000);
+        pack_edges(&mut row, &mut tg, 0x0000, &crate::registry::OBO_CORE);
 
         // both edges are readable...
         assert_eq!(EdgeLanes::new(&row).links().count(), 2);
@@ -495,6 +570,122 @@ mod tests {
             )],
             "part_of must not reach a reasoner that lacks role composition"
         );
+    }
+
+    /// Gate A1, stated as the bug it fixes.
+    ///
+    /// A link to numeric `0` — a real term in three measured namespaces, one
+    /// of them a namespace root — must round-trip AND must not end the walk.
+    /// Under the pre-bias encoding this test fails on both counts: the slot
+    /// bytes are all-zero, so the reader reads a pad, drops the link, and
+    /// **silently truncates the rest of the lane** — the second target is lost
+    /// too. That is why the assertion below checks the *following* link, not
+    /// just the zero one.
+    #[test]
+    fn a_link_to_numeric_zero_survives_and_does_not_end_the_walk() {
+        let mut row = row_with_degrees(&[(Predicate::IsA, 2)]);
+        let mut tg = vec![
+            (Predicate::IsA, t(Namespace::Hpo, 0)),
+            (Predicate::IsA, t(Namespace::Hpo, 118)),
+        ];
+        let st = pack_edges(&mut row, &mut tg, 0x0000, &crate::registry::OBO_CORE);
+        assert_eq!(st.written, 2);
+        assert_eq!(st.dropped, 0);
+
+        let got: Vec<_> = EdgeLanes::new(&row)
+            .links_of(Predicate::IsA)
+            .map(|l| l.num)
+            .collect();
+        assert_eq!(
+            got,
+            vec![0, 118],
+            "numeric 0 is a real target, and the link after it must survive too"
+        );
+
+        // The stored bytes must NOT be zero — that is the whole mechanism.
+        let base = VALUE_OFFSET + EDGE_LANE_SLAB_OFFSET;
+        assert_ne!(
+            u24_le(row[base + 4], row[base + 5], row[base + 6]),
+            0,
+            "a real target must never encode to the pad value"
+        );
+    }
+
+    /// The pad still works — the can-it-stay-silent half. An unused slot must
+    /// still terminate the lane, or the bias would have traded one silent
+    /// failure for another.
+    #[test]
+    fn an_unused_slot_still_reads_as_pad_and_advances_the_lane() {
+        // Two target ontologies force two lanes; the first lane keeps three
+        // empty slots after its single link.
+        let mut row = row_with_degrees(&[(Predicate::IsA, 2)]);
+        let mut tg = vec![
+            (Predicate::IsA, t(Namespace::Mondo, 5015)),
+            (Predicate::IsA, t(Namespace::Uberon, 955)),
+        ];
+        pack_edges(&mut row, &mut tg, 0x0000, &crate::registry::OBO_CORE);
+        let got: Vec<_> = EdgeLanes::new(&row)
+            .links()
+            .map(|(_, l)| (l.classid, l.num))
+            .collect();
+        assert_eq!(
+            got,
+            vec![(0x0301_0000, 5015), (0x0303_0000, 955)],
+            "the three empty slots after the first link must advance the lane, \
+             not yield phantom links"
+        );
+    }
+
+    #[test]
+    fn the_bias_round_trips_across_the_whole_representable_range() {
+        for n in [
+            0u32,
+            1,
+            2,
+            118,
+            65_535,
+            65_536,
+            700_092,
+            9_999_994,
+            MAX_LINK_NUMERIC,
+        ] {
+            assert_eq!(decode_numeric(encode_numeric(n)), n, "{n} must round-trip");
+            assert_ne!(encode_numeric(n), 0, "{n} must not collide with the pad");
+            assert!(
+                encode_numeric(n) <= 0x00FF_FFFF,
+                "{n} must still fit the u24 slot after biasing"
+            );
+        }
+    }
+
+    /// The one numeric the biased u24 cannot hold is reported, not truncated.
+    ///
+    /// `TermId::parse` already rejects `> 0x00FF_FFFF`, so this is reachable
+    /// only by constructing a `TermId` directly — but a guard that cannot be
+    /// shown to fire is the defect one level up.
+    #[test]
+    fn an_unrepresentable_numeric_is_dropped_rather_than_wrapped() {
+        let mut row = row_with_degrees(&[(Predicate::IsA, 2)]);
+        let mut tg = vec![
+            (
+                Predicate::IsA,
+                TermId {
+                    ns: Namespace::Hpo as u8,
+                    num: 0x00FF_FFFF,
+                },
+            ),
+            (Predicate::IsA, t(Namespace::Hpo, 7)),
+        ];
+        let st = pack_edges(&mut row, &mut tg, 0x0000, &crate::registry::OBO_CORE);
+        assert_eq!(st.dropped, 1, "the unrepresentable link must be reported");
+        assert_eq!(st.rows_overflowed, 1, "and must block the ship");
+        assert_eq!(st.written, 1, "the representable link still lands");
+        // It must not have wrapped to the pad, nor to some other term.
+        let got: Vec<_> = EdgeLanes::new(&row)
+            .links_of(Predicate::IsA)
+            .map(|l| l.num)
+            .collect();
+        assert_eq!(got, vec![7], "no phantom target from a wrapped numeric");
     }
 
     #[test]
@@ -521,7 +712,7 @@ mod tests {
         let mut tg: Vec<_> = (1..=EDGE_SLOT_COUNT as u32)
             .map(|n| (Predicate::IsA, t(Namespace::Ro, n)))
             .collect();
-        let st = pack_edges(&mut row, &mut tg, 0x0000);
+        let st = pack_edges(&mut row, &mut tg, 0x0000, &crate::registry::OBO_CORE);
         assert_eq!(st.dropped, 0);
         assert_eq!(
             u16::from_le_bytes([row[et], row[et + 1]]),
