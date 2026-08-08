@@ -163,22 +163,28 @@ pub const OBO_CORE: NsRegistry = NsRegistry::new(&[
 /// bake grounds on. Same `0x03` Ontology domain as [`OBO_CORE`], under the
 /// same local authority its concept-id docs describe.
 ///
-/// ## Why this starts at `0x0310` and not at `0x0306`
+/// ## Why this starts at `0x0340` — and why it took three attempts
 ///
-/// It was minted at `0x0306..=0x030D` and that **collided with
-/// `ogar_ro::RELATION_BODY_CONCEPT_ID`, which is `0x0306`** — an id already
-/// live and already consumed downstream. Two concepts at one address means a
-/// baked BFO row and an `ogar-ro` relation-body row are the same classid, and
-/// nothing downstream could tell them apart.
+/// Minted at `0x0306..=0x030D`, which collided with
+/// `ogar_ro::RELATION_BODY_CONCEPT_ID` (`0x0306`). Moved to
+/// `0x0310..=0x0317`, which collided with **four** consumer allocations —
+/// OPS `0x0311`, a product lane `0x0313`, the UMLS CUI convergence lane
+/// `0x0315`, Orphanet `0x0317`.
 ///
-/// The fix is not `+1`. `0x0300..=0x030F` is treated as the **reserved core
-/// band** — the five OBO-core namespaces, `ogar-ro`, and room for nine more —
-/// and the spine starts at the next clean boundary, `0x0310`. Shifting by one
-/// would have parked BFO at `0x0307`, immediately adjacent to a live
-/// allocation, which is how the collision happens again.
+/// The second attempt failed for a reason worth naming: the `0x03` domain's
+/// occupancy was enumerated **in this repo only**. A private consumer holds an
+/// odd-stride run — `0x0307, 09, 0B, 0D, 0F, 11, 13, 15, 17, 19, 1B, 1D` —
+/// that no test here can see, and it grows into odd slots, so any nearby block
+/// collides eventually rather than immediately. Picking a "clean" block by eye
+/// is the failure mode; there is no vantage point in this crate from which the
+/// block is verifiably clean.
 ///
-/// [`spine_does_not_collide_with_the_core_or_the_reserved_band`](self) is the
-/// guard; `ogar-ro` carries the mirror guard pointing the other way.
+/// `0x0340..=0x0347` sits clear of both the core band and that run's growth,
+/// but **the spacing is a mitigation, not the guard.** The guard has to live
+/// where both sides are visible — i.e. in the consumer. The band test below
+/// only proves this table is self-consistent and clear of the core; it
+/// cannot and does not prove the consumer is clear, and reading it as if it
+/// did is what produced the second collision.
 ///
 /// ## Order is a convention, not a topological sort
 ///
@@ -215,35 +221,35 @@ pub const OBO_CORE: NsRegistry = NsRegistry::new(&[
 pub const META_STUDY_SPINE: NsRegistry = NsRegistry::new(&[
     NsSpec {
         prefix: "BFO",
-        concept_id: 0x0310,
+        concept_id: 0x0340,
     },
     NsSpec {
         prefix: "COB",
-        concept_id: 0x0311,
+        concept_id: 0x0341,
     },
     NsSpec {
         prefix: "IAO",
-        concept_id: 0x0312,
+        concept_id: 0x0342,
     },
     NsSpec {
         prefix: "OBI",
-        concept_id: 0x0313,
+        concept_id: 0x0343,
     },
     NsSpec {
         prefix: "OBCS",
-        concept_id: 0x0314,
+        concept_id: 0x0344,
     },
     NsSpec {
         prefix: "SEPIO",
-        concept_id: 0x0315,
+        concept_id: 0x0345,
     },
     NsSpec {
         prefix: "ECO",
-        concept_id: 0x0316,
+        concept_id: 0x0346,
     },
     NsSpec {
         prefix: "FBbi",
-        concept_id: 0x0317,
+        concept_id: 0x0347,
     },
 ]);
 
@@ -342,7 +348,7 @@ mod tests {
         const EXTENDED: NsRegistry = NsRegistry::new(&[
             NsSpec {
                 prefix: "BFO",
-                concept_id: 0x0310,
+                concept_id: 0x0340,
             },
             NsSpec {
                 prefix: "MONDO",
@@ -352,7 +358,7 @@ mod tests {
         let bfo = EXTENDED.parse("BFO:0000002").expect("BFO parses here");
         assert_eq!(bfo.ns, 0, "BFO is row 0 of this table");
         assert_eq!(bfo.num, 2);
-        assert_eq!(EXTENDED.render_classid(0, 0x0000), Some(0x0310_0000));
+        assert_eq!(EXTENDED.render_classid(0, 0x0000), Some(0x0340_0000));
         assert!(
             TermId::parse("BFO:0000002").is_none(),
             "the shipped core must NOT resolve BFO — otherwise this proves nothing"
@@ -381,14 +387,16 @@ mod tests {
     /// band, or giving two tables the same id.
     #[test]
     fn spine_does_not_collide_with_the_core_or_the_reserved_band() {
-        /// First id outside the reserved core band `0x0300..=0x030F`.
-        const SPINE_BAND_START: u16 = 0x0310;
+        /// First id of the spine block. Everything below belongs to the core
+        /// band or to consumer allocations this crate cannot see.
+        const SPINE_BAND_START: u16 = 0x0340;
 
         for s in META_STUDY_SPINE.specs() {
             assert!(
                 s.concept_id >= SPINE_BAND_START,
-                "{} at {:#06X} sits in the reserved core band \
-                 (0x0300..=0x030F) — that is where ogar-ro's 0x0306 lives",
+                "{} at {:#06X} sits below the spine block — that range holds the \
+                 core namespaces, ogar-ro (0x0306), and consumer allocations \
+                 this crate cannot see",
                 s.prefix,
                 s.concept_id
             );
