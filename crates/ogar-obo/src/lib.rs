@@ -514,7 +514,10 @@ pub struct BakeStats {
     pub triples: usize,
     /// `is_a` cycles found (SCC size > 1) — must be 0 on a clean OBO core
     pub is_a_cycles: usize,
-    /// edges whose object namespace is core but the object node is absent
+    /// edges dropped because their object gets no ROW — absent from the
+    /// sources, or present but obsolete and therefore not tiled. Counting
+    /// only the first was the bug: an edge into an obsolete term reported
+    /// clean here and dangling to any reader of the artifact.
     pub dangling: usize,
     /// MONDO→HP has_phenotype edges resolving to a loaded HP node
     pub mondo_hp: usize,
@@ -591,8 +594,29 @@ pub fn bake_with(
         ..Default::default()
     };
 
+    // The set of ids that will actually GET a row. `dangling` used to mean
+    // "object absent from the node map", but an obsolete term IS in the map
+    // and deliberately gets no row — so an edge into one pointed at a row that
+    // does not exist, and the stat said 0. Measured on the RDF spine: 55 such
+    // edges, reported as dangling by a reader and as clean by the bake.
+    //
+    // An edge into an obsolete term is itself obsolete, so it is dropped
+    // rather than emitted, and counted. Digest-neutral for the `.obo` core
+    // (no edge there targets an untiled row); it is the RDF path, where
+    // `owl:deprecated` classes are still referenced, that this corrects.
+    let tiled: std::collections::HashSet<TermId> = ids.iter().copied().collect();
+
     for id in &ids {
         let node = &nodes[id];
+        let node = {
+            let mut n = node.clone();
+            let before = n.is_a.len() + n.rel.len();
+            n.is_a.retain(|t| tiled.contains(t));
+            n.rel.retain(|(_, t)| tiled.contains(t));
+            stats.dangling += before - (n.is_a.len() + n.rel.len());
+            n
+        };
+        let node = &node;
         let Some(classid) = reg.render_classid(id.ns, app_prefix) else {
             continue;
         };
@@ -615,9 +639,10 @@ pub fn bake_with(
                 p: Predicate::IsA,
                 o: *parent,
             });
-            if !nodes.contains_key(parent) {
-                stats.dangling += 1;
-            }
+            debug_assert!(
+                nodes.contains_key(parent),
+                "untiled targets already filtered"
+            );
         }
         for (p, o) in &node.rel {
             triples.push(Triple {
@@ -625,15 +650,11 @@ pub fn bake_with(
                 p: *p,
                 o: *o,
             });
-            if !nodes.contains_key(o) {
-                stats.dangling += 1;
-            } else {
-                match p {
-                    Predicate::HasPhenotype => stats.mondo_hp += 1,
-                    Predicate::HasAnatomy => stats.hp_uberon += 1,
-                    Predicate::HasQuality => stats.hp_pato += 1,
-                    _ => {}
-                }
+            match p {
+                Predicate::HasPhenotype => stats.mondo_hp += 1,
+                Predicate::HasAnatomy => stats.hp_uberon += 1,
+                Predicate::HasQuality => stats.hp_pato += 1,
+                _ => {}
             }
         }
     }
