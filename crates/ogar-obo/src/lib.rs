@@ -43,6 +43,7 @@
 pub mod crosswalk;
 pub mod edges;
 pub mod reason;
+pub mod registry;
 pub mod spine;
 
 /// Row stride of the canonical SoA node — `key(16) + edges(16) + value(480)`.
