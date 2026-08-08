@@ -160,8 +160,25 @@ pub const OBO_CORE: NsRegistry = NsRegistry::new(&[
 ]);
 
 /// The upper-level **meta-study spine** — the `is_a` skeleton a study-level
-/// bake grounds on. Continues the same `0x03` Ontology domain as [`OBO_CORE`],
-/// under the same local authority its concept-id docs describe.
+/// bake grounds on. Same `0x03` Ontology domain as [`OBO_CORE`], under the
+/// same local authority its concept-id docs describe.
+///
+/// ## Why this starts at `0x0310` and not at `0x0306`
+///
+/// It was minted at `0x0306..=0x030D` and that **collided with
+/// `ogar_ro::RELATION_BODY_CONCEPT_ID`, which is `0x0306`** — an id already
+/// live and already consumed downstream. Two concepts at one address means a
+/// baked BFO row and an `ogar-ro` relation-body row are the same classid, and
+/// nothing downstream could tell them apart.
+///
+/// The fix is not `+1`. `0x0300..=0x030F` is treated as the **reserved core
+/// band** — the five OBO-core namespaces, `ogar-ro`, and room for nine more —
+/// and the spine starts at the next clean boundary, `0x0310`. Shifting by one
+/// would have parked BFO at `0x0307`, immediately adjacent to a live
+/// allocation, which is how the collision happens again.
+///
+/// [`spine_does_not_collide_with_the_core_or_the_reserved_band`](self) is the
+/// guard; `ogar-ro` carries the mirror guard pointing the other way.
 ///
 /// ## Order is a convention, not a topological sort
 ///
@@ -198,35 +215,35 @@ pub const OBO_CORE: NsRegistry = NsRegistry::new(&[
 pub const META_STUDY_SPINE: NsRegistry = NsRegistry::new(&[
     NsSpec {
         prefix: "BFO",
-        concept_id: 0x0306,
+        concept_id: 0x0310,
     },
     NsSpec {
         prefix: "COB",
-        concept_id: 0x0307,
+        concept_id: 0x0311,
     },
     NsSpec {
         prefix: "IAO",
-        concept_id: 0x0308,
+        concept_id: 0x0312,
     },
     NsSpec {
         prefix: "OBI",
-        concept_id: 0x0309,
+        concept_id: 0x0313,
     },
     NsSpec {
         prefix: "OBCS",
-        concept_id: 0x030A,
+        concept_id: 0x0314,
     },
     NsSpec {
         prefix: "SEPIO",
-        concept_id: 0x030B,
+        concept_id: 0x0315,
     },
     NsSpec {
         prefix: "ECO",
-        concept_id: 0x030C,
+        concept_id: 0x0316,
     },
     NsSpec {
         prefix: "FBbi",
-        concept_id: 0x030D,
+        concept_id: 0x0317,
     },
 ]);
 
@@ -345,6 +362,73 @@ mod tests {
         // A TermId is therefore only meaningful WITH its registry.
         assert_eq!(EXTENDED.parse("MONDO:0007739").map(|t| t.ns), Some(1));
         assert_eq!(TermId::parse("MONDO:0007739").map(|t| t.ns), Some(0));
+    }
+
+    /// The guard the 2026-08-08 audit had to be run by hand to find.
+    ///
+    /// `META_STUDY_SPINE` was minted at `0x0306..=0x030D`, and `0x0306` is
+    /// `ogar_ro::RELATION_BODY_CONCEPT_ID` — live, and already consumed
+    /// downstream. Two concepts at one address is not a near-miss: a baked BFO
+    /// row and an `ogar-ro` relation-body row become the same classid.
+    ///
+    /// This crate cannot see `ogar-ro` (that crate deps *this* one, so the
+    /// dependency only runs one way), so the band is asserted instead of the
+    /// constant: everything below `SPINE_BAND_START` belongs to the core
+    /// allocations, and the spine must stay above it. `ogar-ro` carries the
+    /// mirror guard against its own real constant.
+    ///
+    /// **What would make it fail:** minting a spine row inside the reserved
+    /// band, or giving two tables the same id.
+    #[test]
+    fn spine_does_not_collide_with_the_core_or_the_reserved_band() {
+        /// First id outside the reserved core band `0x0300..=0x030F`.
+        const SPINE_BAND_START: u16 = 0x0310;
+
+        for s in META_STUDY_SPINE.specs() {
+            assert!(
+                s.concept_id >= SPINE_BAND_START,
+                "{} at {:#06X} sits in the reserved core band \
+                 (0x0300..=0x030F) — that is where ogar-ro's 0x0306 lives",
+                s.prefix,
+                s.concept_id
+            );
+        }
+        for c in OBO_CORE.specs() {
+            assert!(
+                c.concept_id < SPINE_BAND_START,
+                "{} at {:#06X} escaped the reserved core band",
+                c.prefix,
+                c.concept_id
+            );
+        }
+
+        // No id twice, across BOTH tables — the general form of the bug.
+        let mut ids: Vec<(u16, &str)> = OBO_CORE
+            .specs()
+            .iter()
+            .chain(META_STUDY_SPINE.specs())
+            .map(|s| (s.concept_id, s.prefix))
+            .collect();
+        ids.sort_unstable();
+        for w in ids.windows(2) {
+            assert_ne!(
+                w[0].0, w[1].0,
+                "{} and {} both claim {:#06X}",
+                w[0].1, w[1].1, w[0].0
+            );
+        }
+
+        // Every id stays inside the 0x03 Ontology domain — a spine that ran
+        // off the end of the block would silently land in another domain.
+        for s in OBO_CORE.specs().iter().chain(META_STUDY_SPINE.specs()) {
+            assert_eq!(
+                s.concept_id >> 8,
+                0x03,
+                "{} at {:#06X} left the 0x03 Ontology domain",
+                s.prefix,
+                s.concept_id
+            );
+        }
     }
 
     #[test]

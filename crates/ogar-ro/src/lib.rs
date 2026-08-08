@@ -314,3 +314,44 @@ mod tests {
         assert_eq!(id & 0xFFFF, 0x1000);
     }
 }
+
+#[cfg(test)]
+mod concept_id_collision_guard {
+    use super::RELATION_BODY_CONCEPT_ID;
+    use ogar_obo::registry::{META_STUDY_SPINE, OBO_CORE};
+
+    /// The mirror of `ogar_obo::registry`'s band guard, pointing the other way.
+    ///
+    /// `ogar-obo` cannot see this crate (the dependency runs `ogar-ro` →
+    /// `ogar-obo`), so it can only assert that its tables stay out of the
+    /// reserved band. This side asserts the thing that actually matters: our
+    /// real constant is claimed by no `ogar-obo` table.
+    ///
+    /// It exists because the reverse DID happen — `META_STUDY_SPINE` was
+    /// minted over `0x0306` on 2026-08-08 and nothing failed. The collision
+    /// was found by hand-enumerating the `0x03` domain during an unrelated
+    /// audit, which is not a process that scales.
+    ///
+    /// **What would make it fail:** any `ogar-obo` table growing a row at
+    /// `RELATION_BODY_CONCEPT_ID`.
+    #[test]
+    fn no_ogar_obo_namespace_claims_our_concept_id() {
+        for s in OBO_CORE.specs().iter().chain(META_STUDY_SPINE.specs()) {
+            assert_ne!(
+                s.concept_id, RELATION_BODY_CONCEPT_ID,
+                "ogar-obo namespace {} claims {:#06X}, which is \
+                 RELATION_BODY_CONCEPT_ID — a baked {} row and an ogar-ro \
+                 relation-body row would be the same classid",
+                s.prefix, RELATION_BODY_CONCEPT_ID, s.prefix
+            );
+        }
+    }
+
+    /// Anti-vacuity: the guard above compares against tables that are actually
+    /// populated. A pair of empty tables would pass it while proving nothing.
+    #[test]
+    fn the_tables_the_guard_checks_are_non_empty() {
+        assert!(OBO_CORE.len() >= 5, "core table must be populated");
+        assert!(META_STUDY_SPINE.len() >= 8, "spine table must be populated");
+    }
+}
