@@ -266,6 +266,167 @@ pub fn intersect_sorted(a: &[ClassAddr], b: &[ClassAddr]) -> Vec<ClassAddr> {
     out
 }
 
+// ── S4b: the existential arm (R∃) ────────────────────────────────────────────
+
+/// An existential role — the `r` in `A ⊑ ∃r.B`.
+///
+/// A plain tag rather than a rich type, so this crate stays zero-dep and does
+/// not need the producer's predicate enum. It is deliberately NOT a
+/// [`Subsumption`](crate::Subsumption): a role is an existential restriction,
+/// and the two compose by different rules.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Role(pub u8);
+
+/// A source of **asserted existential fillers** for a class under one role.
+///
+/// Same visitor shape as [`Parents`], and for the same reason: an
+/// implementation over borrowed rows hands out fillers one at a time with
+/// nothing allocated per call.
+pub trait Fillers {
+    /// Visit each asserted filler of `role` on `c`, in any order.
+    fn fillers_of(&self, c: ClassAddr, role: Role, visit: &mut dyn FnMut(ClassAddr));
+}
+
+impl<F> Fillers for F
+where
+    F: Fn(ClassAddr, Role, &mut dyn FnMut(ClassAddr)),
+{
+    #[inline]
+    fn fillers_of(&self, c: ClassAddr, role: Role, visit: &mut dyn FnMut(ClassAddr)) {
+        self(c, role, visit);
+    }
+}
+
+/// **R∃** — `A ⊑ ∃r.B` and `B ⊑ C` give `A ⊑ ∃r.C`.
+///
+/// Returns every filler of `role` on `subject`, each generalized upward through
+/// `grounding_spine`. Sorted and de-duplicated; no hashing.
+///
+/// # The two spines are NOT the same, and swapping them is the classic error
+///
+/// `grounding_spine` is the spine a **filler** generalizes up. For the OBO core
+/// that is `is_a ∪ part_of`: an anatomical filler's grounding is inherited
+/// through mereology as well as taxonomy, which is the deductive form of
+/// "inherit grounding". It is deliberately a DIFFERENT source from the one
+/// [`LensClosure::entails`] uses, which must be `is_a` alone.
+///
+/// The distinction is exactly the false-ancestor hazard, and it is easy to get
+/// backwards: generalizing a **subject** through `part_of` is unsound
+/// (`A part_of B`, `B ⊑ C` does NOT give `A ⊑ C`); generalizing a **filler**
+/// through it is sound and is what this function does. Both sources are
+/// therefore explicit parameters — there is no default that could silently be
+/// the wrong one.
+///
+/// Note this generalizes the filler only. A caller wanting "every phenotype of
+/// this disease INCLUDING those asserted on its superclasses" walks the
+/// subject's own subsumption ancestors first and unions the results — that is a
+/// larger question, and keeping it out of here is what lets this match the
+/// producer's own saturation count exactly.
+#[must_use]
+pub fn fillers_closed<S, F>(
+    subject: ClassAddr,
+    role: Role,
+    fillers: &F,
+    grounding_spine: &S,
+    depth_cap: usize,
+) -> Vec<ClassAddr>
+where
+    S: Parents + ?Sized,
+    F: Fillers + ?Sized,
+{
+    let mut out: Vec<ClassAddr> = Vec::new();
+    let spine = LensClosure::new(grounding_spine).with_depth_cap(depth_cap);
+    fillers.fillers_of(subject, role, &mut |o| {
+        if let Err(at) = out.binary_search(&o) {
+            out.insert(at, o);
+        }
+        for a in spine.supers_of(o) {
+            if let Err(at) = out.binary_search(&a) {
+                out.insert(at, a);
+            }
+        }
+    });
+    out
+}
+
+/// The **cross-ontology Schnittpunkt** — where several subjects' role-fillers
+/// meet, after R∃ generalization.
+///
+/// This is what `meet` over `is_a` alone cannot answer: subsumption never
+/// leaves its own ontology, so two diseases only coincide once you cross by a
+/// role (`has_phenotype` into HPO, `has_anatomy` into Uberon) and then climb
+/// the filler's own spine. Intersection over sorted addresses, one merge pass
+/// per seed.
+///
+/// Empty seeds yield nothing — the identity of an intersection over no sets is
+/// not an answer a caller can use.
+#[must_use]
+pub fn meet_via<S, F>(
+    seeds: &[ClassAddr],
+    role: Role,
+    fillers: &F,
+    grounding_spine: &S,
+    depth_cap: usize,
+) -> Vec<ClassAddr>
+where
+    S: Parents + ?Sized,
+    F: Fillers + ?Sized,
+{
+    let Some((first, rest)) = seeds.split_first() else {
+        return Vec::new();
+    };
+    let mut acc = fillers_closed(*first, role, fillers, grounding_spine, depth_cap);
+    for s in rest {
+        if acc.is_empty() {
+            break;
+        }
+        acc = intersect_sorted(
+            &acc,
+            &fillers_closed(*s, role, fillers, grounding_spine, depth_cap),
+        );
+    }
+    acc
+}
+
+/// Keep only the **most specific** members of a sorted address set — those that
+/// are not an ancestor of another member.
+///
+/// # Why a raw meet is sound and useless
+///
+/// Every filler generalizes up to its ontology's root, so ANY two subjects
+/// share that root and [`meet_via`] returns it. Measured on the OBO core: 120
+/// of 120 sampled disease pairs "shared a phenotype", and in every case the
+/// shared address was `HP:0000001` — "All". A result that fires on every input
+/// carries exactly as much information as one that never fires.
+///
+/// The informative answer to *what do these two subjects share* is the most
+/// specific common filler, which is what this returns: drop `x` when some other
+/// member `y` has `x` among its ancestors, because `y` already says everything
+/// `x` does and says it more precisely.
+///
+/// Cost is |set|² spine walks in the worst case, which is fine because a meet
+/// over seeded facts is small. It is deliberately NOT folded into [`meet_via`]:
+/// the raw meet is the sound object, and narrowing is a presentation choice a
+/// caller makes.
+#[must_use]
+pub fn most_specific<S>(set: &[ClassAddr], spine: &S, depth_cap: usize) -> Vec<ClassAddr>
+where
+    S: Parents + ?Sized,
+{
+    let lens = LensClosure::new(spine).with_depth_cap(depth_cap);
+    let mut out = Vec::new();
+    for (i, x) in set.iter().enumerate() {
+        let redundant = set
+            .iter()
+            .enumerate()
+            .any(|(j, y)| i != j && lens.supers_of(*y).binary_search(x).is_ok());
+        if !redundant {
+            out.push(*x);
+        }
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

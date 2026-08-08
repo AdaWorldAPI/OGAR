@@ -146,6 +146,41 @@ impl<'a> SpineLens<'a> {
             self.links_at(i, Predicate::IsA, visit);
         }
     }
+
+    /// The **grounding spine** of an address: `is_a` ∪ `part_of` parents.
+    ///
+    /// This is the spine an existential FILLER generalizes up (R∃), and it is
+    /// deliberately NOT [`Self::parents_of`]. An anatomical filler's grounding
+    /// is inherited through mereology as well as taxonomy — the deductive form
+    /// of "inherit grounding up the anatomy spine".
+    ///
+    /// **Never hand this to a subsumption reasoner.** Generalizing a *subject*
+    /// through `part_of` is the false-ancestor error (`A part_of B`, `B ⊑ C`
+    /// does not give `A ⊑ C`); generalizing a *filler* through it is sound.
+    /// [`Self::parents_of`] stays `is_a`-only for exactly that reason, and the
+    /// two are separate methods so a caller must choose on purpose.
+    pub fn grounding_parents_of(&self, classid: u32, num: u32, visit: &mut dyn FnMut(u32, u32)) {
+        if let Some(i) = self.resolve(classid, num) {
+            self.links_at(i, Predicate::IsA, visit);
+            self.links_at(i, Predicate::PartOf, visit);
+        }
+    }
+
+    /// The asserted existential fillers of one role on an address.
+    ///
+    /// A thin typed read — the R∃ generalization is the reasoner's job, not
+    /// this one's. An address with no row in view yields nothing, silently.
+    pub fn fillers_of(
+        &self,
+        classid: u32,
+        num: u32,
+        role: Predicate,
+        visit: &mut dyn FnMut(u32, u32),
+    ) {
+        if let Some(i) = self.resolve(classid, num) {
+            self.links_at(i, role, visit);
+        }
+    }
 }
 
 /// Reinterpret a byte buffer as rows, if it is correctly sized and aligned.
@@ -191,6 +226,83 @@ mod tests {
     /// 1 -> 2 -> 3, plus an isolated 9.
     fn fixture() -> Vec<Row512> {
         vec![row(1, &[2]), row(2, &[3]), row(3, &[]), row(9, &[])]
+    }
+
+    #[test]
+    fn the_grounding_spine_includes_part_of_and_the_subsumption_one_does_not() {
+        // one row with BOTH an is_a and a part_of parent
+        let mut r = Row512::zeroed();
+        r.0[0..16].copy_from_slice(&crate::pack_key(MONDO, 1));
+        r.0[crate::EDGES_OFFSET + Predicate::IsA as usize] = 1;
+        r.0[crate::EDGES_OFFSET + Predicate::PartOf as usize] = 1;
+        let mut tg = vec![
+            (
+                Predicate::IsA,
+                TermId {
+                    ns: Namespace::Mondo as u8,
+                    num: 2,
+                },
+            ),
+            (
+                Predicate::PartOf,
+                TermId {
+                    ns: Namespace::Mondo as u8,
+                    num: 3,
+                },
+            ),
+        ];
+        pack_edges(&mut r.0, &mut tg, 0x0000);
+        let rows = vec![r];
+        let lens = SpineLens::new(&rows);
+
+        let mut subsumption = Vec::new();
+        lens.parents_of(MONDO, 1, &mut |_, n| subsumption.push(n));
+        assert_eq!(
+            subsumption,
+            vec![2],
+            "part_of must NOT reach a subsumption walk"
+        );
+
+        let mut grounding = Vec::new();
+        lens.grounding_parents_of(MONDO, 1, &mut |_, n| grounding.push(n));
+        assert_eq!(
+            grounding,
+            vec![2, 3],
+            "the grounding spine is is_a UNION part_of"
+        );
+    }
+
+    #[test]
+    fn fillers_are_read_per_role_and_can_be_empty() {
+        let mut r = Row512::zeroed();
+        r.0[0..16].copy_from_slice(&crate::pack_key(MONDO, 1));
+        r.0[crate::EDGES_OFFSET + Predicate::HasPhenotype as usize] = 1;
+        let mut tg = vec![(
+            Predicate::HasPhenotype,
+            TermId {
+                ns: Namespace::Hpo as u8,
+                num: 42,
+            },
+        )];
+        pack_edges(&mut r.0, &mut tg, 0x0000);
+        let rows = vec![r];
+        let lens = SpineLens::new(&rows);
+
+        let mut got = Vec::new();
+        lens.fillers_of(MONDO, 1, Predicate::HasPhenotype, &mut |c, n| {
+            got.push((c, n))
+        });
+        assert_eq!(got, vec![(0x0302_0000, 42)], "crosses into HPO");
+
+        // can-stay-silent: a role with no asserted filler yields nothing
+        got.clear();
+        lens.fillers_of(MONDO, 1, Predicate::HasAnatomy, &mut |c, n| {
+            got.push((c, n))
+        });
+        assert!(
+            got.is_empty(),
+            "an unasserted role must not manufacture a filler"
+        );
     }
 
     #[test]

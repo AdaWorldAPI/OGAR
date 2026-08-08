@@ -91,7 +91,7 @@
 
 pub mod lens;
 
-pub use lens::{LensClosure, Parents};
+pub use lens::{Fillers, LensClosure, Parents, Role, fillers_closed, meet_via, most_specific};
 
 use std::collections::{HashMap, HashSet, VecDeque};
 
