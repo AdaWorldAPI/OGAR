@@ -42,6 +42,10 @@
 
 pub mod crosswalk;
 pub mod reason;
+/// RF2 snapshot reader — the one parser for SNOMED release-format files
+/// (active filter, snapshot uniqueness, column integrity). Consumers never
+/// hand-roll this.
+pub mod rf2;
 
 /// Row stride of the canonical SoA node — `key(16) + edges(16) + value(480)`.
 /// Mirrors `lance_graph_contract::canonical_node::NODE_ROW_STRIDE`.
