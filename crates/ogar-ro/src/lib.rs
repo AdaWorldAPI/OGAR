@@ -177,6 +177,20 @@ relation_palette! {
     0xA0 => HAS_QUALITY,              "has_quality",              "RO:0000086";
     0xA1 => HAS_INTERPRETATION,       "has_interpretation",       "SCTID:363713009";
     0xA2 => INTERPRETS,               "interprets",               "SCTID:363714003";
+    // ── 2026-08-10: the substance predicate family (operator-approved mints).
+    // A medication node needs THREE distinct predicate families that must
+    // never be folded into one "relates_to": what it treats, what it causes,
+    // and which measurements it distorts. `treats` is RO's substance-treatment
+    // term. `causes_adverse_effect` records provenance against RO's condition-
+    // causation term (RO's term is broader than "adverse"; the byte carries
+    // the narrowed clinical semantics, the CURIE the ancestry). `confounds_test`
+    // has NO public ontology term at predicate level — drug↔lab-test
+    // interference lives in interaction databases, not relation ontologies —
+    // so its provenance is honestly LOCAL until a real term is found; an
+    // invented-looking CURIE would be a lie wearing a namespace.
+    0xA3 => TREATS,                   "treats",                   "RO:0002606";
+    0xA4 => CAUSES_ADVERSE_EFFECT,    "causes_adverse_effect",    "RO:0003302";
+    0xA5 => CONFOUNDS_TEST,           "confounds_test",           "LOCAL:confounds_test";
 }
 
 /// The RO/BFO relation palette as an `ogar-loco` [`Vocabulary`].
