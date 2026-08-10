@@ -2,9 +2,10 @@
 //!
 //! # What this is, and the two questions it answers
 //!
-//! Third member of the factfinder family beside [`ogar-obo`] (harvest) and
-//! [`ogar-ro`] (the predicate palette). Those two say what is *asserted*; this
-//! one says what *follows*. It answers exactly two questions:
+//! Third member of the factfinder family beside [`ogar-obo`] (harvest and bake)
+//! and [`ogar-ro`] (the predicate palette). Those two say what is *asserted*;
+//! this one observes the baked result and says what *follows*. It answers
+//! exactly two questions:
 //!
 //! 1. **Does `A ⊑ B` follow** from the asserted edges? ([`Closure::entails`])
 //! 2. **Is adding a set of axioms sound** — does the merged closure introduce
@@ -18,29 +19,34 @@
 //! [`ogar-obo`]: https://docs.rs/ogar-obo
 //! [`ogar-ro`]: https://docs.rs/ogar-ro
 //!
-//! # Where this runs: BEFORE the bake, never after
+//! # Where this runs: AFTER the bake, as observation
 //!
-//! **The joins are pre-bake.** Reconciling independently authored sources —
-//! deciding which assertions corroborate, which enrich, and which contradict —
-//! is exactly the work that must finish before anything is baked, because the
-//! bake is what freezes the answer into positions. So this crate is a **stage**,
-//! not a layer: it runs once, upstream, and then it is done.
+//! **The joins are pre-bake; this is not a join.** Reconciling independently
+//! authored sources is upstream work that must finish before anything is baked,
+//! because the bake is what freezes the answer into positions. What this crate
+//! does is the opposite end: it **observes the baked substrate** and reports
+//! what follows from it. The bake is its input, not its output.
+//!
+//! Concretely, its input is the `is_a` links carried in a baked row's own edge
+//! lanes — `ogar_obo::edges::subsumptions` is the adapter, and it exists so a
+//! reasoner reads addresses out of positions rather than re-deriving them.
 //!
 //! Three consequences follow, and they are the whole design:
 //!
-//! 1. **Types are legal here.** [`ClassAddr`] and [`Subsumption`] exist because
-//!    a join needs a key and a directed edge. They are pre-bake scaffolding.
-//!    **Nothing this crate defines survives the bake** — afterwards there are
-//!    only classes, and a class is resolved by position, not by a type declared
-//!    here. If one of these types ever appears in a post-bake read path, that is
-//!    the leak, and it is this doc that says so.
+//! 1. **These are readings, not schema.** [`ClassAddr`] is the `(classid,
+//!    identity)` pair a baked key already carries, decoded from its position —
+//!    the same shape `ogar_obo::edges::Link` reads out of a lane. It declares
+//!    nothing about a class and outlives nothing; a class is still resolved by
+//!    position. [`Subsumption`] is a direction, and it is a distinct type only
+//!    so a caller cannot hand this crate a `part_of` edge by accident.
 //! 2. **Nothing here is in the hot path**, so nothing here may pretend to be.
 //!    There is no serialization surface — not behind a feature, not optionally.
-//!    A join validator that could serialize its verdict would invite someone to
-//!    ship the verdict instead of the bake.
-//! 3. **No file, no CURIE, no label.** Input is already-joined addressed edges.
+//!    An observer that could serialize its verdict would invite someone to ship
+//!    the verdict as if it were substrate.
+//! 3. **No file, no CURIE, no label.** Input is addressed edges read from baked
+//!    rows — which carry no CURIE and no label to reach for in the first place.
 //!    Reaching back for the source document would put parsing inside the
-//!    validator and re-introduce the coupling the bake exists to remove.
+//!    observer and re-introduce the coupling the bake exists to remove.
 //!
 //! # The fragment, stated precisely
 //!
@@ -82,6 +88,10 @@
 //! type rather than raw pairs.
 
 #![forbid(unsafe_code)]
+
+pub mod lens;
+
+pub use lens::{Fillers, LensClosure, Parents, Role, fillers_closed, meet_via, most_specific};
 
 use std::collections::{HashMap, HashSet, VecDeque};
 

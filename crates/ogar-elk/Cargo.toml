@@ -6,6 +6,9 @@ license.workspace = true
 repository.workspace = true
 authors.workspace = true
 rust-version.workspace = true
-description = "The EL subsumption closure as a PRE-BAKE join validator. Answers two questions and no others: does `A ⊑ B` follow from what is asserted, and is adding a set of axioms to an existing closure sound (does it introduce an equivalence cycle). Entailments are facts — they follow necessarily — so nothing here is graded, ranked, or scored. Runs once, upstream of the bake, over the joined sources; nothing it defines survives into the baked substrate. Zero dependencies, and no serialization surface at all."
+description = "The EL subsumption closure as a POST-BAKE observer. Answers two questions and no others: does `A ⊑ B` follow from the baked edges, and is adding a set of axioms to an existing closure sound (does it introduce an equivalence cycle). Entailments are facts — they follow necessarily — so nothing here is graded, ranked, or scored. Reads the `is_a` links carried in a baked row's own edge lanes; the joins happened upstream and are not its business. Zero dependencies, and no serialization surface at all."
 
 [dependencies]
+
+[dev-dependencies]
+ogar-obo = { path = "../ogar-obo" }

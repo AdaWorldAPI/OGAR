@@ -11,9 +11,28 @@ description = "OBO-core reference bake — MONDO (disease) · HPO (phenotype) ·
 [features]
 default = []
 serde = ["dep:serde"]
+# RDF front-end. Off by default so the crate keeps its "deps: ogar-vocab only"
+# lean profile; the three ox* crates are pure Rust (no C, no build script) and
+# are pinned to the SAME versions lance-graph-ontology pins, so a workspace
+# that builds both resolves one copy of oxrdf.
+rdf = ["dep:oxrdf", "dep:oxrdfxml", "dep:oxttl"]
 
 [dependencies]
 ogar-vocab = { path = "../ogar-vocab" }
 serde = { workspace = true, optional = true }
+oxrdf = { version = "0.3", optional = true }
+oxrdfxml = { version = "0.2", optional = true }
+oxttl = { version = "0.2", optional = true }
 
 [dev-dependencies]
+
+# These drive the RDF front-end, so they cannot build without it. Declared
+# rather than #[cfg]-guarded so `cargo clippy --all-targets` on the default
+# feature set skips them instead of failing.
+[[example]]
+name = "probe_spine"
+required-features = ["rdf"]
+
+[[example]]
+name = "bake_spine"
+required-features = ["rdf"]
