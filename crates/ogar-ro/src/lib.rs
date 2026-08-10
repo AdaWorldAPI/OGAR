@@ -166,6 +166,17 @@ relation_palette! {
     0x9D => DERIVES_FROM,             "derives_from",             "RO:0001000";
     0x9E => HAS_PHENOTYPE,            "has_phenotype",            "RO:0002200";
     0x9F => DISEASE_HAS_LOCATION,     "disease_has_location",     "RO:0004026";
+    // ── 2026-08-10: the two predicates that complete the clinical-compartment
+    // union (measured downstream: is_a / part_of / has_phenotype / has_location
+    // were already minted; these two were the whole remainder). `has_quality`
+    // is plain RO. The observation pair is not — no RO term carries the
+    // observation-model semantics — so their CURIEs use the registered `SCTID:`
+    // prefix, exactly as OBO ontologies publish such xrefs. The byte is the
+    // normalized predicate either way; the CURIE records provenance, never a
+    // second dispatch key.
+    0xA0 => HAS_QUALITY,              "has_quality",              "RO:0000086";
+    0xA1 => HAS_INTERPRETATION,       "has_interpretation",       "SCTID:363713009";
+    0xA2 => INTERPRETS,               "interprets",               "SCTID:363714003";
 }
 
 /// The RO/BFO relation palette as an `ogar-loco` [`Vocabulary`].
@@ -173,7 +184,7 @@ relation_palette! {
 /// Every minted predicate is a **binary assertion**: it pops two operands
 /// (subject, object), branches to nothing (`body_refs = 0` — a relation is a
 /// leaf, never a nested body), and pushes nothing (W-RO-2). Bytes above the
-/// mint (`0xA0..=0xFF`) are reserved, not allocated — the same posture the
+/// mint (`0xA3..=0xFF`) are reserved, not allocated — the same posture the
 /// Blockly palette takes for its unminted device families: refused rather
 /// than guessed, until a consumer needs the next predicate.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -274,7 +285,10 @@ mod tests {
     #[test]
     fn an_unminted_domain_byte_is_refused_not_guessed() {
         let v = RelationVocabulary;
-        let unminted = FnIndex(0xA0);
+        // The first byte PAST the mint — recomputed from the palette rather
+        // than hardcoded, so extending the palette moves the probe instead of
+        // failing it (which is what happened at the 0xA0..0xA2 mint).
+        let unminted = FnIndex(RELATIONS.iter().map(|r| r.index.0).max().unwrap() + 1);
         assert_eq!(v.stack_arity(unminted), None);
         assert_eq!(v.pushes_result(unminted), None);
         assert_eq!(v.value_codebook(unminted), None);
