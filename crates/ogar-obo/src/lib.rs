@@ -41,11 +41,16 @@
 #![deny(missing_docs)]
 
 pub mod crosswalk;
+pub mod edges;
+#[cfg(feature = "rdf")]
+pub mod rdf;
 pub mod reason;
+pub mod registry;
 /// RF2 snapshot reader — the one parser for SNOMED release-format files
 /// (active filter, snapshot uniqueness, column integrity). Consumers never
 /// hand-roll this.
 pub mod rf2;
+pub mod spine;
 
 /// Row stride of the canonical SoA node — `key(16) + edges(16) + value(480)`.
 /// Mirrors `lance_graph_contract::canonical_node::NODE_ROW_STRIDE`.
@@ -175,10 +180,7 @@ impl TermId {
         if num > 0x00FF_FFFF {
             return None;
         }
-        Some(TermId {
-            ns: ns as u8,
-            num,
-        })
+        Some(TermId { ns: ns as u8, num })
     }
 
     /// This term's namespace.
@@ -287,7 +289,7 @@ impl Row512 {
 /// and family stay `0` in this first bake — the zero-fallback ladder means
 /// `identity` alone discriminates until an HHTL basin mint wakes routing
 /// (RESERVE, DON'T RECLAIM: fixed offsets, zero layout change later).
-fn pack_key(classid: u32, identity: u32) -> [u8; 16] {
+pub(crate) fn pack_key(classid: u32, identity: u32) -> [u8; 16] {
     let mut k = [0u8; 16];
     k[0..4].copy_from_slice(&classid.to_le_bytes());
     // 4..10 HEEL/HIP/TWIG = 0 (dormant cascade)
@@ -321,13 +323,37 @@ fn pack_key(classid: u32, identity: u32) -> [u8; 16] {
     k
 }
 
-/// Pack one node into its 512-byte row. Edges are placed **out-of-line** as
-/// SPO triples (see [`bake`]); the in-row `edges` block records the *degree*
-/// per predicate (a one-byte histogram, saturating at 255) so a reader has the
-/// node's local shape without the triple table, and the `EntityType` value
-/// tenant records the namespace. The one-byte basin-adjacency use of the edge
-/// block is deferred to the HHTL-clustering pass (RESERVE, DON'T RECLAIM).
-fn pack_row(classid: u32, id: &TermId, node: &OboNode) -> Row512 {
+/// Read a row's key back as `(classid, CURIE numeric)` — the inverse of
+/// `pack_key`, recombining the `family:identity` rail into the 24-bit numeric.
+///
+/// This is the *whole* prerender property in one call: a reader learns which
+/// class a row is and which instance, with **zero value decode**.
+#[must_use]
+pub const fn unpack_key(row: &[u8; NODE_ROW_STRIDE]) -> (u32, u32) {
+    let classid = u32::from_le_bytes([row[0], row[1], row[2], row[3]]);
+    let family = u16::from_le_bytes([row[12], row[13]]) as u32;
+    let identity = u16::from_le_bytes([row[14], row[15]]) as u32;
+    (classid, (family << 16) | identity)
+}
+
+/// Pack one node into its 512-byte row.
+///
+/// The in-row `edges` block records the *degree* per predicate (a one-byte
+/// histogram, saturating at 255) — the CSR `row_ptr`. The **targets** (`col_idx`)
+/// ride the free value lanes as G2 `4×u24` literal links; see [`edges`] for the
+/// lane form and the reader's contract. The `EntityType` value tenant records
+/// the namespace. The same edges are also emitted out-of-line as SPO triples by
+/// [`bake`] — the in-row copy is what makes a row traversable on its own.
+///
+/// Returns the row plus the pack stats, so a driver can refuse to ship a
+/// truncation rather than lose edges silently.
+fn pack_row(
+    classid: u32,
+    id: &TermId,
+    node: &OboNode,
+    app_prefix: u16,
+    reg: &registry::NsRegistry,
+) -> (Row512, edges::PackStats) {
     let mut row = Row512::zeroed();
     row.0[0..16].copy_from_slice(&pack_key(classid, id.num));
     // edges block [16,32): a per-predicate degree histogram (index by Predicate
@@ -343,7 +369,13 @@ fn pack_row(classid: u32, id: &TermId, node: &OboNode) -> Row512 {
     // value slab: EntityType tenant (u16 namespace) at its carve offset.
     let et = VALUE_OFFSET + ENTITY_TYPE_SLAB_OFFSET;
     row.0[et..et + 2].copy_from_slice(&(id.ns as u16).to_le_bytes());
-    row
+    // value slab: the edge targets — the col_idx half of the CSR.
+    let mut targets: Vec<(Predicate, TermId)> =
+        Vec::with_capacity(node.is_a.len() + node.rel.len());
+    targets.extend(node.is_a.iter().map(|t| (Predicate::IsA, *t)));
+    targets.extend(node.rel.iter().copied());
+    let st = edges::pack_edges(&mut row.0, &mut targets, app_prefix, reg);
+    (row, st)
 }
 
 // ── OBO `.obo` parser ─────────────────────────────────────────────────────
@@ -418,16 +450,18 @@ pub fn parse_obo(text: &str) -> std::collections::HashMap<TermId, OboNode> {
             // `relationship: <REL> <TARGET> ! label` — the target is the LAST
             // whitespace token before any `!`.
             if let Some(sid) = cur
-                && let Some(t) = last_curie(rest) {
-                    let p = classify(sid.namespace(), t.namespace());
-                    nodes.entry(sid).or_default().rel.push((p, t));
-                }
+                && let Some(t) = last_curie(rest)
+            {
+                let p = classify(sid.namespace(), t.namespace());
+                nodes.entry(sid).or_default().rel.push((p, t));
+            }
         } else if let Some(rest) = line.strip_prefix("intersection_of: ") {
             if let Some(sid) = cur
-                && let Some(t) = last_curie(rest) {
-                    let p = classify(sid.namespace(), t.namespace());
-                    nodes.entry(sid).or_default().rel.push((p, t));
-                }
+                && let Some(t) = last_curie(rest)
+            {
+                let p = classify(sid.namespace(), t.namespace());
+                nodes.entry(sid).or_default().rel.push((p, t));
+            }
         } else if let Some(rest) = line.strip_prefix("xref: ") {
             // `xref: <SOURCE>:<ID> ! label` — the projection-join / guideline
             // bearing. Kept verbatim; NEVER truncated (MeSH → Leitlinie spider).
@@ -435,12 +469,14 @@ pub fn parse_obo(text: &str) -> std::collections::HashMap<TermId, OboNode> {
                 let tok = rest.split('!').next().unwrap_or(rest).trim();
                 let tok = tok.split_whitespace().next().unwrap_or(tok);
                 if let Some((src, id)) = tok.split_once(':')
-                    && !src.is_empty() && !id.is_empty() {
-                        nodes.entry(sid).or_default().xref.push(Xref {
-                            source: XrefSource::from_prefix(src),
-                            id: id.to_string(),
-                        });
-                    }
+                    && !src.is_empty()
+                    && !id.is_empty()
+                {
+                    nodes.entry(sid).or_default().xref.push(Xref {
+                        source: XrefSource::from_prefix(src),
+                        id: id.to_string(),
+                    });
+                }
             }
         }
     }
@@ -450,14 +486,22 @@ pub fn parse_obo(text: &str) -> std::collections::HashMap<TermId, OboNode> {
 /// First whitespace token of a line (before any `!` comment) — the target of
 /// an `is_a:` line.
 fn first_curie(s: &str) -> &str {
-    s.split('!').next().unwrap_or(s).split_whitespace().next().unwrap_or("").trim()
+    s.split('!')
+        .next()
+        .unwrap_or(s)
+        .split_whitespace()
+        .next()
+        .unwrap_or("")
+        .trim()
 }
 
 /// Last CURIE-shaped token before any `!` — the object of a `relationship:` /
 /// `intersection_of:` line (the predicate is the earlier token).
 fn last_curie(s: &str) -> Option<TermId> {
     let head = s.split('!').next().unwrap_or(s);
-    head.split_whitespace().rfind(|t| t.contains(':')).and_then(TermId::parse)
+    head.split_whitespace()
+        .rfind(|t| t.contains(':'))
+        .and_then(TermId::parse)
 }
 
 // ── bake: nodes+edges → 512-byte rows + SPO triples + stats ────────────────
@@ -474,7 +518,10 @@ pub struct BakeStats {
     pub triples: usize,
     /// `is_a` cycles found (SCC size > 1) — must be 0 on a clean OBO core
     pub is_a_cycles: usize,
-    /// edges whose object namespace is core but the object node is absent
+    /// edges dropped because their object gets no ROW — absent from the
+    /// sources, or present but obsolete and therefore not tiled. Counting
+    /// only the first was the bug: an edge into an obsolete term reported
+    /// clean here and dangling to any reader of the artifact.
     pub dangling: usize,
     /// MONDO→HP has_phenotype edges resolving to a loaded HP node
     pub mondo_hp: usize,
@@ -486,6 +533,19 @@ pub struct BakeStats {
     pub xrefs: usize,
     /// MeSH xrefs specifically — the guideline-spider bearings
     pub mesh_xrefs: usize,
+    /// edge targets written into value lanes — the CSR `col_idx`. Equals
+    /// [`BakeStats::triples`] on a clean bake (every edge is also in-row).
+    pub links_packed: usize,
+    /// edge targets that did NOT fit the lane budget. **Must be 0 to ship** —
+    /// a non-zero value means the artifact is missing edges.
+    pub links_dropped: usize,
+    /// rows that overflowed the lane budget (must be 0 to ship)
+    pub rows_overflowed: usize,
+    /// duplicate edges collapsed at bake time — the same `(predicate, object)`
+    /// asserted more than once for one subject, which a multi-source union
+    /// produces routinely. Reported rather than silent: it is the difference
+    /// between the degree histogram and the distinct edge count.
+    pub duplicates: usize,
 }
 
 /// The bake result: the 512-byte SoA rows (loader-facing) + the SPO triple
@@ -510,9 +570,23 @@ pub struct Bake {
 /// logical-def edges folded into the nodes' `rel`) into [`Bake`]. `app_prefix`
 /// is the lo-u16 render skin (`0x0000` = the canonical reference skin).
 #[must_use]
-pub fn bake(
+pub fn bake(nodes: &std::collections::HashMap<TermId, OboNode>, app_prefix: u16) -> Bake {
+    bake_with(nodes, app_prefix, &registry::OBO_CORE)
+}
+
+/// [`bake`] against an explicit namespace table.
+///
+/// This is the general form; `bake` is this against
+/// [`registry::OBO_CORE`]. A row's classid and every edge lane's classid come
+/// from `reg`, so a bake over a different namespace set needs no code change —
+/// only a different table. A target whose namespace is absent from `reg` has
+/// no classid to name it, so its link is reported in
+/// [`BakeStats::links_dropped`] rather than guessed at.
+#[must_use]
+pub fn bake_with(
     nodes: &std::collections::HashMap<TermId, OboNode>,
     app_prefix: u16,
+    reg: &registry::NsRegistry,
 ) -> Bake {
     let mut ids: Vec<TermId> = nodes
         .iter()
@@ -529,10 +603,56 @@ pub fn bake(
         ..Default::default()
     };
 
+    // The set of ids that will actually GET a row. `dangling` used to mean
+    // "object absent from the node map", but an obsolete term IS in the map
+    // and deliberately gets no row — so an edge into one pointed at a row that
+    // does not exist, and the stat said 0. Measured on the RDF spine: 55 such
+    // edges, reported as dangling by a reader and as clean by the bake.
+    //
+    // An edge into an obsolete term is itself obsolete, so it is dropped
+    // rather than emitted, and counted. Digest-neutral for the `.obo` core
+    // (no edge there targets an untiled row); it is the RDF path, where
+    // `owl:deprecated` classes are still referenced, that this corrects.
+    let tiled: std::collections::HashSet<TermId> = ids.iter().copied().collect();
+
     for id in &ids {
         let node = &nodes[id];
-        let classid = id.namespace().render_classid(app_prefix);
-        rows.push(pack_row(classid, id, node));
+        let node = {
+            let mut n = node.clone();
+            let before = n.is_a.len() + n.rel.len();
+            n.is_a.retain(|t| tiled.contains(t));
+            n.rel.retain(|(_, t)| tiled.contains(t));
+            stats.dangling += before - (n.is_a.len() + n.rel.len());
+            // Deduplicate. A driver that unions several sources — `bake_obo`
+            // merges five `.obo` files with `extend` — concatenates the parent
+            // lists of a term that appears in more than one, so the same
+            // `is_a` lands twice. Measured on the shipped core: 15,128
+            // duplicate slots across 10,589 rows, 14 % of the is_a links
+            // written.
+            //
+            // Idempotent semantically (`A is_a B` twice is `A is_a B`), so it
+            // produces no wrong answer — but it spends lane budget and makes
+            // the degree histogram over-report a row's out-degree, which is
+            // what `resident_out_degree` reads. `rdf::parse_rdf` already
+            // dedups its own output; doing it here covers every driver instead
+            // of every driver having to remember.
+            let pre = n.is_a.len() + n.rel.len();
+            n.is_a.sort_unstable();
+            n.is_a.dedup();
+            n.rel.sort_unstable();
+            n.rel.dedup();
+            stats.duplicates += pre - (n.is_a.len() + n.rel.len());
+            n
+        };
+        let node = &node;
+        let Some(classid) = reg.render_classid(id.ns, app_prefix) else {
+            continue;
+        };
+        let (row, pk) = pack_row(classid, id, node, app_prefix, reg);
+        rows.push(row);
+        stats.links_packed += pk.written;
+        stats.links_dropped += pk.dropped;
+        stats.rows_overflowed += pk.rows_overflowed;
         // Preserve every external cross-reference — the projection-join /
         // guideline-spider bearings. NEVER truncated.
         for x in &node.xref {
@@ -547,9 +667,10 @@ pub fn bake(
                 p: Predicate::IsA,
                 o: *parent,
             });
-            if !nodes.contains_key(parent) {
-                stats.dangling += 1;
-            }
+            debug_assert!(
+                nodes.contains_key(parent),
+                "untiled targets already filtered"
+            );
         }
         for (p, o) in &node.rel {
             triples.push(Triple {
@@ -557,15 +678,11 @@ pub fn bake(
                 p: *p,
                 o: *o,
             });
-            if !nodes.contains_key(o) {
-                stats.dangling += 1;
-            } else {
-                match p {
-                    Predicate::HasPhenotype => stats.mondo_hp += 1,
-                    Predicate::HasAnatomy => stats.hp_uberon += 1,
-                    Predicate::HasQuality => stats.hp_pato += 1,
-                    _ => {}
-                }
+            match p {
+                Predicate::HasPhenotype => stats.mondo_hp += 1,
+                Predicate::HasAnatomy => stats.hp_uberon += 1,
+                Predicate::HasQuality => stats.hp_pato += 1,
+                _ => {}
             }
         }
     }
@@ -659,22 +776,35 @@ pub fn parse_hp_logical_defs(owl: &str) -> Vec<(TermId, Predicate, TermId)> {
             in_eq += 1;
         }
         if in_eq > 0
-            && let Some(sid) = cur {
-                for uid in find_obo_ids(line, "UBERON_") {
-                    out.push((
-                        TermId { ns: Namespace::Hpo as u8, num: sid },
-                        Predicate::HasAnatomy,
-                        TermId { ns: Namespace::Uberon as u8, num: uid },
-                    ));
-                }
-                for pid in find_obo_ids(line, "PATO_") {
-                    out.push((
-                        TermId { ns: Namespace::Hpo as u8, num: sid },
-                        Predicate::HasQuality,
-                        TermId { ns: Namespace::Pato as u8, num: pid },
-                    ));
-                }
+            && let Some(sid) = cur
+        {
+            for uid in find_obo_ids(line, "UBERON_") {
+                out.push((
+                    TermId {
+                        ns: Namespace::Hpo as u8,
+                        num: sid,
+                    },
+                    Predicate::HasAnatomy,
+                    TermId {
+                        ns: Namespace::Uberon as u8,
+                        num: uid,
+                    },
+                ));
             }
+            for pid in find_obo_ids(line, "PATO_") {
+                out.push((
+                    TermId {
+                        ns: Namespace::Hpo as u8,
+                        num: sid,
+                    },
+                    Predicate::HasQuality,
+                    TermId {
+                        ns: Namespace::Pato as u8,
+                        num: pid,
+                    },
+                ));
+            }
+        }
         if line.contains("</owl:equivalentClass>") {
             in_eq = (in_eq - 1).max(0);
         }
@@ -689,7 +819,10 @@ fn find_hp_about(line: &str) -> Option<u32> {
     let i = line.find("owl:Class rdf:about=")?;
     let rest = &line[i..];
     let j = rest.find("HP_")?;
-    let digits: String = rest[j + 3..].chars().take_while(char::is_ascii_digit).collect();
+    let digits: String = rest[j + 3..]
+        .chars()
+        .take_while(char::is_ascii_digit)
+        .collect();
     digits.parse().ok()
 }
 
@@ -701,9 +834,10 @@ fn find_obo_ids(line: &str, prefix: &str) -> Vec<u32> {
         let after = &hay[i + prefix.len()..];
         let digits: String = after.chars().take_while(char::is_ascii_digit).collect();
         if let Ok(n) = digits.parse::<u32>()
-            && n <= 0x00FF_FFFF {
-                ids.push(n);
-            }
+            && n <= 0x00FF_FFFF
+        {
+            ids.push(n);
+        }
         hay = &after[digits.len()..];
     }
     ids
@@ -746,15 +880,26 @@ mod tests {
     fn v3_tail_carries_oversize_curie_numerics_on_the_family_identity_rail() {
         // Above u16 — the case a bare `identity` cannot hold.
         let big = 700_092u32;
-        assert!(big > u32::from(u16::MAX), "fixture must exceed the u16 the rail exists for");
+        assert!(
+            big > u32::from(u16::MAX),
+            "fixture must exceed the u16 the rail exists for"
+        );
         let k = pack_key(Namespace::Mondo.render_classid(0x0000), big);
 
         // Byte positions, per new_v2.
-        assert_eq!(&k[10..12], &[0, 0], "leaf stays dormant (RESERVE, DON'T RECLAIM)");
+        assert_eq!(
+            &k[10..12],
+            &[0, 0],
+            "leaf stays dormant (RESERVE, DON'T RECLAIM)"
+        );
         let family = u16::from_le_bytes([k[12], k[13]]);
         let identity = u16::from_le_bytes([k[14], k[15]]);
         assert_eq!(u32::from(family), big >> 16, "family holds the high half");
-        assert_eq!(u32::from(identity), big & 0xFFFF, "identity holds the low half");
+        assert_eq!(
+            u32::from(identity),
+            big & 0xFFFF,
+            "identity holds the low half"
+        );
 
         // Lossless through the public reader.
         let mut row = Row512::zeroed();
@@ -766,13 +911,19 @@ mod tests {
         // The V1 read of the SAME bytes must NOT agree — proof the tail really
         // moved, not that both layouts happen to coincide on this fixture.
         let v1_read = u32::from_le_bytes([row.0[13], row.0[14], row.0[15], 0]);
-        assert_ne!(v1_read, big, "a V1 u24 read of a V3 row must be observably wrong");
+        assert_ne!(
+            v1_read, big,
+            "a V1 u24 read of a V3 row must be observably wrong"
+        );
 
         // Ordering is preserved: family is the HIGH half, so (family, identity)
         // sorts as the numeric does. This is what keeps binary-search-by-key
         // valid over the sorted bake.
         let lo = pack_key(Namespace::Mondo.render_classid(0x0000), 5_148);
-        assert!(lo[12..16] < k[12..16], "tail bytes order as the numeric orders");
+        assert!(
+            lo[12..16] < k[12..16],
+            "tail bytes order as the numeric orders"
+        );
     }
 
     #[test]
@@ -802,7 +953,11 @@ is_a: MONDO:0005015 ! diabetes mellitus\n";
         let t = n(Namespace::Mondo, 5148);
         let node = &nodes[&t];
         assert_eq!(node.xref.len(), 3, "all three xrefs kept");
-        assert!(node.xref.iter().any(|x| x.source == XrefSource::Mesh && x.id == "D003924"));
+        assert!(
+            node.xref
+                .iter()
+                .any(|x| x.source == XrefSource::Mesh && x.id == "D003924")
+        );
         let bake = bake(&nodes, 0x0000);
         assert_eq!(bake.stats.mesh_xrefs, 1, "MeSH bearing counted");
         assert_eq!(bake.stats.xrefs, 3);
