@@ -285,12 +285,15 @@ mod tests {
             ),
             Err(StatementError::DanglingOperands { depth: 2 })
         );
-        // Uncovered: WAIT has no shared-core tables — refuse, never guess.
+        // Uncovered: RETURN has no shared-core arity — refuse, never guess.
+        // (Re-pinned from WAIT when the coverage sweep landed: WAIT is now
+        // covered, RETURN stays refused because it is genuinely variadic —
+        // void vs value. See `shared_core::stack_arity`'s doc table.)
         assert_eq!(
-            statement_bounds(&v, &body(&[Call::with_value(FnIndex::WAIT, 3)])),
+            statement_bounds(&v, &body(&[Call::with_value(FnIndex::RETURN, 3)])),
             Err(StatementError::Uncovered {
                 index: 0,
-                f: FnIndex::WAIT
+                f: FnIndex::RETURN
             })
         );
     }
