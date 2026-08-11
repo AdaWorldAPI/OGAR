@@ -13,9 +13,10 @@
 //! - Bytes **at/above the floor** belong to the vocabulary. A [`Vocabulary`]
 //!   implementation answers for exactly that range via its `domain_*` hooks;
 //!   the composed methods route each byte to the right table.
-//! - A shared-core byte the core does not cover (e.g. `WAIT` today) is
-//!   **refused everywhere** — a vocabulary does not get to guess for it.
-//!   Coverage grows in the core, once, for everyone.
+//! - A shared-core byte the core does not cover (today: the five genuinely
+//!   variadic entries listed on [`shared_core::stack_arity`]) is **refused
+//!   everywhere** — a vocabulary does not get to guess for it. Coverage
+//!   grows in the core, once, for everyone.
 //!
 //! [`conformance::check`] is the mechanical enforcement: run it in every
 //! vocabulary crate's tests. It catches a composed-method override that
@@ -51,8 +52,26 @@ pub mod shared_core {
     /// `None` means the core does not cover this function — refused rather
     /// than guessed, because a wrong arity does not produce a slightly-wrong
     /// result: it desynchronizes the stack and reattributes every later
-    /// operand. (`WAIT`, `STOP`, `RETURN`, `TERNARY` and others are real
-    /// palette entries deliberately not yet covered.)
+    /// operand.
+    ///
+    /// # What is still uncovered, and why it is not an oversight
+    ///
+    /// Exactly five entries answer `None`, and every one is **genuinely
+    /// variadic** — it has no single correct arity to record, so covering it
+    /// would mean choosing a number that is wrong for some legitimate call:
+    ///
+    /// | function | why it has no fixed arity |
+    /// |---|---|
+    /// | `RETURN` | a void return evaluates nothing; a value return evaluates one |
+    /// | `NUMBER_PROPERTY` | `even`/`odd`/`prime`/… take the number alone, `divisible by` takes a divisor too |
+    /// | `PROMPT` | `text_prompt` carries its message as a field, `text_prompt_ext` as an operand |
+    /// | `LIST_WITH` | a list literal holds as many items as its mutator says |
+    /// | `PROC_CALL` | a call passes as many arguments as its procedure declares |
+    ///
+    /// These want an arity that is a property of the CALL rather than of the
+    /// function — a per-call count carried in the call's own bytes. That is a
+    /// deliberate design question, not a table row, so they stay refused
+    /// until it is answered. Everything else the palette names is covered.
     ///
     /// For control flow this counts **only** the evaluated operands. A loop
     /// body is not among them; see [`body_refs`].
@@ -115,6 +134,84 @@ pub mod shared_core {
             | FnIndex::AND
             | FnIndex::OR
             | FnIndex::JOIN => 2,
+
+            // ── control: the suspend/stop family.
+            // A duration or a condition, evaluated first; `STOP`'s target
+            // (this script / all / others) is a selector immediate, not an
+            // operand — both frontends agree (`control_wait` declares one
+            // input, `control_stop` declares none).
+            FnIndex::WAIT | FnIndex::WAIT_UNTIL => 1,
+            FnIndex::STOP => 0,
+
+            // ── expressions with a fixed shape.
+            // Corroborated by BOTH frontends where both have the block, and
+            // by the surviving one where only one does: `logic_ternary` and
+            // `math_constrain` declare three inputs, `math_atan2` and
+            // `math_random_int`/`operator_random` two, `math_random_float`
+            // none, `text_isEmpty` one.
+            FnIndex::TERNARY | FnIndex::CONSTRAIN => 3,
+            FnIndex::ATAN2 | FnIndex::RANDOM_INT => 2,
+            FnIndex::RANDOM_FLOAT => 0,
+
+            // ── text.
+            // The selector-style ops take the subject only; the dropdown
+            // (which case, which end to trim) is a value byte, never an
+            // operand — the same split `math_single[ROOT]` already uses.
+            FnIndex::IS_EMPTY
+            | FnIndex::CHANGE_CASE
+            | FnIndex::TRIM
+            | FnIndex::REVERSE
+            | FnIndex::PRINT => 1,
+            // `APPEND` follows the `VAR_SET` shape below: the variable is an
+            // immediate, so only the appended value is evaluated
+            // (`text_append` declares one input).
+            FnIndex::APPEND => 1,
+            FnIndex::CHAR_AT | FnIndex::INDEX_OF | FnIndex::CONTAINS | FnIndex::COUNT => 2,
+            FnIndex::SUBSTRING | FnIndex::REPLACE => 3,
+
+            // ── variables.
+            // `VAR_GET` is a leaf (above): the variable id rides as an
+            // immediate value byte and nothing is popped. Its writing twins
+            // therefore evaluate only the incoming value — which is exactly
+            // what both frontends declare (`data_setvariableto` and
+            // `variables_set` one input each, the variable itself a field).
+            FnIndex::VAR_SET | FnIndex::VAR_CHANGE => 1,
+
+            // ── lists.
+            //
+            // The list is an ORDINARY OPERAND here, not an immediate, and
+            // that is what lets one table serve two frontends that model
+            // lists differently. Blockly passes a list *expression*
+            // (`lists_length` takes a LIST input); Scratch names a global
+            // list in a *field* (`data_lengthoflist` declares zero inputs).
+            // On a stack machine the two converge: Scratch's field lowers to
+            // an explicit push of the list reference — the same shape
+            // `VAR_GET` already has — and the op then pops it. So the arity
+            // below counts the list, and a Scratch lowering supplies it
+            // rather than needing a second opcode family.
+            FnIndex::LIST_EMPTY => 0,
+            FnIndex::LIST_LENGTH
+            | FnIndex::LIST_IS_EMPTY
+            | FnIndex::LIST_DELETE_ALL
+            | FnIndex::LIST_SORT
+            | FnIndex::ON_LIST => 1,
+            FnIndex::LIST_REPEAT
+            | FnIndex::LIST_GET
+            | FnIndex::LIST_ADD
+            | FnIndex::LIST_DELETE
+            | FnIndex::LIST_INDEX_OF
+            | FnIndex::LIST_CONTAINS
+            | FnIndex::LIST_SPLIT => 2,
+            FnIndex::LIST_SET | FnIndex::LIST_INSERT | FnIndex::LIST_SUBLIST => 3,
+
+            // ── procedures.
+            // `PROC_DEF` evaluates nothing — its body is a REFERENCE, counted
+            // by `body_refs`, which is the two-quantity split this module
+            // exists to keep apart. `PROC_ARG` is a leaf like `VAR_GET`.
+            FnIndex::PROC_DEF | FnIndex::PROC_ARG => 0,
+
+            // Deliberately still uncovered — see the module note on the five
+            // variadic entries. Refused rather than guessed.
             _ => return None,
         })
     }
@@ -134,7 +231,13 @@ pub mod shared_core {
             | FnIndex::REPEAT_UNTIL
             | FnIndex::FOREVER
             | FnIndex::FOR_EACH
-            | FnIndex::FOR_RANGE => 1,
+            | FnIndex::FOR_RANGE
+            // A function definition references the body it defines. It
+            // evaluates nothing (`stack_arity` 0), which is the two-quantity
+            // split in its purest form — and both frontends declare exactly
+            // this shape: `procedures_definition` has one statement input and
+            // zero value inputs.
+            | FnIndex::PROC_DEF => 1,
             FnIndex::IF_ELSE => 2,
             _ => 0,
         }
@@ -944,17 +1047,29 @@ mod tests {
             );
             assert!(shared_core::branches(f), "{f:?} should reference a body");
         }
-        // Silence twin: uncovered control flow stays uncovered rather than
-        // being quietly assigned a plausible shape. WAIT/STOP/RETURN are real
-        // palette entries the core does not yet model.
+        // Silence twin: what the core does NOT model stays refused rather
+        // than being quietly assigned a plausible shape.
+        //
+        // Re-pinned when the coverage sweep landed: WAIT / WAIT_UNTIL / STOP
+        // are now covered (both frontends declare their shape, so there was
+        // nothing left to guess). What remains refused is the genuinely
+        // VARIADIC set — an arity that belongs to the call, not the function
+        // — which is a design question and not a table row. See
+        // `shared_core::stack_arity`'s doc table.
         for f in [
-            FnIndex::WAIT,
-            FnIndex::WAIT_UNTIL,
-            FnIndex::STOP,
             FnIndex::RETURN,
+            FnIndex::NUMBER_PROPERTY,
+            FnIndex::PROMPT,
+            FnIndex::LIST_WITH,
+            FnIndex::PROC_CALL,
         ] {
             assert_eq!(shared_core::stack_arity(f), None, "{f:?} must stay refused");
         }
+        // …and the newly covered half, so this test cannot pass by refusing
+        // everything: a silence twin with no can-fire half proves nothing.
+        assert_eq!(shared_core::stack_arity(FnIndex::WAIT), Some(1));
+        assert_eq!(shared_core::stack_arity(FnIndex::STOP), Some(0));
+        assert_eq!(shared_core::stack_arity(FnIndex::LIST_SET), Some(3));
     }
 
     #[test]
@@ -1081,7 +1196,7 @@ mod tests {
         // uncovered stays None.
         assert_eq!(checked.pushes_result(FnIndex::ADD), Some(true));
         assert_eq!(checked.pushes_result(FnIndex::REPEAT), Some(false));
-        assert_eq!(checked.pushes_result(FnIndex::WAIT), None);
+        assert_eq!(checked.pushes_result(FnIndex::RETURN), None);
         // Domain half sampled from the hooks; the undeclared pushes column
         // defaults to None (refused by segmentation, never guessed).
         assert_eq!(checked.table().stack_arity(FnIndex(0x90)), Some(1));
@@ -1156,8 +1271,8 @@ mod tests {
         // W-2: names are not coverage — refused-but-real entries are named
         // so a legend can say "exists, refused" rather than omitting them.
         assert_eq!(shared_core::name(FnIndex::ADD), Some("ADD"));
-        assert_eq!(shared_core::name(FnIndex::WAIT), Some("WAIT"));
-        assert_eq!(shared_core::stack_arity(FnIndex::WAIT), None);
+        assert_eq!(shared_core::name(FnIndex::RETURN), Some("RETURN"));
+        assert_eq!(shared_core::stack_arity(FnIndex::RETURN), None);
         assert_eq!(shared_core::name(FnIndex::NOP), None, "NOP is not an op");
         assert_eq!(shared_core::name(FnIndex(0x1F)), None, "reserved = unnamed");
 
@@ -1239,5 +1354,71 @@ mod tests {
                 what: "pushes_result",
             })
         );
+    }
+}
+
+#[cfg(test)]
+mod coverage {
+    use super::*;
+
+    /// Every function the palette NAMES has an arity, except the five
+    /// documented variadic entries.
+    ///
+    /// The core used to name 96 operations and give arities for 50 — so a
+    /// consumer could resolve an opcode, get a legal `FnIndex`, and then find
+    /// the substrate unable to say what it consumed. That gap was invisible
+    /// from inside `ogar-loco` (nothing here enumerated it) and surfaced only
+    /// when a consumer mapped a second frontend onto the same core.
+    ///
+    /// This test is the enumeration that was missing. It walks the whole byte
+    /// range rather than a hand-listed set, so a NEWLY MINTED constant with no
+    /// arity row fails here immediately instead of years later in a consumer.
+    #[test]
+    fn every_named_function_has_an_arity_except_the_documented_variadics() {
+        const VARIADIC: [FnIndex; 5] = [
+            FnIndex::RETURN,
+            FnIndex::NUMBER_PROPERTY,
+            FnIndex::PROMPT,
+            FnIndex::LIST_WITH,
+            FnIndex::PROC_CALL,
+        ];
+
+        let mut named = 0usize;
+        let mut missing = Vec::new();
+        for b in 0..DOMAIN_FLOOR {
+            let f = FnIndex(b);
+            if shared_core::name(f).is_none() {
+                // Not a minted operation — nothing is owed for it. But it
+                // must not answer either, or the range would be lying.
+                assert_eq!(
+                    shared_core::stack_arity(f),
+                    None,
+                    "{f:?} is unnamed yet reports an arity"
+                );
+                continue;
+            }
+            named += 1;
+            if shared_core::stack_arity(f).is_none() && !VARIADIC.contains(&f) {
+                missing.push((b, shared_core::name(f)));
+            }
+        }
+        assert!(
+            missing.is_empty(),
+            "named operations with no arity and no documented reason: {missing:?}"
+        );
+
+        // Can-stay-silent: the variadics really are still refused, so the
+        // assertion above cannot be satisfied by covering everything.
+        for f in VARIADIC {
+            assert_eq!(shared_core::stack_arity(f), None, "{f:?} must stay refused");
+            assert!(
+                shared_core::name(f).is_some(),
+                "{f:?} must still be NAMED — refused is not the same as absent"
+            );
+        }
+
+        // And the census itself, pinned: 95 named operations (96 constants
+        // minus NOP, which is not an operation), 5 refused, 90 covered.
+        assert_eq!(named, 95, "the named census moved — re-pin deliberately");
     }
 }
