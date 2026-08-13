@@ -146,7 +146,11 @@ mod tests {
     fn sctids_are_u64_and_refuse_rather_than_truncate() {
         let s = parse_snapshot(OK).expect("parses");
         assert_eq!(s.sctid(1, "referencedComponentId"), Some(16898231000119107));
-        assert_eq!(s.sctid(0, "mapTarget"), None, "E11 is not numeric — refused");
+        assert_eq!(
+            s.sctid(0, "mapTarget"),
+            None,
+            "E11 is not numeric — refused"
+        );
         assert_eq!(s.sctid(0, "nope"), None, "absent column — refused");
     }
 
