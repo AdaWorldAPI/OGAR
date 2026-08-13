@@ -1798,3 +1798,41 @@ isolation. The map's job is to keep them visible.
   Zero-dependency, `forbid(unsafe_code)`, 8 tests each carrying the input
   that would falsify it — depends: D-CLASSID-CANON-HIGH-FLIP (the address
   form it consumes).
+
+- **D-OGAR-DOC-SPINE (`docs/OGAR-DOC-INGESTION-SPINE.md` — borrowed operating
+  time for the stage W4 does not have; 2026-08-07; [S] — transferred claim,
+  council input):** `OGAR-DOC-W4-BUILD-SPEC` is strong on persist / read /
+  reconstruct but **begins one stage too late** — it starts from a `DocIr` that
+  already exists, and nothing in OGAR covers the stage where a file arrives and
+  something must decide what it is, whether it needs recognition at all, and in
+  what order the work happens. That stage is where a document system accrues its
+  scar tissue and this stack has none; `paperless-ngx` has run it in production
+  for ~a decade. Thirteen invariants extracted, cited to source, over four axes:
+  **ingestion ordering** (S-1..S-5), **escalation** (S-6), **rules** (S-7..S-10),
+  **business identity** (S-11..S-13). The two that would be expensive to
+  retrofit: **S-2** — dedup is consulted BEFORE recognition spend, not only
+  inside `persist_document`, and it matches against the derived-artifact hash as
+  well as the original (W4's `content_sha256` idempotency prevents a duplicate
+  *subtree*, not a duplicate *spend*); and **S-5** — the write order between the
+  KV blob and the subtree decides whether a failure leaves collectable garbage
+  or an undetectable dangling reference, a question W4 does not currently answer.
+  **S-4 is the one entry better than [S]** — "one decision, two consumers, ONE
+  function" is independently corroborated in-stack (`tesseract-rs`'s
+  `region_is_table` had to become one shared primitive for exactly the reason
+  `is_born_digital_text` did, their issue #13387), so the rule grades **[H]**.
+  **Explicitly NOT transferred** (§NT): the sklearn estimator (duplicates
+  `deepnsm` / `lance-graph-arm-discovery`, violates ADR-022/023), the filing
+  data model (`correspondent`/`tags` — a competing identity model against
+  `classid → ClassView → facet rails`), storage-path templating (consumer's per
+  W4-8), and **the dual store** — their full-text index is a second authority
+  whose cost is measured in their own retry policy
+  (`autoretry_for=(SearchIndexLockError,), max_retries=5`). **Operator-directed
+  deferral:** a `tantivy` index is NOT adopted as the search layer — our typed
+  fields make the dominant queries *structural* (the SoA columns already answer
+  them) where paperless is forced into full-text search by a flat `content`
+  blob; if free-prose retrieval is later wanted it indexes the out-of-line
+  value-slab keyed by `document_guid`, a lens and never a parallel authority.
+  Falsifiers named for S-2 (ingest the same page twice; second pass must be ~0)
+  and S-8 (express real SKR03 rules with `CONTAINS`/`LIST_CONTAINS`/`EQ` only —
+  if `REGEX`/`FUZZY` prove load-bearing the `FnIndex` additions are not
+  optional). Depends: D-OGAR-DOC-LAYER, D-DOC-IR-SECOND-RETINA.
