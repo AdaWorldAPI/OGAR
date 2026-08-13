@@ -42,6 +42,7 @@
 
 pub mod crosswalk;
 pub mod edges;
+pub mod layout;
 #[cfg(feature = "rdf")]
 pub mod rdf;
 pub mod reason;
@@ -59,11 +60,15 @@ pub const NODE_ROW_STRIDE: usize = 512;
 pub const EDGES_OFFSET: usize = 16;
 /// Byte offset of the value slab within a row.
 pub const VALUE_OFFSET: usize = 32;
-/// `EntityType` value-tenant offset **within the 480-byte value slab**
-/// (tenant ordinal 8; see the contract `VALUE_TENANTS` carve). A `u16`
-/// that records this node's OBO namespace so a reader can group by ontology
-/// without decoding the classid.
-pub const ENTITY_TYPE_SLAB_OFFSET: usize = 96;
+/// `EntityType` value-tenant offset **within the 480-byte value slab** — a
+/// `u16` recording this node's OBO namespace so a reader can group by
+/// ontology without decoding the classid.
+///
+/// **Derived from the per-class LE contract** ([`layout::OBO_CORE_ROW`]),
+/// never an independent literal: this bake's carve is a DECLARED per-class
+/// reading (it differs from the generic default tenant carve on purpose —
+/// see [`layout`] for the drift history and the declaration that retired it).
+pub const ENTITY_TYPE_SLAB_OFFSET: usize = layout::OBO_CORE_ROW.entity_type.slab_off;
 
 /// The five OBO-core namespaces this bake carries.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -135,6 +140,26 @@ impl Namespace {
     pub const fn render_classid(self, app_prefix: u16) -> u32 {
         ((self.concept_id() as u32) << 16) | (app_prefix as u32)
     }
+
+    /// The inverse of [`Namespace::concept_id`] — resolve a classid's hi-u16
+    /// concept back to the OBO namespace, or `None` outside the core five.
+    ///
+    /// The **single home** of the classid↔namespace reading (the render-classid
+    /// carve is canon-high `concept << 16 | app_prefix`, so the concept is
+    /// `(classid >> 16) as u16`). Consumers must derive through this rather
+    /// than re-arithmetic the carve locally — the 2026-08-13 crosswalk audit
+    /// found that inverse hand-written downstream.
+    #[must_use]
+    pub const fn from_concept_id(concept: u16) -> Option<Namespace> {
+        Some(match concept {
+            0x0301 => Namespace::Mondo,
+            0x0302 => Namespace::Hpo,
+            0x0303 => Namespace::Uberon,
+            0x0304 => Namespace::Pato,
+            0x0305 => Namespace::Ro,
+            _ => return None,
+        })
+    }
 }
 
 /// The RO-predicate byte palette carried on edges (the `P` of an SPO triple).
@@ -158,6 +183,38 @@ pub enum Predicate {
     HasQuality = 6,
     /// any other `relationship:` predicate, preserved generically.
     Other = 7,
+}
+
+impl Predicate {
+    /// The wire/lane ordinal — the enum discriminant, the byte the edge block,
+    /// the edge lanes, and every consumer-side RO lane carry.
+    ///
+    /// This pair (`ordinal` / [`Predicate::from_ordinal`]) is the **single
+    /// home** of the byte↔predicate reading. A consumer that writes its own
+    /// `match b { 2 => PartOf, … }` creates a second copy of this table that
+    /// drifts silently when a predicate is minted — exactly the
+    /// second-projection failure the 2026-08-13 crosswalk audit measured in
+    /// two downstream repos.
+    #[must_use]
+    pub const fn ordinal(self) -> u8 {
+        self as u8
+    }
+
+    /// The inverse of [`Predicate::ordinal`]. `0` (reserved / unset) and
+    /// anything past the mint is refused, never guessed.
+    #[must_use]
+    pub const fn from_ordinal(o: u8) -> Option<Predicate> {
+        Some(match o {
+            1 => Predicate::IsA,
+            2 => Predicate::PartOf,
+            3 => Predicate::HasPhenotype,
+            4 => Predicate::HasLocation,
+            5 => Predicate::HasAnatomy,
+            6 => Predicate::HasQuality,
+            7 => Predicate::Other,
+            _ => return None,
+        })
+    }
 }
 
 /// A parsed OBO term id: `(namespace, 24-bit numeric)`.

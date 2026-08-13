@@ -131,6 +131,22 @@ impl<'a> SpineLens<'a> {
         }
     }
 
+    /// Visit every **typed relation** (everything except `is_a`) of the row at
+    /// `i`, decoded in place — one lane sweep, not one sweep per predicate.
+    ///
+    /// The typed twin of [`Self::links_at`]: `is_a` is excluded because the
+    /// subsumption spine has its own reader ([`Self::parents_of`]) with its own
+    /// safety note, and a caller asking for "the relations" almost never wants
+    /// subsumption mixed in silently.
+    pub fn rel_at(&self, i: usize, visit: &mut dyn FnMut(Predicate, u32, u32)) {
+        let Some(row) = self.rows.get(i) else { return };
+        for (p, l) in EdgeLanes::new(&row.0).links() {
+            if p != Predicate::IsA {
+                visit(p, l.classid, l.num);
+            }
+        }
+    }
+
     /// Visit the **asserted superclasses** of an address: resolve, then walk
     /// that row's `is_a` links.
     ///

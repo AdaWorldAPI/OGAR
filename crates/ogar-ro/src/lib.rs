@@ -193,6 +193,51 @@ relation_palette! {
     0xA5 => CONFOUNDS_TEST,           "confounds_test",           "LOCAL:confounds_test";
 }
 
+/// Position lookup over the palette's contiguous slot band — resolving an
+/// [`FnIndex`] is an index computation, never a scan.
+///
+/// The palette mints slots contiguously from [`IS_A`] (`0x90`) upward, so
+/// `RELATIONS[f - 0x90]` IS the row ("Position trägt die Ebene" — the same
+/// argument the consumer rail slabs make). A byte below the floor or past the
+/// mint is refused, not guessed. The contiguity itself is pinned by
+/// `the_slot_band_is_contiguous_so_position_is_the_lookup` — a future gap in
+/// the band fails THERE, loudly, instead of silently misaligning this lookup.
+///
+/// This is the **single home** of the `FnIndex → predicate` reading. A
+/// consumer that round-trips byte → mnemonic string → byte (name-keyed scan)
+/// re-creates the string join this palette exists to delete.
+#[must_use]
+pub const fn by_index(f: FnIndex) -> Option<&'static RelationPredicate> {
+    let i = f.0.wrapping_sub(IS_A.0) as usize;
+    if i < RELATIONS.len() {
+        Some(&RELATIONS[i])
+    } else {
+        None
+    }
+}
+
+/// The `ogar_obo::Predicate` → palette-row crossing — **one home** for the
+/// mapping both sides of the OBO/RO seam need, so no consumer ever writes the
+/// ordinal↔mnemonic table a second time.
+///
+/// `IsA`/`PartOf`/`HasPhenotype`/`HasLocation`/`HasQuality` map onto their
+/// minted rows. `HasAnatomy` (an existential harvested from HPO logical
+/// definitions) and `Other` (the generic preserve-everything bucket) have no
+/// palette row — `None`, honestly, rather than a lookalike.
+#[must_use]
+pub const fn for_obo_predicate(p: ogar_obo::Predicate) -> Option<&'static RelationPredicate> {
+    use ogar_obo::Predicate as P;
+    let f = match p {
+        P::IsA => IS_A,
+        P::PartOf => PART_OF,
+        P::HasPhenotype => HAS_PHENOTYPE,
+        P::HasLocation => DISEASE_HAS_LOCATION,
+        P::HasQuality => HAS_QUALITY,
+        P::HasAnatomy | P::Other => return None,
+    };
+    by_index(f)
+}
+
 /// The RO/BFO relation palette as an `ogar-loco` [`Vocabulary`].
 ///
 /// Every minted predicate is a **binary assertion**: it pops two operands
@@ -318,6 +363,47 @@ mod tests {
             seen.push(r.index.0);
         }
         assert!(seen.len() >= 12, "palette shrank to {}", seen.len());
+    }
+
+    #[test]
+    fn the_slot_band_is_contiguous_so_position_is_the_lookup() {
+        // by_index's soundness condition, pinned: slot i sits at IS_A.0 + i.
+        // A future mint that leaves a gap fails HERE, not by misalignment.
+        for (i, r) in RELATIONS.iter().enumerate() {
+            assert_eq!(
+                r.index.0,
+                IS_A.0 + u8::try_from(i).unwrap(),
+                "{} breaks the contiguous band",
+                r.name
+            );
+            assert_eq!(
+                by_index(r.index),
+                Some(r),
+                "{} resolves by position",
+                r.name
+            );
+        }
+        // refusal at both edges — the lookup can say no
+        assert_eq!(by_index(FnIndex(IS_A.0 - 1)), None, "below the band");
+        let past = RELATIONS.last().unwrap().index.0 + 1;
+        assert_eq!(by_index(FnIndex(past)), None, "past the mint");
+    }
+
+    #[test]
+    fn the_obo_predicate_crossing_has_one_home_and_refuses_honestly() {
+        use ogar_obo::Predicate as P;
+        for (p, want) in [
+            (P::IsA, "is_a"),
+            (P::PartOf, "part_of"),
+            (P::HasPhenotype, "has_phenotype"),
+            (P::HasLocation, "disease_has_location"),
+            (P::HasQuality, "has_quality"),
+        ] {
+            assert_eq!(for_obo_predicate(p).map(|r| r.name), Some(want));
+        }
+        // no palette row exists for these — None, never a lookalike
+        assert_eq!(for_obo_predicate(P::HasAnatomy), None);
+        assert_eq!(for_obo_predicate(P::Other), None);
     }
 
     #[test]

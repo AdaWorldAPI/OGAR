@@ -16,7 +16,7 @@
 //! base `.obo` does not carry, so [`ElStats::unsatisfiable`] is reported `0`
 //! with that caveat — closing it is the `hp-base.owl` / disjointness pass.
 
-use crate::{Namespace, OboNode, Predicate, TermId, Triple};
+use crate::{Namespace, Predicate, TermId, Triple};
 use std::collections::{HashMap, HashSet};
 
 /// Count `is_a` cycles (strongly-connected components of size > 1) — must be 0
@@ -218,19 +218,155 @@ pub fn saturate(triples: &[Triple]) -> ElStats {
     }
 }
 
-// ── per-term reasoning walk over parse_obo output ──────────────────────────
+// ── per-term reasoning walk, generic over its edge source ──────────────────
 //
 // `saturate` gives the aggregate EL closure; a consumer resolving ONE entity
-// (a disease → its anatomy site + phenotypes) needs the per-term walk. These
-// operate directly on [`crate::parse_obo`]'s `id -> node` map, applying the
-// same is_a-saturation + existential-propagation rules to a single subject.
+// (a disease → its anatomy site + phenotypes) needs the per-term walk. The
+// walk applies the same is_a-saturation + existential-propagation rules to a
+// single subject — and it is generic over WHERE the asserted edges come from,
+// so the same rules run over the pre-bake parse map at join time and over the
+// baked lanes at read time, without a consumer ever rebuilding the map from
+// rows it already holds (the 2026-08-13 crosswalk audit's headline finding).
 
-/// Transitive `is_a` ancestry of `id` over [`crate::parse_obo`] output (the
-/// term itself excluded), deduped, in deterministic order, depth-capped. The
-/// start id is pre-marked seen, so a cyclic `is_a` (incl. a self-parent) can
-/// never re-emit the query term.
+/// Where the per-term walk reads a subject's **asserted** edges from.
+///
+/// **SoA lenses only — never a map.** The operator ruling (2026-08-13): a
+/// JOIN exists only **cross-domain** (a crosswalk resolving a foreign code
+/// into this domain's address space, upstream of the bake); **inner-domain
+/// edges live in the live SoA substrate** and are read there, in place. The
+/// pre-bake parse map ([`crate::parse_obo`]'s output) is bake input and does
+/// NOT implement this trait — a reasoning path holding a parsed map beside
+/// baked rows is the second-projection the 2026-08-13 crosswalk audit
+/// measured, and it is structurally excluded here rather than discouraged.
+///
+/// Shipped sources:
+///
+/// * [`SpineSource`] — a borrowed lens over one baked slab, decoding edge
+///   lanes in place;
+/// * [`Stacked`] — **SoA lens stacking**: several borrowed sources layered
+///   into one, for the deployment shape where a domain's edge families live
+///   in more than one slab (crystal spine + a sidecar SoA of cross-angle
+///   lanes). When the primary slab cannot carry an edge family, the answer
+///   is a **sidecar SoA under the same LE contract, stacked** — never a
+///   hand-rolled exception container.
+///
+/// Both visitors must yield a deterministic order for a given source (the
+/// walk's output order is defined by it).
+pub trait EdgeSource {
+    /// Visit the asserted `is_a` parents of `id`. Unknown ids yield nothing,
+    /// silently — an edge into an unloaded ontology is a boundary, not a fault.
+    fn is_a(&self, id: TermId, visit: &mut dyn FnMut(TermId));
+    /// Visit the asserted typed relations `(predicate, object)` of `id`
+    /// (everything except `is_a`).
+    fn rel(&self, id: TermId, visit: &mut dyn FnMut(Predicate, TermId));
+}
+
+/// **SoA lens stacking** — several borrowed [`EdgeSource`] layers read as one.
+///
+/// Layers are visited in the given order, so the stack's determinism is the
+/// layers' determinism plus their order. Duplicate suppression is the walk's
+/// job (its `seen` set), not the stack's — stacking stays a pure read.
+///
+/// This is the sanctioned shape for "the spine slab has `is_a`, the sidecar
+/// slab has the cross-angle relations": two lenses, one stack, zero rebuild.
+#[derive(Clone, Copy)]
+pub struct Stacked<'a> {
+    layers: &'a [&'a dyn EdgeSource],
+}
+
+impl<'a> Stacked<'a> {
+    /// Stack borrowed layers, visited in order.
+    #[must_use]
+    pub const fn new(layers: &'a [&'a dyn EdgeSource]) -> Self {
+        Self { layers }
+    }
+}
+
+impl core::fmt::Debug for Stacked<'_> {
+    /// Prints the layer COUNT, never the layers (a layer can lens megabytes).
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("Stacked")
+            .field("layers", &self.layers.len())
+            .finish()
+    }
+}
+
+impl EdgeSource for Stacked<'_> {
+    fn is_a(&self, id: TermId, visit: &mut dyn FnMut(TermId)) {
+        for l in self.layers {
+            l.is_a(id, visit);
+        }
+    }
+
+    fn rel(&self, id: TermId, visit: &mut dyn FnMut(Predicate, TermId)) {
+        for l in self.layers {
+            l.rel(id, visit);
+        }
+    }
+}
+
+/// [`crate::spine::SpineLens`] lifted into [`TermId`] space — the baked-lane
+/// [`EdgeSource`].
+///
+/// Address translation is derived, never re-arithmetic'd: `TermId → classid`
+/// through [`Namespace::render_classid`] under the bake's `app_prefix`, and
+/// `classid → TermId` through [`Namespace::from_concept_id`] on the hi-u16.
+/// A link into a concept outside the core five (or into a row not in view) is
+/// dropped silently — the same boundary rule the lens itself follows.
+#[derive(Clone, Copy, Debug)]
+pub struct SpineSource<'a> {
+    lens: crate::spine::SpineLens<'a>,
+    app_prefix: u16,
+}
+
+impl<'a> SpineSource<'a> {
+    /// Borrow a lens over rows baked under `app_prefix`.
+    #[must_use]
+    pub const fn new(lens: crate::spine::SpineLens<'a>, app_prefix: u16) -> Self {
+        Self { lens, app_prefix }
+    }
+
+    /// `(classid, num)` → [`TermId`], via the namespace's own concept-id
+    /// inverse. `None` outside the OBO core.
+    fn term_of(classid: u32, num: u32) -> Option<TermId> {
+        let ns = Namespace::from_concept_id((classid >> 16) as u16)?;
+        Some(TermId { ns: ns as u8, num })
+    }
+}
+
+impl EdgeSource for SpineSource<'_> {
+    fn is_a(&self, id: TermId, visit: &mut dyn FnMut(TermId)) {
+        let classid = id.namespace().render_classid(self.app_prefix);
+        self.lens.parents_of(classid, id.num, &mut |c, n| {
+            if let Some(t) = Self::term_of(c, n) {
+                visit(t);
+            }
+        });
+    }
+
+    fn rel(&self, id: TermId, visit: &mut dyn FnMut(Predicate, TermId)) {
+        let classid = id.namespace().render_classid(self.app_prefix);
+        if let Some(i) = self.lens.resolve(classid, id.num) {
+            self.lens.rel_at(i, &mut |p, c, n| {
+                if let Some(t) = Self::term_of(c, n) {
+                    visit(p, t);
+                }
+            });
+        }
+    }
+}
+
+/// Transitive `is_a` ancestry of `id` over any [`EdgeSource`] (the term itself
+/// excluded), deduped, in deterministic order, depth-capped. The start id is
+/// pre-marked seen, so a cyclic `is_a` (incl. a self-parent) can never
+/// re-emit the query term.
+///
+/// The returned `Vec` is the caller's transient answer, never a cache — an
+/// ancestor is the same KIND as a parent (a member, not a fact about the
+/// set), so the closure is a projection under the zero-copy law: asking twice
+/// walks twice, deliberately.
 #[must_use]
-pub fn ancestors(nodes: &HashMap<TermId, OboNode>, id: TermId) -> Vec<TermId> {
+pub fn ancestors<S: EdgeSource + ?Sized>(src: &S, id: TermId) -> Vec<TermId> {
     let mut seen = HashSet::new();
     seen.insert(id);
     let mut out = Vec::new();
@@ -239,14 +375,12 @@ pub fn ancestors(nodes: &HashMap<TermId, OboNode>, id: TermId) -> Vec<TermId> {
         frontier.sort_unstable();
         let mut next = Vec::new();
         for f in frontier.drain(..) {
-            if let Some(n) = nodes.get(&f) {
-                for &p in &n.is_a {
-                    if seen.insert(p) {
-                        out.push(p);
-                        next.push(p);
-                    }
+            src.is_a(f, &mut |p| {
+                if seen.insert(p) {
+                    out.push(p);
+                    next.push(p);
                 }
-            }
+            });
         }
         if next.is_empty() {
             break;
@@ -260,23 +394,21 @@ pub fn ancestors(nodes: &HashMap<TermId, OboNode>, id: TermId) -> Vec<TermId> {
 /// existential-role propagation up the subsumption spine, for a single subject.
 /// Deduped, deterministic (term-local edges first, then up the ancestry).
 #[must_use]
-pub fn related_via_ancestry(
-    nodes: &HashMap<TermId, OboNode>,
+pub fn related_via_ancestry<S: EdgeSource + ?Sized>(
+    src: &S,
     id: TermId,
     pred: Predicate,
 ) -> Vec<TermId> {
     let mut chain = vec![id];
-    chain.extend(ancestors(nodes, id));
+    chain.extend(ancestors(src, id));
     let mut seen = HashSet::new();
     let mut out = Vec::new();
     for c in chain {
-        if let Some(n) = nodes.get(&c) {
-            for &(p, obj) in &n.rel {
-                if p == pred && seen.insert(obj) {
-                    out.push(obj);
-                }
+        src.rel(c, &mut |p, obj| {
+            if p == pred && seen.insert(obj) {
+                out.push(obj);
             }
-        }
+        });
     }
     out
 }
@@ -284,8 +416,8 @@ pub fn related_via_ancestry(
 /// The term's anatomy sites (`disease_has_location` → Uberon, classified by the
 /// Mondo→Uberon namespace pair), propagated up the `is_a` ancestry.
 #[must_use]
-pub fn anatomy_of(nodes: &HashMap<TermId, OboNode>, id: TermId) -> Vec<TermId> {
-    related_via_ancestry(nodes, id, Predicate::HasLocation)
+pub fn anatomy_of<S: EdgeSource + ?Sized>(src: &S, id: TermId) -> Vec<TermId> {
+    related_via_ancestry(src, id, Predicate::HasLocation)
         .into_iter()
         .filter(|t| t.namespace() == Namespace::Uberon)
         .collect()
@@ -294,8 +426,8 @@ pub fn anatomy_of(nodes: &HashMap<TermId, OboNode>, id: TermId) -> Vec<TermId> {
 /// The term's phenotypes (`has_phenotype` / `disease_has_feature` → HPO,
 /// classified by the Mondo→Hpo namespace pair), propagated up the ancestry.
 #[must_use]
-pub fn phenotypes_of(nodes: &HashMap<TermId, OboNode>, id: TermId) -> Vec<TermId> {
-    related_via_ancestry(nodes, id, Predicate::HasPhenotype)
+pub fn phenotypes_of<S: EdgeSource + ?Sized>(src: &S, id: TermId) -> Vec<TermId> {
+    related_via_ancestry(src, id, Predicate::HasPhenotype)
         .into_iter()
         .filter(|t| t.namespace() == Namespace::Hpo)
         .collect()
@@ -390,8 +522,11 @@ mod tests {
         );
     }
 
+    /// The per-term walk over the BAKED LANES — parse feeds the bake, the walk
+    /// reads the rows. The parse map itself is not a source (inner-domain is
+    /// the live SoA substrate; the map is join-stage input only).
     #[test]
-    fn per_term_walk_resolves_ancestry_anatomy_phenotype() {
+    fn per_term_walk_resolves_ancestry_anatomy_phenotype_over_the_baked_lanes() {
         // A disease with its anatomy edge on an is_a PARENT — the walk must
         // inherit it up the subsumption spine.
         let obo = "[Term]\n\
@@ -403,22 +538,82 @@ relationship: disease_has_feature HP:0012735 ! Cough\n\
 [Term]\n\
 id: MONDO:0000270\n\
 name: lower respiratory tract disorder\n\
-relationship: disease_has_location UBERON:0001558 ! lower respiratory tract\n";
-        let nodes = crate::parse_obo(obo);
+relationship: disease_has_location UBERON:0001558 ! lower respiratory tract\n\
+\n\
+[Term]\n\
+id: HP:0012735\n\
+name: Cough\n\
+\n\
+[Term]\n\
+id: UBERON:0001558\n\
+name: lower respiratory tract\n";
+        let baked = crate::bake(&crate::parse_obo(obo), 0x0000);
+        let lens = crate::spine::SpineLens::new(&baked.rows);
+        assert!(lens.is_sorted(), "the bake's own order carries the lens");
+        let src = SpineSource::new(lens, 0x0000);
         let pneu = TermId::parse("MONDO:0005249").unwrap();
         assert!(
-            ancestors(&nodes, pneu).contains(&TermId::parse("MONDO:0000270").unwrap()),
+            ancestors(&src, pneu).contains(&TermId::parse("MONDO:0000270").unwrap()),
             "is_a ancestry"
         );
         assert!(
-            anatomy_of(&nodes, pneu).contains(&TermId::parse("UBERON:0001558").unwrap()),
+            anatomy_of(&src, pneu).contains(&TermId::parse("UBERON:0001558").unwrap()),
             "disease_has_location → Uberon, inherited from the is_a parent"
         );
         assert!(
-            phenotypes_of(&nodes, pneu).contains(&TermId::parse("HP:0012735").unwrap()),
+            phenotypes_of(&src, pneu).contains(&TermId::parse("HP:0012735").unwrap()),
             "disease_has_feature → HPO (own edge)"
         );
         // self excluded from its own ancestry (cycle-safe)
-        assert!(!ancestors(&nodes, pneu).contains(&pneu));
+        assert!(!ancestors(&src, pneu).contains(&pneu));
+    }
+
+    /// SoA lens STACKING: the subsumption spine in one slab, the cross-angle
+    /// relations in a SIDECAR slab — the stack answers what neither slab can
+    /// alone (the anatomy edge sits on the parent, and the parent link sits in
+    /// the OTHER slab). This is the deployment shape the trait exists for.
+    #[test]
+    fn a_sidecar_slab_stacks_onto_the_spine_without_any_rebuild() {
+        // slab 1: the is_a spine only
+        let spine_obo = "[Term]\n\
+id: MONDO:0005249\n\
+name: pneumonia\n\
+is_a: MONDO:0000270 ! lower respiratory tract disorder\n\
+\n\
+[Term]\n\
+id: MONDO:0000270\n\
+name: lower respiratory tract disorder\n";
+        // slab 2 (sidecar): the cross-angle relation only
+        let sidecar_obo = "[Term]\n\
+id: MONDO:0000270\n\
+name: lower respiratory tract disorder\n\
+relationship: disease_has_location UBERON:0001558 ! lower respiratory tract\n\
+\n\
+[Term]\n\
+id: UBERON:0001558\n\
+name: lower respiratory tract\n";
+        let spine_bake = crate::bake(&crate::parse_obo(spine_obo), 0x0000);
+        let sidecar_bake = crate::bake(&crate::parse_obo(sidecar_obo), 0x0000);
+        let spine = SpineSource::new(crate::spine::SpineLens::new(&spine_bake.rows), 0x0000);
+        let sidecar = SpineSource::new(crate::spine::SpineLens::new(&sidecar_bake.rows), 0x0000);
+        let layers: [&dyn EdgeSource; 2] = [&spine, &sidecar];
+        let stack = Stacked::new(&layers);
+
+        let pneu = TermId::parse("MONDO:0005249").unwrap();
+        let site = TermId::parse("UBERON:0001558").unwrap();
+        // Neither slab alone can resolve the anatomy…
+        assert!(
+            anatomy_of(&spine, pneu).is_empty(),
+            "the spine slab carries no relation"
+        );
+        assert!(
+            anatomy_of(&sidecar, pneu).is_empty(),
+            "the sidecar slab carries no ancestry into the relation"
+        );
+        // …the STACK can: ancestry from slab 1, relation from slab 2.
+        assert!(
+            anatomy_of(&stack, pneu).contains(&site),
+            "stacked lenses compose ancestry × cross-angle"
+        );
     }
 }

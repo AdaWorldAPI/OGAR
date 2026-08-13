@@ -82,9 +82,12 @@ pub const LANE_BYTES: usize = 16;
 /// Links per lane under the G2 `4×u24` carving.
 pub const LINKS_PER_LANE: usize = 4;
 /// First edge lane's offset **within the 480-byte value slab** (lane 7).
-pub const EDGE_LANE_SLAB_OFFSET: usize = 112;
-/// Number of lanes reserved for edge targets (lanes 7..30).
-pub const EDGE_LANE_COUNT: usize = 23;
+/// Derived from the per-class LE contract ([`crate::layout::OBO_CORE_ROW`]),
+/// never an independent literal.
+pub const EDGE_LANE_SLAB_OFFSET: usize = crate::layout::OBO_CORE_ROW.edge_lanes.slab_off;
+/// Number of lanes reserved for edge targets (lanes 7..30). Derived from the
+/// per-class LE contract, never an independent literal.
+pub const EDGE_LANE_COUNT: usize = crate::layout::OBO_CORE_ROW.lane_count;
 /// Total link slots per row.
 pub const EDGE_SLOT_COUNT: usize = EDGE_LANE_COUNT * LINKS_PER_LANE;
 
