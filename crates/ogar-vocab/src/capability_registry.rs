@@ -372,7 +372,7 @@ fn resolve_concept_row(id: u16) -> Option<(&'static str, u16)> {
 mod the_canon_carries_no_palette_rows {
     #[test]
     fn no_0x17xx_row_reached_the_globally_mirrored_codebook() {
-        assert_eq!(crate::class_ids::ALL.len(), 90);
+        assert_eq!(crate::class_ids::ALL.len(), 91);
         for (_, id) in crate::class_ids::ALL {
             assert_ne!(*id >> 8, 0x17, "a 0x17XX row reached the codebook");
         }

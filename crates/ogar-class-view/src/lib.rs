@@ -112,6 +112,7 @@ use ogar_vocab::{
     osm_note,
     osm_relation,
     osm_relation_member,
+    osm_street_node,
     osm_user,
     osm_way,
     osm_way_node,
@@ -266,6 +267,7 @@ fn all_canonical_classes() -> Vec<(&'static str, Class)> {
         ("osm_note", osm_note()),
         ("osm_gpx_trace", osm_gpx_trace()),
         ("osm_user", osm_user()),
+        ("osm_street_node", osm_street_node()),
     ]
 }
 

@@ -92,13 +92,34 @@ pub const fn classid(concept: u16, classview: u16) -> u32 {
     render_classid(classview, concept)
 }
 
+/// Concepts DERIVED by a bake rather than mirrored from a Rails class.
+///
+/// The Geo domain began as a mirror of OSM's own schema, so "every concept
+/// grounds to a Rails class" held by construction. It stopped holding when the
+/// bake started synthesizing junctions from the routable-way graph: OSM has no
+/// junction element, and inventing a Rails name to satisfy the check would put
+/// a falsehood in the Core to keep a test green.
+///
+/// Membership is therefore an explicit, reviewable list — not a relaxed
+/// assertion. Adding a name here is a claim that OSM genuinely has no source
+/// element for it.
+pub const SYNTHESIZED: &[&str] = &["osm_street_node"];
+
 /// Every Geo concept, in codebook order, with its Rails source class(es).
 ///
 /// The `Old*` versioned Rails classes ground to their base concept — the
 /// temporal axis is a Lance version, not a new id — which is why `Node` and
 /// `OldNode` share `0x0F01`.
+///
+/// One entry has NO Rails source: see [`SYNTHESIZED`].
 pub const OSM_CONCEPTS: &[(&str, u16, &[&str])] = &[
     ("osm_node", class_ids::OSM_NODE, &["Node", "OldNode"]),
+    // The one DERIVED concept: OSM has no junction element, so there is no
+    // Rails class to ground against. The bake synthesizes it from the
+    // routable-way graph. Its rails list is deliberately empty — see
+    // `tests::every_concept_sits_in_the_geo_domain`, which allows exactly
+    // this concept to have none rather than accepting a fabricated source.
+    ("osm_street_node", class_ids::OSM_STREET_NODE, &[]),
     ("osm_way", class_ids::OSM_WAY, &["Way", "OldWay"]),
     (
         "osm_relation",
@@ -556,15 +577,29 @@ mod tests {
                 GEO_DOMAIN,
                 "{name} ({id:#06x}) is outside the Geo domain"
             );
-            assert!(!rails.is_empty(), "{name} has no Rails source class");
+            // Empty rails is allowed for EXACTLY the concepts OSM does not
+            // have an element for — a derived concept has nothing to ground
+            // against, and a fabricated source class would be worse than an
+            // honest absence. Anything else with no rails is a mistake.
+            if !SYNTHESIZED.contains(name) {
+                assert!(!rails.is_empty(), "{name} has no Rails source class");
+            }
         }
-        // Ten concepts, and the ids are distinct — a copy-paste that reused
+        // Every synthesized name must actually BE a concept — otherwise the
+        // exemption above silently covers a typo and re-opens the hole.
+        for s in SYNTHESIZED {
+            assert!(
+                OSM_CONCEPTS.iter().any(|(n, _, _)| n == s),
+                "{s} is exempted but is not a concept"
+            );
+        }
+        // Eleven concepts, and the ids are distinct — a copy-paste that reused
         // one constant twice would pass a domain check but fail here.
-        assert_eq!(OSM_CONCEPTS.len(), 10);
+        assert_eq!(OSM_CONCEPTS.len(), 11);
         let mut ids: Vec<u16> = OSM_CONCEPTS.iter().map(|(_, id, _)| *id).collect();
         ids.sort_unstable();
         ids.dedup();
-        assert_eq!(ids.len(), 10, "two concepts share an id");
+        assert_eq!(ids.len(), 11, "two concepts share an id");
     }
 
     #[test]

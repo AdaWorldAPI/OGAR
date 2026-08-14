@@ -1381,6 +1381,14 @@ const CODEBOOK: &[(&str, u16)] = &[
     ("osm_note", 0x0F08),
     ("osm_gpx_trace", 0x0F09),
     ("osm_user", 0x0F0A),
+    // SYNTHESIZED — the one Geo concept with no Rails source. OSM has no
+    // "junction" element: a street node is DERIVED by the bake from the
+    // routable-way graph (Berlin 619,470 junction nodes → 233,053 rows;
+    // Brandenburg 590,437). It earns its own id because its VALUE SLOTS mean
+    // something different from an `osm_node`'s — per-edge names, adjacency,
+    // bearing, and a turn matrix, resolved by ClassView — and there is
+    // otherwise no byte on disk distinguishing the two readings.
+    ("osm_street_node", 0x0F0B),
 ];
 
 /// Codebook **domain** — the high byte of a canonical id (see
@@ -1985,6 +1993,20 @@ pub mod class_ids {
     pub const OSM_GPX_TRACE: u16 = 0x0F09;
     /// `osm_user` (`0x0F0A`) — a mapper account. Rails `User`.
     pub const OSM_USER: u16 = 0x0F0A;
+    /// `osm_street_node` (`0x0F0B`) — a junction in the routable-way graph.
+    ///
+    /// **No Rails source, by nature**: OSM has no junction element. This is
+    /// DERIVED by the bake wherever routable ways meet, and it exists as its
+    /// own concept because its value slots carry a different schema from an
+    /// ordinary `osm_node` — per-edge street names, adjacency, bearing and a
+    /// turn matrix, all resolved through its ClassView.
+    ///
+    /// Without a distinct classid there is no byte on disk separating "a
+    /// junction row using its edge slots" from "a tagged node using its first
+    /// tag slot" — a reader that guessed measured **1,084,213 false hits** on
+    /// real Berlin data (see `osm-soa-bake`'s `street.rs`). The id IS the
+    /// disambiguator.
+    pub const OSM_STREET_NODE: u16 = 0x0F0B;
 
     // ── 0x07XX — OSINT domain: no concept constants (low byte = APPID,
     // domain-wise; q2 = 0x01 → `0x0701` is OSINT-for-q2, not a concept —
@@ -2096,6 +2118,7 @@ pub mod class_ids {
         ("osm_note", OSM_NOTE),
         ("osm_gpx_trace", OSM_GPX_TRACE),
         ("osm_user", OSM_USER),
+        ("osm_street_node", OSM_STREET_NODE),
     ];
 
     #[cfg(test)]
@@ -2159,7 +2182,7 @@ pub mod class_ids {
             // lance-graph mirror is rebuilt against it.
             assert_eq!(
                 ALL.len(),
-                90,
+                91,
                 "class_ids::ALL count changed — update this pin AND the \
                  lance-graph mirror COUNT_FUSE (crates/lance-graph-ogar/src/lib.rs) \
                  in the same PR",
@@ -3045,6 +3068,7 @@ pub fn all_promoted_classes() -> Vec<Class> {
         osm_note(),
         osm_gpx_trace(),
         osm_user(),
+        osm_street_node(),
     ]
 }
 
@@ -4758,6 +4782,25 @@ pub fn osm_user() -> Class {
         family_edge("traces", "Trace"),
         family_edge("notes", "Note"),
     ];
+    c
+}
+
+/// The `osm_street_node` (`0x0F0B`) — a junction in the routable-way graph.
+///
+/// The one Geo class with **no Rails source**: OSM has no junction element, so
+/// `Class::new` names the derived concept rather than a mirrored table. It is
+/// synthesized by the bake wherever routable ways meet, and it exists as its
+/// own class because its value slots carry a schema an `osm_node`'s do not —
+/// per-edge street names, adjacency, bearing and a turn matrix.
+///
+/// Its association is to `Way`, not to `Node`: a junction is defined BY the
+/// ways that meet at it, which is also how the bake derives it.
+#[must_use]
+pub fn osm_street_node() -> Class {
+    let mut c = Class::new("StreetNode");
+    c.language = Language::Unknown;
+    c.canonical_concept = Some("osm_street_node".to_string());
+    c.associations = vec![family_edge("ways", "Way")];
     c
 }
 
