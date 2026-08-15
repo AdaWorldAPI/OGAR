@@ -22,7 +22,9 @@ jobs:
         with:
           components: rustfmt,clippy
       - name: Apply append-only weather authority
-        run: python .github/scripts/weather_classid_mint.py
+        run: |
+          python .github/scripts/weather_classid_mint.py
+          python .github/scripts/weather_classid_followup.py
       - name: Format and test the mint
         run: |
           cargo fmt --all
@@ -30,9 +32,9 @@ jobs:
           cargo clippy -p ogar-vocab --all-targets -- -D warnings
       - name: Commit tested mint and remove bootstrap
         run: |
-          git rm .github/workflows/weather-classid-mint-bootstrap.yml .github/scripts/weather_classid_mint.py .claude/weather-mint-trigger
+          git rm .github/workflows/weather-classid-mint-bootstrap.yml .github/scripts/weather_classid_mint.py .github/scripts/weather_classid_followup.py .claude/weather-mint-trigger
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add crates/ogar-vocab/src/lib.rs crates/ogar-vocab/src/ports.rs docs/APP-CLASS-CODEBOOK-LAYOUT.md
+          git add crates/ogar-vocab/src/lib.rs crates/ogar-vocab/src/ports.rs crates/ogar-vocab/src/capability_registry.rs docs/APP-CLASS-CODEBOOK-LAYOUT.md
           git commit -m "feat(vocab): mint Weather/Atmosphere classids (#271)"
           git push origin HEAD:codex/weather-classid-mint-271
