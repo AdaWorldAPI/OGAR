@@ -1499,7 +1499,7 @@ pub enum ConceptDomain {
     /// transcribing a GPL/AGPL implementation, so this public codebook stays
     /// unencumbered while GPL consumers link it freely.
     Blocks,
-    /// Any high-byte slot not yet assigned a domain (`0x04XX`–`0x06XX`,
+    /// Any high-byte slot not yet assigned a domain (`0x05XX`–`0x06XX`,
     /// `0x10XX`–`0x16XX`, `0x18XX`+).
     Unassigned,
 }
