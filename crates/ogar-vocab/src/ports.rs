@@ -617,9 +617,46 @@ pub const OSM_ALIASES: &[(&str, u16)] = &[
     ("User", class_ids::OSM_USER),
 ];
 
+// ── WeatherNext / weathernext-rs port ───────────────────────────────
+
+/// WeatherNext's `PortSpec` over the shared Weather / Atmosphere (`0x04XX`)
+/// canonical concepts. `0x0009` is the reserved WeatherNext ClassView skin;
+/// the canonical meaning remains in the high u16.
+pub struct WeatherNextPort;
+
+impl PortSpec for WeatherNextPort {
+    const NAMESPACE: &'static str = "WeatherNext";
+    const BRIDGE_ID: &'static str = "weathernext";
+    const APP_PREFIX: u16 = 0x0009;
+    fn aliases() -> &'static [(&'static str, u16)] {
+        WEATHERNEXT_ALIASES
+    }
+}
+
+/// WeatherNext public names mapped onto shared canonical weather concepts.
+pub const WEATHERNEXT_ALIASES: &[(&str, u16)] = &[
+    ("WeatherCell", class_ids::WEATHER_CELL),
+    ("WeatherStaticCell", class_ids::WEATHER_STATIC_CELL),
+];
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::app::{app_of, concept_of, render_classid};
+
+    #[test]
+    fn weathernext_classview_composes_canon_high_custom_low() {
+        assert_eq!(WeatherNextPort::APP_PREFIX, 0x0009);
+        assert_eq!(WeatherNextPort::classview(), 0x0009);
+        assert_eq!(WeatherNextPort::class_id("WeatherCell"), Some(0x0401));
+        assert_eq!(WeatherNextPort::class_id("WeatherStaticCell"), Some(0x0402));
+        let dynamic = render_classid(WeatherNextPort::APP_PREFIX, class_ids::WEATHER_CELL);
+        let statics = render_classid(WeatherNextPort::APP_PREFIX, class_ids::WEATHER_STATIC_CELL);
+        assert_eq!(dynamic, 0x0401_0009);
+        assert_eq!(statics, 0x0402_0009);
+        assert_eq!(concept_of(dynamic), 0x0401);
+        assert_eq!(app_of(dynamic), 0x0009);
+    }
 
     #[test]
     fn openproject_namespace_and_bridge_id_match_canonical_strings() {

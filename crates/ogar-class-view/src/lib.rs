@@ -158,6 +158,8 @@ use ogar_vocab::{
     unit_of_measure,
     visit,
     vital_sign,
+    weather_cell,
+    weather_static_cell,
 };
 
 /// All promoted canonical concepts: `(canonical_concept_name, Class)`.
@@ -207,6 +209,12 @@ fn all_canonical_classes() -> Vec<(&'static str, Class)> {
         ("pricelist", pricelist()),
         ("pricelist_rule", pricelist_rule()),
         ("unit_of_measure", unit_of_measure()),
+        // ── 0x04XX — Weather / Atmosphere ──
+        // These canonical views intentionally carry no W1 payload fields:
+        // field/level/unit slots are selected by WeatherNext's ClassView
+        // manifest, not promoted into the shared OGAR schema.
+        ("weather_cell", weather_cell()),
+        ("weather_static_cell", weather_static_cell()),
         // ── 0x08XX — OCR (container kinds; content stays in content stores) ──
         ("unicharset", unicharset()),
         ("recoder", recoder()),

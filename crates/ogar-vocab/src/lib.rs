@@ -1104,7 +1104,7 @@ impl Class {
 ///   0x01XX  project-mgmt      (OP ↔ Redmine fork lineage)
 ///   0x02XX  commerce / ERP    (OSB ↔ Odoo cross-curator)
 ///   0x03XX  Ontology          (OBO biomedical reference: MONDO/HPO/Uberon/PATO/RO — zero rows here; concepts in ogar-obo)
-///   0x04XX  unassigned
+///   0x04XX  Weather / Atmosphere (forecast + atmospheric reference cells)
 ///   0x05XX  unassigned
 ///   0x06XX  unassigned
 ///   0x07XX  reserved: OSINT
@@ -1222,6 +1222,12 @@ const CODEBOOK: &[(&str, u16)] = &[
     // consumers (odoo-rs, openproject-nexgen-rs, …) never pull them into their
     // concept space. Public reference, firewall-separated from `0x09` Health
     // PHI — same reference≠PHI split as Anatomy (0x0A). Do NOT mint rows here.
+    // ── 0x04XX — Weather / Atmosphere domain ──
+    // Canonical atmospheric/grid concepts consumed by WeatherNext and the
+    // lance-graph weather SoA bake. These are shared meanings; renderer /
+    // ClassView selection remains in the low u16 of the full classid.
+    ("weather_cell", 0x0401),
+    ("weather_static_cell", 0x0402),
     // ── 0x07XX — OSINT domain: ZERO vocabulary rows BY DESIGN (operator
     // ruling 2026-07-02, corrects PR #145's two hallucinated concept mints
     // `osint_system@0x0700` / `osint_person@0x0701`). Within the OSINT domain
@@ -1417,6 +1423,9 @@ pub enum ConceptDomain {
     /// never pulls into ERP / project consumers. Public reference, NOT PHI —
     /// same reference≠PHI split as [`Anatomy`](Self::Anatomy).
     Ontology,
+    /// `0x04XX` — Weather / Atmosphere. Shared atmospheric and forecast-grid
+    /// concepts; public environmental reference data, not an OSM extension.
+    Weather,
     /// `0x07XX` — OSINT (open-source intelligence).
     Osint,
     /// `0x08XX` — OCR (optical character recognition / document
@@ -1490,7 +1499,7 @@ pub enum ConceptDomain {
     /// transcribing a GPL/AGPL implementation, so this public codebook stays
     /// unencumbered while GPL consumers link it freely.
     Blocks,
-    /// Any high-byte slot not yet assigned a domain (`0x04XX`–`0x06XX`,
+    /// Any high-byte slot not yet assigned a domain (`0x05XX`–`0x06XX`,
     /// `0x10XX`–`0x16XX`, `0x18XX`+).
     Unassigned,
 }
@@ -1504,6 +1513,7 @@ pub fn canonical_concept_domain(id: u16) -> ConceptDomain {
         0x01 => ConceptDomain::ProjectMgmt,
         0x02 => ConceptDomain::Commerce,
         0x03 => ConceptDomain::Ontology,
+        0x04 => ConceptDomain::Weather,
         0x07 => ConceptDomain::Osint,
         0x08 => ConceptDomain::Ocr,
         0x09 => ConceptDomain::Health,
@@ -1762,6 +1772,15 @@ pub mod class_ids {
     /// `unit_of_measure` (`0x020B`) — measurement unit. OSB `UoM`, Odoo
     /// `uom.uom` (`qudt:Unit`).
     pub const UNIT_OF_MEASURE: u16 = 0x020B;
+
+    // ── 0x04XX — Weather / Atmosphere domain ──
+
+    /// `weather_cell` (`0x0401`) — one dynamic atmospheric/forecast grid
+    /// cell. Time is a dataset/version axis, not a new concept id.
+    pub const WEATHER_CELL: u16 = 0x0401;
+    /// `weather_static_cell` (`0x0402`) — static support cell for terrain /
+    /// geography-derived weather context, distinct from dynamic fields.
+    pub const WEATHER_STATIC_CELL: u16 = 0x0402;
 
     // ── 0x08XX — OCR domain (document extraction; the Tesseract-rs arc) ──
     // Class-level container KINDS only: the concept slots name the container
@@ -2054,6 +2073,9 @@ pub mod class_ids {
         ("pricelist", PRICELIST),
         ("pricelist_rule", PRICELIST_RULE),
         ("unit_of_measure", UNIT_OF_MEASURE),
+        // 0x04XX — Weather / Atmosphere
+        ("weather_cell", WEATHER_CELL),
+        ("weather_static_cell", WEATHER_STATIC_CELL),
         // 0x07XX — OSINT: ZERO vocabulary rows BY DESIGN (operator ruling
         // 2026-07-02; see the CODEBOOK 0x07XX section note). No entries
         // follow — OGAR vocabulary carries no OSINT concept names.
@@ -2182,7 +2204,7 @@ pub mod class_ids {
             // lance-graph mirror is rebuilt against it.
             assert_eq!(
                 ALL.len(),
-                91,
+                93,
                 "class_ids::ALL count changed — update this pin AND the \
                  lance-graph mirror COUNT_FUSE (crates/lance-graph-ogar/src/lib.rs) \
                  in the same PR",
@@ -3005,6 +3027,8 @@ pub fn all_promoted_classes() -> Vec<Class> {
         // vocabulary carries no OSINT concept names, see the CODEBOOK
         // 0x07XX section note.
         // 0x08XX — OCR arm (9 container kinds), in class_ids::ALL order.
+        weather_cell(),
+        weather_static_cell(),
         unicharset(),
         recoder(),
         charset(),
@@ -4654,6 +4678,30 @@ pub fn joint() -> Class {
 }
 
 // ─────────────────────────────────────────────────────────────────────
+// 0x04XX — Weather / Atmosphere canonical builders.
+// Field/level/unit slot semantics live in the consumer ClassView manifest;
+// the canonical class carries identity, never the weather payload layout.
+// ─────────────────────────────────────────────────────────────────────
+
+/// `weather_cell` (`0x0401`) — one dynamic atmospheric / forecast-grid cell.
+#[must_use]
+pub fn weather_cell() -> Class {
+    let mut c = Class::new("WeatherCell");
+    c.language = Language::Unknown;
+    c.canonical_concept = Some("weather_cell".to_string());
+    c
+}
+
+/// `weather_static_cell` (`0x0402`) — static geography-derived support cell.
+#[must_use]
+pub fn weather_static_cell() -> Class {
+    let mut c = Class::new("WeatherStaticCell");
+    c.language = Language::Unknown;
+    c.canonical_concept = Some("weather_static_cell".to_string());
+    c
+}
+
+// ─────────────────────────────────────────────────────────────────────
 // 0x0FXX — Geo domain builders (OpenStreetMap geodata reference ontology).
 // The canonical reference shape of the OSM element model harvested from
 // openstreetmap-website (Rails) via ruff → OGAR. node/way/relation are the
@@ -5570,8 +5618,10 @@ mod tests {
         // lives in ogar-obo; plug-and-play, never pulls into ERP consumers).
         assert_eq!(canonical_concept_domain(0x0300), ConceptDomain::Ontology);
         assert_eq!(canonical_concept_domain(0x03AB), ConceptDomain::Ontology);
-        // Unassigned blocks (4-6).
-        assert_eq!(canonical_concept_domain(0x0400), ConceptDomain::Unassigned);
+        // Weather / Atmosphere block (0x04), then still-unassigned 0x05-0x06.
+        assert_eq!(canonical_concept_domain(0x0400), ConceptDomain::Weather);
+        assert_eq!(canonical_concept_domain(0x0401), ConceptDomain::Weather);
+        assert_eq!(canonical_concept_domain(0x0500), ConceptDomain::Unassigned);
         assert_eq!(canonical_concept_domain(0x0600), ConceptDomain::Unassigned);
         // HR block (0x0D).
         assert_eq!(canonical_concept_domain(0x0D00), ConceptDomain::HR);
@@ -6678,5 +6728,33 @@ mod tests {
                 c.name,
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod weather_classid_mint_tests {
+    use super::*;
+
+    #[test]
+    fn weather_domain_and_codebook_are_append_only_and_not_geo() {
+        assert_eq!(
+            canonical_concept_domain(class_ids::WEATHER_CELL),
+            ConceptDomain::Weather
+        );
+        assert_eq!(
+            canonical_concept_domain(class_ids::WEATHER_STATIC_CELL),
+            ConceptDomain::Weather
+        );
+        assert_ne!(
+            canonical_concept_domain(class_ids::WEATHER_CELL),
+            ConceptDomain::Geo
+        );
+        assert_eq!(canonical_concept_id("weather_cell"), Some(0x0401));
+        assert_eq!(canonical_concept_id("weather_static_cell"), Some(0x0402));
+        assert_eq!(weather_cell().canonical_id(), Some(class_ids::WEATHER_CELL));
+        assert_eq!(
+            weather_static_cell().canonical_id(),
+            Some(class_ids::WEATHER_STATIC_CELL)
+        );
     }
 }
