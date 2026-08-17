@@ -1,0 +1,14 @@
+[package]
+name = "ogar-dismech"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+description = "Compile-time classid reservation for DisMech disease-mechanism concepts (Monarch Initiative `dismech`, transcoded in the public sibling repo AdaWorldAPI/dismech-rs). Authority-side half of the plug-and-play contract: dismech-rs itself stays zero-dependency, this crate reserves and guards the classid so no ogar-obo namespace can silently collide with it."
+
+[dependencies]
+ogar-obo = { path = "../ogar-obo" }
+
+[dev-dependencies]
