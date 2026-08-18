@@ -57,6 +57,40 @@ classid : u32  =  [ hi u16 : in-codebook class ]  [ lo u16 : APP / codebook name
   (`0x01` project, `0x02` commerce, `0x07` osint, `0x08` ocr, `0x09`
   health, `0x0A` anatomy, `0x0B` auth, `0x0C` automation). Within an
   app-private codebook the app owns its own `DD|CC` layout.
+
+  **The domain byte carries ALTITUDE** (operator, 2026-08-18 — *"Java is an
+  entire different layer that's why I chose another higher level"*): a
+  slot's magnitude encodes how high the thing sits, so placement is neither
+  mnemonic nor next-free. `0x00`–`0x0F` is the canonical business/reference
+  ontology; `0x17` is the substrate's own orchestration tier (`ogar-loco`);
+  **`0xC0`+ is the C-band — strata ABOVE the Rust substrate**, foreign host
+  layers the substrate reaches into rather than owns:
+
+  | slot | domain | why there |
+  |---|---|---|
+  | `0xC0` | `JavaRuntime` (Panama + Valhalla) | the managed-runtime membrane over the SoA substrate — the **floor** of the band |
+  | `0xC1` | `Analytics` | the analyst estate — addressable tabular units + catalog ontology (`ogar-bricks` and a lakehouse consumer are two app prefixes over ONE vocabulary) |
+  | `0xC4` | `BinaryLifting` | bolted onto `0xC0` (Ghidra is itself a JVM application), so a **tenant** of that layer rather than a peer; the slot number is the blast radius |
+
+  All three are **reserved-empty** — zero concept rows, same posture as
+  `Osint` / `Genetics` / `Blocks` — so `canonical_concept_domain` returns a
+  stable tag before anything mints. `0xC2`–`0xC3` stay `Unassigned` **by
+  intent**, pinned by test, exactly as the `0x10`–`0x16` gap below `Blocks`
+  is: the slots were chosen deliberately, so a later pass must not tidy a
+  C-band domain downward into the hole.
+
+  Structural note (why altitude is worth the space it takes): the domain
+  byte is the first two nibbles of the classid, so its **top nibble is a
+  16-way altitude selector** — one mask separates "substrate ontology" from
+  "host layer" with no lookup and no value decode. That is §3.5's *the key
+  prerenders nodes with zero value decode*, applied to layering. A
+  first-nibble split is the most expensive split the 16-ary cascade has;
+  spending it on altitude is what makes it worth spending.
+
+  Legibility hazard, recorded rather than rediscovered: **`0xC0` is a digit
+  swap of `0x0C` automation** (`0xC001_0000` vs `0x0C01_0000`). Raised, not
+  decisive, and pinned two-sided in `ogar-vocab`'s domain test so a
+  transposition anywhere in the chain fails there first.
 - **`lo u16` (0xAAAA) — APP prefix = codebook namespace selector.**
   Which 256⁶ semantic space / which centroid-codebook set the key
   resolves against (the longest-prefix codebook scoping already pinned

@@ -1609,6 +1609,84 @@ isolation. The map's job is to keep them visible.
   (deliberately no compiler dep). Deferred, named: `DocOp` (editor authority),
   Lance-versioned `Revision(n)` lookup, `FieldView` enum widening.
 
+- **[D-CBAND-ALTITUDE] the domain byte carries ALTITUDE — `0xC0`/`0xC1`/`0xC4`
+  reserved as the C-band, the strata ABOVE the Rust substrate** — `[G]`
+  (CODED, reserved-empty, 2026-08-18, operator ruling: *"Java is an entire
+  different layer that's why I chose another higher level"*) — home:
+  `ogar-vocab::ConceptDomain::{JavaRuntime, Analytics, BinaryLifting}` +
+  `canonical_concept_domain` (`0xC0`/`0xC1`/`0xC4` arms) — depends:
+  D-CLASSID-CANON-HIGH-FLIP, D-BLOCKS-DOMAIN (the reserved-empty +
+  pinned-gap posture this follows).
+
+  **The ruling.** A domain slot's *magnitude* encodes how high the thing sits
+  in the stack; placement is neither mnemonic nor next-free. `0x00`–`0x0F` is
+  the canonical business/reference ontology, `0x17` is the substrate's own
+  orchestration tier (`ogar-loco`), and `0xC0`+ is the **C-band** — foreign
+  host layers the substrate reaches into rather than owns. Within the band:
+  **`0xC0` `JavaRuntime`** (Panama + Valhalla — the managed-runtime membrane,
+  and the FLOOR of the band, the door every other tenant arrives through);
+  **`0xC1` `Analytics`** (the analyst estate — addressable tabular units +
+  catalog ontology); **`0xC4` `BinaryLifting`** (bolted onto `0xC0`, since
+  Ghidra is itself a JVM application, so a *tenant* of that layer rather than
+  a peer of C0 — and the slot number is the blast radius of turning any binary
+  into addressable rows). All three carry ZERO concept rows.
+
+  **Why altitude is worth its cost.** The domain byte is the first two nibbles
+  of the classid, so its top nibble is a 16-way altitude selector: one mask
+  separates "substrate ontology" from "host layer" with no lookup and no value
+  decode — `APP-CLASS-CODEBOOK-LAYOUT.md` §3.5's *the key prerenders nodes with
+  zero value decode*, applied to layering. A first-nibble split is the most
+  expensive split the 16-ary cascade has; spending it on altitude is what makes
+  it worth spending.
+
+  **Three fences carried in the variant docs.** (1) *Naming*: each domain names
+  the shared CONCEPT, never a vendor or renderer — `ogar-bricks` and a
+  lakehouse consumer are two app prefixes over ONE `Analytics` vocabulary;
+  Ghidra and `r2sleigh` are two consumers of the same SLEIGH specs over ONE
+  `BinaryLifting` vocabulary (the D-BLOCKS-DOMAIN fence, reapplied). (2)
+  *Provenance*, load-bearing for `0xC4`: mints must derive from permissively-
+  licensed or specification sources (Ghidra core is Apache-2.0 — `opcodes.hh`
+  and the SLEIGH processor specs are usable; the `GPL/` subtree is not needed
+  for lifting), NEVER by transcribing a GPL/AGPL or LGPL implementation — so
+  the public codebook stays unencumbered while a GPL consumer links it freely
+  and the GPL boundary sits entirely in the consumer repo. (3) *No speculative
+  widening*: `0xC0` is deliberately `JavaRuntime` and not a vendor-neutral
+  `HostRuntime` — no second managed runtime is in scope, and another one would
+  get its own C-band slot rather than dilute this one.
+
+  **`0xC2`–`0xC3` stay `Unassigned` BY INTENT**, pinned by test exactly as the
+  `0x10`–`0x16` gap below `Blocks` is: the slots were chosen deliberately (C4 =
+  the blast radius), not consecutively, so a later pass cannot "tidy" a C-band
+  domain downward into the hole. Two disable-runs confirm the guards are
+  load-bearing rather than decorative: dropping the `0xC4` arm turns the
+  `BinaryLifting` assertions red; minting into `0xC2` turns the gap assertion
+  red. Also pinned two-sided: **`0x0C` Automation is not `0xC0` JavaRuntime** —
+  a digit swap of each other, the one real legibility hazard in this
+  allocation, recorded rather than left to be rediscovered.
+
+  **Storno — what this ruling corrects.** Three proposals made in the session
+  that produced it, all withdrawn, all the same error: seating P-code at
+  `0x1718` as an `ogar-loco` consumer slot (wrong tier — `0x17` is
+  lance-graph's *internal* orchestration: elixir-on-rails shaped, `rs-graph-llm`
+  as executor, Rig marking the replayability boundary between external LLM and
+  internal low-code — not a container for any palette whose ops fit in a byte);
+  putting P-code at `0x18` beside `Blocks` (same error, one slot over); and
+  proposing a separate substrate/layout-contract domain (not separate — it is
+  `0xC0`'s content). Root cause: clustering by **shape** (everything becomes
+  `(function : value)` calls in a 512-byte node) when the axis is **altitude**.
+  *Shape-similarity is not domain-identity.* What survives: **reuse
+  `ogar-loco`'s node shape, own your own domain** — loco's own doc says the
+  `FunctionBody` classid belongs at the substrate and a frontend references it
+  rather than minting its own. Borrowing the container is not joining the
+  domain.
+
+  **First named consumer** (not built, not blocking): `lance-graph-java`'s W6
+  schema/classid field on `LgjResourceInfo` / `LgjLaneDesc`, by which a native
+  resource names WHICH layout contract its bytes obey instead of implying it via
+  `kind` — a `0xC0` concept, the membrane naming itself from inside its own
+  stratum. Cross-ref: that repo's `.claude/board/EPIPHANIES.md`
+  `E-LGJ-THE-DOMAIN-BYTE-CARRIES-ALTITUDE-1`.
+
 - **[D-BLOCKS-DOMAIN] `0x17XX` reserved as ConceptDomain::Blocks — the shared
   visual block-programming opcode vocabulary, ONE canon domain under two app
   prefixes** — `[G]` (CODED, reserved-empty, 2026-08-04, operator-chosen slot)
