@@ -1404,6 +1404,33 @@ const CODEBOOK: &[(&str, u16)] = &[
 /// Reserved high-byte slots are listed with their intended domain name
 /// even before any concept lands in that block, so consumers can branch
 /// on them today and the meaning is stable as concepts arrive.
+///
+/// # The domain byte carries ALTITUDE, not just identity
+///
+/// Operator ruling, 2026-08-18 (*"Java is an entire different layer that's
+/// why I chose another higher level"*): a slot's **magnitude** encodes how
+/// high the thing sits in the stack, so placement is neither mnemonic nor
+/// next-free.
+///
+/// - `0x00`–`0x0F` — the canonical business/reference ontology.
+/// - `0x17` — the substrate's own orchestration tier (`ogar-loco`'s call
+///   ABI; see [`Blocks`](Self::Blocks) for the label's narrowed reading).
+/// - `0xC0`+ — the **C-band: strata ABOVE the Rust substrate**, i.e. foreign
+///   host layers the substrate reaches into rather than owns.
+///
+/// This is cheap in exactly the right way: the domain byte is the first two
+/// nibbles of the classid, so its **top nibble is a 16-way altitude
+/// selector** — one mask separates "substrate ontology" from "host layer"
+/// with no lookup and no value decode, which is the canon's *the key
+/// prerenders nodes with zero value decode* applied to layering. A
+/// first-nibble split is the most expensive split the 16-ary cascade has;
+/// spending it on altitude is what makes it worth spending.
+///
+/// **Do not cluster by subject matter.** Two vocabularies that share a
+/// SHAPE (both are opcode palettes, both are call sequences) do not thereby
+/// share a domain — shape-similarity is not domain-identity. A frontend may
+/// freely reuse `ogar-loco`'s node shape while owning its own domain;
+/// borrowing the container is not joining the domain.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[non_exhaustive]
@@ -1499,8 +1526,67 @@ pub enum ConceptDomain {
     /// transcribing a GPL/AGPL implementation, so this public codebook stays
     /// unencumbered while GPL consumers link it freely.
     Blocks,
+    /// `0xC0XX` — **Java runtime** (Project Panama + Project Valhalla): the
+    /// managed-runtime membrane over the SoA substrate. The **floor of the
+    /// C-band** — the door every other tenant of that layer arrives through.
+    /// Carries ZERO vocabulary rows today — same reserved posture as
+    /// [`Osint`](Self::Osint) / [`Genetics`](Self::Genetics) /
+    /// [`Blocks`](Self::Blocks): the slot returns a stable domain tag before
+    /// any concept mints (operator ruling, 2026-08-18).
+    ///
+    /// First named consumer: `lance-graph-java`'s planned schema/classid
+    /// field on `LgjResourceInfo` / `LgjLaneDesc`, by which a native
+    /// resource names WHICH layout contract its bytes obey instead of
+    /// implying it via `kind` — the membrane naming itself from inside its
+    /// own stratum, not a substrate concept borrowed downward.
+    ///
+    /// Deliberately **not** generalized to a vendor-neutral `HostRuntime`:
+    /// no second managed runtime is in scope, and pre-widening a reserved
+    /// slot for a hypothetical consumer is the speculative move this
+    /// codebook avoids. A CLR/other-runtime layer, if it ever lands, gets
+    /// its own C-band slot rather than diluting this one.
+    JavaRuntime,
+    /// `0xC1XX` — **Analytics**: the analyst estate — addressable tabular
+    /// units (the shared concept behind an OGAR *brick* and a lakehouse
+    /// table alike) plus the catalog ontology around them. Carries ZERO
+    /// vocabulary rows today; reserved posture as above (operator ruling,
+    /// 2026-08-18).
+    ///
+    /// The domain names the **shared tabular concept**, never a vendor:
+    /// `ogar-bricks` and a Databricks/Unity-Catalog consumer are two app
+    /// prefixes over ONE vocabulary — the same fence
+    /// [`Blocks`](Self::Blocks) carries, and the same shape as the
+    /// OpenProject/Redmine showcase in `docs/APP-CLASS-CODEBOOK-LAYOUT.md`
+    /// §2. The *pipeline* that transforms such units is a separate register
+    /// (a call vocabulary), not a concept in this domain.
+    Analytics,
+    /// `0xC4XX` — **Binary lifting**: normalized machine-code IR and the
+    /// artifact ontology around it (program image, function, section,
+    /// symbol). Bolted onto [`JavaRuntime`](Self::JavaRuntime) — Ghidra is
+    /// itself a JVM application — so it is a *tenant* of C0's layer, not a
+    /// peer of C0. Carries ZERO vocabulary rows today; reserved posture as
+    /// above (operator ruling, 2026-08-18).
+    ///
+    /// The slot number is deliberate: **C4, for the blast radius** of
+    /// turning any binary into addressable substrate rows.
+    ///
+    /// The domain names the **shared lift concept**, never a tool: Ghidra
+    /// and `r2sleigh` are two consumers of the same SLEIGH specs, hence two
+    /// app prefixes over ONE vocabulary (the [`Blocks`](Self::Blocks) fence
+    /// again).
+    ///
+    /// **Provenance fence, and it is load-bearing here:** concepts minted
+    /// in this domain must derive from permissively-licensed or
+    /// specification sources (Ghidra core is Apache-2.0 — its `opcodes.hh`
+    /// and the SLEIGH processor specs are usable; the `GPL/` subtree is
+    /// not needed for lifting) — never by transcribing a GPL/AGPL or
+    /// LGPL implementation. That keeps this public codebook unencumbered
+    /// while a GPL consumer links it freely, and lets the GPL boundary sit
+    /// entirely in the consumer repo.
+    BinaryLifting,
     /// Any high-byte slot not yet assigned a domain (`0x05XX`–`0x06XX`,
-    /// `0x10XX`–`0x16XX`, `0x18XX`+).
+    /// `0x10XX`–`0x16XX`, `0x18XX`–`0xBFXX`, `0xC2XX`–`0xC3XX`,
+    /// `0xC5XX`+).
     Unassigned,
 }
 
@@ -1524,6 +1610,9 @@ pub fn canonical_concept_domain(id: u16) -> ConceptDomain {
         0x0E => ConceptDomain::Genetics,
         0x0F => ConceptDomain::Geo,
         0x17 => ConceptDomain::Blocks,
+        0xC0 => ConceptDomain::JavaRuntime,
+        0xC1 => ConceptDomain::Analytics,
+        0xC4 => ConceptDomain::BinaryLifting,
         _ => ConceptDomain::Unassigned,
     }
 }
@@ -5640,7 +5729,36 @@ mod tests {
         assert_eq!(canonical_concept_domain(0x1701), ConceptDomain::Blocks);
         assert_eq!(canonical_concept_domain(0x17FF), ConceptDomain::Blocks);
         assert_eq!(canonical_concept_domain(0x1800), ConceptDomain::Unassigned);
-        // Trailing unassigned tail (0x18+).
+        // ── The C-band (operator ruling 2026-08-18): strata ABOVE the Rust
+        // substrate. All three reserved-empty; the magnitude is the point —
+        // a higher slot means a higher layer, not a later mint.
+        assert_eq!(canonical_concept_domain(0xC000), ConceptDomain::JavaRuntime);
+        assert_eq!(canonical_concept_domain(0xC0FF), ConceptDomain::JavaRuntime);
+        assert_eq!(canonical_concept_domain(0xC100), ConceptDomain::Analytics);
+        assert_eq!(canonical_concept_domain(0xC1FF), ConceptDomain::Analytics);
+        assert_eq!(
+            canonical_concept_domain(0xC400),
+            ConceptDomain::BinaryLifting
+        );
+        assert_eq!(
+            canonical_concept_domain(0xC4FF),
+            ConceptDomain::BinaryLifting
+        );
+        // The C2-C3 gap stays unassigned BY INTENT, exactly like 0x10-0x16
+        // below Blocks: C0/C1/C4 were chosen deliberately (C4 = the blast
+        // radius), not as consecutive free slots, so a later pass must not
+        // "tidy" a C-band domain downward into the hole.
+        assert_eq!(canonical_concept_domain(0xC200), ConceptDomain::Unassigned);
+        assert_eq!(canonical_concept_domain(0xC300), ConceptDomain::Unassigned);
+        // ...and the band's own edges: nothing leaks below C0 or above C4.
+        assert_eq!(canonical_concept_domain(0xBF00), ConceptDomain::Unassigned);
+        assert_eq!(canonical_concept_domain(0xC500), ConceptDomain::Unassigned);
+        // 0x0C Automation is NOT 0xC0 JavaRuntime — the two are a digit swap
+        // of each other, the one real legibility hazard in this allocation.
+        // Pinned so a transposition anywhere in the chain fails here first.
+        assert_eq!(canonical_concept_domain(0x0C01), ConceptDomain::Automation);
+        assert_eq!(canonical_concept_domain(0xC001), ConceptDomain::JavaRuntime);
+        // Trailing unassigned tail (0x18+, minus the C-band above).
         assert_eq!(canonical_concept_domain(0xFFFF), ConceptDomain::Unassigned);
     }
 
