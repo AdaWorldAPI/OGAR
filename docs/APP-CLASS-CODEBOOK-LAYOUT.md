@@ -68,7 +68,7 @@ classid : u32  =  [ hi u16 : in-codebook class ]  [ lo u16 : APP / codebook name
 
   | slot | domain | why there |
   |---|---|---|
-  | `0xC0` | `JavaRuntime` (Panama + Valhalla) | the managed-runtime membrane over the SoA substrate — the **floor** of the band |
+  | `0xC0` | `JavaRuntime` (Panama FFM) | the managed-runtime membrane over the SoA substrate — the **floor** of the band. Valhalla deliberately has NO domain slot — not because it is unintegrated (lance-graph-java's shipping descriptor vocabulary is `value record`-ready by design, one word per type, with measured EA-build numbers) but because it is a representation *property of* the C0 concepts' vocabulary, never an addressable boundary itself — see the `JavaRuntime` doc comment in `ogar-vocab` |
   | `0xC1` | `Analytics` | the analyst estate — addressable tabular units + catalog ontology (`ogar-bricks` and a lakehouse consumer are two app prefixes over ONE vocabulary) |
   | `0xC4` | `BinaryLifting` | bolted onto `0xC0` (Ghidra is itself a JVM application), so a **tenant** of that layer rather than a peer; the slot number is the blast radius |
 

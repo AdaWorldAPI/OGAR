@@ -1687,6 +1687,18 @@ isolation. The map's job is to keep them visible.
   stratum. Cross-ref: that repo's `.claude/board/EPIPHANIES.md`
   `E-LGJ-THE-DOMAIN-BYTE-CARRIES-ALTITUDE-1`.
 
+  **Correction (2026-08-18, same day, cross-session ruling lance-graph-java ×
+  ruff/R2IL):** the parenthetical above reads "(Panama + Valhalla)" — the slot
+  is **Panama FFM alone**. Valhalla gets no domain representation: a
+  `ConceptDomain` is a vocabulary of ADDRESSABLE things, and Valhalla is a
+  representation property (flatness) OF the C0 vocabulary, not a crossing
+  concept. Stated precisely so the ruling is not misread as "Valhalla is
+  unintegrated": lance-graph-java's shipping descriptor types are
+  `value record`-ready by design (one-word migration under JEP 401) and the
+  A/B ran on a real EA build with measured numbers — the integration is a
+  designed property of the concepts, which is exactly why it mints no
+  address. Canonical text: the `JavaRuntime` doc comment in `ogar-vocab`.
+
 - **[D-BLOCKS-DOMAIN] `0x17XX` reserved as ConceptDomain::Blocks — the shared
   visual block-programming opcode vocabulary, ONE canon domain under two app
   prefixes** — `[G]` (CODED, reserved-empty, 2026-08-04, operator-chosen slot)
