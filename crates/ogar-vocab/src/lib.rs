@@ -1526,13 +1526,38 @@ pub enum ConceptDomain {
     /// transcribing a GPL/AGPL implementation, so this public codebook stays
     /// unencumbered while GPL consumers link it freely.
     Blocks,
-    /// `0xC0XX` — **Java runtime** (Project Panama + Project Valhalla): the
-    /// managed-runtime membrane over the SoA substrate. The **floor of the
-    /// C-band** — the door every other tenant of that layer arrives through.
-    /// Carries ZERO vocabulary rows today — same reserved posture as
-    /// [`Osint`](Self::Osint) / [`Genetics`](Self::Genetics) /
-    /// [`Blocks`](Self::Blocks): the slot returns a stable domain tag before
-    /// any concept mints (operator ruling, 2026-08-18).
+    /// `0xC0XX` — **Java runtime (Panama FFM)**: the managed-runtime
+    /// membrane over the SoA substrate via Project Panama's Foreign
+    /// Function & Memory API — downcalls, memory segments, lanes, arenas,
+    /// masks. The **floor of the C-band** — the door every other tenant of
+    /// that layer arrives through. Carries ZERO vocabulary rows today —
+    /// same reserved posture as [`Osint`](Self::Osint) /
+    /// [`Genetics`](Self::Genetics) / [`Blocks`](Self::Blocks): the slot
+    /// returns a stable domain tag before any concept mints (operator
+    /// ruling, 2026-08-18).
+    ///
+    /// **Valhalla deliberately has NO domain representation here — and NOT
+    /// because it is unintegrated** (cross-session ruling, 2026-08-18,
+    /// `lance-graph-java` × `ruff`/R2IL: *"a `ConceptDomain` is a
+    /// vocabulary of ADDRESSABLE things; Panama's crossing concepts —
+    /// downcalls, segments, lanes, arenas, masks — are addressable, while
+    /// Valhalla flatness is a property of a representation. If it ever
+    /// needs surfacing, it's a facet on an existing concept, not a
+    /// domain."*). Valhalla IS integrated in `lance-graph-java`, in two
+    /// real senses: the shipping descriptor vocabulary (`LaneId` /
+    /// `Ordinal` / `MaskId` / `RowRange` / `FacetId`) is designed so the
+    /// same source compiles as `value record` under JEP 401 — migration is
+    /// one word per type — and a real Valhalla EA build (`27-jep401ea3`)
+    /// ran the A/B with measured results (array flattening cliff at 8-byte
+    /// payload; 4–8-byte descriptors 5.5× smaller / up to 8.3× faster
+    /// where flattening applies; bulk data stays native, winning 38–57×
+    /// on both platforms). Precisely BECAUSE that integration is a
+    /// designed property OF the `0xC0` concepts' vocabulary rather than a
+    /// concept itself, it mints no address: properties of concepts do not
+    /// get domains. This corrects the prior doc text here, which bundled
+    /// the two as "Panama + Valhalla" as if both named crossing surfaces.
+    /// A genuine Valhalla concept, if one is ever needed, is argued fresh
+    /// on its own merits — it does not inherit squatting rights in `0xC0`.
     ///
     /// First named consumer: `lance-graph-java`'s planned schema/classid
     /// field on `LgjResourceInfo` / `LgjLaneDesc`, by which a native
