@@ -6,9 +6,10 @@ license.workspace = true
 repository.workspace = true
 authors.workspace = true
 rust-version.workspace = true
-description = "Compile-time classid reservation for DisMech disease-mechanism concepts (Monarch Initiative `dismech`, transcoded in the public sibling repo AdaWorldAPI/dismech-rs). Authority-side half of the plug-and-play contract: dismech-rs itself stays zero-dependency, this crate reserves and guards the classid so no ogar-obo namespace can silently collide with it."
+description = "Compile-time classid reservation and causal predicate palette for DisMech disease-mechanism concepts (Monarch Initiative `dismech`, transcoded in the public sibling repo AdaWorldAPI/dismech-rs). Authority-side half of the plug-and-play contract: dismech-rs itself stays zero-dependency, this crate reserves and guards the classid, and mints the 19 causal predicates (causes, leads_to, triggers, …) as a callable ogar-loco Vocabulary under the dismech: CURIE namespace."
 
 [dependencies]
+ogar-loco = { path = "../ogar-loco" }
 ogar-obo = { path = "../ogar-obo" }
 
 [dev-dependencies]
