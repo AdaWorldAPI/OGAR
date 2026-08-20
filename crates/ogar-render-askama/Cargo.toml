@@ -9,6 +9,27 @@ description = "Build-time askama codegen harness over the canonical layer — on
 ogar-vocab = { path = "../ogar-vocab" }
 lance-graph-contract = { git = "https://github.com/AdaWorldAPI/lance-graph", branch = "main" }
 askama = "0.12"
+# `askama_axum` is NOT used by this crate — it is required to COMPILE it in any
+# graph where some other crate uses it, and that is a cargo feature-unification
+# fact, not a choice here.
+#
+# `askama_axum 0.4` enables `askama/with-axum`. Features unify across the whole
+# dependency graph, so once any consumer pulls `askama_axum`, askama's
+# `#[derive(Template)]` starts emitting an `IntoResponse` impl that names
+# `::askama_axum` — in EVERY crate that derives Template, including this one.
+# Without the dependency the expansion cannot resolve and the build dies with
+# `E0433: cannot find `askama_axum` in the crate root`, pointing at our own
+# `#[derive(Template)]` lines (measured on `artifact_kinds/cells.rs`).
+#
+# The defect is therefore invisible until a consumer combines the two, and then
+# it is unfixable from the consumer side without forking or pinning this crate.
+# Measured 2026-08-20 wiring `ogar-render-askama` into `medcare-server`, which
+# has used `askama_axum = "0.4"` for its own handlers all along.
+#
+# Cheap and inert where nobody enables the feature: `askama_axum` is a thin
+# adapter over the same askama, and with the feature off the derive never
+# references it.
+askama_axum = "0.4"
 
 [dev-dependencies]
 # harvest driver for examples/render_osm.rs (Rails app/models → Class → Rust)
