@@ -1926,3 +1926,45 @@ isolation. The map's job is to keep them visible.
   and S-8 (express real SKR03 rules with `CONTAINS`/`LIST_CONTAINS`/`EQ` only —
   if `REGEX`/`FUZZY` prove load-bearing the `FnIndex` additions are not
   optional). Depends: D-OGAR-DOC-LAYER, D-DOC-IR-SECOND-RETINA.
+
+- **[D-DISMECH-SEARCH-BAND] the resolution search is a second VOCABULARY BAND,
+  and its residue is an eye-tracking overlay — never a graph write** — `[G]`
+  (CODED, 2026-08-21) — home: `crates/ogar-dismech/src/lib.rs` (slots
+  `0xA3..=0xA9`, `SEARCH_OPS` + `residue_band`) — depends: D-V1-TAIL-RETIRED
+  (the 12B register the calls ride), `ogar-loco` `Vocabulary`/`DOMAIN_FLOOR`,
+  lance-graph `causal-edge` `ReasoningBand` (bits 61-63) + `nars::tactics`
+  `ReasoningGap`/`Throttle`. **Two bands, one vocabulary:** the 19 causal
+  predicates stay the closed *measured* set mirroring upstream; the seven
+  constraint-propagation verbs are ours and carry `LOCAL:` CURIEs (the
+  `ogar-ro` precedent — a `dismech:` prefix would assert a provenance upstream
+  never gave). **Sudoku is mechanical, not decorative:** resolution is
+  elimination, `HIDDEN_SINGLE` is the case where the free text does not know
+  what it names (eindeutigkeit is a property of the unit, never of the cell
+  read alone), and `ELIMINATE` makes cardinality a moving state rather than a
+  static count. **`FOLD_XREF` is ordered before counting** — two addresses of
+  one referent are not two referents, and counting first reports a bookkeeping
+  artifact as a fork. **The residue is an overlay at the graph's own
+  addresses, in separate tables** — eye tracking, so "1:1" is the *addressing*
+  and the occupancy is sparse; writing it into each subject instead gives
+  every subject a partial copy of the ontology's structure and stops being
+  affordable. Three bits suffice because a fixation sample is tiny. **One-way,
+  structurally:** no search op declares `DISMECH_TARGET_CODEBOOK`, so a
+  residue value has no path to be read as a graph address. **NOT evidence** —
+  propagation *forces* a cell given the constraints and will force wrong cells
+  confidently from wrong constraints; the value is search-economic (which of
+  tens of thousands of edges is worth opening), and confirmation needs a
+  channel the trace did not travel. **Pothole → rung degradation → revision:**
+  two of the four `residue_band` outcomes ARE potholes and the mapping IS the
+  degradation — 0 candidates names its own cell (the reach-out hook), and
+  `>= diffuse_floor` is hub-shaped in the exact sense `Throttle::hub_indegree`
+  already means, which is why `diffuse_floor` is a required parameter with no
+  shipped default. **The rung is the LAYER, not the payload:** rungs project
+  as a stack of alpha layers at zero bit cost (one table per rung over one
+  address space); never map the 3-bit band onto the rung ladder — its owner
+  pins that they are unrelated enums sharing four variant names. 20 tests, 5
+  disable-runs verified red-then-green (codebook guard, computes-vs-asserts,
+  meta-is-a-layer, strict floor, band contiguity). **Named next, NOT built:**
+  the second-order collector over `lance-graph-supervisor`'s `PhaseCensus` —
+  a *mask over the activities* (one `&self` pass), never the retired
+  actor/pump surface (`E-PROGRESSION-IS-EXISTENCE-NOT-COMMAND-1`); and the
+  0/1/2/n distribution measurement that would calibrate `diffuse_floor`.
