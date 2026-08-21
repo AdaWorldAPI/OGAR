@@ -74,6 +74,81 @@
 //! for the three-attempt history that produced this band), and
 //! `ogar_obo::registry::META_STUDY_SPINE` (`0x0340..=0x0347`).
 
+//! # The second band: the search, as a thinking pattern
+//!
+//! Slots `0xA3..=0xA9` mint the **constraint-propagation verbs** — kept in
+//! their own band so the 19 above stay the closed *measured* set that
+//! mirrors upstream, and carrying `LOCAL:` CURIEs because they are ours: a
+//! `dismech:` prefix would assert a provenance upstream never gave.
+//!
+//! The pattern is Sudoku, and the word is mechanical rather than decorative:
+//! resolution is **elimination**, not similarity. A cell with one remaining
+//! candidate is forced ([`NAKED_SINGLE`]); a referent that can sit in only
+//! one cell of its unit forces that cell **even while it still holds other
+//! candidates** ([`HIDDEN_SINGLE`]) — which is the case where the free text
+//! does not know what it names. The eindeutigkeit is a property of the unit,
+//! never of the cell read alone. [`ELIMINATE`] is what makes cardinality a
+//! moving state rather than a static count: a term with two candidates today
+//! has one after a neighbour resolves.
+//!
+//! ## The residue is an overlay, and that is a cost argument
+//!
+//! A search leaves a 3-bit band per cell it touched ([`residue_band`]).
+//! Those samples are collected **at the graph's own addresses, in separate
+//! tables** — never merged down into the graph.
+//!
+//! The shape is eye tracking. You do not record what the eye *saw* — that is
+//! the whole scene, once per viewer. You record *where it looked*: a sparse
+//! trace in scene coordinates. So "1:1" is the **addressing**, not the
+//! occupancy: one shared, unmodified scene; one sparse trace per search.
+//! Writing the trace into each subject instead would give every subject a
+//! partial copy of the ontology's structure, which does not stay affordable.
+//! It is also why three bits suffice — a fixation sample is tiny by
+//! construction.
+//!
+//! **One-way, structurally.** The overlay reads the graph; the graph never
+//! reads the overlay. That is why no search op declares
+//! [`DISMECH_TARGET_CODEBOOK`]: their operands are candidate sets and
+//! computed bands, never basin-scoped ids, so a residue value has no path to
+//! be mistaken for a graph address.
+//!
+//! ## It is not evidence — it is where to look
+//!
+//! Propagation *forces* a cell given the constraints; it does not prove it.
+//! Put the wrong constraints in and it will force wrong cells with full
+//! confidence. The value is not epistemic but search-economic: against tens
+//! of thousands of edges the question is rarely "is this true" and almost
+//! always "which of these is even worth opening". Confirmation needs a
+//! channel the trace did not travel — a second, independently curated source
+//! is one; the trace itself never is.
+//!
+//! ## Pothole → rung degradation → revision
+//!
+//! Two of [`residue_band`]'s four outcomes are **potholes**, and the mapping
+//! IS the degradation:
+//!
+//! - **0 candidates** — nothing addressable. The gap names its own cell,
+//!   which is the reach-out hook: a failure that says what is missing points
+//!   at what to fetch, instead of silently deriving nothing.
+//! - **`>= diffuse_floor`** — the term does not discriminate. This is
+//!   hub-shaped in the exact sense the consumer's own throttle already
+//!   means: a term with too many attachments is barred rather than guessed
+//!   at. `diffuse_floor` is therefore the same *kind* of quantity as that
+//!   throttle's hub threshold — calibrated per corpus, never a shipped
+//!   constant.
+//!
+//! Revision is downstream and elsewhere: this band produces the degraded
+//! rung; NARS revision consumes it.
+//!
+//! ## The rung is the layer, not the payload
+//!
+//! Projecting rungs as a stack of alpha layers costs zero bits here: each
+//! rung is its own table over the same address space, and the 3-bit sample
+//! is what sits *inside* one layer. Do not try to carry a rung ordinal in
+//! the band — the consumer's band is 3 bits (8 values) and its owner pins,
+//! explicitly, that its ordinals must never be mapped onto the rung ladder's.
+//! They are unrelated enums that share four variant names.
+
 #![warn(missing_docs)]
 #![forbid(unsafe_code)]
 
@@ -178,15 +253,191 @@ pub const fn by_index(f: FnIndex) -> Option<&'static DisMechPredicate> {
     }
 }
 
-/// The DisMech causal predicate palette as an `ogar-loco` [`Vocabulary`].
+// ── The search band: the Sudoku thinking pattern ────────────────────────────
+
+/// One search operation this palette mints — the constraint-propagation
+/// verbs, kept in their own band so the 19 predicates above stay the closed
+/// *measured* set that mirrors upstream.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DisMechSearchOp {
+    /// The minted [`FnIndex`] byte.
+    pub index: FnIndex,
+    /// The canonical mnemonic (matches [`Vocabulary::name`]'s answer).
+    pub name: &'static str,
+    /// The `LOCAL:*` CURIE. **Not** `dismech:` — these verbs are ours, not
+    /// upstream's; claiming the upstream namespace for them would assert a
+    /// provenance upstream never gave. This crate's own module doc records
+    /// the `ogar-ro` precedent for exactly this situation (`LOCAL:` where no
+    /// external term carries the semantics; the CURIE records provenance,
+    /// never a second dispatch key).
+    pub curie: &'static str,
+    /// Operands popped before the call.
+    pub arity: u8,
+    /// Function indices carried in the call's value bytes.
+    pub bodies: u8,
+}
+
+/// `candidates` — the candidate referent set for one cell, drawn from a
+/// **named** union of ontologies. The union must be named because
+/// cardinality is only meaningful relative to it: unique in one namespace
+/// and plural across the union is the same term, two answers.
+pub const CANDIDATES: FnIndex = FnIndex(0xA3);
+/// `fold_xref` — collapse candidates that are one referent wearing two
+/// addresses. **Ordering is load-bearing:** counting before folding reports
+/// a bookkeeping artifact as a fork.
+pub const FOLD_XREF: FnIndex = FnIndex(0xA4);
+/// `naked_single` — exactly one candidate remains in the cell, so the cell
+/// is forced. The plain resolution case.
+pub const NAKED_SINGLE: FnIndex = FnIndex(0xA5);
+/// `hidden_single` — the referent can sit in only one cell of the unit, so
+/// that cell is forced *even while it still holds other candidates*. This is
+/// the case where the text does not know what it names: the eindeutigkeit is
+/// a property of the unit, never of the cell read alone.
+pub const HIDDEN_SINGLE: FnIndex = FnIndex(0xA6);
+/// `eliminate` — propagate one resolution by striking it from its peers.
+/// The step that makes cardinality a moving state rather than a static count.
+pub const ELIMINATE: FnIndex = FnIndex(0xA7);
+/// `fork` — branch a bounded candidate set into arms that are all kept.
+/// **Not `IF_ELSE`:** a conditional discards the untaken arm, a fork does
+/// not — that retention is what makes the result a counterfactual instead
+/// of a choice.
+pub const FORK: FnIndex = FnIndex(0xA8);
+/// `residue_band` — push the 3-bit reasoning-band ordinal for the cell's
+/// current resolution state. See [`residue_band`] for the mapping and
+/// [`SECOND_ORDER_BAND`] for the overlay-about-the-overlay.
+pub const RESIDUE_BAND: FnIndex = FnIndex(0xA9);
+
+/// Every search operation this palette mints, in slot order.
+pub const SEARCH_OPS: &[DisMechSearchOp] = &[
+    DisMechSearchOp {
+        index: CANDIDATES,
+        name: "candidates",
+        curie: "LOCAL:candidates",
+        arity: 0,
+        bodies: 0,
+    },
+    DisMechSearchOp {
+        index: FOLD_XREF,
+        name: "fold_xref",
+        curie: "LOCAL:fold_xref",
+        arity: 1,
+        bodies: 0,
+    },
+    DisMechSearchOp {
+        index: NAKED_SINGLE,
+        name: "naked_single",
+        curie: "LOCAL:naked_single",
+        arity: 1,
+        bodies: 0,
+    },
+    DisMechSearchOp {
+        index: HIDDEN_SINGLE,
+        name: "hidden_single",
+        curie: "LOCAL:hidden_single",
+        arity: 2,
+        bodies: 0,
+    },
+    DisMechSearchOp {
+        index: ELIMINATE,
+        name: "eliminate",
+        curie: "LOCAL:eliminate",
+        arity: 2,
+        bodies: 0,
+    },
+    DisMechSearchOp {
+        index: FORK,
+        name: "fork",
+        curie: "LOCAL:fork",
+        arity: 1,
+        bodies: 2,
+    },
+    DisMechSearchOp {
+        index: RESIDUE_BAND,
+        name: "residue_band",
+        curie: "LOCAL:residue_band",
+        arity: 1,
+        bodies: 0,
+    },
+];
+
+/// Position lookup over the search band — the same index computation
+/// [`by_index`] performs over the predicate band.
+#[must_use]
+pub const fn search_op_by_index(f: FnIndex) -> Option<&'static DisMechSearchOp> {
+    let i = f.0.wrapping_sub(CANDIDATES.0) as usize;
+    if i < SEARCH_OPS.len() {
+        Some(&SEARCH_OPS[i])
+    } else {
+        None
+    }
+}
+
+// ── The residue: what a search leaves behind ────────────────────────────────
+
+/// The band ordinal for **thinking about thinking** — an overlay whose
+/// subject is another overlay, not the graph.
+///
+/// `6` is `Meta` in the consumer's 3-bit reasoning band ("reasoning ABOUT
+/// reasoning/evidence/revision"). Named here so a second-order collector
+/// does not re-derive it from a magic number.
+pub const SECOND_ORDER_BAND: u8 = 6;
+
+/// Map a cell's candidate cardinality to a 3-bit reasoning-band ordinal.
+///
+/// **Count only AFTER [`FOLD_XREF`].** Two addresses of one referent are not
+/// two referents; counting first reports a bookkeeping artifact as a fork.
+///
+/// | candidates | ordinal | reading |
+/// |---|---:|---|
+/// | 0 | 0 (`Surface`) | nothing addressable — an absence, not a claim |
+/// | 1 | 2 (`Relation`) | resolved: a named relation between addressed nodes |
+/// | `2..diffuse_floor` | 4 (`Counterfactual`) | bounded arms, each interventionable |
+/// | `>= diffuse_floor` | 1 (`Association`) | the term does not discriminate |
+///
+/// Two is a *question*; fifty is noise. Where between them the fork stops
+/// being a fork is `diffuse_floor` — **a required parameter with no default
+/// on purpose.** No measured value exists, and shipping a constant would
+/// launder a guess into an apparent finding; a caller reads it off its own
+/// data. A floor of `<= 2` collapses the counterfactual band to empty, a
+/// legitimate strict policy, pinned as such.
+///
+/// # Binding, without a dependency edge
+///
+/// The ordinal is written by the consumer via its own
+/// `with_reasoning_band(from_bits_3(n))`. This crate does not depend on the
+/// edge type and must not: that field's owner states it is *"set ONLY by an
+/// explicit `with_reasoning_band()` call"* with nothing deriving it
+/// internally. Producing the ordinal here and writing it there is what
+/// honours that — a derivation inside the edge crate would break it.
+///
+/// **Provenance gate:** on the consumer's v1 layout those three bits were
+/// temporal bits 9-11, so a v1 row can read a non-zero band it never meant.
+/// Version-gate rows of unknown provenance.
+#[must_use]
+pub const fn residue_band(candidates: u32, diffuse_floor: u32) -> u8 {
+    if candidates == 0 {
+        0 // Surface
+    } else if candidates == 1 {
+        2 // Relation
+    } else if candidates < diffuse_floor {
+        4 // Counterfactual
+    } else {
+        1 // Association
+    }
+}
+
+/// Both DisMech palettes as one `ogar-loco` [`Vocabulary`]: the causal
+/// predicates AND the search band, which answer differently.
 ///
 /// Every minted predicate is a **binary assertion**: it pops two operands
 /// (subject, object), branches to nothing (`body_refs = 0` — a causal edge
 /// is a leaf, never a nested body), and pushes nothing — it asserts an
 /// edge, it does not compute a value for a caller to consume, mirroring
-/// `ogar_ro::RelationVocabulary`'s W-RO-2 reasoning exactly. Bytes above the
-/// mint (`0xA3..=0xFF`) are reserved, not allocated — refused rather than
-/// guessed, until a consumer needs the next predicate.
+/// `ogar_ro::RelationVocabulary`'s W-RO-2 reasoning exactly.
+///
+/// The search band (`0xA3..=0xA9`) answers differently — see [`SEARCH_OPS`].
+/// Bytes past BOTH bands (`0xAA..=0xFF`) are reserved, not allocated —
+/// refused rather than guessed, until a consumer needs the next slot.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct DisMechVocabulary;
 
@@ -198,25 +449,42 @@ impl DisMechVocabulary {
 
 impl Vocabulary for DisMechVocabulary {
     fn domain_stack_arity(&self, f: FnIndex) -> Option<u8> {
-        Self::minted(f).then_some(2)
+        if Self::minted(f) {
+            Some(2)
+        } else {
+            search_op_by_index(f).map(|o| o.arity)
+        }
     }
 
-    fn domain_body_refs(&self, _f: FnIndex) -> u8 {
-        0
+    fn domain_body_refs(&self, f: FnIndex) -> u8 {
+        search_op_by_index(f).map_or(0, |o| o.bodies)
     }
 
     fn domain_pushes_result(&self, f: FnIndex) -> Option<bool> {
         // A causal predicate acts — it asserts an edge — it does not push a
         // value for a caller to consume. `Some(false)`, never `Some(true)`,
         // for every minted predicate.
-        Self::minted(f).then_some(false)
+        if Self::minted(f) {
+            return Some(false);
+        }
+        // A search op COMPUTES, so it pushes — except `fork`, which branches.
+        search_op_by_index(f).map(|o| o.bodies == 0)
     }
 
     fn domain_name(&self, f: FnIndex) -> Option<&'static str> {
-        RELATIONS.iter().find(|r| r.index == f).map(|r| r.name)
+        RELATIONS
+            .iter()
+            .find(|r| r.index == f)
+            .map(|r| r.name)
+            .or_else(|| search_op_by_index(f).map(|o| o.name))
     }
 
     fn domain_value_codebook(&self, f: FnIndex) -> Option<ValueCodebook> {
+        // Predicates resolve operands against the basin's target table.
+        // Search ops do NOT: their operands are candidate sets and computed
+        // bands, never basin-scoped ids. Declaring a codebook for them would
+        // invite a residue value being read as a graph address — the
+        // contamination this band exists to avoid.
         Self::minted(f).then_some(DISMECH_TARGET_CODEBOOK)
     }
 }
@@ -299,12 +567,128 @@ mod tests {
     }
 
     #[test]
+    fn the_search_band_is_contiguous_and_never_overlaps_the_predicate_band() {
+        assert_eq!(SEARCH_OPS.len(), 7);
+        for (i, o) in SEARCH_OPS.iter().enumerate() {
+            assert_eq!(o.index.0, CANDIDATES.0 + u8::try_from(i).unwrap());
+            assert_eq!(search_op_by_index(o.index), Some(o));
+            assert!(
+                by_index(o.index).is_none(),
+                "{} collides with the predicate band",
+                o.name
+            );
+        }
+        // The bands abut with no gap: the search band starts one past the
+        // last predicate. A gap would leave an unowned byte between them.
+        let last_pred = RELATIONS.iter().map(|r| r.index.0).max().unwrap();
+        assert_eq!(CANDIDATES.0, last_pred + 1);
+    }
+
+    #[test]
+    fn a_search_op_computes_where_a_predicate_asserts() {
+        let v = DisMechVocabulary;
+        // Anti-vacuity: the two groups must actually DIFFER, so assert both
+        // halves rather than only the new one.
+        for r in RELATIONS {
+            assert_eq!(v.pushes_result(r.index), Some(false), "{}", r.name);
+        }
+        for o in SEARCH_OPS.iter().filter(|o| o.bodies == 0) {
+            assert_eq!(v.pushes_result(o.index), Some(true), "{}", o.name);
+        }
+        // FORK is the ONE exception and the filter above excludes it, so it
+        // must be pinned here or nothing pins it: a branching call is
+        // non-pushing, like the shared core's own control calls. Left
+        // unpinned, a change making `fork` push would pass every test while
+        // silently re-segmenting statements (`pushes_result` is what
+        // `statement_bounds` computes stack depth from).
+        assert_eq!(
+            v.pushes_result(FORK),
+            Some(false),
+            "a branching call must not also push"
+        );
+    }
+
+    #[test]
+    fn no_search_op_declares_the_target_codebook() {
+        let v = DisMechVocabulary;
+        // Anti-vacuity: predicates DO declare it, so this cannot pass by
+        // everything answering None.
+        assert_eq!(
+            v.value_codebook(CAUSES),
+            Some(DISMECH_TARGET_CODEBOOK),
+            "the predicate band must still declare it"
+        );
+        for o in SEARCH_OPS {
+            assert_eq!(
+                v.value_codebook(o.index),
+                None,
+                "{} must not expose a basin address to residue",
+                o.name
+            );
+        }
+    }
+
+    #[test]
+    fn fork_branches_where_every_predicate_is_a_leaf() {
+        let v = DisMechVocabulary;
+        assert_eq!(v.body_refs(FORK), 2, "a fork keeps BOTH arms");
+        assert!(v.branches(FORK));
+        for o in SEARCH_OPS.iter().filter(|o| o.index != FORK) {
+            assert!(!v.branches(o.index), "{} must not branch", o.name);
+        }
+        for r in RELATIONS {
+            assert!(!v.branches(r.index), "{} must not branch", r.name);
+        }
+    }
+
+    #[test]
+    fn residue_band_maps_the_cardinality_ladder() {
+        // floor = 8 keeps all four outcomes reachable, so no arm is vacuous.
+        assert_eq!(residue_band(0, 8), 0, "no candidate -> Surface");
+        assert_eq!(residue_band(1, 8), 2, "unique -> Relation");
+        assert_eq!(residue_band(2, 8), 4, "a fork -> Counterfactual");
+        assert_eq!(residue_band(7, 8), 4, "still bounded -> Counterfactual");
+        assert_eq!(residue_band(8, 8), 1, "at the floor -> Association");
+        assert_eq!(residue_band(50, 8), 1, "diffuse -> Association");
+    }
+
+    #[test]
+    fn a_strict_floor_collapses_the_counterfactual_band_shut() {
+        // The documented strict policy: floor <= 2 admits no fork at all.
+        for n in 2..64 {
+            assert_ne!(
+                residue_band(n, 2),
+                4,
+                "floor 2 must admit no counterfactual, but {n} did"
+            );
+        }
+        // ...and it is a POLICY, not a broken function: raise the floor and
+        // the same input forks.
+        assert_eq!(residue_band(2, 3), 4);
+    }
+
+    #[test]
+    fn thinking_about_thinking_is_never_a_cardinality_outcome() {
+        // SECOND_ORDER_BAND is a LAYER, not something counting can produce.
+        // If a future mapping could emit it, meta would collapse into the
+        // first order and the overlay-about-the-overlay would lose its own
+        // address.
+        for floor in 0..16 {
+            for n in 0..256 {
+                assert_ne!(residue_band(n, floor), SECOND_ORDER_BAND);
+            }
+        }
+    }
+
+    #[test]
     fn an_unminted_domain_byte_is_refused_not_guessed() {
         let v = DisMechVocabulary;
-        // The first byte PAST the mint — recomputed from the palette rather
-        // than hardcoded, so extending the palette moves the probe instead
-        // of failing it.
-        let unminted = FnIndex(RELATIONS.iter().map(|r| r.index.0).max().unwrap() + 1);
+        // The first byte past BOTH bands — recomputed rather than hardcoded,
+        // so extending a palette moves the probe instead of failing it.
+        // Re-pinned when the search band landed: 0xA3 used to be the probe
+        // and is now `candidates`, so reading only RELATIONS would have
+        // asserted "unminted" about a minted byte.
+        let unminted = FnIndex(SEARCH_OPS.iter().map(|o| o.index.0).max().unwrap() + 1);
         assert_eq!(v.stack_arity(unminted), None);
         assert_eq!(v.pushes_result(unminted), None);
         assert_eq!(v.value_codebook(unminted), None);
