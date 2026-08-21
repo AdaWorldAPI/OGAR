@@ -432,9 +432,11 @@ pub const fn residue_band(candidates: u32, diffuse_floor: u32) -> u8 {
 /// (subject, object), branches to nothing (`body_refs = 0` — a causal edge
 /// is a leaf, never a nested body), and pushes nothing — it asserts an
 /// edge, it does not compute a value for a caller to consume, mirroring
-/// `ogar_ro::RelationVocabulary`'s W-RO-2 reasoning exactly. Bytes above the
-/// mint (`0xA3..=0xFF`) are reserved, not allocated — refused rather than
-/// guessed, until a consumer needs the next predicate.
+/// `ogar_ro::RelationVocabulary`'s W-RO-2 reasoning exactly.
+///
+/// The search band (`0xA3..=0xA9`) answers differently — see [`SEARCH_OPS`].
+/// Bytes past BOTH bands (`0xAA..=0xFF`) are reserved, not allocated —
+/// refused rather than guessed, until a consumer needs the next slot.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct DisMechVocabulary;
 
@@ -592,6 +594,17 @@ mod tests {
         for o in SEARCH_OPS.iter().filter(|o| o.bodies == 0) {
             assert_eq!(v.pushes_result(o.index), Some(true), "{}", o.name);
         }
+        // FORK is the ONE exception and the filter above excludes it, so it
+        // must be pinned here or nothing pins it: a branching call is
+        // non-pushing, like the shared core's own control calls. Left
+        // unpinned, a change making `fork` push would pass every test while
+        // silently re-segmenting statements (`pushes_result` is what
+        // `statement_bounds` computes stack depth from).
+        assert_eq!(
+            v.pushes_result(FORK),
+            Some(false),
+            "a branching call must not also push"
+        );
     }
 
     #[test]
