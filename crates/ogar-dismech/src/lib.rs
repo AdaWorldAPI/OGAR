@@ -426,7 +426,8 @@ pub const fn residue_band(candidates: u32, diffuse_floor: u32) -> u8 {
     }
 }
 
-/// The DisMech causal predicate palette as an `ogar-loco` [`Vocabulary`].
+/// Both DisMech palettes as one `ogar-loco` [`Vocabulary`]: the causal
+/// predicates AND the search band, which answer differently.
 ///
 /// Every minted predicate is a **binary assertion**: it pops two operands
 /// (subject, object), branches to nothing (`body_refs = 0` — a causal edge
