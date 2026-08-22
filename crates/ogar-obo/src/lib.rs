@@ -89,8 +89,23 @@ pub enum Namespace {
 }
 
 impl Namespace {
-    /// **Every OBO-core namespace, in concept-id order** — the enumeration of
-    /// the `0x03` Ontology domain.
+    /// **Every OBO-core namespace, in concept-id order.**
+    ///
+    /// **Scope, stated precisely: this is `OBO_CORE`, not the `0x03` domain.**
+    /// The Ontology domain has three claimants and this array is one of them —
+    /// [`registry::OBO_CORE`] (`0x0301..=0x0305`, mirrored by this enum),
+    /// [`registry::META_STUDY_SPINE`] (`0x0340..=0x0347` — BFO / COB / IAO /
+    /// OBI / OBCS / SEPIO / ECO / FBbi), and `ogar_ro::RELATION_BODY_CONCEPT_ID`
+    /// (`0x0306`, in a crate this one cannot see: the dependency runs
+    /// `ogar-ro` → `ogar-obo`). A caller that needs the whole domain must ask
+    /// all three; iterating `ALL` and calling it "the ontology" would miss nine
+    /// of fourteen concepts.
+    ///
+    /// That distinction is not pedantry — `META_STUDY_SPINE` was once minted
+    /// **over** `0x0306` and nothing failed, because no enumeration spanned the
+    /// domain. It was found by hand-enumerating during an unrelated audit; the
+    /// guard that now catches it lives in `ogar-ro`, the only side that can see
+    /// both.
     ///
     /// # Why this has to live here
     ///
@@ -111,7 +126,11 @@ impl Namespace {
     /// invents a `0x0306` for any ordinal past the end.
     ///
     /// Ordered by [`concept_id`](Self::concept_id) so a caller iterating this
-    /// walks the block in address order.
+    /// walks the core band in address order. It is also the enum order
+    /// [`registry::OBO_CORE`] is pinned against, and
+    /// `registry::tests::obo_core_matches_the_shipped_enum` consumes THIS array
+    /// rather than repeating it — the duplicate that test used to carry is what
+    /// promoting it to a public const removes.
     pub const ALL: [Namespace; 5] = [
         Namespace::Mondo,
         Namespace::Hpo,
