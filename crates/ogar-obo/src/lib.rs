@@ -89,6 +89,37 @@ pub enum Namespace {
 }
 
 impl Namespace {
+    /// **Every OBO-core namespace, in concept-id order** — the enumeration of
+    /// the `0x03` Ontology domain.
+    ///
+    /// # Why this has to live here
+    ///
+    /// `ogar_vocab::ConceptDomain::Ontology` carries **zero shared codebook
+    /// rows by design** (see [`concept_id`](Self::concept_id)), so a consumer
+    /// that reaches for `concepts_in_domain(ConceptDomain::Ontology)` gets an
+    /// empty set — and an empty set reads exactly like "there is nothing here
+    /// to reason about". There is; it is this array, deliberately kept in the
+    /// producer so ERP and project consumers never compile it.
+    ///
+    /// Without an enumeration a consumer has three bad options: repeat the list
+    /// locally (the re-implementation [`from_concept_id`](Self::from_concept_id)
+    /// already warns about), scan the whole `0x03` block calling
+    /// `from_concept_id` on all 256 slots, or compute the ids by arithmetic
+    /// from the variant order. The third is the one that was found downstream:
+    /// `0x0300 | (ns as u32 + 1)` happens to be right only because the five
+    /// variants are declared in the same order as five contiguous ids, and it
+    /// invents a `0x0306` for any ordinal past the end.
+    ///
+    /// Ordered by [`concept_id`](Self::concept_id) so a caller iterating this
+    /// walks the block in address order.
+    pub const ALL: [Namespace; 5] = [
+        Namespace::Mondo,
+        Namespace::Hpo,
+        Namespace::Uberon,
+        Namespace::Pato,
+        Namespace::Ro,
+    ];
+
     /// The OBO CURIE prefix (`"MONDO"`, `"HP"`, `"UBERON"`, `"PATO"`, `"RO"`).
     #[must_use]
     pub const fn prefix(self) -> &'static str {
@@ -913,6 +944,60 @@ pub fn merge_logical_defs(
 
 #[cfg(test)]
 mod tests {
+    /// **`ALL` must be exactly what `from_concept_id` accepts.**
+    ///
+    /// The failure this exists for is the classic one: someone adds a sixth
+    /// namespace, extends `concept_id` / `from_concept_id` / `prefix` (the
+    /// compiler forces all three — they are exhaustive matches) and leaves the
+    /// array at five. Nothing in the type system catches that, because an array
+    /// literal is not a match.
+    ///
+    /// So the test does not compare against a second hand-written list. It
+    /// sweeps the ENTIRE u16 space, collects every concept `from_concept_id`
+    /// resolves, and asserts that set is exactly `ALL`'s — in both directions.
+    #[test]
+    fn all_is_exactly_the_set_from_concept_id_resolves() {
+        let swept: Vec<u16> = (0..=u16::MAX)
+            .filter(|c| super::Namespace::from_concept_id(*c).is_some())
+            .collect();
+        let listed: Vec<u16> = super::Namespace::ALL
+            .iter()
+            .map(|n| n.concept_id())
+            .collect();
+        assert_eq!(
+            swept, listed,
+            "ALL and from_concept_id disagree — a namespace was added to one and not the other"
+        );
+
+        // Anti-vacuity: the sweep really is selective (5 of 65_536), so the
+        // equality above is not two empty sets agreeing.
+        assert_eq!(swept.len(), super::Namespace::ALL.len());
+        assert!(!swept.is_empty(), "the sweep found nothing at all");
+        assert!(
+            swept.len() < 16,
+            "from_concept_id is accepting far too much: {}",
+            swept.len()
+        );
+
+        // Ordered by concept id, as the doc promises — a caller iterating ALL
+        // walks the block in address order.
+        assert!(
+            listed.windows(2).all(|w| w[0] < w[1]),
+            "ALL is not in ascending concept-id order: {listed:?}"
+        );
+
+        // Every entry round-trips, and every entry is in the 0x03 block.
+        for n in super::Namespace::ALL {
+            assert_eq!(super::Namespace::from_concept_id(n.concept_id()), Some(n));
+            assert_eq!(
+                n.concept_id() >> 8,
+                0x03,
+                "{n:?} is outside the Ontology domain"
+            );
+            assert!(!n.prefix().is_empty());
+        }
+    }
+
     use super::*;
     use std::collections::HashMap;
 
