@@ -40,9 +40,14 @@
 //! # This crate mints nothing
 //!
 //! serde-only. The `document 0x080B` / `typed_field 0x080A` classid mints and
-//! the persistence ActionDefs live in `ogar-vocab` / `ogar-doc` (W4), gated on
-//! the doc-layer 5+3 council. This crate is pure perceptual structure with no
-//! canon dependency, so it can land ahead of that ratification.
+//! the persistence ActionDefs live in `ogar-vocab` (W4, not a separate
+//! `ogar-doc` crate — the council landed the ActionDefs in `ogar-vocab`'s
+//! own `document_actions` module per `OGAR-DOC-W4-BUILD-SPEC.md` §W4-5 §A1's
+//! "executor lives in the assembly repo" ruling), 5+3-council-ratified and
+//! shipped 2026-08-25 (`docs/DISCOVERY-MAP.md` `D-OGAR-DOC-LAYER`). This
+//! crate stayed pure perceptual structure throughout, with no canon
+//! dependency — it landed ahead of that ratification and needed no change
+//! once the mints shipped.
 //!
 //! # Observation IR vs. the composition layer (DocIr composition grounding)
 //!

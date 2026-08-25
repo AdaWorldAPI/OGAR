@@ -47,6 +47,14 @@ D-DOCIR-COMPOSITION (#217)→ THIS: the document becomes a lens over the object
                             graph; ObjectSlots are typed projection portals
 ```
 
+> **Status 2026-08-25:** the first beat's mints + ActionDefs (`typed_field`
+> `0x080A`, `document` `0x080B` confirmed, `persist_document`/
+> `read_document`/`reconstruct_document`) are 5+3 council-ratified and
+> shipped — see `D-OGAR-DOC-LAYER`'s Status paragraph in `DISCOVERY-MAP.md`.
+> The design/arc grade here (`[G]`, "continuation of an operator-ruled arc")
+> was always about the SHAPE, independent of whether the first beat's mints
+> had landed; both are now true together.
+
 Reading the composition layer against this arc dissolves the "is this a new
 subsystem?" question: it is the same brick, made **addressable to a foreign
 node**.
@@ -264,7 +272,8 @@ defer.
   `ClassRbac`/`effective_mask` enforcement is spec + probe-gated, NOT shipped).
   Crate placement is bound by
   the A1 "one crate" ruling. Slice landing zone is grounded to exact files in
-  `openproject-nexgen-rs`.
+  `openproject-nexgen-rs`. (`D-OGAR-DOC-LAYER`'s mints/ActionDefs: council-
+  ratified + shipped 2026-08-25, see `DISCOVERY-MAP.md`.)
 - **Part B** — the STL/geometry chunk is a `[S]` rediscovery of the "address is
   geometry" arc (`HhtlMode::Located` / `helix` / `jc` / `D-FMA-SKELETON` /
   `D-BOUNDS` / `3DGS-*` plans); reuse, don't fork; the one new sliver is an
