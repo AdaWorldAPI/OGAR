@@ -2018,3 +2018,18 @@ isolation. The map's job is to keep them visible.
   a *mask over the activities* (one `&self` pass), never the retired
   actor/pump surface (`E-PROGRESSION-IS-EXISTENCE-NOT-COMMAND-1`); and the
   0/1/2/n distribution measurement that would calibrate `diffuse_floor`.
+
+- **[D-DOCIR-UX-HARVEST] page identity + document-type/field-schema shapes a
+  real DMS's page-editing and metadata UX requires** — `[H]` (extracted
+  2026-08-25 from `papermerge/papermerge-core` source, file:line cited
+  throughout — the evidence side is grounded, adoption is not yet gated) —
+  **ADR** (`docs/DOCIR-UX-HARVEST.md`) — home: `ogar-doc-ir` (`PageId` /
+  `PageOp` / `FieldSchema` / `DocumentType` proposal — additive fields, not a
+  reshape of the observation IR) — depends: D-DOCIR-COMPOSITION (the
+  observation IR stays untouched; these are new fields alongside it, same
+  discipline), D-OGAR-DOC-SPINE (the sibling harvest — that one is
+  ingestion-stage, from `paperless-ngx`; this one is UX/page-editing-stage,
+  from `papermerge-core` — deliberately scoped to exclude that harvest's
+  archive-layer concerns: folders, permissions, search-as-projection, the
+  Celery task boundary — those are `ogar-doc` / KV-store territory, not this
+  crate's).
