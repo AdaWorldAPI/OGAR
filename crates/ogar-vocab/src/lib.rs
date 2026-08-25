@@ -1395,6 +1395,14 @@ const CODEBOOK: &[(&str, u16)] = &[
     // bearing, and a turn matrix, resolved by ClassView — and there is
     // otherwise no byte on disk distinguishing the two readings.
     ("osm_street_node", 0x0F0B),
+    // ── 0xC6XX — MMIO hardware-platform domain (C64 = founding tenant) ──
+    // Container KINDS only, per the 0x08XX OCR precedent: the concrete
+    // VIC-II/SID/CIA registers and the 6502 mnemonics are CONTENT rows
+    // (keyed by address / decode), never concept slots.
+    ("mmio_chip", 0xC601),
+    ("mmio_register", 0xC602),
+    ("rom_image", 0xC603),
+    ("machine_memory_map", 0xC604),
 ];
 
 /// Codebook **domain** — the high byte of a canonical id (see
@@ -1609,9 +1617,29 @@ pub enum ConceptDomain {
     /// while a GPL consumer links it freely, and lets the GPL boundary sit
     /// entirely in the consumer repo.
     BinaryLifting,
+    /// `0xC6XX` — **MMIO hardware platform**: memory-mapped hardware as
+    /// addressable ontology — chip, register, ROM image, memory map. The
+    /// slot number is deliberate: **C6, one hex digit short of the C64**
+    /// — the founding tenant (operator-directed, 2026-08-25). The domain
+    /// names the shared concept, never a machine: the C64, an NES, or an
+    /// Amiga are app prefixes over ONE vocabulary (the
+    /// [`Blocks`](Self::Blocks) fence again).
+    ///
+    /// Sits beside [`BinaryLifting`](Self::BinaryLifting), not inside it:
+    /// C4 is the architecture-agnostic lift/IR ontology (program image,
+    /// function, section, symbol); a `$D021` border-colour register is a
+    /// PLATFORM fact a lifted program references, not an IR concept.
+    ///
+    /// **Provenance fence (mirrors C4's, widened deliberately,
+    /// operator-approved 2026-08-25):** permissively-licensed
+    /// implementations (rust64 is MIT) and vendor datasheets (6526 /
+    /// 6567 / 6581 — register facts, not expression) are lawful sources
+    /// for minted names; GPL emulators (Frodo, zinc64, resid) stay
+    /// behavioral/test-vector reference only — read, never transcribed.
+    Mmio,
     /// Any high-byte slot not yet assigned a domain (`0x05XX`–`0x06XX`,
     /// `0x10XX`–`0x16XX`, `0x18XX`–`0xBFXX`, `0xC2XX`–`0xC3XX`,
-    /// `0xC5XX`+).
+    /// `0xC5XX`, `0xC7XX`+).
     Unassigned,
 }
 
@@ -1638,6 +1666,7 @@ pub fn canonical_concept_domain(id: u16) -> ConceptDomain {
         0xC0 => ConceptDomain::JavaRuntime,
         0xC1 => ConceptDomain::Analytics,
         0xC4 => ConceptDomain::BinaryLifting,
+        0xC6 => ConceptDomain::Mmio,
         _ => ConceptDomain::Unassigned,
     }
 }
@@ -2145,6 +2174,26 @@ pub mod class_ids {
     // domain-wise; q2 = 0x01 → `0x0701` is OSINT-for-q2, not a concept —
     // operator ruling 2026-07-02; see the CODEBOOK section note). ──
 
+    // ── 0xC6XX — MMIO hardware-platform domain (C64 = founding tenant) ──
+    // Kind slots only (the 0x08XX rule): concrete registers and opcodes
+    // are content rows, never concept slots.
+
+    /// `mmio_chip` (`0xC601`) — a memory-mapped peripheral chip KIND
+    /// (VIC-II / SID / CIA / …). The concrete chip is content or the
+    /// classid's custom-low half, never a new slot.
+    pub const MMIO_CHIP: u16 = 0xC601;
+    /// `mmio_register` (`0xC602`) — a memory-mapped hardware-register
+    /// container kind. Concrete registers are content rows keyed by
+    /// address — `$D021` is data read through the ClassView, never a
+    /// classid (the C64-rs hard rule, kept on purpose).
+    pub const MMIO_REGISTER: u16 = 0xC602;
+    /// `rom_image` (`0xC603`) — a resident ROM image kind (KERNAL /
+    /// BASIC / character generator).
+    pub const ROM_IMAGE: u16 = 0xC603;
+    /// `machine_memory_map` (`0xC604`) — the banking/overlay layout that
+    /// decides which chip or ROM answers at a given address.
+    pub const MACHINE_MEMORY_MAP: u16 = 0xC604;
+
     /// Every `(canonical_concept_name, id)` pair the constants vouch for.
     /// Drift-guarded against [`super::CODEBOOK`] by tests in this module.
     pub const ALL: &[(&str, u16)] = &[
@@ -2255,6 +2304,11 @@ pub mod class_ids {
         ("osm_gpx_trace", OSM_GPX_TRACE),
         ("osm_user", OSM_USER),
         ("osm_street_node", OSM_STREET_NODE),
+        // 0xC6XX — MMIO hardware platform
+        ("mmio_chip", MMIO_CHIP),
+        ("mmio_register", MMIO_REGISTER),
+        ("rom_image", ROM_IMAGE),
+        ("machine_memory_map", MACHINE_MEMORY_MAP),
     ];
 
     #[cfg(test)]
@@ -2318,7 +2372,7 @@ pub mod class_ids {
             // lance-graph mirror is rebuilt against it.
             assert_eq!(
                 ALL.len(),
-                93,
+                97,
                 "class_ids::ALL count changed — update this pin AND the \
                  lance-graph mirror COUNT_FUSE (crates/lance-graph-ogar/src/lib.rs) \
                  in the same PR",
@@ -3207,6 +3261,11 @@ pub fn all_promoted_classes() -> Vec<Class> {
         osm_gpx_trace(),
         osm_user(),
         osm_street_node(),
+        // 0xC6XX — MMIO hardware platform, in class_ids::ALL order.
+        mmio_chip(),
+        mmio_register(),
+        rom_image(),
+        machine_memory_map(),
     ]
 }
 
@@ -4816,6 +4875,47 @@ pub fn weather_static_cell() -> Class {
 }
 
 // ─────────────────────────────────────────────────────────────────────
+// 0xC6XX — MMIO hardware-platform builders (C64 = founding tenant).
+// Kind-level containers only: registers/opcodes are content rows.
+// ─────────────────────────────────────────────────────────────────────
+
+/// `mmio_chip` (`0xC601`) — a memory-mapped peripheral chip kind.
+#[must_use]
+pub fn mmio_chip() -> Class {
+    let mut c = Class::new("MmioChip");
+    c.language = Language::Unknown;
+    c.canonical_concept = Some("mmio_chip".to_string());
+    c
+}
+
+/// `mmio_register` (`0xC602`) — a memory-mapped register container kind.
+#[must_use]
+pub fn mmio_register() -> Class {
+    let mut c = Class::new("MmioRegister");
+    c.language = Language::Unknown;
+    c.canonical_concept = Some("mmio_register".to_string());
+    c
+}
+
+/// `rom_image` (`0xC603`) — a resident ROM image kind.
+#[must_use]
+pub fn rom_image() -> Class {
+    let mut c = Class::new("RomImage");
+    c.language = Language::Unknown;
+    c.canonical_concept = Some("rom_image".to_string());
+    c
+}
+
+/// `machine_memory_map` (`0xC604`) — the banking/overlay layout kind.
+#[must_use]
+pub fn machine_memory_map() -> Class {
+    let mut c = Class::new("MachineMemoryMap");
+    c.language = Language::Unknown;
+    c.canonical_concept = Some("machine_memory_map".to_string());
+    c
+}
+
+// ─────────────────────────────────────────────────────────────────────
 // 0x0FXX — Geo domain builders (OpenStreetMap geodata reference ontology).
 // The canonical reference shape of the OSM element model harvested from
 // openstreetmap-website (Rails) via ruff → OGAR. node/way/relation are the
@@ -5775,9 +5875,14 @@ mod tests {
         // "tidy" a C-band domain downward into the hole.
         assert_eq!(canonical_concept_domain(0xC200), ConceptDomain::Unassigned);
         assert_eq!(canonical_concept_domain(0xC300), ConceptDomain::Unassigned);
-        // ...and the band's own edges: nothing leaks below C0 or above C4.
+        assert_eq!(canonical_concept_domain(0xC600), ConceptDomain::Mmio);
+        assert_eq!(canonical_concept_domain(0xC6FF), ConceptDomain::Mmio);
+        // ...and the band's own edges: nothing leaks below C0 or above C6,
+        // and the C5 hole between BinaryLifting and Mmio stays open BY
+        // INTENT (C6 was chosen for the C64 pun, not as the next free slot).
         assert_eq!(canonical_concept_domain(0xBF00), ConceptDomain::Unassigned);
         assert_eq!(canonical_concept_domain(0xC500), ConceptDomain::Unassigned);
+        assert_eq!(canonical_concept_domain(0xC700), ConceptDomain::Unassigned);
         // 0x0C Automation is NOT 0xC0 JavaRuntime — the two are a digit swap
         // of each other, the one real legibility hazard in this allocation.
         // Pinned so a transposition anywhere in the chain fails here first.
