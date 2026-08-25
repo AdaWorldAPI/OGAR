@@ -75,6 +75,17 @@ A3 ClassView × WideFieldMask template. **The council verifies the
 source-agnostic boundary — a spec that only a tesseract producer could
 satisfy is a numbered factual error.**
 
+**Status 2026-08-25 — W0 CLOSED (mints half):** the council ran (spec
+v1→v2→v3, `OGAR-DOC-W4-BUILD-SPEC.md`) and shipped `typed_field 0x080A` +
+confirmed `document 0x080B`, plus the three `document_actions` ActionDefs.
+See `docs/DISCOVERY-MAP.md` `D-OGAR-DOC-LAYER`'s Status paragraph. The
+one-crate-`ogar-doc` / `ogar-doc-ir`-as-neutral-tissue / A2/A3 template
+questions this W0 gate also covers are addressed by what already shipped
+(`ogar-doc-ir` as a standalone serde-only crate per W1 below; the
+ActionDefs landed in `ogar-vocab`, not a new `ogar-doc` crate, per W4-5
+§A1's own plan) — W2/W3 (the tesseract/spider producers persisting through
+`persist_document`) remain open, tracked in `D-OGAR-DOC-LAYER`.
+
 ### W1 — `ogar-doc-ir` (the IR crate; gates everything downstream)
 
 - Types: region tree (page / region / table+cells / figure / header /

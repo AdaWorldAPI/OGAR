@@ -1236,9 +1236,12 @@ isolation. The map's job is to keep them visible.
   re-drift. The `const _` fuse (`OCR_ACTION_NAMES.len()`) is 8→14; the
   tesseract-ogar executor's `COVERED_CAPABILITIES` grows in lockstep (the
   interim is a HARD workspace compile failure via the sibling path-dep, so the
-  OGAR PR merges FIRST). Deferred (recorded, not omitted): a `typed_field`
-  concept mint (would-be 0x080A) — only when a consumer persists harvested
-  fields as graph nodes; a `language` param slot — only WITH a multi-model
+  OGAR PR merges FIRST). Deferred (recorded, not omitted) at the time this
+  entry was written: a `typed_field` concept mint (would-be 0x080A) — only
+  when a consumer persists harvested fields as graph nodes. **Status
+  2026-08-25 — no longer deferred:** the W4 5+3 council (see D-OGAR-DOC-LAYER)
+  minted `typed_field` at exactly `0x080A` and shipped the paperless-rs
+  consumer trigger this entry named. A `language` param slot — only WITH a multi-model
   executor (eng-only ships today, so a dead param would be a lie in the facts);
   a `classify_regions` cheap-path toggle — no precedent, regions always
   classified today. Spec + phase-1 consolidation:
@@ -1311,7 +1314,9 @@ isolation. The map's job is to keep them visible.
   owner 0), not an online write. Cross-ref D-EXEC-ONE-ACTION,
   D-KAUSAL-CONSUME-PIN-ODOO, OGAR-TRANSPILE-SUBSTRATE (pull-back contract).
 
-- **D-OGAR-DOC-LAYER** (2026-07-12; [S] — spec, council-pending): `ogar-doc`
+- **D-OGAR-DOC-LAYER** (2026-07-12; **[G] — W4 mints + ActionDefs council-ratified
+  and shipped 2026-08-25**, executor body still open — see the Status paragraph
+  below): `ogar-doc`
   is the document persistence + reconstruction layer over `ogar-ocr` (the
   shipped 14-cap `ocr_actions` table). It PERSISTS a `doc.v1`: the **raw bytes
   as a KV reference** (the `document` node value = `{sha256, kv_key, mime,
@@ -1332,6 +1337,44 @@ isolation. The map's job is to keep them visible.
   Charter: `docs/OGAR-DOC-LAYER-PROPOSAL.md` (merged #191). Grade [S] until the
   5+3 council + a probe promote it; the canon mints (0x080A/0x080B) land WITH
   the council-verified build, never ahead of it.
+
+  **Status 2026-08-25 — W4 5+3 COUNCIL-RATIFIED (spec v1→v2→v3), mints +
+  ActionDefs SHIPPED:** the council ran per `.claude/agents/5plus3-council.md`
+  (5 research savants Phase 1 → consolidated draft v2 → 3 brutal reviewers
+  Phase 3 → fix → ratified v3 = `OGAR-DOC-W4-BUILD-SPEC.md` §W4-3/§W4-4 as
+  executable spec). Both mints landed: `class_ids::TYPED_FIELD = 0x080A`
+  (`ogar_vocab::typed_field()`, the per-field decomposition shape — key,
+  value, confidence, geometry) and `class_ids::DOCUMENT = 0x080B` (already
+  present, confirmed unchanged). The three facts-only ActionDefs
+  (`persist_document` / `read_document` / `reconstruct_document`) landed in a
+  **new, separate** domain table — `ogar_vocab::document_actions` — not a
+  growth of `ocr_actions.rs` as §W4-4's literal text originally said
+  (Deviation D-1, council-verified genuine mechanism-share via the
+  cross-domain-synthesizer savant, not mere-rhyme): `resolve_hotplug` gates
+  **per contributing table**, so folding these three rows into
+  `ocr_actions.rs` would have forced a non-OCR consumer
+  (`paperless-kv`) into `OCR_EXPECTED_EXECUTORS`, permanently entangling
+  `tesseract-ogar`'s and `paperless-kv`'s hot-plug resolutions. Expected
+  executor: `paperless-kv` (`OGAR-DOC-W4-BUILD-SPEC.md` §W4-5 §A1's own
+  plan — the executor lives in the assembly repo, not a new `ogar-doc`
+  crate). Three independent count-fuses updated in lockstep (93→94):
+  `capability_registry.rs`'s literal assert, `lib.rs::class_ids::ALL`'s
+  literal assert (with its failure message corrected to stop pointing at the
+  `COUNT_FUSE` mechanism removed 2026-08-14 — it now names the real remaining
+  obligation, the lance-graph mirror row below), and the `ConceptDomain::Ocr`
+  domain-count + exact-order fuse (10→11). `all_promoted_classes()` gained
+  the matching constructor call. **Cross-repo companion (SAME landing arc,
+  never deferred):** `lance-graph`'s `lance-graph-contract::ogar_codebook`
+  zero-dep mirror gained the matching `typed_field`/0x080A row — since
+  `COUNT_FUSE` no longer exists, nothing else would have caught a stale
+  mirror here. **Deliberately NOT in this landing:** the `persist_document`
+  executor BODY (walking a `DocIr` into GUID-keyed SoA nodes,
+  `DedupIndex`-backed) — the council explicitly scoped this pass to "facts
+  only" per §W4-4's own rule, and flagged (Savant 5) that whoever writes the
+  body next must return a typed `Result::Err` for an unimplemented
+  capability, never `todo!()`/`unimplemented!()`. `paperless-rs`'s
+  `paperless-kv::HOT_PLUG` activation against this table is the consumer-side
+  follow-through, tracked in that repo.
 
 - **D-DOC-IR-SECOND-RETINA** (2026-07-13; [S] — plan, council gates W1+):
   `doc.v1` is promoted from OCR output format to the substrate's **perceptual
@@ -1411,6 +1454,13 @@ isolation. The map's job is to keep them visible.
   needs repo access; P-XRETINA now needs only the tesseract producer (the DOM
   half is
   live + the `converges_on_facts` probe is on OGAR main via #199).
+  **Status 2026-08-25 — the doc-layer council W1/W2/W3 was gating on has run:**
+  see D-OGAR-DOC-LAYER's Status paragraph — the `0x080A`/`0x080B` mints this
+  entry's W1 status called "operator-gated" (line 1401-1402 above, left
+  as-written since it was true when written) are now minted and shipped.
+  P-XRETINA (same-invoice-both-retinas convergence) is still blocked on W2
+  (tesseract retina, repo access) independent of the mint landing — the mint
+  unblocks PERSISTING a `doc.v1`, not producing one from pixels.
 
 - **D-A2UI-SCREEN-ADDRESSING** (2026-07-14; [S] — proposal, council + repo
   mint gate W0+): the remote desktop stops pushing pixels and starts
