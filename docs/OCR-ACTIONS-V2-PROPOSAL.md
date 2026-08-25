@@ -75,14 +75,22 @@ Numbered claims the council verifies (not redesigns):
   exist for consumers that already hold intermediate artifacts. Both
   granularities mirror the existing table's own split (recognize_page vs
   render_*).
-- **V2-2 (zero new mints):** every subject is an ALREADY-MINTED `0x08XX`
-  concept. `page_layout` (`0x0807`) is the natural subject for
-  layout-DOM-level actions (11, 14); `page_image` (`0x0808`) for
-  pixel-level actions (9, 10, 12, 13). Deliberate deferral: a
-  `typed_field` concept mint (would-be `0x080A`) is NOT needed until a
-  consumer persists harvested fields as graph nodes — the trigger
-  condition is recorded here so the deferral is a decision, not an
-  omission.
+- **V2-2 (zero new mints, at the time this table shipped):** every subject
+  is an ALREADY-MINTED `0x08XX` concept. `page_layout` (`0x0807`) is the
+  natural subject for layout-DOM-level actions (11, 14); `page_image`
+  (`0x0808`) for pixel-level actions (9, 10, 12, 13). Deliberate deferral,
+  as originally written: a `typed_field` concept mint (would-be `0x080A`)
+  is NOT needed until a consumer persists harvested fields as graph nodes —
+  the trigger condition is recorded here so the deferral is a decision, not
+  an omission. **Status 2026-08-25 — the deferred trigger fired:** the W4
+  5+3 council minted `typed_field` at exactly `0x080A` (`D-OGAR-DOC-LAYER`,
+  `DISCOVERY-MAP.md`) once `paperless-rs` needed to persist harvested
+  fields as graph nodes. This 14-row table itself is unchanged — the new
+  mint's ActionDefs (`persist_document`/`read_document`/
+  `reconstruct_document`) landed in their own `document_actions.rs` table,
+  not here (Deviation D-1: `resolve_hotplug` gates per contributing table,
+  so growing this table would have entangled a non-OCR consumer into
+  `OCR_EXPECTED_EXECUTORS`).
 - **V2-3 (harvest_profile vocabulary):** `harvest_profile` is a string
   slot with ONE defined value in v2 — `"german_invoice"` (maps to
   `tesseract_ocr::german_invoice_fields()`); absent/empty = no harvest
@@ -168,9 +176,12 @@ path by construction.
   carrying only the original 8 must FAIL with the missing-capability
   drift (the fuse proof).
 
-## C7. Non-goals (v2)
+## C7. Non-goals (v2, at the time this table shipped)
 
-- No `typed_field` mint (trigger recorded in V2-2).
+- No `typed_field` mint (trigger recorded in V2-2). **Status 2026-08-25:**
+  the trigger fired — see V2-2's status paragraph and `D-OGAR-DOC-LAYER`
+  (`DISCOVERY-MAP.md`). Still true of THIS v2 table specifically: the mint's
+  ActionDefs did not land here (Deviation D-1, see V2-2).
 - No streaming/chunked payload story (executor seam's business).
 - No REST/HTTP surface anywhere in OGAR (lab-vs-canonical rule).
 - No deu.lstm / multi-language slot — `language` is NOT added in v2

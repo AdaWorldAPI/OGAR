@@ -45,6 +45,7 @@ pub mod recipe;
 /// `render_tsv` / `render_hocr` / `render_searchable_pdf`, each targeting a
 /// minted `0x08XX` [`class_ids`] concept.
 pub mod capability_registry;
+pub mod document_actions;
 pub mod geo_actions;
 pub mod healthcare_actions;
 pub mod ocr_actions;
@@ -1259,6 +1260,12 @@ const CODEBOOK: &[(&str, u16)] = &[
     ("page_layout", 0x0807),
     ("page_image", 0x0808),
     ("ocr_renderer", 0x0809),
+    // TypedField — one harvested key/value field as a graph node: a
+    // `document`'s per-field awareness (OGAR-DOC-W4-BUILD-SPEC.md §W4-3,
+    // council-ratified). `key`/`value` are out-of-line by identity
+    // (value-slab store), never inline content — same discipline as
+    // `document`'s content-addressed raw bytes below.
+    ("typed_field", 0x080A),
     // The generic, source-agnostic DOCUMENT concept — the parsed-structure
     // root the OCR arc converges on. This is the emit seam already declared by
     // `ogar-doc-ir::DocIr` ("the document 0x080B subtree"): the reusable
@@ -1267,7 +1274,7 @@ const CODEBOOK: &[(&str, u16)] = &[
     // openproject) reuses. Content-addressed (`DocIr::content_sha256`); the
     // raw bytes live in a content store (a consumer `DocumentKv`), never as a
     // concept slot — the kind gets the slot, the bytes do not (0x08XX rule
-    // above). 0x080A stays reserved for a future OCR-plane kind.
+    // above).
     ("document", 0x080B),
     // ── 0x09XX — Health domain (clinical / patient / care) ──
     // 12 concepts, two provenance classes. 0x0901..0x0907: the 7 entities
@@ -1940,12 +1947,16 @@ pub mod class_ids {
     /// classid custom-low half, mirroring the `network_layer` pattern
     /// (plan Phase 4B-D).
     pub const OCR_RENDERER: u16 = 0x0809;
+    /// `typed_field` (`0x080A`) — one harvested key/value field as a graph
+    /// node: a `document`'s per-field awareness (`OGAR-DOC-W4-BUILD-SPEC.md`
+    /// §W4-3, council-ratified). `key`/`value` are out-of-line by identity
+    /// (value-slab store); `confidence` + bbox rails live on the register.
+    pub const TYPED_FIELD: u16 = 0x080A;
     /// `document` (`0x080B`) — the generic, source-agnostic DOCUMENT concept:
     /// the parsed-structure root the OCR arc converges on and the reusable DTO
     /// `ogar-doc-ir::DocIr` carries (`tesseract-rs → doc.v1 → ogar-from-docv1
     /// → DocIr → render`). Content-addressed via `DocIr::content_sha256`; the
     /// raw bytes live in a consumer content store, never as a concept slot.
-    /// `0x080A` is reserved for a future OCR-plane kind.
     pub const DOCUMENT: u16 = 0x080B;
 
     // ── 0x09XX — health domain (medcare-rs Healthcare namespace) ──
@@ -2203,6 +2214,7 @@ pub mod class_ids {
         ("page_layout", PAGE_LAYOUT),
         ("page_image", PAGE_IMAGE),
         ("ocr_renderer", OCR_RENDERER),
+        ("typed_field", TYPED_FIELD),
         ("document", DOCUMENT),
         // 0x09XX — health
         ("patient", PATIENT),
@@ -2304,24 +2316,27 @@ pub mod class_ids {
 
         #[test]
         fn count_fuse_matches_lance_graph_ogar_mirror() {
-            // OGAR-side half of the two-sided drift fuse. The lance-graph
-            // side half is `lance_graph_ogar::parity::COUNT_FUSE`
-            // (lance-graph `crates/lance-graph-ogar/src/lib.rs:119`), a
-            // compile-time assert that
-            // `lance_graph_contract::ogar_codebook::CODEBOOK.len() ==
-            // ogar_vocab::class_ids::ALL.len()`. That fuse only fires if
-            // OGAR's count changes without the contract mirror following —
-            // it cannot detect the mirror itself drifting, because it has
-            // no independent number to compare against on the OGAR side.
-            // Pin the number here too, so a change to this count is visible
-            // in THIS repo's CI the moment it happens, not only when the
-            // lance-graph mirror is rebuilt against it.
+            // OGAR-side half of a two-sided drift check. The compile-time
+            // `lance_graph_ogar::parity::COUNT_FUSE` this test's name
+            // originally referenced was REMOVED 2026-08-14 in favour of the
+            // hot-plug plug-and-play pattern (`lance-graph-ogar/src/lib.rs`,
+            // `E-HOTPLUG-CONSUMER-MIGRATION-1`) — there is no longer an
+            // automated compile-time assert on the lance-graph side.
+            // `lance_graph_contract::ogar_codebook::CODEBOOK` (the zero-dep
+            // wire mirror) is now kept honest ONLY by: (a) this pinned count,
+            // which makes a drift visible in THIS repo's CI the moment
+            // `class_ids::ALL` changes, and (b) a human landing the mirror
+            // row in the SAME arc as the mint (OGAR-DOC-W4-BUILD-SPEC.md
+            // §W4 capstone gate G17/G19) — there is no third safety net.
+            // Pin the number here so a bump is never silent.
             assert_eq!(
                 ALL.len(),
-                93,
-                "class_ids::ALL count changed — update this pin AND the \
-                 lance-graph mirror COUNT_FUSE (crates/lance-graph-ogar/src/lib.rs) \
-                 in the same PR",
+                94,
+                "class_ids::ALL count changed — update this pin AND land the \
+                 corresponding row in lance-graph's \
+                 crates/lance-graph-contract/src/ogar_codebook.rs::CODEBOOK \
+                 mirror (COUNT_FUSE was removed 2026-08-14; nothing else will \
+                 catch a stale mirror) in the same PR-arc",
             );
         }
 
@@ -3152,6 +3167,7 @@ pub fn all_promoted_classes() -> Vec<Class> {
         page_layout(),
         page_image(),
         ocr_renderer(),
+        typed_field(),
         document(),
         // 0x09XX — health arm (7 OGIT Healthcare concepts + 5
         // harvest-derived mints), in class_ids::ALL order.
@@ -4234,6 +4250,31 @@ pub fn ocr_renderer() -> Class {
     let mut format = Attribute::new("format");
     format.type_name = Some("u8".to_string());
     c.attributes = vec![format];
+    c
+}
+
+/// TypedField (`0x080A`) — one harvested key/value field as a graph node: a
+/// `document`'s per-field awareness (`OGAR-DOC-W4-BUILD-SPEC.md` §W4-3,
+/// council-ratified). The attributes mirror `ogar-doc-ir`'s per-field shape
+/// so a `ClassView` can project it; `key`/`value` are out-of-line by
+/// identity (value-slab store), never inline content — same discipline as
+/// `document`'s content-addressed raw bytes below.
+#[must_use]
+pub fn typed_field() -> Class {
+    let mut c = Class::new("TypedField");
+    c.language = Language::Unknown;
+    c.canonical_concept = Some("typed_field".to_string());
+    let attr = |name: &str, ty: &str| {
+        let mut a = Attribute::new(name);
+        a.type_name = Some(ty.to_string());
+        a
+    };
+    c.attributes = vec![
+        attr("key", "String"),
+        attr("value", "String"),
+        attr("confidence", "u8"),
+        attr("geometry", "Geometry"),
+    ];
     c
 }
 
@@ -5928,11 +5969,13 @@ mod tests {
         // 0x08XX OCR: nine container KINDS (unicharset/recoder/charset/
         // network_layer + the PDF→text plan mints textline/blob/page_layout/
         // page_image/ocr_renderer) plus the generic `document` (0x080B — the
-        // ogar-doc-ir::DocIr concept the tesseract-rs pipeline converges on).
+        // ogar-doc-ir::DocIr concept the tesseract-rs pipeline converges on)
+        // and `typed_field` (0x080A — one harvested key/value field as a
+        // graph node, `OGAR-DOC-W4-BUILD-SPEC.md` §W4-3, council-ratified).
         // Content (the 112 unichars, code tables, blob outlines) never becomes
         // concepts — see the CODEBOOK 0x08XX section note (Osint zero-rows
         // precedent).
-        assert_eq!(concepts_in_domain(ConceptDomain::Ocr).count(), 10);
+        assert_eq!(concepts_in_domain(ConceptDomain::Ocr).count(), 11);
         let ocr: Vec<&str> = concepts_in_domain(ConceptDomain::Ocr)
             .map(|(name, _)| name)
             .collect();
@@ -5948,6 +5991,7 @@ mod tests {
                 "page_layout",
                 "page_image",
                 "ocr_renderer",
+                "typed_field",
                 "document",
             ],
             "OCR domain set drift — re-sync the consumer coverage gate",

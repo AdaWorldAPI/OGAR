@@ -203,6 +203,11 @@ pub fn domain_tables() -> Vec<DomainTable> {
             expected_executors: crate::healthcare_actions::HEALTHCARE_EXPECTED_EXECUTORS,
             entries: healthcare_entries,
         },
+        DomainTable {
+            domain: "document",
+            expected_executors: crate::document_actions::DOCUMENT_EXPECTED_EXECUTORS,
+            entries: document_entries,
+        },
     ]
 }
 
@@ -372,7 +377,7 @@ fn resolve_concept_row(id: u16) -> Option<(&'static str, u16)> {
 mod the_canon_carries_no_palette_rows {
     #[test]
     fn no_0x17xx_row_reached_the_globally_mirrored_codebook() {
-        assert_eq!(crate::class_ids::ALL.len(), 93);
+        assert_eq!(crate::class_ids::ALL.len(), 94);
         for (_, id) in crate::class_ids::ALL {
             assert_ne!(*id >> 8, 0x17, "a 0x17XX row reached the codebook");
         }
@@ -401,6 +406,15 @@ mod the_canon_carries_no_palette_rows {
 /// [`entries_from_actions`] path as OCR.
 fn healthcare_entries() -> Vec<(String, u16)> {
     entries_from_actions(&crate::healthcare_actions::healthcare_actions())
+}
+
+/// Document domain rows ([`crate::document_actions`], the paperless-rs
+/// table — `OGAR-DOC-W4-BUILD-SPEC.md` §W4-4, council-ratified 2026-08-25),
+/// derived through the same generic [`entries_from_actions`] path as OCR
+/// and healthcare. Deliberately a SEPARATE table from `ocr_entries` — see
+/// `document_actions`'s module doc for why.
+fn document_entries() -> Vec<(String, u16)> {
+    entries_from_actions(&crate::document_actions::document_actions())
 }
 
 /// A green hot-plug resolution: the `(concept, classid)` vocab rows and the
@@ -501,6 +515,42 @@ mod hotplug_tests {
         assert!(concepts.contains(&("textline", 0x0805)));
         assert!(concepts.contains(&("page_layout", 0x0807)));
         assert_eq!(caps.len(), crate::ocr_actions::OCR_ACTION_NAMES.len());
+    }
+
+    /// The doc-layer capstone probe (`OGAR-DOC-W4-BUILD-SPEC.md` §W4-4,
+    /// 5+3-council-ratified 2026-08-25): `resolve_hotplug("paperless-kv",
+    /// DOCUMENT_SUBJECT_CLASSIDS, covered)` GREEN, and — the property
+    /// `ocr_hotplug_resolves_vocab_and_actions` above does not need to
+    /// check, because `tesseract-ogar` never plugs `document` — that
+    /// `tesseract-ogar`'s OWN resolution is untouched by this new table
+    /// (Deviation D-1's whole point: isolation).
+    #[test]
+    fn document_hotplug_resolves_vocab_and_actions_and_does_not_contaminate_ocr() {
+        let (concepts, caps) = resolve_hotplug(
+            "paperless-kv",
+            crate::document_actions::DOCUMENT_SUBJECT_CLASSIDS,
+            crate::document_actions::DOCUMENT_ACTION_NAMES,
+        )
+        .expect("document hot-plug drifted from the authoritative table");
+        assert_eq!(concepts, vec![("document", crate::class_ids::DOCUMENT)]);
+        assert_eq!(caps.len(), 3);
+
+        // The wrong consumer against the same id bangs UnexpectedConsumer.
+        assert!(matches!(
+            resolve_hotplug(
+                "tesseract-ogar",
+                crate::document_actions::DOCUMENT_SUBJECT_CLASSIDS,
+                crate::document_actions::DOCUMENT_ACTION_NAMES,
+            ),
+            Err(HotplugDrift::UnexpectedConsumer(_))
+        ));
+
+        // tesseract-ogar's OWN resolution is byte-identical to before this
+        // table existed — the isolation property Deviation D-1 exists for.
+        let (ocr_concepts, ocr_caps) =
+            resolve_hotplug("tesseract-ogar", OCR_IDS, OCR_COVERED).expect("green");
+        assert_eq!(ocr_concepts.len(), OCR_IDS.len());
+        assert_eq!(ocr_caps.len(), crate::ocr_actions::OCR_ACTION_NAMES.len());
     }
 
     /// The parity-plan P3 probe: `resolve_hotplug("medcare-rs",

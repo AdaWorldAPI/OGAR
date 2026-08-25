@@ -146,6 +146,12 @@ as a raw-ref (KV) + an awareness subtree (SoA graph), reconstructs it via a
 `reconstruct_document` ActionDef; triggers the v2-deferred `typed_field` mint +
 a `document` mint. Grade `[S]` (spec) until the council + a probe promote it.
 
+**Done — 2026-08-25.** The 5+3 council ran (spec v1→v2→v3, see
+`OGAR-DOC-W4-BUILD-SPEC.md`); `D-OGAR-DOC-LAYER` regrades to `[G]` for the
+mints + ActionDefs (the executor body stays open, tracked in that entry's
+Status paragraph). `typed_field` minted at `0x080A`; `document` confirmed at
+`0x080B`.
+
 ---
 
 # AMENDMENT — operator rulings, 2026-07-13 (pre-council; the council verifies THIS boundary)
