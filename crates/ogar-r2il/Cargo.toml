@@ -1,0 +1,14 @@
+[package]
+name = "ogar-r2il"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+description = "Proxy glue: r2sleigh's R2IL opcode set as an ogar-loco Vocabulary, plus the masked lane projection that re-reads one body under any LaneShape without rebuilding it. Always-on — no feature gate, no optional dep."
+
+[dependencies]
+ogar-loco = { path = "../ogar-loco" }
+
+[dev-dependencies]
