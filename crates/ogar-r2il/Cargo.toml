@@ -12,3 +12,8 @@ description = "Proxy glue: r2sleigh's R2IL opcode set as an ogar-loco Vocabulary
 ogar-loco = { path = "../ogar-loco" }
 
 [dev-dependencies]
+# PROBE-ZIPPER-HOP-PARITY only (tests/zipper_hop_parity.rs): the real facet
+# carrier for the rail zipper. Dev-only — the lib keeps its ogar-loco-only
+# dependency surface (the "no r2sleigh dep" reasoning applies here too:
+# tests may hold the object graph, the vocabulary table must not).
+lance-graph-contract = { git = "https://github.com/AdaWorldAPI/lance-graph", branch = "main" }
