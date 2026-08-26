@@ -19,11 +19,18 @@
 //! *enumeration*; what loco needs from it is an *arity table*. Depending on
 //! the crate would drag `r2il`'s `Varnode`/`SpaceId`/`ArchSpec` object graph
 //! into every consumer that only wanted to know that `IntAdd` pops two
-//! operands — and `ruff_r2il`'s own module doc already names that graph
-//! *"structurally still stage-1 pointer chasing"*. A table of 82 arities is
+//! operands. A table of 82 arities is
 //! not worth an object graph, so the table is declared here and pinned to the
 //! source enum by [`R2ILFn::MNEMONICS`], which a drift test compares against
 //! `r2il`'s own opcode list when that crate is present.
+//!
+//! **Operator ruling (2026-08-26): R2IL is EXECUTED, never pre-converted.**
+//! `ruff_r2il` (the ruff-side R2IL→SPO harvest) is NOT on this path and never
+//! will be: converting live V4 R2IL down to a V3 SPO projection before running
+//! it is a lossy static shadow of semantics the interpreter already has
+//! first-class. The runtime path is r2sleigh's interpreter executing R2IL in
+//! realtime; this crate is the addressing glue that makes those calls
+//! loco-addressable — not a converter, not a harvest.
 //!
 //! **Always on** means exactly this: no feature gate, no `optional = true`,
 //! no `cfg`. A consumer that has `ogar-loco` has R2IL semantics available,

@@ -97,12 +97,15 @@ use ogar_vocab::{
     joint,
     knowledge_item,
     lab_value,
+    machine_memory_map,
     mars_application,
     mars_machine,
     mars_node_template,
     mars_resource,
     mars_software,
     medication,
+    mmio_chip,
+    mmio_register,
     network_layer,
     ocr_renderer,
     osm_changeset,
@@ -150,10 +153,12 @@ use ogar_vocab::{
     project_wiki_page,
     project_work_item,
     recoder,
+    rom_image,
     skeleton,
     tax_policy,
     textline,
     treatment,
+    typed_field,
     unicharset,
     unit_of_measure,
     visit,
@@ -226,6 +231,7 @@ fn all_canonical_classes() -> Vec<(&'static str, Class)> {
         ("page_image", page_image()),
         ("ocr_renderer", ocr_renderer()),
         ("document", document()),
+        ("typed_field", typed_field()),
         // ── 0x09XX — health (7 OGIT Healthcare + 4 harvest-derived mints) ──
         ("patient", patient()),
         ("diagnosis", diagnosis()),
@@ -276,6 +282,11 @@ fn all_canonical_classes() -> Vec<(&'static str, Class)> {
         ("osm_gpx_trace", osm_gpx_trace()),
         ("osm_user", osm_user()),
         ("osm_street_node", osm_street_node()),
+        // ── 0xC6XX — MMIO hardware-platform (C64 = founding tenant) ──
+        ("mmio_chip", mmio_chip()),
+        ("mmio_register", mmio_register()),
+        ("rom_image", rom_image()),
+        ("machine_memory_map", machine_memory_map()),
     ]
 }
 
