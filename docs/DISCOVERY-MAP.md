@@ -1749,6 +1749,46 @@ isolation. The map's job is to keep them visible.
   designed property of the concepts, which is exactly why it mints no
   address. Canonical text: the `JavaRuntime` doc comment in `ogar-vocab`.
 
+  **Breadcrumb — where the `0xC4` consumer-side state actually lives
+  (2026-08-27, pointer only; nothing here is duplicated).** A session
+  arriving at this entry to ask "what is BUILT on the Ghidra/R2IL side, and
+  what is still open" reads these, in this order — they are the source of
+  truth, this list is only the index:
+
+  - `AdaWorldAPI/lance-graph-java` `.claude/board/WAVE_STATUS_CHECKLIST.md`
+    (merged PR #37) — the per-wave DONE / SUPERSEDED / BLOCKED checklist.
+    It exists because sessions repeatedly mis-attributed which wave was
+    nearly complete; read it before restating wave status from memory.
+    Headline it carries: the LGJ substrate+facade arc is COMPLETE
+    (`D-LGJ-A…AUDIT`, `W1–W7`, ABI minors 5–8), `D-LGJ-W8` (mask-native
+    navigation correction) is the genuinely unfinished one with FALSIFIERS
+    and POLICY outstanding, and **`wave-ghidra-g1-g2.md` is SUPERSEDED —
+    never dispatch it.** Its capability shipped as `AdaWorldAPI/ruff`
+    PR #94 (`crates/ruff_r2il`).
+  - Same repo, `.claude/plans/` — `ghidra-integration-v1.md` (G0
+    archaeology: 74 P-code opcodes, `PcodeEmulator` as reference oracle),
+    `ogar-machine-v1.md`, `mask-native-navigation-correction-v1.md`.
+    `.claude/waves/wave-ogar-machine-pm1.md` is BLOCKED behind a four-part
+    gate whose live condition is `ruff_r2il` **PR2 → PR3** merging — that
+    upstream pair, not anything in this repo, is the Ghidra/R2IL critical
+    path.
+  - `AdaWorldAPI/lance-graph` `.claude/plans/r2il-machine-semantic-contract-v1.md`
+    — the R2IL semantic contract (§7.7 coupled materials, §7.8 V4 /
+    three-tier JIT / the zipper isomorphism and its purity fence).
+  - `AdaWorldAPI/r2sleigh` — `crates/r2conc` (concrete slab executor) plus
+    the two green probes: LIVE-REGFILE (Ghidra-lifted 6502 vs an
+    independent oracle, byte-parity) and zipper-hop-parity.
+
+  **Measured negative, recorded so it is not assumed away:** as of
+  2026-08-27 `lance-graph-java` has **no** `r2il` / `r2conc` / `r2sleigh`
+  binding at all — `native/lgj-abi/Cargo.toml` deps are exactly `ndarray`
+  and `lance-graph-contract`, and every apparent "Ghidra" hit in its Rust,
+  Java and docs is the substring `opcode` naming that crate's own
+  `LgjOpCode` ABI vocabulary. The only real P-code content is the
+  standalone `valhalla-lab` R12 flattening reproducer, wired into nothing.
+  The Ghidra seam is *verified* and the vocabulary *measured*; the binding
+  is unbuilt.
+
 - **[D-BLOCKS-DOMAIN] `0x17XX` reserved as ConceptDomain::Blocks — the shared
   visual block-programming opcode vocabulary, ONE canon domain under two app
   prefixes** — `[G]` (CODED, reserved-empty, 2026-08-04, operator-chosen slot)
