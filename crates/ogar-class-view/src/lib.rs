@@ -76,29 +76,23 @@ use ogar_vocab::{
     auth_zanzibar,
     auth_zitadel,
     automation_trigger,
-    bfo,
     billable_work_entry,
     billing_party,
     blob,
     bone,
     canonical_concept_id,
     charset,
-    cob,
     commercial_document,
     commercial_line_item,
     currency_policy,
     diagnosis,
     document,
-    eco,
     examination,
     external_practice,
-    fbbi,
-    hpo,
     hr_department,
     hr_employee,
     hr_employment_contract,
     hr_job,
-    iao,
     investigation,
     joint,
     knowledge_item,
@@ -112,10 +106,7 @@ use ogar_vocab::{
     medication,
     mmio_chip,
     mmio_register,
-    mondo,
     network_layer,
-    obcs,
-    obi,
     ocr_renderer,
     osm_changeset,
     osm_element_tag,
@@ -131,7 +122,6 @@ use ogar_vocab::{
     page_image,
     page_layout,
     patient,
-    pato,
     payment_record,
     practitioner,
     pricelist,
@@ -163,16 +153,12 @@ use ogar_vocab::{
     project_wiki_page,
     project_work_item,
     recoder,
-    ro,
-    ro_relation_body,
     rom_image,
-    sepio,
     skeleton,
     tax_policy,
     textline,
     treatment,
     typed_field,
-    uberon,
     unicharset,
     unit_of_measure,
     visit,
@@ -228,24 +214,18 @@ fn all_canonical_classes() -> Vec<(&'static str, Class)> {
         ("pricelist", pricelist()),
         ("pricelist_rule", pricelist_rule()),
         ("unit_of_measure", unit_of_measure()),
-        // ── 0x03XX — Ontology (minted 2026-08-22; registered here so the
-        // codebook↔registry gates hold — a CODEBOOK promotion without a
-        // registry entry is exactly what `every_codebook_id_appears_in_
-        // class_ids_all` exists to catch, and it caught this one) ──
-        ("mondo", mondo()),
-        ("hpo", hpo()),
-        ("uberon", uberon()),
-        ("pato", pato()),
-        ("ro", ro()),
-        ("ro_relation_body", ro_relation_body()),
-        ("bfo", bfo()),
-        ("cob", cob()),
-        ("iao", iao()),
-        ("obi", obi()),
-        ("obcs", obcs()),
-        ("sepio", sepio()),
-        ("eco", eco()),
-        ("fbbi", fbbi()),
+        // ── 0x03XX — Ontology: NO registry rows, BY DESIGN ──
+        // Plug-and-play (operator, 2026-08-31: the domain is reached
+        // "via plug and play"). The 14 OBO concepts are minted in the
+        // PRODUCER `ogar-obo` (`Namespace` / `registry::OBO_CORE` /
+        // `META_STUDY_SPINE`) and `ogar-ro` (`RELATION_BODY_CONCEPT_ID`),
+        // not in the shared `ogar-vocab` codebook — so there is nothing
+        // here to register. A consumer that deps `ogar-obo` gets them;
+        // one that does not never pulls them into its concept space.
+        // (They were briefly minted into ogar-vocab on 2026-08-22 and
+        // registered here to satisfy the codebook↔registry gate; that
+        // mint was taken back — the gate is satisfied again by both
+        // sides being empty.)
         // ── 0x04XX — Weather / Atmosphere ──
         // These canonical views intentionally carry no W1 payload fields:
         // field/level/unit slots are selected by WeatherNext's ClassView
