@@ -1210,68 +1210,19 @@ const CODEBOOK: &[(&str, u16)] = &[
     ("pricelist", 0x0209),
     ("pricelist_rule", 0x020A),
     ("unit_of_measure", 0x020B),
-    // ── 0x03XX — Ontology domain ──
-    //
-    // ⊘ SUPERSEDED (operator ruling, 2026-08-22): "the domains should be minted
-    // in ogar-vocab". The prior note here read "ZERO vocabulary rows BY DESIGN
-    // … Do NOT mint rows here", with the ids held in the producers instead. It
-    // is reversed, not deleted — the reasoning it carried is below, and so is
-    // what it cost.
-    //
-    // The old posture was plug-and-play: only a consumer deping `ogar-obo`
-    // compiled the OBO concepts, so ERP / project consumers never pulled them
-    // into their concept space. What it also produced:
-    //
-    //   1. `concepts_in_domain(ConceptDomain::Ontology)` returned an EMPTY set.
-    //      An empty set is indistinguishable from "this domain has nothing to
-    //      reason about", and that is how it was read.
-    //   2. The domain had three independent mint sites and no enumeration
-    //      spanning them — `ogar-obo::registry::OBO_CORE` (0x0301..0x0305),
-    //      `ogar-obo::registry::META_STUDY_SPINE` (0x0340..0x0347) and
-    //      `ogar-ro::RELATION_BODY_CONCEPT_ID` (0x0306). `META_STUDY_SPINE` was
-    //      once minted OVER 0x0306 and nothing failed; the collision was found
-    //      by hand-enumerating the domain during an unrelated audit. A guard
-    //      now exists in `ogar-ro` (the only crate that can see both sides,
-    //      since the dependency runs ogar-ro → ogar-obo), but a guard per pair
-    //      does not scale and cannot see a site nobody thought to add.
-    //   3. A consumer with no enumeration to call computed the ids instead:
-    //      `0x0300 | (ns + 1)`, right only because five variants happen to be
-    //      declared in the order of five contiguous ids — and it yields 0x0306,
-    //      i.e. `ogar-ro`'s relation body, for any ordinal past the end.
-    //
-    // One mint site makes (2) structurally impossible — `codebook_has_no_
-    // duplicate_ids_or_zero` covers the whole domain in one table — and (1)
-    // and (3) stop being reachable, because there is now something to ask.
-    //
-    // The producers keep their typed surfaces (`Namespace::concept_id`,
-    // `RELATION_BODY_CONCEPT_ID`); those are the ergonomic reading. This table
-    // is the mint of record, and the agreement between them is a test, not a
-    // convention.
-    //
-    // Public reference, firewall-separated from `0x09` Health PHI — same
-    // reference≠PHI split as Anatomy (0x0A). Unchanged by this reversal.
-    //
-    // OBO core — mirrored by `ogar_obo::Namespace` / `registry::OBO_CORE`.
-    ("mondo", 0x0301),
-    ("hpo", 0x0302),
-    ("uberon", 0x0303),
-    ("pato", 0x0304),
-    ("ro", 0x0305),
-    // Relation BODIES — `ogar_ro::RELATION_BODY_CONCEPT_ID`. One slot past the
-    // OBO core; distinct from `ro` (0x0305), which is the RO term-node
-    // namespace. This is the row whose absence from any shared table let
-    // META_STUDY_SPINE be minted over it.
-    ("ro_relation_body", 0x0306),
-    // Meta-study spine — `ogar_obo::registry::META_STUDY_SPINE`. Deliberately
-    // banded at 0x0340 to sit clear of the core band's growth.
-    ("bfo", 0x0340),
-    ("cob", 0x0341),
-    ("iao", 0x0342),
-    ("obi", 0x0343),
-    ("obcs", 0x0344),
-    ("sepio", 0x0345),
-    ("eco", 0x0346),
-    ("fbbi", 0x0347),
+    // ── 0x03XX — Ontology domain: ZERO vocabulary rows BY DESIGN ──
+    // Public OBO biomedical reference ontologies (MONDO disease · HPO
+    // phenotype · Uberon anatomy · PATO quality · RO relations). Same posture
+    // as the 0x07XX OSINT and 0x0EXX Genetics blocks: the domain slot is
+    // RESERVED (`ConceptDomain::Ontology`) so `canonical_concept_domain`
+    // returns a stable tag, but the concept ids are NOT minted as shared
+    // CODEBOOK rows — they live in the producer crate `ogar-obo`
+    // (`Namespace::concept_id`: mondo 0x0301 · hpo 0x0302 · uberon 0x0303 ·
+    // pato 0x0304 · ro 0x0305). This keeps the OBO reference PLUG-AND-PLAY:
+    // only a consumer that deps `ogar-obo` compiles the concepts; ERP / project
+    // consumers (odoo-rs, openproject-nexgen-rs, …) never pull them into their
+    // concept space. Public reference, firewall-separated from `0x09` Health
+    // PHI — same reference≠PHI split as Anatomy (0x0A). Do NOT mint rows here.
     // ── 0x04XX — Weather / Atmosphere domain ──
     // Canonical atmospheric/grid concepts consumed by WeatherNext and the
     // lance-graph weather SoA bake. These are shared meanings; renderer /
@@ -1972,43 +1923,6 @@ pub mod class_ids {
     /// `uom.uom` (`qudt:Unit`).
     pub const UNIT_OF_MEASURE: u16 = 0x020B;
 
-    // ── 0x03XX — Ontology domain (minted 2026-08-22, operator ruling: "the
-    //    domains should be minted in ogar-vocab"; see the CODEBOOK block for
-    //    the posture this reverses and what the prior split cost) ──
-
-    /// `mondo` (`0x0301`) — MONDO disease. `ogar_obo::Namespace::Mondo`.
-    pub const MONDO: u16 = 0x0301;
-    /// `hpo` (`0x0302`) — human phenotype. `ogar_obo::Namespace::Hpo`.
-    pub const HPO: u16 = 0x0302;
-    /// `uberon` (`0x0303`) — anatomy spine. `ogar_obo::Namespace::Uberon`.
-    pub const UBERON: u16 = 0x0303;
-    /// `pato` (`0x0304`) — phenotypic quality. `ogar_obo::Namespace::Pato`.
-    pub const PATO: u16 = 0x0304;
-    /// `ro` (`0x0305`) — RO term nodes. `ogar_obo::Namespace::Ro`.
-    pub const RO: u16 = 0x0305;
-    /// `ro_relation_body` (`0x0306`) — RO relation BODIES, distinct from the
-    /// term-node namespace [`RO`]. `ogar_ro::RELATION_BODY_CONCEPT_ID`; the row
-    /// whose absence from any shared table let `META_STUDY_SPINE` be minted
-    /// over it once.
-    pub const RO_RELATION_BODY: u16 = 0x0306;
-    /// `bfo` (`0x0340`) — Basic Formal Ontology. Meta-study spine, banded at
-    /// 0x0340 to sit clear of the core band's growth.
-    pub const BFO: u16 = 0x0340;
-    /// `cob` (`0x0341`) — Core Ontology for Biology and Biomedicine.
-    pub const COB: u16 = 0x0341;
-    /// `iao` (`0x0342`) — Information Artifact Ontology.
-    pub const IAO: u16 = 0x0342;
-    /// `obi` (`0x0343`) — Ontology for Biomedical Investigations.
-    pub const OBI: u16 = 0x0343;
-    /// `obcs` (`0x0344`) — Ontology of Biological and Clinical Statistics.
-    pub const OBCS: u16 = 0x0344;
-    /// `sepio` (`0x0345`) — Scientific Evidence and Provenance Information.
-    pub const SEPIO: u16 = 0x0345;
-    /// `eco` (`0x0346`) — Evidence and Conclusion Ontology.
-    pub const ECO: u16 = 0x0346;
-    /// `fbbi` (`0x0347`) — Biological Imaging Methods Ontology.
-    pub const FBBI: u16 = 0x0347;
-
     // ── 0x04XX — Weather / Atmosphere domain ──
 
     /// `weather_cell` (`0x0401`) — one dynamic atmospheric/forecast grid
@@ -2333,20 +2247,6 @@ pub mod class_ids {
         ("pricelist", PRICELIST),
         ("pricelist_rule", PRICELIST_RULE),
         ("unit_of_measure", UNIT_OF_MEASURE),
-        ("mondo", MONDO),
-        ("hpo", HPO),
-        ("uberon", UBERON),
-        ("pato", PATO),
-        ("ro", RO),
-        ("ro_relation_body", RO_RELATION_BODY),
-        ("bfo", BFO),
-        ("cob", COB),
-        ("iao", IAO),
-        ("obi", OBI),
-        ("obcs", OBCS),
-        ("sepio", SEPIO),
-        ("eco", ECO),
-        ("fbbi", FBBI),
         // 0x04XX — Weather / Atmosphere
         ("weather_cell", WEATHER_CELL),
         ("weather_static_cell", WEATHER_STATIC_CELL),
@@ -2485,7 +2385,7 @@ pub mod class_ids {
             // Pin the number here so a bump is never silent.
             assert_eq!(
                 ALL.len(),
-                112,
+                98,
                 "class_ids::ALL count changed — update this pin AND land the \
                  corresponding row in lance-graph's \
                  crates/lance-graph-contract/src/ogar_codebook.rs::CODEBOOK \
@@ -3304,20 +3204,6 @@ pub fn all_promoted_classes() -> Vec<Class> {
         pricelist(),
         pricelist_rule(),
         unit_of_measure(),
-        mondo(),
-        hpo(),
-        uberon(),
-        pato(),
-        ro(),
-        ro_relation_body(),
-        bfo(),
-        cob(),
-        iao(),
-        obi(),
-        obcs(),
-        sepio(),
-        eco(),
-        fbbi(),
         // 0x07XX — OSINT arm: ZERO vocabulary rows BY DESIGN (operator
         // ruling 2026-07-02, corrects PR #145's hallucinated
         // `osint_system` / `osint_person` mints); no calls follow — OGAR
@@ -5010,143 +4896,6 @@ pub fn joint() -> Class {
 // Field/level/unit slot semantics live in the consumer ClassView manifest;
 // the canonical class carries identity, never the weather payload layout.
 // ─────────────────────────────────────────────────────────────────────
-
-// ─────────────────────────────────────────────────────────────────────
-// 0x03XX — Ontology domain builders (public OBO biomedical reference).
-//
-// Reference concepts, deliberately ATTRIBUTE-FREE — the same shape as the
-// 0x04XX weather cells. An OBO namespace's content is terms and edges, and
-// those live in the bake (`ogar-obo`: `TermId`, the label slab, the edge
-// block), not in a shared class shape. Asserting attributes here would be
-// inventing a model for data this crate does not own; the mint records the
-// concept's IDENTITY, which is the thing that has to be collision-free.
-// ─────────────────────────────────────────────────────────────────────
-
-/// `mondo` (`0x0301`) — MONDO disease.
-#[must_use]
-pub fn mondo() -> Class {
-    let mut c = Class::new("Mondo");
-    c.language = Language::Unknown;
-    c.canonical_concept = Some("mondo".to_string());
-    c
-}
-
-/// `hpo` (`0x0302`) — HPO human phenotype.
-#[must_use]
-pub fn hpo() -> Class {
-    let mut c = Class::new("Hpo");
-    c.language = Language::Unknown;
-    c.canonical_concept = Some("hpo".to_string());
-    c
-}
-
-/// `uberon` (`0x0303`) — Uberon anatomy spine.
-#[must_use]
-pub fn uberon() -> Class {
-    let mut c = Class::new("Uberon");
-    c.language = Language::Unknown;
-    c.canonical_concept = Some("uberon".to_string());
-    c
-}
-
-/// `pato` (`0x0304`) — PATO phenotypic quality.
-#[must_use]
-pub fn pato() -> Class {
-    let mut c = Class::new("Pato");
-    c.language = Language::Unknown;
-    c.canonical_concept = Some("pato".to_string());
-    c
-}
-
-/// `ro` (`0x0305`) — RO term nodes.
-#[must_use]
-pub fn ro() -> Class {
-    let mut c = Class::new("Ro");
-    c.language = Language::Unknown;
-    c.canonical_concept = Some("ro".to_string());
-    c
-}
-
-/// `ro_relation_body` (`0x0306`) — RO relation BODIES — distinct from the `ro` term-node namespace.
-#[must_use]
-pub fn ro_relation_body() -> Class {
-    let mut c = Class::new("RoRelationBody");
-    c.language = Language::Unknown;
-    c.canonical_concept = Some("ro_relation_body".to_string());
-    c
-}
-
-/// `bfo` (`0x0340`) — Basic Formal Ontology.
-#[must_use]
-pub fn bfo() -> Class {
-    let mut c = Class::new("Bfo");
-    c.language = Language::Unknown;
-    c.canonical_concept = Some("bfo".to_string());
-    c
-}
-
-/// `cob` (`0x0341`) — Core Ontology for Biology and Biomedicine.
-#[must_use]
-pub fn cob() -> Class {
-    let mut c = Class::new("Cob");
-    c.language = Language::Unknown;
-    c.canonical_concept = Some("cob".to_string());
-    c
-}
-
-/// `iao` (`0x0342`) — Information Artifact Ontology.
-#[must_use]
-pub fn iao() -> Class {
-    let mut c = Class::new("Iao");
-    c.language = Language::Unknown;
-    c.canonical_concept = Some("iao".to_string());
-    c
-}
-
-/// `obi` (`0x0343`) — Ontology for Biomedical Investigations.
-#[must_use]
-pub fn obi() -> Class {
-    let mut c = Class::new("Obi");
-    c.language = Language::Unknown;
-    c.canonical_concept = Some("obi".to_string());
-    c
-}
-
-/// `obcs` (`0x0344`) — Ontology of Biological and Clinical Statistics.
-#[must_use]
-pub fn obcs() -> Class {
-    let mut c = Class::new("Obcs");
-    c.language = Language::Unknown;
-    c.canonical_concept = Some("obcs".to_string());
-    c
-}
-
-/// `sepio` (`0x0345`) — Scientific Evidence and Provenance Information.
-#[must_use]
-pub fn sepio() -> Class {
-    let mut c = Class::new("Sepio");
-    c.language = Language::Unknown;
-    c.canonical_concept = Some("sepio".to_string());
-    c
-}
-
-/// `eco` (`0x0346`) — Evidence and Conclusion Ontology.
-#[must_use]
-pub fn eco() -> Class {
-    let mut c = Class::new("Eco");
-    c.language = Language::Unknown;
-    c.canonical_concept = Some("eco".to_string());
-    c
-}
-
-/// `fbbi` (`0x0347`) — Biological Imaging Methods Ontology.
-#[must_use]
-pub fn fbbi() -> Class {
-    let mut c = Class::new("FBbi");
-    c.language = Language::Unknown;
-    c.canonical_concept = Some("fbbi".to_string());
-    c
-}
 
 /// `weather_cell` (`0x0401`) — one dynamic atmospheric / forecast-grid cell.
 #[must_use]
