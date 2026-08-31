@@ -1117,6 +1117,17 @@ impl Class {
 ///   0x0DXX  HR                (employment / org / contracts)
 ///   0x0EXX  reserved: Genetics (CPIC pharmacogenomics, consumed by q2)
 ///   0x0FXX  Geo               (OpenStreetMap geodata reference ontology)
+///   0x90XX  reference         (ROOT of the domain reference tree)
+///   0x91XX  Disease · 0x92XX Phenomenology · 0x94XX Lab · 0x95XX Imaging
+///   0x96XX  BiologicalProcess · 0x97XX Substance · 0x98XX Procedure
+///   0x9AXX  Form
+///     ↑ the domain reference tree (`0x90..=0x9D`): HIGH byte = compartment,
+///       LOW byte = vocabulary, carried 1:1 from the retired 0x03XX block.
+///       0x93 anatomy and 0x99 genetics are deliberately NOT minted here —
+///       they are ALIASES onto the existing authorities 0x0A Anatomy and
+///       0x0E Genetics, which ogar-fma and ogar-cpic/q2 already consume.
+///       0x9E is NOT claimed: it is `has_phenotype` in ogar-ro's PREDICATE
+///       space, a different axis that overlaps these numbers.
 ///   0x10XX–0x16XX unassigned
 ///   0x17XX  reserved: Blocks  (visual block-programming vocabulary; consumed
 ///                              by blockly-rs / scratch-rs)
@@ -1644,6 +1655,105 @@ pub enum ConceptDomain {
     /// for minted names; GPL emulators (Frodo, zinc64, resid) stay
     /// behavioral/test-vector reference only — read, never transcribed.
     Mmio,
+    /// `0x90XX` — reference (domain reference tree; `data/config/domain_classids.tsv`).
+    /// the ROOT of the domain reference tree — the block that says "a biomedical reference domain" without yet saying which. Zero rows: it is the tree's handle, not a vocabulary.
+    ///
+    /// Part of the `0x90..=0x9D` **domain reference tree**: the high byte is the
+    /// COMPARTMENT and the low byte is the vocabulary, carried 1:1 from the
+    /// retired `0x03XX` block. Carries ZERO shared vocabulary rows — the
+    /// concepts stay plug-and-play in their producers, same posture as
+    /// [`Ontology`](Self::Ontology). What the block buys is that a consumer
+    /// reads the compartment off the key (`classid >> 24`) instead of looking
+    /// it up.
+    Reference,
+    /// `0x91XX` — disease (domain reference tree; `data/config/domain_classids.tsv`).
+    /// MONDO / ICD-10-GM / Orphanet / OMIM / DECIPHER identity.
+    ///
+    /// Part of the `0x90..=0x9D` **domain reference tree**: the high byte is the
+    /// COMPARTMENT and the low byte is the vocabulary, carried 1:1 from the
+    /// retired `0x03XX` block. Carries ZERO shared vocabulary rows — the
+    /// concepts stay plug-and-play in their producers, same posture as
+    /// [`Ontology`](Self::Ontology). What the block buys is that a consumer
+    /// reads the compartment off the key (`classid >> 24`) instead of looking
+    /// it up.
+    Disease,
+    /// `0x92XX` — phenomenology (domain reference tree; `data/config/domain_classids.tsv`).
+    /// HPO. Kept OUT of [`Disease`](Self::Disease) deliberately: a phenotype is what is observed, a disease is what is concluded.
+    ///
+    /// Part of the `0x90..=0x9D` **domain reference tree**: the high byte is the
+    /// COMPARTMENT and the low byte is the vocabulary, carried 1:1 from the
+    /// retired `0x03XX` block. Carries ZERO shared vocabulary rows — the
+    /// concepts stay plug-and-play in their producers, same posture as
+    /// [`Ontology`](Self::Ontology). What the block buys is that a consumer
+    /// reads the compartment off the key (`classid >> 24`) instead of looking
+    /// it up.
+    Phenomenology,
+    /// `0x94XX` — lab (domain reference tree; `data/config/domain_classids.tsv`).
+    /// LOINC observables.
+    ///
+    /// Part of the `0x90..=0x9D` **domain reference tree**: the high byte is the
+    /// COMPARTMENT and the low byte is the vocabulary, carried 1:1 from the
+    /// retired `0x03XX` block. Carries ZERO shared vocabulary rows — the
+    /// concepts stay plug-and-play in their producers, same posture as
+    /// [`Ontology`](Self::Ontology). What the block buys is that a consumer
+    /// reads the compartment off the key (`classid >> 24`) instead of looking
+    /// it up.
+    Lab,
+    /// `0x95XX` — imaging (domain reference tree; `data/config/domain_classids.tsv`).
+    /// RadLex, and FMA in its FINDING reading — the same structure addressed as an imaging finding rather than as anatomy.
+    ///
+    /// Part of the `0x90..=0x9D` **domain reference tree**: the high byte is the
+    /// COMPARTMENT and the low byte is the vocabulary, carried 1:1 from the
+    /// retired `0x03XX` block. Carries ZERO shared vocabulary rows — the
+    /// concepts stay plug-and-play in their producers, same posture as
+    /// [`Ontology`](Self::Ontology). What the block buys is that a consumer
+    /// reads the compartment off the key (`classid >> 24`) instead of looking
+    /// it up.
+    Imaging,
+    /// `0x96XX` — biological_process (domain reference tree; `data/config/domain_classids.tsv`).
+    /// GO — the mechanism domain.
+    ///
+    /// Part of the `0x90..=0x9D` **domain reference tree**: the high byte is the
+    /// COMPARTMENT and the low byte is the vocabulary, carried 1:1 from the
+    /// retired `0x03XX` block. Carries ZERO shared vocabulary rows — the
+    /// concepts stay plug-and-play in their producers, same posture as
+    /// [`Ontology`](Self::Ontology). What the block buys is that a consumer
+    /// reads the compartment off the key (`classid >> 24`) instead of looking
+    /// it up.
+    BiologicalProcess,
+    /// `0x97XX` — substance (domain reference tree; `data/config/domain_classids.tsv`).
+    /// ATC / RxNorm / Gelbe Liste / ChEBI.
+    ///
+    /// Part of the `0x90..=0x9D` **domain reference tree**: the high byte is the
+    /// COMPARTMENT and the low byte is the vocabulary, carried 1:1 from the
+    /// retired `0x03XX` block. Carries ZERO shared vocabulary rows — the
+    /// concepts stay plug-and-play in their producers, same posture as
+    /// [`Ontology`](Self::Ontology). What the block buys is that a consumer
+    /// reads the compartment off the key (`classid >> 24`) instead of looking
+    /// it up.
+    Substance,
+    /// `0x98XX` — procedure (domain reference tree; `data/config/domain_classids.tsv`).
+    /// OPS; SNOMED's procedure side needs its own lane (it does not fit 24 bit).
+    ///
+    /// Part of the `0x90..=0x9D` **domain reference tree**: the high byte is the
+    /// COMPARTMENT and the low byte is the vocabulary, carried 1:1 from the
+    /// retired `0x03XX` block. Carries ZERO shared vocabulary rows — the
+    /// concepts stay plug-and-play in their producers, same posture as
+    /// [`Ontology`](Self::Ontology). What the block buys is that a consumer
+    /// reads the compartment off the key (`classid >> 24`) instead of looking
+    /// it up.
+    Procedure,
+    /// `0x9AXX` — form (domain reference tree; `data/config/domain_classids.tsv`).
+    /// form MASTERS and schemata ONLY. A filled instance is patient data and stays behind the firewall — the master is public reference, the instance is not.
+    ///
+    /// Part of the `0x90..=0x9D` **domain reference tree**: the high byte is the
+    /// COMPARTMENT and the low byte is the vocabulary, carried 1:1 from the
+    /// retired `0x03XX` block. Carries ZERO shared vocabulary rows — the
+    /// concepts stay plug-and-play in their producers, same posture as
+    /// [`Ontology`](Self::Ontology). What the block buys is that a consumer
+    /// reads the compartment off the key (`classid >> 24`) instead of looking
+    /// it up.
+    Form,
     /// Any high-byte slot not yet assigned a domain (`0x05XX`–`0x06XX`,
     /// `0x10XX`–`0x16XX`, `0x18XX`–`0xBFXX`, `0xC2XX`–`0xC3XX`,
     /// `0xC5XX`, `0xC7XX`+).
@@ -1670,6 +1780,15 @@ pub fn canonical_concept_domain(id: u16) -> ConceptDomain {
         0x0E => ConceptDomain::Genetics,
         0x0F => ConceptDomain::Geo,
         0x17 => ConceptDomain::Blocks,
+        0x90 => ConceptDomain::Reference,
+        0x91 => ConceptDomain::Disease,
+        0x92 => ConceptDomain::Phenomenology,
+        0x94 => ConceptDomain::Lab,
+        0x95 => ConceptDomain::Imaging,
+        0x96 => ConceptDomain::BiologicalProcess,
+        0x97 => ConceptDomain::Substance,
+        0x98 => ConceptDomain::Procedure,
+        0x9A => ConceptDomain::Form,
         0xC0 => ConceptDomain::JavaRuntime,
         0xC1 => ConceptDomain::Analytics,
         0xC4 => ConceptDomain::BinaryLifting,
@@ -5520,6 +5639,64 @@ mod tests {
         assert_eq!(canonical_concept_id("handle_out"), None);
         assert_eq!(canonical_concept_id(""), None);
         assert_eq!(canonical_concept_id("user"), None);
+    }
+
+    /// **The domain reference tree resolves, and its two deliberate holes
+    /// stay holes.** `0x90..=0x9A` minus `0x93`/`0x99` are the nine blocks
+    /// minted 2026-08-31 (`data/config/domain_classids.tsv`); the high byte
+    /// IS the compartment, which is what lets a consumer read it off
+    /// `classid >> 24` instead of looking it up.
+    ///
+    /// Two-sided on purpose: the nine must resolve, AND the three numbers
+    /// that look like they belong must NOT — `0x93`/`0x99` are aliases onto
+    /// the existing `Anatomy`/`Genetics` authorities (minting them here
+    /// would be a second source of truth for one domain), and `0x9E` is
+    /// `has_phenotype` in ogar-ro's predicate space.
+    #[test]
+    fn the_domain_reference_tree_resolves_and_its_holes_stay_holes() {
+        for (byte, want) in [
+            (0x90u16, ConceptDomain::Reference),
+            (0x91, ConceptDomain::Disease),
+            (0x92, ConceptDomain::Phenomenology),
+            (0x94, ConceptDomain::Lab),
+            (0x95, ConceptDomain::Imaging),
+            (0x96, ConceptDomain::BiologicalProcess),
+            (0x97, ConceptDomain::Substance),
+            (0x98, ConceptDomain::Procedure),
+            (0x9A, ConceptDomain::Form),
+        ] {
+            assert_eq!(
+                canonical_concept_domain((byte << 8) | 0x01),
+                want,
+                "block {byte:#04X} must resolve"
+            );
+        }
+        for hole in [0x93u16, 0x99, 0x9E] {
+            assert_eq!(
+                canonical_concept_domain((hole << 8) | 0x01),
+                ConceptDomain::Unassigned,
+                "{hole:#04X} must stay unminted here"
+            );
+        }
+    }
+
+    /// The tree carries **zero** shared vocabulary rows — the compartments
+    /// are reserved addresses, the concepts stay plug-and-play in their
+    /// producers. Same posture the Ontology block has, and the reason the
+    /// codebook mirror needs no rows for them.
+    #[test]
+    fn the_domain_reference_tree_mints_no_codebook_rows() {
+        let rows: Vec<&str> = CODEBOOK
+            .iter()
+            .filter(|(_, id)| (0x90..=0x9D).contains(&(id >> 8)))
+            .map(|(n, _)| *n)
+            .collect();
+        assert!(
+            rows.is_empty(),
+            "reference tree must stay row-free: {rows:?}"
+        );
+        // Anti-vacuity: the codebook is not empty in general.
+        assert!(CODEBOOK.len() > 50, "codebook must be populated");
     }
 
     #[test]
