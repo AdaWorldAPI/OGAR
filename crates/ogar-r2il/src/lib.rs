@@ -335,6 +335,18 @@ impl Vocabulary for R2ILVocabulary {
         R2ILFn::ordinal(f).and_then(|o| ARITY[o])
     }
 
+    /// Wires the [`PUSHES`] column into the segmentation seam.
+    ///
+    /// Without this override, `ogar_loco::statement_bounds` refuses every
+    /// R2IL call as `Uncovered` — the crate shipped the pushes data (the
+    /// inherent [`R2ILVocabulary::pushes_result`]) but never answered the
+    /// trait hook that the statement walk actually reads, leaving R2IL
+    /// bodies lowerable but not segmentable. Found by the counterfactual
+    /// witness probe on its first run against a mixed core+R2IL body.
+    fn domain_pushes_result(&self, f: FnIndex) -> Option<bool> {
+        Self::pushes_result(f)
+    }
+
     /// **Zero, for every R2IL opcode** — and that is a semantic statement, not
     /// a stub.
     ///
@@ -720,6 +732,66 @@ mod tests {
             assert!(R2ILFn::ordinal(FnIndex(b)).is_none(), "byte {b:#04x}");
             assert!(v.domain_stack_arity(FnIndex(b)).is_none(), "byte {b:#04x}");
         }
+    }
+
+    /// The pushes column is WIRED into the segmentation seam — an R2IL body
+    /// segments into statements. The probe that found the gap: a mixed
+    /// core+R2IL body refused with `Uncovered(IntAdd)` because the crate
+    /// shipped [`PUSHES`] but never answered `domain_pushes_result`.
+    #[test]
+    fn r2il_bodies_are_segmentable() {
+        use ogar_loco::{Call, FunctionBody, LaneShape, statement_bounds};
+        let v = ogar_loco::vocabulary::conformance::validate(R2ILVocabulary).unwrap();
+        let int_add = R2ILFn::from_ordinal(
+            R2ILFn::MNEMONICS
+                .iter()
+                .position(|m| *m == "IntAdd")
+                .unwrap(),
+        )
+        .unwrap()
+        .0;
+        let store = R2ILFn::from_ordinal(
+            R2ILFn::MNEMONICS
+                .iter()
+                .position(|m| *m == "Store")
+                .unwrap(),
+        )
+        .unwrap()
+        .0;
+        // NUMBER, NUMBER, IntAdd (pushes), NUMBER, Store (arity 2, no push).
+        let body = FunctionBody::from_calls(
+            LaneShape::Pairs,
+            &[
+                Call::with_value(ogar_loco::FnIndex::NUMBER, 5),
+                Call::with_value(ogar_loco::FnIndex::NUMBER, 3),
+                Call::new(int_add),
+                Call::with_value(ogar_loco::FnIndex::NUMBER, 9),
+                Call::new(store),
+            ],
+        )
+        .unwrap();
+        let bounds = statement_bounds(&v, &body).expect("R2IL body must segment");
+        assert_eq!(
+            bounds.len(),
+            1,
+            "one Store statement spanning all five calls"
+        );
+        assert_eq!(bounds[0].call_count, 5);
+        // …and the silence twin: a variadic op still refuses (arity None
+        // short-circuits before pushes is ever consulted).
+        let call_other = R2ILFn::from_ordinal(
+            R2ILFn::MNEMONICS
+                .iter()
+                .position(|m| *m == "CallOther")
+                .unwrap(),
+        )
+        .unwrap()
+        .0;
+        let bad = FunctionBody::from_calls(LaneShape::Pairs, &[Call::new(call_other)]).unwrap();
+        assert!(
+            statement_bounds(&v, &bad).is_err(),
+            "variadic stays refused"
+        );
     }
 
     /// Variadic opcodes are REFUSED, not reported as nullary.

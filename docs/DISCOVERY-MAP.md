@@ -2058,3 +2058,42 @@ isolation. The map's job is to keep them visible.
   a *mask over the activities* (one `&self` pass), never the retired
   actor/pump surface (`E-PROGRESSION-IS-EXISTENCE-NOT-COMMAND-1`); and the
   0/1/2/n distribution measurement that would calibrate `diffuse_floor`.
+
+- **[D-CFW-LADDER] Counterfactual visibility is a four-rung ladder over the
+  stored program — byte ⊇ exact-area ⊇ register ⊇ increment — measured on
+  SEMANTIC loco/r2il edits, with the register's two blind spots named** —
+  `[G]` (CODED, 2026-08-31) — home:
+  `crates/ogar-r2il/examples/probe_counterfactual_witness_kernel.rs` —
+  depends: `ogar-loco` `statement_bounds` (the R5 maskable unit),
+  `R2ILVocabulary`, `CallMask`/`project` (#288's inline-words form),
+  lance-graph E-MONOTONE-STREAM-LEVEL2-IS-DISCRIMINATION-NOT-MAGNITUDE-1
+  (the register-cast construction this probe re-grounds). **What changed
+  against the predecessor:** the lance-graph stream probe generated witness
+  events from a seeded RNG and called a seed-preserving reshuffle an
+  intervention — measuring that a mechanical dummy is mechanically
+  invisible. Here the stream source is a real `FunctionBody` (24 statements
+  of the R2IL store idiom, mixed shared-core + domain calls), **the Markov
+  window IS the loco statement** (intra-window order = the stack
+  discipline), and each counterfactual is a statement-local program edit
+  proven confined under the masked lane projection (outside the statement's
+  `CallMask` the two slabs project identically; inside, they differ).
+  Measured: CF-1a (operand swap within the operand run) — byte 2 /
+  exact-area 2.4e-7 / register 0 / increment 0: the register's 1-bit
+  orientation is MIDPOINT-granular and honestly blind to sub-midpoint order
+  (blind spot #1; the probe's first gate expected otherwise and was
+  falsified). CF-1b (midpoint-crossing swap) — register 3.1e-7 sees it,
+  increments exactly 0 (provably blind to any pure reordering). CF-2
+  (IntSub→IntAdd) — visible ONLY at the byte tier: both ops share the
+  arithmetic locus, so a rule counterfactual below locus granularity never
+  reaches any stream tier (blind spot #2). CF-3 identity — all four tiers
+  exactly 0. G0 anchors the inline Goursat solver at 8.0e-5 vs the
+  I₀(2√⟨u,v⟩) closed form. **Crate fix shipped with the probe:** ogar-r2il
+  declared `PUSHES` but never answered `Vocabulary::domain_pushes_result`,
+  leaving R2IL bodies lowerable but UNSEGMENTABLE (`Uncovered(IntAdd)` on
+  first contact); the override now delegates to the table, with the
+  segmentable + variadic-still-refused test pair. **Consequence:** at
+  register resolution, counterfactual reasoning over stored thinking is a
+  DETECTION instrument for dataflow-order interventions at or above
+  statement-midpoint scale; rule substitutions within a locus class and
+  sub-midpoint reorderings require the byte tier (the program itself) or a
+  finer orientation encoding — a deliberate future mint, not a patch.
