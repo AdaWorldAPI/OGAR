@@ -217,7 +217,10 @@ mod tests {
 
         // The surface is addressed by class + concept + key.
         assert!(src.contains("data-class-id=\"0x0102\""), "{src}");
-        assert!(src.contains("data-concept=\"commercial_document\""), "{src}");
+        assert!(
+            src.contains("data-concept=\"commercial_document\""),
+            "{src}"
+        );
         assert!(src.contains("data-key=\"0801000301020304\""), "{src}");
         // Each field carries its POSITION (layout address) — including the
         // wide position past 63.
@@ -265,7 +268,10 @@ mod tests {
 
         assert!(!src.contains("<script>alert('label')"), "label raw:\n{src}");
         assert!(!src.contains("<img src=x onerror"), "value raw:\n{src}");
-        assert!(!src.contains("<script>alert('action')"), "action raw:\n{src}");
+        assert!(
+            !src.contains("<script>alert('action')"),
+            "action raw:\n{src}"
+        );
         assert!(!src.contains("<title-xss>"), "title raw:\n{src}");
         assert!(!src.contains("<concept-xss>"), "concept raw:\n{src}");
         // The escaped form is present (quote encoding varies by askama
@@ -275,8 +281,7 @@ mod tests {
 
     #[test]
     fn empty_actions_omit_the_nav() {
-        let src =
-            render_field_view(1, "c", "00", "T", &sample_fields(), &[]).unwrap();
+        let src = render_field_view(1, "c", "00", "T", &sample_fields(), &[]).unwrap();
         assert!(
             !src.contains("fieldview-actions"),
             "no action nav when there are no actions:\n{src}"
