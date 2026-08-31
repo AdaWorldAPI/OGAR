@@ -139,15 +139,15 @@ impl NsRegistry {
 pub const OBO_CORE: NsRegistry = NsRegistry::new(&[
     NsSpec {
         prefix: "MONDO",
-        concept_id: 0x0301,
+        concept_id: 0x9101,
     },
     NsSpec {
         prefix: "HP",
-        concept_id: 0x0302,
+        concept_id: 0x9202,
     },
     NsSpec {
         prefix: "UBERON",
-        concept_id: 0x0303,
+        concept_id: 0x9303,
     },
     NsSpec {
         prefix: "PATO",
@@ -399,10 +399,17 @@ mod tests {
                 s.concept_id
             );
         }
+        // Since the S3 writer flip the migrated core ids live in the 0x9X
+        // domain tree, so "below the spine band" is no longer the core's
+        // shape. The invariant that MATTERS is unchanged: no core id may sit
+        // inside the spine block itself (0x0340..=0x0347 + headroom to the
+        // end of the 0x03 page), and the un-migrated pair (PATO/RO) still
+        // sits below it.
         for c in OBO_CORE.specs() {
+            let in_legacy_page = c.concept_id >> 8 == 0x03;
             assert!(
-                c.concept_id < SPINE_BAND_START,
-                "{} at {:#06X} escaped the reserved core band",
+                !in_legacy_page || c.concept_id < SPINE_BAND_START,
+                "{} at {:#06X} collides with the reserved spine band",
                 c.prefix,
                 c.concept_id
             );
@@ -424,13 +431,16 @@ mod tests {
             );
         }
 
-        // Every id stays inside the 0x03 Ontology domain — a spine that ran
-        // off the end of the block would silently land in another domain.
+        // Every id stays inside a domain THIS table may address — the spine
+        // and the un-migrated pair in the legacy 0x03 Ontology page, the
+        // migrated three in the 0x90..0x9D domain-reference tree (S3 writer
+        // flip). An id outside both would silently land in a foreign domain,
+        // which is exactly what this guard exists to catch.
         for s in OBO_CORE.specs().iter().chain(META_STUDY_SPINE.specs()) {
-            assert_eq!(
-                s.concept_id >> 8,
-                0x03,
-                "{} at {:#06X} left the 0x03 Ontology domain",
+            let hi = (s.concept_id >> 8) as u8;
+            assert!(
+                hi == 0x03 || (0x90..=0x9D).contains(&hi),
+                "{} at {:#06X} sits in a domain this crate does not own",
                 s.prefix,
                 s.concept_id
             );

@@ -217,7 +217,7 @@ mod tests {
     use super::*;
     use crate::{Namespace, TermId, edges::pack_edges};
 
-    const MONDO: u32 = 0x0301_0000;
+    const MONDO: u32 = crate::Namespace::Mondo.render_classid(0x0000);
 
     fn row(num: u32, parents: &[u32]) -> Row512 {
         let mut r = Row512::zeroed();
@@ -308,7 +308,11 @@ mod tests {
         lens.fillers_of(MONDO, 1, Predicate::HasPhenotype, &mut |c, n| {
             got.push((c, n))
         });
-        assert_eq!(got, vec![(0x0302_0000, 42)], "crosses into HPO");
+        assert_eq!(
+            got,
+            vec![(crate::Namespace::Hpo.render_classid(0x0000), 42)],
+            "crosses into HPO"
+        );
 
         // can-stay-silent: a role with no asserted filler yields nothing
         got.clear();
@@ -332,7 +336,7 @@ mod tests {
         // anti-vacuity: resolve must be able to say no
         assert_eq!(lens.resolve(MONDO, 4), None, "absent numeric");
         assert_eq!(
-            lens.resolve(0x0302_0000, 1),
+            lens.resolve(crate::Namespace::Hpo.render_classid(0x0000), 1),
             None,
             "right numeric, wrong class"
         );

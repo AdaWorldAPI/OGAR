@@ -71,20 +71,44 @@ pub const VALUE_OFFSET: usize = 32;
 pub const ENTITY_TYPE_SLAB_OFFSET: usize = layout::OBO_CORE_ROW.entity_type.slab_off;
 
 /// The five OBO-core namespaces this bake carries.
+///
+/// # S3 of the staging migration (2026-08-31): the writer emits the DOMAIN tree
+///
+/// Since the `0x90..0x9A` domain-reference-tree mint (#292), the retired `0x03`
+/// Ontology block is a TERMINAL address space: writers emit the domain form
+/// (`disease::mondo = 0x9101`, HIGH byte = compartment, LOW byte = the
+/// vocabulary's old `0x03` lo byte carried 1:1), and the legacy `0x03NN`
+/// concept stays READABLE ([`Namespace::from_concept_id`] accepts both forms).
+/// PATO and RO deliberately do NOT move: PATO's home is the fusion-or-facet
+/// question (it is a quality axis, not a domain) and RO is the predicate
+/// namespace — neither has a row in the domain table, so both keep their
+/// legacy concept until that is decided.
+///
+/// **The variant ORDER is a wire contract and never re-sorts:** `ns as u8`
+/// (0 MONDO · 1 HP · 2 UBERON · 3 PATO · 4 RO) is the category byte baked
+/// into `value[96]` of every row and the `TermId.ns` ordinal. The ids below
+/// are therefore no longer monotone in enum order — that property belonged
+/// to the retired block, not to the enum.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Namespace {
-    /// MONDO — disease (`0x0301`, the `0x03` OBO Ontology domain).
+    /// MONDO — disease (`0x9101` = `disease::mondo`; legacy `0x0301` readable).
     Mondo,
-    /// HPO — human phenotype / clinical symptom (`0x0302`).
+    /// HPO — human phenotype / clinical symptom (`0x9202` =
+    /// `phenomenology::hpo`; legacy `0x0302` readable).
     Hpo,
-    /// Uberon — anatomy spine (`0x0303`). Cross-references FMA (`ogar-fma`,
-    /// `0x0A` Anatomy) by edge, not by shared domain byte.
+    /// Uberon — anatomy spine (`0x9303` = `anatomy::uberon`; legacy `0x0303`
+    /// readable). Cross-references FMA (`ogar-fma`, `0x0A` Anatomy) by edge,
+    /// not by shared domain byte; `0x93` is the anatomy ALIAS block — the
+    /// upstream authority stays `0x0A`, which is why no `ConceptDomain::0x93`
+    /// variant exists (a deliberate hole, pinned by ogar-vocab's own test).
     Uberon,
-    /// PATO — phenotypic quality (`0x0304`).
+    /// PATO — phenotypic quality (`0x0304`, deliberately NOT migrated — see
+    /// the enum doc).
     Pato,
-    /// RO — relations ontology (predicate classes; `0x0305`). Predicates ride
-    /// the [`Predicate`] byte palette on edges, not as node classids, but RO
-    /// term nodes are still baked for completeness.
+    /// RO — relations ontology (predicate classes; `0x0305`, deliberately NOT
+    /// migrated — see the enum doc). Predicates ride the [`Predicate`] byte
+    /// palette on edges, not as node classids, but RO term nodes are still
+    /// baked for completeness.
     Ro,
 }
 
@@ -110,17 +134,17 @@ impl Namespace {
     ///
     /// # Why this still exists next to the shared codebook
     ///
-    /// Since the 2026-08-22 mint, `ogar_vocab::CODEBOOK` carries all 14
-    /// Ontology rows (`0x0301..=0x0306`, `0x0340..=0x0347`), so
-    /// `concepts_in_domain(ConceptDomain::Ontology)` now returns the FULL
-    /// domain — that is the discovery surface for "everything ontological".
-    /// (An earlier revision of this doc said the domain carried zero shared
-    /// rows by design; the mint reversed that ruling, and the sentence was
-    /// corrected rather than left to steer consumers into assembling the
-    /// three producer lists by hand.) This array remains the TYPED
-    /// five-namespace subset — the `OBO_CORE` band as `Namespace` variants,
-    /// for callers that want the enum (CURIE prefixes, per-namespace
-    /// dispatch), not a `(name, id)` row scan.
+    /// The 2026-08-22 mint put 14 Ontology rows into `ogar_vocab::CODEBOOK`;
+    /// #290 REVERSED that (operator ruling: plug-and-play — OBO concepts live
+    /// in their producer, never in the shared codebook), so
+    /// `concepts_in_domain(ConceptDomain::Ontology)` is EMPTY again and this
+    /// array is once more the discovery surface for the core five. (This
+    /// paragraph has now flipped twice; the codebook state, not this prose,
+    /// is authoritative — measured 2026-08-31: zero `0x03xx` and zero
+    /// `0x034x` shared rows.) This array remains the TYPED five-namespace
+    /// subset — the `OBO_CORE` band as `Namespace` variants, for callers
+    /// that want the enum (CURIE prefixes, per-namespace dispatch), not a
+    /// `(name, id)` row scan.
     ///
     /// Without an enumeration a consumer has three bad options: repeat the list
     /// locally (the re-implementation [`from_concept_id`](Self::from_concept_id)
@@ -181,9 +205,9 @@ impl Namespace {
     #[must_use]
     pub const fn concept_id(self) -> u16 {
         match self {
-            Namespace::Mondo => 0x0301,
-            Namespace::Hpo => 0x0302,
-            Namespace::Uberon => 0x0303,
+            Namespace::Mondo => 0x9101,
+            Namespace::Hpo => 0x9202,
+            Namespace::Uberon => 0x9303,
             Namespace::Pato => 0x0304,
             Namespace::Ro => 0x0305,
         }
@@ -208,9 +232,12 @@ impl Namespace {
     #[must_use]
     pub const fn from_concept_id(concept: u16) -> Option<Namespace> {
         Some(match concept {
-            0x0301 => Namespace::Mondo,
-            0x0302 => Namespace::Hpo,
-            0x0303 => Namespace::Uberon,
+            // Domain form (the writer's form since S3) and the legacy `0x03`
+            // shadow, both readable — "legacy nur noch lesend". Every baked
+            // artifact minted before the flip carries the legacy ids.
+            0x9101 | 0x0301 => Namespace::Mondo,
+            0x9202 | 0x0302 => Namespace::Hpo,
+            0x9303 | 0x0303 => Namespace::Uberon,
             0x0304 => Namespace::Pato,
             0x0305 => Namespace::Ro,
             _ => return None,
@@ -985,18 +1012,24 @@ mod tests {
         let swept: Vec<u16> = (0..=u16::MAX)
             .filter(|c| super::Namespace::from_concept_id(*c).is_some())
             .collect();
-        let listed: Vec<u16> = super::Namespace::ALL
+        // RE-PINNED for S3 (2026-08-31): the reader accepts BOTH address
+        // forms, so the swept set is ALL's ids UNION the legacy shadows of
+        // the three migrated namespaces — 8 ids for 5 namespaces, each
+        // shadow resolving to the SAME namespace as its domain form.
+        let mut expected: Vec<u16> = super::Namespace::ALL
             .iter()
             .map(|n| n.concept_id())
+            .chain([0x0301u16, 0x0302, 0x0303])
             .collect();
+        expected.sort_unstable();
         assert_eq!(
-            swept, listed,
-            "ALL and from_concept_id disagree — a namespace was added to one and not the other"
+            swept, expected,
+            "from_concept_id must accept exactly ALL's ids plus the three              legacy shadows — a namespace was added to one side and not the other"
         );
 
-        // Anti-vacuity: the sweep really is selective (5 of 65_536), so the
+        // Anti-vacuity: the sweep really is selective (8 of 65_536), so the
         // equality above is not two empty sets agreeing.
-        assert_eq!(swept.len(), super::Namespace::ALL.len());
+        assert_eq!(swept.len(), super::Namespace::ALL.len() + 3);
         assert!(!swept.is_empty(), "the sweep found nothing at all");
         assert!(
             swept.len() < 16,
@@ -1004,21 +1037,31 @@ mod tests {
             swept.len()
         );
 
-        // Ordered by concept id, as the doc promises — a caller iterating ALL
-        // walks the block in address order.
-        assert!(
-            listed.windows(2).all(|w| w[0] < w[1]),
-            "ALL is not in ascending concept-id order: {listed:?}"
-        );
+        // The legacy shadow resolves to the SAME namespace as the domain form
+        // — an alias, never a second meaning.
+        for (legacy, ns) in [
+            (0x0301u16, super::Namespace::Mondo),
+            (0x0302, super::Namespace::Hpo),
+            (0x0303, super::Namespace::Uberon),
+        ] {
+            assert_eq!(super::Namespace::from_concept_id(legacy), Some(ns));
+        }
 
-        // Every entry round-trips, and every entry is in the 0x03 block.
-        for n in super::Namespace::ALL {
-            assert_eq!(super::Namespace::from_concept_id(n.concept_id()), Some(n));
-            assert_eq!(
-                n.concept_id() >> 8,
-                0x03,
-                "{n:?} is outside the Ontology domain"
-            );
+        // Every entry round-trips, carries its expected address, and the
+        // enum ORDER stays the wire ordinal (the value[96] category byte) —
+        // the old "ascending concept-id order" claim belonged to the retired
+        // 0x03 block and is deliberately NOT re-asserted.
+        let expected_ids = [
+            (super::Namespace::Mondo, 0x9101u16),
+            (super::Namespace::Hpo, 0x9202),
+            (super::Namespace::Uberon, 0x9303),
+            (super::Namespace::Pato, 0x0304),
+            (super::Namespace::Ro, 0x0305),
+        ];
+        for (i, (n, id)) in expected_ids.into_iter().enumerate() {
+            assert_eq!(n.concept_id(), id);
+            assert_eq!(super::Namespace::from_concept_id(id), Some(n));
+            assert_eq!(n as usize, i, "the wire ordinal must never re-sort");
             assert!(!n.prefix().is_empty());
         }
     }
@@ -1098,9 +1141,12 @@ mod tests {
         let t = TermId::parse("MONDO:0007739").unwrap();
         assert_eq!(t.namespace(), Namespace::Mondo);
         assert_eq!(t.num, 7739);
-        // canon-high: (0x0301 << 16) | app_prefix ; all five in the 0x03 domain
-        assert_eq!(Namespace::Mondo.render_classid(0x0000), 0x0301_0000);
-        assert_eq!(Namespace::Uberon.render_classid(0x00AB), 0x0303_00AB);
+        // canon-high: (concept << 16) | app_prefix — since the S3 writer flip
+        // the migrated three carry the DOMAIN form (disease::mondo 0x9101,
+        // anatomy::uberon 0x9303); the legacy shadows stay readable, which
+        // the sweep test above pins.
+        assert_eq!(Namespace::Mondo.render_classid(0x0000), 0x9101_0000);
+        assert_eq!(Namespace::Uberon.render_classid(0x00AB), 0x9303_00AB);
         // out-of-scope / malformed
         assert!(TermId::parse("CHEBI:12345").is_none());
         assert!(TermId::parse("MONDO:99999999").is_none()); // > 24-bit
