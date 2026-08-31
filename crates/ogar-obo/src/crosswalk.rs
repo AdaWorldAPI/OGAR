@@ -130,11 +130,15 @@ impl Crosswalk {
     }
 }
 
-/// The Uberon anatomy classid (`0x0303`), for a consumer that resolves an FMA
-/// zone and wants to confirm the returned address is anatomy.
-pub const ANATOMY_CLASSID: u32 = 0x0303_0000;
-/// The MONDO disease classid (`0x0301`).
-pub const DISEASE_CLASSID: u32 = 0x0301_0000;
+/// The Uberon anatomy classid, for a consumer that resolves an FMA zone and
+/// wants to confirm the returned address is anatomy. DERIVED from the enum
+/// (never a literal), so it moved with the S3 producer flip (#293:
+/// `0x0303_0000 -> 0x9303_0000`) instead of silently disagreeing with what
+/// [`Crosswalk::resolve_fma`] actually renders — which is exactly how the
+/// stale literal was caught (MedCare's conformance suite).
+pub const ANATOMY_CLASSID: u32 = (crate::Namespace::Uberon.concept_id() as u32) << 16;
+/// The MONDO disease classid (derived, see [`ANATOMY_CLASSID`]).
+pub const DISEASE_CLASSID: u32 = (crate::Namespace::Mondo.concept_id() as u32) << 16;
 
 #[cfg(test)]
 mod tests {
