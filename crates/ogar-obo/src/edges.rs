@@ -431,7 +431,7 @@ mod tests {
             vec![(
                 Predicate::IsA,
                 Link {
-                    classid: 0x0301_0000,
+                    classid: target_classid(Namespace::Mondo, 0x0000),
                     num: 5015
                 }
             )]
@@ -456,11 +456,11 @@ mod tests {
             got,
             vec![
                 Link {
-                    classid: 0x0301_0000,
+                    classid: target_classid(Namespace::Mondo, 0x0000),
                     num: 1
                 },
                 Link {
-                    classid: 0x0302_0000,
+                    classid: target_classid(Namespace::Hpo, 0x0000),
                     num: 2
                 }
             ]
@@ -547,7 +547,10 @@ mod tests {
         // to a reasoner without role composition derives false ancestors, so
         // the projection must yield ONLY the is_a edge.
         let mut row = row_with_degrees(&[(Predicate::IsA, 1), (Predicate::PartOf, 1)]);
-        row[0..16].copy_from_slice(&crate::pack_key(0x0303_0000, 2244));
+        row[0..16].copy_from_slice(&crate::pack_key(
+            target_classid(Namespace::Uberon, 0x0000),
+            2244,
+        ));
         let mut tg = vec![
             (Predicate::IsA, t(Namespace::Uberon, 10)),
             (Predicate::PartOf, t(Namespace::Uberon, 20)),
@@ -563,11 +566,11 @@ mod tests {
             got,
             vec![(
                 Link {
-                    classid: 0x0303_0000,
+                    classid: target_classid(Namespace::Uberon, 0x0000),
                     num: 2244
                 },
                 Link {
-                    classid: 0x0303_0000,
+                    classid: target_classid(Namespace::Uberon, 0x0000),
                     num: 10
                 }
             )],
@@ -633,7 +636,10 @@ mod tests {
             .collect();
         assert_eq!(
             got,
-            vec![(0x0301_0000, 5015), (0x0303_0000, 955)],
+            vec![
+                (target_classid(Namespace::Mondo, 0x0000), 5015),
+                (target_classid(Namespace::Uberon, 0x0000), 955),
+            ],
             "the three empty slots after the first link must advance the lane, \
              not yield phantom links"
         );
@@ -696,11 +702,12 @@ mod tests {
         // an oversize CURIE (> u16) must survive: the numeric rides the rail,
         // high half in `family`. A truncating decode would return 4556 here.
         let mut row = [0u8; NODE_ROW_STRIDE];
-        row[0..16].copy_from_slice(&crate::pack_key(0x0301_0000, 700_092));
+        let mondo = target_classid(Namespace::Mondo, 0x0000);
+        row[0..16].copy_from_slice(&crate::pack_key(mondo, 700_092));
         assert_eq!(
             subject(&row),
             Link {
-                classid: 0x0301_0000,
+                classid: mondo,
                 num: 700_092
             }
         );
