@@ -23,17 +23,20 @@
 //!   (`IntAdd` → `IntSub` — a rule counterfactual), CF-3 is the identical
 //!   program (silence).
 //!
-//! # The three-tier visibility ladder under measurement
+//! # The four-tier visibility ladder under measurement
 //!
-//! For each counterfactual, three readings of "how far is the edited
+//! For each counterfactual, four readings of "how far is the edited
 //! timeline from the factual one":
 //!
 //! 1. **byte tier** — differing call slots between the two value slabs,
 //!    counted through the r2il masked projection (loco's own diff);
-//! 2. **register tier** — normalized signature-kernel distance with the
-//!    24-locus register cast as level-2 coefficients (sign = orientation
-//!    within the statement, magnitude = i4 net);
-//! 3. **increment tier** — the same kernel, increments only.
+//! 2. **exact-area tier** — normalized signature-kernel distance with the
+//!    full per-window antisymmetric area matrices (computed from the call
+//!    stream — information the register does NOT store);
+//! 3. **register tier** — the same kernel with the 24-locus register cast
+//!    as level-2 coefficients (sign = orientation within the statement,
+//!    magnitude = i4 net);
+//! 4. **increment tier** — the same kernel, increments only.
 //!
 //! Pre-registered expectations (each an assert):
 //!
@@ -43,9 +46,15 @@
 //!   is CONFINED: outside the edited statement's `CallMask`, the projected
 //!   calls of factual and counterfactual slabs are identical; inside, they
 //!    differ (the lens proves locality — can-fire + can-stay-silent).
-//! - G2 (CF-1 operand swap): byte > 0, increment == 0 (net per-locus counts
-//!   unchanged — increments are structurally blind to dataflow order),
-//!   register > 0 (the orientation tier sees the swap).
+//! - G2a (CF-1a intra-run swap): byte > 0, exact-area > 0, increment == 0
+//!   (net per-locus counts unchanged — increments are structurally blind
+//!   to dataflow order), register == 0 — the orientation bit is
+//!   MIDPOINT-granular and honestly blind to sub-midpoint order (the
+//!   probe's first gate expected otherwise and was falsified; blind spot
+//!   #1, named).
+//! - G2b (CF-1b midpoint-crossing swap): byte > 0, exact-area > 0,
+//!   increment == 0, register > 0 — the orientation tier sees exactly the
+//!   class of dataflow edit its bit encodes.
 //! - G3 (CF-2 operator substitution): byte > 0, increment == 0, AND
 //!   register == 0 — the honest resolution limit: `IntAdd` and `IntSub`
 //!   land on the same arithmetic locus, so a rule counterfactual below the

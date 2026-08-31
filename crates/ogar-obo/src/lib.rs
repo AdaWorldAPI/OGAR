@@ -97,9 +97,10 @@ impl Namespace {
     /// [`registry::META_STUDY_SPINE`] (`0x0340..=0x0347` — BFO / COB / IAO /
     /// OBI / OBCS / SEPIO / ECO / FBbi), and `ogar_ro::RELATION_BODY_CONCEPT_ID`
     /// (`0x0306`, in a crate this one cannot see: the dependency runs
-    /// `ogar-ro` → `ogar-obo`). A caller that needs the whole domain must ask
-    /// all three; iterating `ALL` and calling it "the ontology" would miss nine
-    /// of fourteen concepts.
+    /// `ogar-ro` → `ogar-obo`). A caller that needs the whole domain asks the
+    /// shared codebook (`concepts_in_domain(ConceptDomain::Ontology)`, 14
+    /// rows since the mint); iterating `ALL` and calling it "the ontology"
+    /// would miss nine of fourteen concepts.
     ///
     /// That distinction is not pedantry — `META_STUDY_SPINE` was once minted
     /// **over** `0x0306` and nothing failed, because no enumeration spanned the
@@ -107,14 +108,19 @@ impl Namespace {
     /// guard that now catches it lives in `ogar-ro`, the only side that can see
     /// both.
     ///
-    /// # Why this has to live here
+    /// # Why this still exists next to the shared codebook
     ///
-    /// `ogar_vocab::ConceptDomain::Ontology` carries **zero shared codebook
-    /// rows by design** (see [`concept_id`](Self::concept_id)), so a consumer
-    /// that reaches for `concepts_in_domain(ConceptDomain::Ontology)` gets an
-    /// empty set — and an empty set reads exactly like "there is nothing here
-    /// to reason about". There is; it is this array, deliberately kept in the
-    /// producer so ERP and project consumers never compile it.
+    /// Since the 2026-08-22 mint, `ogar_vocab::CODEBOOK` carries all 14
+    /// Ontology rows (`0x0301..=0x0306`, `0x0340..=0x0347`), so
+    /// `concepts_in_domain(ConceptDomain::Ontology)` now returns the FULL
+    /// domain — that is the discovery surface for "everything ontological".
+    /// (An earlier revision of this doc said the domain carried zero shared
+    /// rows by design; the mint reversed that ruling, and the sentence was
+    /// corrected rather than left to steer consumers into assembling the
+    /// three producer lists by hand.) This array remains the TYPED
+    /// five-namespace subset — the `OBO_CORE` band as `Namespace` variants,
+    /// for callers that want the enum (CURIE prefixes, per-namespace
+    /// dispatch), not a `(name, id)` row scan.
     ///
     /// Without an enumeration a consumer has three bad options: repeat the list
     /// locally (the re-implementation [`from_concept_id`](Self::from_concept_id)
