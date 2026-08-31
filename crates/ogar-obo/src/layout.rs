@@ -101,13 +101,22 @@ const _: () = assert!(OBO_CORE_ROW.edge_lanes.bytes == OBO_CORE_ROW.lane_count *
 /// (`ogar-ro`'s relation-BODY classid, whose 512-byte row is `ogar-loco`
 /// call-slab shaped, not this schema) and every concept outside the
 /// registries. Refused, not guessed.
+///
+/// Accepts BOTH address forms of an aliased namespace (the reader rule the S3
+/// producer flip set for [`Namespace::from_concept_id`]): a pre-flip artifact
+/// keyed `0x0301` carries exactly this carve, so its legacy concept id must
+/// resolve to the same schema the domain form does.
 #[must_use]
 pub fn row_schema_of(concept: u16) -> Option<&'static ClassRowSchema> {
+    // Fold a legacy alias onto its canonical (registry-minted) form before the
+    // registry probe; a concept without an alias probes as itself.
+    let canonical =
+        crate::Namespace::from_concept_id(concept).map_or(concept, crate::Namespace::concept_id);
     let known = registry::OBO_CORE
         .specs()
         .iter()
         .chain(registry::META_STUDY_SPINE.specs())
-        .any(|s| s.concept_id == concept);
+        .any(|s| s.concept_id == canonical);
     known.then_some(&OBO_CORE_ROW)
 }
 
@@ -127,6 +136,21 @@ mod tests {
                 Some(&OBO_CORE_ROW),
                 "{} must declare its row carve",
                 s.prefix
+            );
+        }
+    }
+
+    /// A pre-flip artifact's rows carry the legacy ids and EXACTLY this
+    /// carve — the reader rule (`from_concept_id` accepts both) extends to
+    /// the schema resolution, or a legacy artifact becomes unreadable the
+    /// moment the registry mints the domain form.
+    #[test]
+    fn legacy_alias_concepts_resolve_to_the_same_schema() {
+        for legacy in [0x0301u16, 0x0302, 0x0303] {
+            assert_eq!(
+                row_schema_of(legacy),
+                Some(&OBO_CORE_ROW),
+                "{legacy:#06x} (legacy alias) must resolve the declared carve"
             );
         }
     }
