@@ -89,6 +89,62 @@ pub enum Namespace {
 }
 
 impl Namespace {
+    /// **Every OBO-core namespace, in concept-id order.**
+    ///
+    /// **Scope, stated precisely: this is `OBO_CORE`, not the `0x03` domain.**
+    /// The Ontology domain has three claimants and this array is one of them —
+    /// [`registry::OBO_CORE`] (`0x0301..=0x0305`, mirrored by this enum),
+    /// [`registry::META_STUDY_SPINE`] (`0x0340..=0x0347` — BFO / COB / IAO /
+    /// OBI / OBCS / SEPIO / ECO / FBbi), and `ogar_ro::RELATION_BODY_CONCEPT_ID`
+    /// (`0x0306`, in a crate this one cannot see: the dependency runs
+    /// `ogar-ro` → `ogar-obo`). A caller that needs the whole domain asks the
+    /// shared codebook (`concepts_in_domain(ConceptDomain::Ontology)`, 14
+    /// rows since the mint); iterating `ALL` and calling it "the ontology"
+    /// would miss nine of fourteen concepts.
+    ///
+    /// That distinction is not pedantry — `META_STUDY_SPINE` was once minted
+    /// **over** `0x0306` and nothing failed, because no enumeration spanned the
+    /// domain. It was found by hand-enumerating during an unrelated audit; the
+    /// guard that now catches it lives in `ogar-ro`, the only side that can see
+    /// both.
+    ///
+    /// # Why this still exists next to the shared codebook
+    ///
+    /// Since the 2026-08-22 mint, `ogar_vocab::CODEBOOK` carries all 14
+    /// Ontology rows (`0x0301..=0x0306`, `0x0340..=0x0347`), so
+    /// `concepts_in_domain(ConceptDomain::Ontology)` now returns the FULL
+    /// domain — that is the discovery surface for "everything ontological".
+    /// (An earlier revision of this doc said the domain carried zero shared
+    /// rows by design; the mint reversed that ruling, and the sentence was
+    /// corrected rather than left to steer consumers into assembling the
+    /// three producer lists by hand.) This array remains the TYPED
+    /// five-namespace subset — the `OBO_CORE` band as `Namespace` variants,
+    /// for callers that want the enum (CURIE prefixes, per-namespace
+    /// dispatch), not a `(name, id)` row scan.
+    ///
+    /// Without an enumeration a consumer has three bad options: repeat the list
+    /// locally (the re-implementation [`from_concept_id`](Self::from_concept_id)
+    /// already warns about), scan the whole `0x03` block calling
+    /// `from_concept_id` on all 256 slots, or compute the ids by arithmetic
+    /// from the variant order. The third is the one that was found downstream:
+    /// `0x0300 | (ns as u32 + 1)` happens to be right only because the five
+    /// variants are declared in the same order as five contiguous ids, and it
+    /// invents a `0x0306` for any ordinal past the end.
+    ///
+    /// Ordered by [`concept_id`](Self::concept_id) so a caller iterating this
+    /// walks the core band in address order. It is also the enum order
+    /// [`registry::OBO_CORE`] is pinned against, and
+    /// `registry::tests::obo_core_matches_the_shipped_enum` consumes THIS array
+    /// rather than repeating it — the duplicate that test used to carry is what
+    /// promoting it to a public const removes.
+    pub const ALL: [Namespace; 5] = [
+        Namespace::Mondo,
+        Namespace::Hpo,
+        Namespace::Uberon,
+        Namespace::Pato,
+        Namespace::Ro,
+    ];
+
     /// The OBO CURIE prefix (`"MONDO"`, `"HP"`, `"UBERON"`, `"PATO"`, `"RO"`).
     #[must_use]
     pub const fn prefix(self) -> &'static str {
@@ -913,6 +969,60 @@ pub fn merge_logical_defs(
 
 #[cfg(test)]
 mod tests {
+    /// **`ALL` must be exactly what `from_concept_id` accepts.**
+    ///
+    /// The failure this exists for is the classic one: someone adds a sixth
+    /// namespace, extends `concept_id` / `from_concept_id` / `prefix` (the
+    /// compiler forces all three — they are exhaustive matches) and leaves the
+    /// array at five. Nothing in the type system catches that, because an array
+    /// literal is not a match.
+    ///
+    /// So the test does not compare against a second hand-written list. It
+    /// sweeps the ENTIRE u16 space, collects every concept `from_concept_id`
+    /// resolves, and asserts that set is exactly `ALL`'s — in both directions.
+    #[test]
+    fn all_is_exactly_the_set_from_concept_id_resolves() {
+        let swept: Vec<u16> = (0..=u16::MAX)
+            .filter(|c| super::Namespace::from_concept_id(*c).is_some())
+            .collect();
+        let listed: Vec<u16> = super::Namespace::ALL
+            .iter()
+            .map(|n| n.concept_id())
+            .collect();
+        assert_eq!(
+            swept, listed,
+            "ALL and from_concept_id disagree — a namespace was added to one and not the other"
+        );
+
+        // Anti-vacuity: the sweep really is selective (5 of 65_536), so the
+        // equality above is not two empty sets agreeing.
+        assert_eq!(swept.len(), super::Namespace::ALL.len());
+        assert!(!swept.is_empty(), "the sweep found nothing at all");
+        assert!(
+            swept.len() < 16,
+            "from_concept_id is accepting far too much: {}",
+            swept.len()
+        );
+
+        // Ordered by concept id, as the doc promises — a caller iterating ALL
+        // walks the block in address order.
+        assert!(
+            listed.windows(2).all(|w| w[0] < w[1]),
+            "ALL is not in ascending concept-id order: {listed:?}"
+        );
+
+        // Every entry round-trips, and every entry is in the 0x03 block.
+        for n in super::Namespace::ALL {
+            assert_eq!(super::Namespace::from_concept_id(n.concept_id()), Some(n));
+            assert_eq!(
+                n.concept_id() >> 8,
+                0x03,
+                "{n:?} is outside the Ontology domain"
+            );
+            assert!(!n.prefix().is_empty());
+        }
+    }
+
     use super::*;
     use std::collections::HashMap;
 

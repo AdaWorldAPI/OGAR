@@ -266,13 +266,11 @@ mod tests {
     /// moves the shipped digests — and this test is what refuses it.
     #[test]
     fn obo_core_matches_the_shipped_enum() {
-        let enum_order = [
-            Namespace::Mondo,
-            Namespace::Hpo,
-            Namespace::Uberon,
-            Namespace::Pato,
-            Namespace::Ro,
-        ];
+        // `Namespace::ALL` — not a local literal. This test used to carry its
+        // own copy of the five, which made three copies of one list (enum,
+        // registry, test). Consuming the public const leaves two, and the
+        // agreement between those two is exactly what this test asserts.
+        let enum_order = Namespace::ALL;
         assert_eq!(
             OBO_CORE.len(),
             enum_order.len(),
