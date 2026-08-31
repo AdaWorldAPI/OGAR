@@ -63,10 +63,11 @@
 //!
 //! Reads like a filtered query, executes as word-tests over a bitmask; no
 //! `Vec<Call>` is built and no call outside the mask is ever decoded. The
-//! mask is [`CallMask`] — `Box<[u64]>` over call indices, with the same
-//! algebra and the same single named materializer as every other mask plane
-//! in this workspace, because "a `long[]` of selected ids is still a
-//! materialised population" applies here identically.
+//! mask is [`CallMask`] — an inline `[u64; 3]` over call indices (three
+//! words, no allocation, cover every [`LaneShape`]'s call population), with
+//! the same algebra and the same single named materializer as every other
+//! mask plane in this workspace, because "a `long[]` of selected ids is
+//! still a materialised population" applies here identically.
 //!
 //! **Reshuffling is a re-READ, never a re-WRITE.** The same slab under two
 //! shapes yields two different call streams from the same unchanged bytes —
@@ -357,17 +358,37 @@ impl R2ILVocabulary {
     }
 }
 
+/// Inline word count for [`CallMask`]'s bitset.
+///
+/// Derived, not chosen: the widest [`LaneShape`] is `Pairs`, at
+/// `180 = LaneShape::Pairs.calls_per_lane() * ogar_loco::CONTENT_SLOTS` call
+/// slots (pinned by the
+/// `masks_of_different_shapes_range_over_different_populations` test), and
+/// `180.div_ceil(64) == 3`. `Triples` (120) and `Quads` (90) both need fewer
+/// words and simply leave the high word(s) unused — always zero, since
+/// [`CallMask::set`] only ever touches a word index `< len.div_ceil(64)`.
+/// Three inline `u64` words therefore cover every shape with no allocation.
+const MASK_WORDS: usize = 3;
+
 /// A population of CALL INDICES within one body, as words.
 ///
 /// The same law as every other mask plane here: reads like a selection,
 /// executes as word ops, and leaves mask form only through the one named
-/// materializer. Call indices are shape-relative — a mask built under
-/// `Pairs` indexes a different population than the same bits under `Quads` —
-/// which is why [`project`] takes both and why [`CallMask::shape`] is
-/// carried rather than inferred.
-#[derive(Clone, Debug, PartialEq, Eq)]
+/// materializer ([`CallMask::materialize_indices`]) — the lazy
+/// [`CallMask::set_indices`] iterator is not a second exit, it stays inside
+/// the same word-scan discipline and only turns into data when a caller
+/// chooses to collect it. Call indices are shape-relative — a mask built
+/// under `Pairs` indexes a different population than the same bits under
+/// `Quads` — which is why [`project`] takes both and why [`CallMask::shape`]
+/// is carried rather than inferred.
+///
+/// Backed by [`MASK_WORDS`] inline `u64` words rather than a `Box<[u64]>`:
+/// every [`LaneShape`]'s call population fits in three words with room to
+/// spare, so a boxed, heap-allocated slice would only be paying for an
+/// allocation the largest shape never needs.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct CallMask {
-    words: Box<[u64]>,
+    words: [u64; MASK_WORDS],
     len: u32,
     shape: LaneShape,
 }
@@ -377,8 +398,12 @@ impl CallMask {
     #[must_use]
     pub fn empty(shape: LaneShape) -> Self {
         let len = shape.calls_per_lane() * ogar_loco::CONTENT_SLOTS;
+        debug_assert!(
+            len.div_ceil(64) <= MASK_WORDS,
+            "shape needs more than MASK_WORDS={MASK_WORDS} inline words"
+        );
         Self {
-            words: vec![0u64; len.div_ceil(64)].into_boxed_slice(),
+            words: [0u64; MASK_WORDS],
             len: u32::try_from(len).unwrap_or(u32::MAX),
             shape,
         }
@@ -434,12 +459,7 @@ impl CallMask {
     fn zip(&self, other: &Self, f: impl Fn(u64, u64) -> u64) -> Self {
         debug_assert_eq!(self.shape, other.shape, "masks of different shapes");
         Self {
-            words: self
-                .words
-                .iter()
-                .zip(other.words.iter())
-                .map(|(&a, &b)| f(a, b))
-                .collect(),
+            words: std::array::from_fn(|i| f(self.words[i], other.words[i])),
             len: self.len,
             shape: self.shape,
         }
@@ -468,30 +488,78 @@ impl CallMask {
 
     /// Complement WITHIN the shape's call count.
     ///
-    /// The tail word's bits past `len` are cleared: a complement that keeps
-    /// them invents call slots the body does not have, and every downstream
-    /// count and projection silently inflates.
+    /// Every bit at or past `len` is cleared, word by word — not just in the
+    /// physically-last of [`MASK_WORDS`] inline words. With fixed inline
+    /// storage, a shape narrower than `Pairs` (e.g. `Triples`, `Quads`) never
+    /// touches the high word(s) at all, so a plain `!w` over every word would
+    /// flip those always-zero, never-meant-to-be-addressed words to all-ones
+    /// — phantom call slots the body does not have, inflating every
+    /// downstream count and projection. Clearing per-word by each word's own
+    /// bit range (fully out of range → zeroed; straddling `len` → masked to
+    /// its in-range bits; fully in range → left untouched) is what keeps this
+    /// correct for every shape, not only the widest one.
     #[must_use]
     pub fn not(&self) -> Self {
-        let mut out = Self {
-            words: self.words.iter().map(|&w| !w).collect(),
+        let mut words: [u64; MASK_WORDS] = std::array::from_fn(|i| !self.words[i]);
+        for (word_idx, w) in words.iter_mut().enumerate() {
+            let word_start = (word_idx as u32) * 64;
+            if word_start >= self.len {
+                *w = 0;
+            } else if word_start + 64 > self.len {
+                let bits_in_word = self.len - word_start;
+                *w &= (1u64 << bits_in_word) - 1;
+            }
+        }
+        Self {
+            words,
             len: self.len,
             shape: self.shape,
-        };
-        let tail = u64::from(self.len % 64);
-        if tail != 0
-            && let Some(last) = out.words.last_mut()
-        {
-            *last &= (1u64 << tail) - 1;
         }
-        out
+    }
+
+    /// Set bit indices, ascending, as a lazy iterator.
+    ///
+    /// One `trailing_zeros` + `w &= w - 1` per set bit, word by word — O(3 +
+    /// popcount) rather than [`materialize_indices`](Self::materialize_indices)'s
+    /// O(len) per-index `contains` scan. This is the lazy sibling, not a
+    /// second exit from mask form: nothing is collected until a caller
+    /// chooses to. `materialize_indices` is built on top of it.
+    ///
+    /// The trailing `take_while` is a defensive bound, not a hot path: by
+    /// construction no bit is ever set at an index `>= len` (`set` guards it,
+    /// and `not` now clears per-word instead of assuming the tail lives in
+    /// the last of [`MASK_WORDS`] words), so this only ever matters if that
+    /// invariant is ever broken elsewhere.
+    //
+    // No `#[must_use]`: `impl Iterator` already carries it, and stacking a
+    // second bare one is `clippy::double_must_use` (CI runs `-D warnings`).
+    pub fn set_indices(&self) -> impl Iterator<Item = u32> + '_ {
+        let len = self.len;
+        self.words
+            .iter()
+            .enumerate()
+            .flat_map(|(word_idx, &word)| {
+                let base = (word_idx as u32) * 64;
+                let mut w = word;
+                std::iter::from_fn(move || {
+                    if w == 0 {
+                        None
+                    } else {
+                        let bit = w.trailing_zeros();
+                        w &= w - 1;
+                        Some(base + bit)
+                    }
+                })
+            })
+            .take_while(move |&i| i < len)
     }
 
     /// **The named materializer** — call indices out, ascending. O(n), and
-    /// the only exit from mask form.
+    /// the only *eager* exit from mask form (see [`Self::set_indices`] for
+    /// the lazy view this is built on).
     #[must_use]
     pub fn materialize_indices(&self) -> Vec<u32> {
-        (0..self.len).filter(|&i| self.contains(i)).collect()
+        self.set_indices().collect()
     }
 }
 
@@ -789,5 +857,82 @@ mod tests {
             &[(0, core), (5, R2ILFn::from_ordinal(0).unwrap().0.0)],
         );
         assert_eq!(r2il_mask(&mixed, LaneShape::Pairs).count(), 1);
+    }
+
+    /// `CallMask` is exactly its three inline fields, padded to its own
+    /// alignment — no `Box<[u64]>` (pointer + length) hiding inside it. The
+    /// expected size is computed from the field layout itself rather than a
+    /// hardcoded byte count, so this stays correct however `LaneShape` is
+    /// represented.
+    #[test]
+    fn call_mask_stores_its_words_inline_not_boxed() {
+        let words_bytes = std::mem::size_of::<[u64; MASK_WORDS]>();
+        let len_bytes = std::mem::size_of::<u32>();
+        let shape_bytes = std::mem::size_of::<LaneShape>();
+        let raw_sum = words_bytes + len_bytes + shape_bytes;
+        let align = std::mem::align_of::<CallMask>();
+        let expected = raw_sum.div_ceil(align) * align;
+        assert_eq!(
+            std::mem::size_of::<CallMask>(),
+            expected,
+            "CallMask must be exactly its inline fields (padded to its own \
+             alignment) — a Box<[u64]> backing would additionally cost a \
+             pointer plus a length"
+        );
+        // A CallMask is trivially Copy-able data now — no field left behind
+        // that would make Copy unsound.
+        let m = CallMask::empty(LaneShape::Pairs);
+        let copy = m;
+        assert_eq!(m, copy, "CallMask must remain usable after being Copy'd");
+    }
+
+    /// [`CallMask::set_indices`] yields exactly the set-bit indices,
+    /// ascending — for an empty mask (silence), a single-bit mask, and a
+    /// full mask (every index the shape admits), across every `LaneShape`.
+    #[test]
+    fn set_indices_yields_exactly_the_set_bit_indices() {
+        for shape in LaneShape::ALL {
+            // Empty: yields nothing.
+            let empty = CallMask::empty(shape);
+            assert_eq!(
+                empty.set_indices().collect::<Vec<u32>>(),
+                Vec::<u32>::new(),
+                "{shape:?}: empty mask must iterate to nothing"
+            );
+
+            // A handful of scattered bits, including one that straddles the
+            // word boundary at index 64 and (for Pairs) one near the tail.
+            let mut m = CallMask::empty(shape);
+            let candidates = [0u32, 1, 63, 64, 65, m.len().saturating_sub(1)];
+            let mut expected: Vec<u32> = candidates
+                .into_iter()
+                .filter(|&i| i < m.len())
+                .collect::<std::collections::BTreeSet<u32>>()
+                .into_iter()
+                .collect();
+            expected.sort_unstable();
+            for &i in &expected {
+                m.set(i);
+            }
+            assert_eq!(
+                m.set_indices().collect::<Vec<u32>>(),
+                expected,
+                "{shape:?}: scattered bits must iterate ascending, exactly the set ones"
+            );
+            assert_eq!(
+                m.materialize_indices(),
+                expected,
+                "{shape:?}: materialize_indices must agree with set_indices"
+            );
+
+            // Full: every index the shape admits, ascending, none skipped.
+            let full = CallMask::all(shape);
+            let got_full: Vec<u32> = full.set_indices().collect();
+            let want_full: Vec<u32> = (0..full.len()).collect();
+            assert_eq!(
+                got_full, want_full,
+                "{shape:?}: full mask must yield 0..len"
+            );
+        }
     }
 }
