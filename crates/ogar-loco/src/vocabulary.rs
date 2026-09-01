@@ -89,6 +89,17 @@ pub mod shared_core {
             | FnIndex::FOR_EACH => 1,
             // from, to, by — then a body.
             FnIndex::FOR_RANGE => 3,
+            // ── epistemic mask algebra (0x86..0x8B). TERNLOG pops three
+            // masks; its truth table rides as the call's value byte, never
+            // as an operand. The two list-consuming ops take the LIST as
+            // one operand (the arity of the call, not of the children —
+            // which is how the variadic-refusal rule stays satisfied).
+            FnIndex::TERNLOG => 3,
+            FnIndex::BELNAP_JOIN
+            | FnIndex::INFO_GAIN
+            | FnIndex::SIGMA_TENSION
+            | FnIndex::STANCE_ENTROPY => 2,
+            FnIndex::ACCUMULATE => 1,
             // Leave the enclosing loop / iteration. No operand, no body.
             FnIndex::BREAK | FnIndex::CONTINUE => 0,
             // ── leaves — they push, they do not consume.
@@ -337,6 +348,12 @@ pub mod shared_core {
             FnIndex::ACOS => "ACOS",
             FnIndex::ATAN => "ATAN",
             FnIndex::ATAN2 => "ATAN2",
+            FnIndex::TERNLOG => "TERNLOG",
+            FnIndex::BELNAP_JOIN => "BELNAP_JOIN",
+            FnIndex::INFO_GAIN => "INFO_GAIN",
+            FnIndex::SIGMA_TENSION => "SIGMA_TENSION",
+            FnIndex::ACCUMULATE => "ACCUMULATE",
+            FnIndex::STANCE_ENTROPY => "STANCE_ENTROPY",
             FnIndex::RANDOM_INT => "RANDOM_INT",
             FnIndex::RANDOM_FLOAT => "RANDOM_FLOAT",
             FnIndex::CONSTRAIN => "CONSTRAIN",
@@ -1417,8 +1434,11 @@ mod coverage {
             );
         }
 
-        // And the census itself, pinned: 95 named operations (96 constants
-        // minus NOP, which is not an operation), 5 refused, 90 covered.
-        assert_eq!(named, 95, "the named census moved — re-pin deliberately");
+        // And the census itself, pinned: 101 named operations (102 constants
+        // minus NOP, which is not an operation), 5 refused, 96 covered.
+        // Re-pinned 2026-09-01: +6 for the epistemic mask-algebra band
+        // (0x86..0x8B — TERNLOG, BELNAP_JOIN, INFO_GAIN, SIGMA_TENSION,
+        // ACCUMULATE, STANCE_ENTROPY), minted into the reserved core slots.
+        assert_eq!(named, 101, "the named census moved — re-pin deliberately");
     }
 }
