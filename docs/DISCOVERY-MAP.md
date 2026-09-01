@@ -2097,3 +2097,44 @@ isolation. The map's job is to keep them visible.
   statement-midpoint scale; rule substitutions within a locus class and
   sub-midpoint reorderings require the byte tier (the program itself) or a
   finer orientation encoding — a deliberate future mint, not a patch.
+
+- **[D-BASIN-CODEBOOK] a large palette is ONE function plus a shared value
+  table, never N functions — `ogar-loco::basin` — [G] — CODED — depends
+  D-BLOCKS-DOMAIN, `ValueCodebook` (W-RO-3), `crate::pool`.** Measured: the
+  loco domain range `0x90..=0xFF` — **opcode bytes, NOT the `0x90XX`
+  concept-domain reference tree; different axis, same numerals** — is **112**
+  function slots per vocabulary
+  (`ogar-ro` mints 22 from `0x90`; `recipe_vocab` mints 34). A 144-entry
+  relation palette therefore **cannot** be `FnIndex` bytes — 144 > 112, and no
+  carving makes it fit. So a large palette is a VALUE table: one `FnIndex` for
+  the whole thing, the operand byte an index into a codebook. The 12-byte
+  entry payload is the V3 content-blind register and the entry's own classid
+  names its reading (`6×(u8:u8)` / `4×(u8:u8:u8)` / `3×(u8:u8:u8:u8)` /
+  `12×u8`) — which is what separates a codebook from an enum: a flat ordinal
+  has no metric, a quantizer code answers distance by table lookup.
+  **The gap this closes:** `ValueCodebook` had the right ownership
+  (basin-scoped) and carried no table; `ConstantPool` had the right facet
+  shape and is owned per-function, so a shared table held there would be
+  copied into every function naming it. `basin` is the join — the pool's
+  arithmetic (called, not copied) under the codebook's ownership. **Why it is
+  not the shared-mutable sink `pool` refused:** that objection is about
+  MUTABILITY. `BasinCodebookBuilder::seal` consumes the builder and yields a
+  `BasinCodebook` with no `&mut self` method at all — one writer at mint time,
+  zero afterwards. `BasinCodebooks::resolve_operand` is the seam that makes
+  `Vocabulary::value_codebook` load-bearing rather than advisory: before it,
+  the declaration named a table nothing could reach. **Not minted here:** the
+  entry classids stay PARAMETERS (same posture as `pool::placeholder`), since
+  minting a concept is an operator decision with a ledger entry. **Open
+  underneath:** W-RO-5 — `LaneShape` and `CascadeShape` are bit-for-bit the
+  same carving in two repos; a shared rail codebook is written in one and read
+  in the other, making it the first thing actually blocked by that
+  duplication rather than merely annoyed by it. **Numeral-collision note:**
+  `ogar_vocab`'s domain table already records one live case of this axis
+  overlap (`0x9E` = `has_phenotype` in `ogar-ro`'s predicate space vs the
+  `0x9x` reference-tree compartments); `basin.rs` carries a section stating
+  which axis every `0x9x` in it is on. Nothing in loco mints a concept — its
+  own are `0x1701`/`0x1702` in Blocks. 8 tests, each disable-verified
+  (two were found VACUOUS by their own falsifier and strengthened: table-order
+  resolution passed until the two books held different bytes at index 1, and
+  the capacity guard passed until the refusal was asserted to leave the table
+  unchanged).
