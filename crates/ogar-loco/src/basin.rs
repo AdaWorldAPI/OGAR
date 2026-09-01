@@ -43,6 +43,29 @@
 //! reading elsewhere. Because a sealed codebook cannot be edited at all, the
 //! repointing happens one level up, at the mint that builds the next version.
 //!
+//! # `0x90` here is an OPCODE byte, not a concept domain — do not read across
+//!
+//! Three address spaces in this workspace carry overlapping numerals, and this
+//! module touches two of them:
+//!
+//! | space | width | what `0x90` names there |
+//! |---|---|---|
+//! | [`FnIndex`] — the call codebook | `u8` | [`crate::DOMAIN_FLOOR`], first vocabulary-local opcode |
+//! | `ogar_vocab` concept domain | `u16` hi byte | `0x90XX`, ROOT of the domain reference tree (`0x90..=0x9D`: Disease, Phenomenology, Lab, Imaging, Substance, Procedure, Form …) |
+//! | [`ValueCodebook::id`] | `u8` | whichever codebook a basin plugged in third |
+//!
+//! **They never meet**, and nothing here mints a concept — loco's own are
+//! `0x1701`/`0x1702` in the Blocks domain, and this module mints none at all.
+//! But the numerals collide on the page, and `ogar_vocab`'s domain table
+//! already documents a live instance of exactly this confusion: *"`0x9E` is
+//! NOT claimed: it is `has_phenotype` in `ogar-ro`'s PREDICATE space, a
+//! different axis that overlaps these numbers."* `ogar-ro` does mint `0x9E` —
+//! as an opcode. Both readings are correct on their own axis.
+//!
+//! So every `0x9x` below is an **opcode byte**. A reader who knows `0x90XX` as
+//! the reference-tree root must not read a health-domain claim into a range
+//! that is talking about function indices.
+//!
 //! # Why this is a value table and not more opcodes
 //!
 //! The domain range is `0x90..=0xFF` — **112** function slots per vocabulary.

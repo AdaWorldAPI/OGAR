@@ -2101,7 +2101,9 @@ isolation. The map's job is to keep them visible.
 - **[D-BASIN-CODEBOOK] a large palette is ONE function plus a shared value
   table, never N functions — `ogar-loco::basin` — [G] — CODED — depends
   D-BLOCKS-DOMAIN, `ValueCodebook` (W-RO-3), `crate::pool`.** Measured: the
-  loco domain range `0x90..=0xFF` is **112** function slots per vocabulary
+  loco domain range `0x90..=0xFF` — **opcode bytes, NOT the `0x90XX`
+  concept-domain reference tree; different axis, same numerals** — is **112**
+  function slots per vocabulary
   (`ogar-ro` mints 22 from `0x90`; `recipe_vocab` mints 34). A 144-entry
   relation palette therefore **cannot** be `FnIndex` bytes — 144 > 112, and no
   carving makes it fit. So a large palette is a VALUE table: one `FnIndex` for
@@ -2126,7 +2128,12 @@ isolation. The map's job is to keep them visible.
   underneath:** W-RO-5 — `LaneShape` and `CascadeShape` are bit-for-bit the
   same carving in two repos; a shared rail codebook is written in one and read
   in the other, making it the first thing actually blocked by that
-  duplication rather than merely annoyed by it. 8 tests, each disable-verified
+  duplication rather than merely annoyed by it. **Numeral-collision note:**
+  `ogar_vocab`'s domain table already records one live case of this axis
+  overlap (`0x9E` = `has_phenotype` in `ogar-ro`'s predicate space vs the
+  `0x9x` reference-tree compartments); `basin.rs` carries a section stating
+  which axis every `0x9x` in it is on. Nothing in loco mints a concept — its
+  own are `0x1701`/`0x1702` in Blocks. 8 tests, each disable-verified
   (two were found VACUOUS by their own falsifier and strengthened: table-order
   resolution passed until the two books held different bytes at index 1, and
   the capacity guard passed until the refusal was asserted to leave the table
