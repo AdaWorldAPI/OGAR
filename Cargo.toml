@@ -23,6 +23,7 @@ members = [
     "crates/ogar-obo",
     "crates/ogar-cpic",
     "crates/ogar-dismech",
+    "crates/ogar-epistemic",
     "crates/ogar-adapter-python",
     "crates/ogar-adapter-csharp",
     "crates/ogar-auth",
