@@ -589,40 +589,22 @@ impl FnIndex {
     /// Read a call argument. `procedures_defreturn` argument access.
     pub const PROC_ARG: FnIndex = FnIndex(0x85);
 
-    // ── epistemic mask algebra (0x86..0x8B, minted 2026-09-01) ──────────
+    // ── stacked-mask combinator (0x86, minted 2026-09-01) ────────────────
     //
-    // The operator's essence-directive, verbatim in intent: primitives like
-    // Belnap become reusable bytecode macros here, for literally everything.
-    // Semantics are owned by `lance-graph-contract::epistemic_bassin` (the
-    // scalar oracles these calls are parity-tested against); batch SIMD
-    // execution is ndarray's shipped W1a-#9 `ternlog` (native VPTERNLOGQ).
-    // Green-certified atoms only — Hambly-Lyons is deliberately ABSENT
-    // while jc Pillar 11 is red (the red-pillar mint rule).
+    // Generic: any 3-input boolean over mask-shaped carriers, independent of
+    // what the masks mean. Batch SIMD execution is ndarray's shipped W1a-#9
+    // `ternlog` (native VPTERNLOGQ). Slots 0x87..0x8B are reserved core
+    // slots: the pair-specific band minted there on 2026-09-01 was
+    // retracted on 2026-09-02 with the model it encoded (reserve, don't
+    // reclaim — a future mint takes the next free slot deliberately).
 
     /// Any 3-input boolean over stacked masks: pops three masks, and the
     /// call's ONE VALUE BYTE **is the 8-bit truth table** (IMM bit index =
     /// `(a << 2) | (b << 1) | c`) — one FnIndex covers all 256 stacked-mask
     /// combinators, which is the purest `(function : value)` in the ABI.
-    /// Canonical tables (asked-contested 0x80, asked-silent 0x02 = the
-    /// missing link, …) live in `epistemic_bassin::sweep_ternlog`.
+    /// The value byte is the whole table; no named table set is canonical
+    /// here — a caller passes the truth table its own question needs.
     pub const TERNLOG: FnIndex = FnIndex(0x86);
-    /// Belnap/FDE knowledge-order join of two mask PAIRS — bitwise OR per
-    /// side; provably the state layer of one-hop accumulation.
-    pub const BELNAP_JOIN: FnIndex = FnIndex(0x87);
-    /// Shannon expected-information-gain readout: pops (before, after)
-    /// candidate counts, pushes whole bits of narrowing (u4-saturated).
-    /// Proprioception, never evidence.
-    pub const INFO_GAIN: FnIndex = FnIndex(0x88);
-    /// EWA tension readout: pops (log-norm growth, certificate bound),
-    /// pushes quarters-of-the-bound (u4; 7 = the 1.75× PASS slack).
-    pub const SIGMA_TENSION: FnIndex = FnIndex(0x89);
-    /// One-hop accumulation of a LIST of bassin pairs into the parent pair —
-    /// exact sums per side, one clamp; a parent expresses its DIRECT
-    /// children only.
-    pub const ACCUMULATE: FnIndex = FnIndex(0x8A);
-    /// One-hop contested-ness: pops (list of pairs, axis), pushes the
-    /// four-state Shannon entropy of the children's stances on that axis.
-    pub const STANCE_ENTROPY: FnIndex = FnIndex(0x8B);
 
     /// Is this a **shared computational** operation — one that means the same
     /// thing in every vocabulary?
