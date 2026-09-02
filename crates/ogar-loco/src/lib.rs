@@ -119,6 +119,7 @@
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
+pub mod basin;
 pub mod node;
 pub mod pool;
 pub mod program;
