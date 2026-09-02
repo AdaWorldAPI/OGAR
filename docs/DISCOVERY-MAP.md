@@ -2097,3 +2097,18 @@ isolation. The map's job is to keep them visible.
   statement-midpoint scale; rule substitutions within a locus class and
   sub-midpoint reorderings require the byte tier (the program itself) or a
   finer orientation encoding — a deliberate future mint, not a patch.
+
+- **[D-EPISTEMIC-BAND-RETRACTED] the 0x87..0x8B loco calls and `ogar-epistemic`
+  (concept 0x0334) are RETRACTED — `ogar-loco` — [G] — CODED (removal) —
+  regrades #296/#297.** The lance-graph semantic-family ruling of 2026-09-02
+  (`E-SIX-SEMANTIC-FAMILIES-MUST-NOT-IMPERSONATE-EACH-OTHER-1`) found that the
+  register those calls operated on aliased three distinct families (episodic
+  loci, qualia magnitude, population basin). `BELNAP_JOIN` / `INFO_GAIN` /
+  `SIGMA_TENSION` / `ACCUMULATE` / `STANCE_ENTROPY` were defined over that
+  pair and go with it; census re-pinned 101 → 96. `TERNLOG` 0x86 stays: it is
+  a generic 3-input mask combinator whose value byte is the truth table,
+  independently justified by ndarray's W1a-#9 `ternlog`. Slots 0x87..0x8B are
+  reserved core again (reserve, don't reclaim). The fixed 24-axis basis is
+  withdrawn as canonical population-basin semantics; population geometry is
+  an accepted vacancy on the lance-graph side. Append-only: D-BASIN-CODEBOOK
+  (#295) is unaffected and stands.

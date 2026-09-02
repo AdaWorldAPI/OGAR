@@ -89,17 +89,13 @@ pub mod shared_core {
             | FnIndex::FOR_EACH => 1,
             // from, to, by — then a body.
             FnIndex::FOR_RANGE => 3,
-            // ── epistemic mask algebra (0x86..0x8B). TERNLOG pops three
-            // masks; its truth table rides as the call's value byte, never
-            // as an operand. The two list-consuming ops take the LIST as
-            // one operand (the arity of the call, not of the children —
-            // which is how the variadic-refusal rule stays satisfied).
+            // ── stacked-mask combinator (0x86). TERNLOG pops three masks;
+            // its truth table rides as the call's value byte, never as an
+            // operand. 0x87..0x8B are reserved core slots again (the
+            // pair-specific band minted there on 2026-09-01 was retracted
+            // by the 2026-09-02 semantic-family ruling; reserve, don't
+            // reclaim).
             FnIndex::TERNLOG => 3,
-            FnIndex::BELNAP_JOIN
-            | FnIndex::INFO_GAIN
-            | FnIndex::SIGMA_TENSION
-            | FnIndex::STANCE_ENTROPY => 2,
-            FnIndex::ACCUMULATE => 1,
             // Leave the enclosing loop / iteration. No operand, no body.
             FnIndex::BREAK | FnIndex::CONTINUE => 0,
             // ── leaves — they push, they do not consume.
@@ -349,11 +345,6 @@ pub mod shared_core {
             FnIndex::ATAN => "ATAN",
             FnIndex::ATAN2 => "ATAN2",
             FnIndex::TERNLOG => "TERNLOG",
-            FnIndex::BELNAP_JOIN => "BELNAP_JOIN",
-            FnIndex::INFO_GAIN => "INFO_GAIN",
-            FnIndex::SIGMA_TENSION => "SIGMA_TENSION",
-            FnIndex::ACCUMULATE => "ACCUMULATE",
-            FnIndex::STANCE_ENTROPY => "STANCE_ENTROPY",
             FnIndex::RANDOM_INT => "RANDOM_INT",
             FnIndex::RANDOM_FLOAT => "RANDOM_FLOAT",
             FnIndex::CONSTRAIN => "CONSTRAIN",
@@ -1434,11 +1425,12 @@ mod coverage {
             );
         }
 
-        // And the census itself, pinned: 101 named operations (102 constants
-        // minus NOP, which is not an operation), 5 refused, 96 covered.
-        // Re-pinned 2026-09-01: +6 for the epistemic mask-algebra band
-        // (0x86..0x8B — TERNLOG, BELNAP_JOIN, INFO_GAIN, SIGMA_TENSION,
-        // ACCUMULATE, STANCE_ENTROPY), minted into the reserved core slots.
-        assert_eq!(named, 101, "the named census moved — re-pin deliberately");
+        // And the census itself, pinned: 96 named operations (97 constants
+        // minus NOP, which is not an operation), 5 refused, 91 covered.
+        // Re-pinned 2026-09-01 to 101 (+6, the 0x86..0x8B mask-algebra
+        // band); re-pinned 2026-09-02 to 96 (−5): only the generic TERNLOG
+        // 0x86 survives the semantic-family ruling — the five pair-specific
+        // calls were retracted with the model they encoded.
+        assert_eq!(named, 96, "the named census moved — re-pin deliberately");
     }
 }
