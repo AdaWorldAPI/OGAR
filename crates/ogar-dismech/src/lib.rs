@@ -829,10 +829,6 @@ mod concept_id_collision_guard {
     /// (0x0340..=0x0347) — the two bands `ogar-obo/src/registry.rs`
     /// documents as the reason `META_STUDY_SPINE` itself took three
     /// attempts to place.
-    // Deliberately a runtime test, not a `const { assert!(..) }`: it is meant
-    // to show up in `cargo test` output as a named, documented invariant
-    // rather than as a compile failure.
-    #[allow(clippy::assertions_on_constants)]
     #[test]
     fn stays_in_the_0x03_ontology_domain_clear_of_documented_bands() {
         assert_eq!(DISMECH_CONCEPT_ID >> 8, 0x03);
