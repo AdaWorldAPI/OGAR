@@ -24,6 +24,8 @@ jobs:
         uses: dtolnay/rust-toolchain@master
         with:
           toolchain: 1.98.1
+          # rustfmt/clippy are actually exercised in the sibling `lint.yml`
+          # workflow, not here — this job only needs the compiler.
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
       - name: cargo check --workspace --all-targets

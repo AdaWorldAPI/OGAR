@@ -832,12 +832,12 @@ mod concept_id_collision_guard {
     #[test]
     fn stays_in_the_0x03_ontology_domain_clear_of_documented_bands() {
         assert_eq!(DISMECH_CONCEPT_ID >> 8, 0x03);
-        assert!(
+        const _: () = assert!(
             DISMECH_CONCEPT_ID > 0x0321,
             "must clear the documented private-consumer odd-stride run \
              (live through 0x031D, retired through 0x0321)"
         );
-        assert!(
+        const _: () = assert!(
             DISMECH_CONCEPT_ID < 0x0340,
             "must clear META_STUDY_SPINE (0x0340..=0x0347)"
         );
