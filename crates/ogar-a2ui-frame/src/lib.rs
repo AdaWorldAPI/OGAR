@@ -245,8 +245,10 @@ impl Frame {
                     });
                 }
                 let mask_words = payload[FIXED..mask_end]
-                    .chunks_exact(8)
-                    .map(|c| u64::from_le_bytes([c[0], c[1], c[2], c[3], c[4], c[5], c[6], c[7]]))
+                    .as_chunks::<8>()
+                    .0
+                    .iter()
+                    .map(|c| u64::from_le_bytes(*c))
                     .collect();
                 Ok(Self::NodeDelta(NodeDelta {
                     key,

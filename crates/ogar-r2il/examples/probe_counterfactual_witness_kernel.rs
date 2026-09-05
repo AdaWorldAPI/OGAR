@@ -45,7 +45,7 @@
 //! - G1: segmentation is GREEN over the mixed core+R2IL body, and the edit
 //!   is CONFINED: outside the edited statement's `CallMask`, the projected
 //!   calls of factual and counterfactual slabs are identical; inside, they
-//!    differ (the lens proves locality — can-fire + can-stay-silent).
+//!   differ (the lens proves locality — can-fire + can-stay-silent).
 //! - G2a (CF-1a intra-run swap): byte > 0, exact-area > 0, increment == 0
 //!   (net per-locus counts unchanged — increments are structurally blind
 //!   to dataflow order), register == 0 — the orientation bit is
