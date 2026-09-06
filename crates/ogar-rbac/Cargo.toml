@@ -1,0 +1,29 @@
+[package]
+name = "ogar-rbac"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "OGAR's canonical RBAC authority: the ClassRbac realization over OGAR's own grant data, keyed by classid and fed by ogar-auth's canonical user. Authorization semantics live here; the generic authorize/authorize_scoped kernel stays in lance-graph-rbac and provider-specific login stays below ogar-auth."
+
+[dependencies]
+# THE deliberate edge. RBAC does not accept an arbitrary parallel identity
+# normalizer — it operates on OGAR's canonical user. The crate graph is the
+# statement of that invariant, so this dependency is load-bearing and must not
+# be optimized away for abstract decoupling.
+ogar-auth = { path = "../ogar-auth" }
+
+# The minted vocabulary the grants are keyed by (`project_role` 0x0117,
+# `project_actor` 0x0104, the 0x09XX health concepts). Authorization decisions
+# key on ids this crate does not invent.
+ogar-vocab = { path = "../ogar-vocab" }
+
+# The zero-dep socket: `ClassRbac`, `ClassId`, `Operation`, `ClassGrant`,
+# `OpMask`, `WideFieldMask`. Downward dep only — the contract never reaches
+# back into OGAR.
+lance-graph-contract = { git = "https://github.com/AdaWorldAPI/lance-graph", branch = "claude/patient-identity-architecture-r8lhi5" }
+
+# The GENERIC kernel (`authorize`, `authorize_scoped`, `ScopedDecision`).
+# Consumed, never cloned: the algorithm is consumer-agnostic and stays where it
+# is. This crate supplies the impl and the grant data, not the mechanics.
+lance-graph-rbac = { git = "https://github.com/AdaWorldAPI/lance-graph", branch = "claude/patient-identity-architecture-r8lhi5" }
