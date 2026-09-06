@@ -21,9 +21,9 @@ ogar-vocab = { path = "../ogar-vocab" }
 # The zero-dep socket: `ClassRbac`, `ClassId`, `Operation`, `ClassGrant`,
 # `OpMask`, `WideFieldMask`. Downward dep only — the contract never reaches
 # back into OGAR.
-lance-graph-contract = { git = "https://github.com/AdaWorldAPI/lance-graph", branch = "claude/patient-identity-architecture-r8lhi5" }
+lance-graph-contract = { git = "https://github.com/AdaWorldAPI/lance-graph", branch = "main" }
 
 # The GENERIC kernel (`authorize`, `authorize_scoped`, `ScopedDecision`).
 # Consumed, never cloned: the algorithm is consumer-agnostic and stays where it
 # is. This crate supplies the impl and the grant data, not the mechanics.
-lance-graph-rbac = { git = "https://github.com/AdaWorldAPI/lance-graph", branch = "claude/patient-identity-architecture-r8lhi5" }
+lance-graph-rbac = { git = "https://github.com/AdaWorldAPI/lance-graph", branch = "main" }

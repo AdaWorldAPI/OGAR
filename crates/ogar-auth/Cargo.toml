@@ -21,7 +21,7 @@ ogar-encryption = { path = "../ogar-encryption" }
 # the parallel identity normalizer the ownership ruling forbids. Downward dep
 # only — the contract is zero-dep and never reaches back into OGAR. Same git
 # pattern as `ogar-class-view`.
-lance-graph-contract = { git = "https://github.com/AdaWorldAPI/lance-graph", branch = "claude/patient-identity-architecture-r8lhi5" }
+lance-graph-contract = { git = "https://github.com/AdaWorldAPI/lance-graph", branch = "main" }
 
 # Argon2id PHC hash+verify (the login-credential path — distinct from the
 # envelope KDF). Default features carry `password-hash` + `rand` (OsRng salt).
