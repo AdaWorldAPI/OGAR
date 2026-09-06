@@ -51,6 +51,7 @@
 pub mod legacy;
 pub mod password;
 pub mod totp;
+pub mod user;
 
 // ── Forward suite: re-exported via `ogar-encryption` ────────────────────────
 // Reused wholesale, never re-implemented (see crate docs). A consumer that
@@ -104,4 +105,12 @@ pub type AuthResult<T> = Result<T, AuthError>;
 /// The adapter itself (token validation, JWKS fetch, claim mapping) lands as a
 /// sibling crate under the `ogar-adapter-*` convention when the endgame is
 /// scheduled — it is out of scope for the local auth substrate this crate is.
+///
+/// **The convergence point is now shipped**, as [`crate::user`]: an adapter's
+/// job ends at producing an [`AuthBinding`](crate::user::AuthBinding), which
+/// [`UserStore::resolve`](crate::user::UserStore::resolve) maps to the canonical
+/// [`User`](crate::user::User); the envelope every path converges on is
+/// [`AuthenticatedUser::actor_context`](crate::user::AuthenticatedUser::actor_context).
+/// This module stays an empty marker: what is still out of scope here is
+/// unchanged — token validation, JWKS fetch and claim parsing.
 pub mod federation {}
