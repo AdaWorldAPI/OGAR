@@ -4,6 +4,46 @@
 > `graph-flow` at `59f9315` (3,723 LOC across 11 modules). Nothing here is
 > built; this is the gap list and the shape each closure must take.
 
+## ⊘ CORRECTED — the answer is ONE thing, and this doc buried it (operator, 2026-09-14)
+
+Operator, on the version below: *"All I need from ogar-loco to know functions
+as objects. It can't be so hard."*
+
+Right, and this crate already says so. `LocoConcept::Inventory` — **`0x1702`,
+already minted** — carries this doc in `lib.rs`:
+
+> the **inventory** row: the function registry entry (which functions exist,
+> **addressed by identity**). A registry read never touches a body.
+
+That IS functions-as-objects. It is already the design, already has a concept
+id, and **nothing implements it**. `Program { functions: Vec<FunctionBody> }`
+is a placeholder standing in for it, and the interpreter resolves a branch as
+`self.program.functions.get(idx)` — a Vec index, not an address.
+
+So the whole change is one indirection:
+
+```
+branch(target)  →  inventory.get(address)     // not functions[byte]
+```
+
+A function AT REST is already an object: `FunctionNode` is 512 bytes with a
+16-byte key in slot 0, and `node.rs` keeps that key deliberately opaque so the
+substrate mints it. The identity exists; the runtime does not use it.
+
+**Once a branch target is an address rather than a local index, the four
+"gaps" below stop being gaps and become consequences.** A function can be a
+VALUE (its address fits an immediate byte through the constant pool, or the
+facet's 12 bytes directly); a continuation is a function; graph orchestration
+is functions referencing functions. No async, no `Context` map, no
+`SessionStorage` — those are graph-flow's answers to *not having this*.
+
+**The error in what follows:** it maps graph-flow's architecture onto loco
+feature-by-feature, instead of asking what loco lacks. Everything below is
+kept as the reading record of `graph-flow` at `59f9315` — the decision "no
+async" still stands, and the four consequences are real — but `Inventory` plus
+a `branch` that resolves through it is the answer, and the rest is downstream
+of it.
+
 ## The headline: loco must NOT become async
 
 `graph-flow` gets human-in-the-loop by being async all the way down —
