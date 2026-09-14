@@ -115,6 +115,18 @@ pub enum RunError<E> {
         /// The cap it exceeded.
         cap: u32,
     },
+    /// A branch recursed past [`Interpreter::recursion_depth`].
+    ///
+    /// Distinct from [`RunError::IterationCap`] on purpose: a loop that runs
+    /// too long and a cycle of bodies calling each other are different
+    /// defects in the program, and collapsing them would send an author
+    /// looking at the wrong one.
+    RecursionDepth {
+        /// The branching call that would have exceeded the depth.
+        call: FnIndex,
+        /// The ceiling it hit.
+        depth: u32,
+    },
     /// A control-flow call outside the five this engine executes. Refused
     /// rather than approximated — see the module doc.
     UnhandledControlFlow {
@@ -123,6 +135,51 @@ pub enum RunError<E> {
     },
 }
 
+/// The shared core's control band: `0x01..=0x1F`.
+///
+/// Every byte in it is the ENGINE's to execute or refuse — never the
+/// dialect's. Below it sits `NOP`; above it start the value families
+/// (logic `0x20`, compare `0x30`, arithmetic `0x40`, variables `0x80`), and
+/// past [`DOMAIN_FLOOR`] a dialect owns its own bytes outright.
+const CONTROL_BAND: core::ops::RangeInclusive<u8> = 0x01..=0x1F;
+
+/// Is `f` the engine's to handle?
+///
+/// # Why not `Vocabulary::branches`
+///
+/// Because that answers a DIFFERENT QUESTION, and its own doc says so:
+/// *"this predicate answers 'does lowering this call require emitting another
+/// function?', which is the only question a cast asks"* — a CODEGEN question.
+/// It is `body_refs(f) > 0`, and `BREAK` / `CONTINUE` / `STOP` / `RETURN` /
+/// `WAIT` reference no body, so they are `false` under it.
+///
+/// Used as an EXECUTION predicate it silently handed every one of them to
+/// `Dialect::call`, where a dialect could invent a meaning for `BREAK` and
+/// let the run report success — while this module's contract promised
+/// [`RunError::UnhandledControlFlow`]. Two questions, one name, and the
+/// vocabulary had already written the warning.
+///
+/// The band is the right discriminator: it is a property of the shared core's
+/// own layout, it needs no per-byte list to drift, and a domain vocabulary
+/// cannot forge it (`DOMAIN_FLOOR` is `0x90`).
+fn is_engine_control(f: FnIndex) -> bool {
+    CONTROL_BAND.contains(&f.0)
+}
+
+/// How deep [`Interpreter::branch`] may recurse before refusing.
+///
+/// Not a style limit — a safety one. `Program::references_are_resolvable`
+/// rejects only target `0` and out-of-range targets; it does NOT reject
+/// cycles, so two bodies that branch to each other pass validation and then
+/// recurse until the native stack is gone. A stack overflow aborts the
+/// process, which is the one failure an orchestration engine must never turn
+/// a bad program into.
+///
+/// 64 is chosen against the substrate rather than taste: a continuation stack
+/// is 90 quad slots in one node, so a depth past that could not be reified
+/// anyway.
+pub const DEFAULT_RECURSION_DEPTH: u32 = 64;
+
 /// A running program: the engine's own state, plus the dialect's.
 pub struct Interpreter<'a, V: Vocabulary, D: Dialect> {
     vocab: &'a CheckedVocabulary<V>,
@@ -130,6 +187,8 @@ pub struct Interpreter<'a, V: Vocabulary, D: Dialect> {
     dialect: D,
     stack: Vec<D::Value>,
     iteration_cap: u32,
+    recursion_depth: u32,
+    depth: u32,
 }
 
 impl<'a, V: Vocabulary, D: Dialect> Interpreter<'a, V, D> {
@@ -141,7 +200,20 @@ impl<'a, V: Vocabulary, D: Dialect> Interpreter<'a, V, D> {
             dialect,
             stack: Vec::new(),
             iteration_cap: DEFAULT_ITERATION_CAP,
+            recursion_depth: DEFAULT_RECURSION_DEPTH,
+            depth: 0,
         }
+    }
+
+    /// Replace the recursion ceiling.
+    pub fn with_recursion_depth(mut self, depth: u32) -> Self {
+        self.recursion_depth = depth;
+        self
+    }
+
+    /// The depth a branch may not exceed.
+    pub fn recursion_depth(&self) -> u32 {
+        self.recursion_depth
     }
 
     /// Replace the per-loop iteration ceiling.
@@ -178,7 +250,7 @@ impl<'a, V: Vocabulary, D: Dialect> Interpreter<'a, V, D> {
         let mut pc = 0usize;
         while let Some(call) = body.call(pc) {
             let f = call.function;
-            if !self.vocab.table().branches(f) {
+            if !is_engine_control(f) {
                 self.dialect
                     .call(f, call.values, &mut self.stack)
                     .map_err(RunError::Dialect)?;
@@ -199,12 +271,11 @@ impl<'a, V: Vocabulary, D: Dialect> Interpreter<'a, V, D> {
         call: Call,
     ) -> Result<(), RunError<D::Error>> {
         let f = call.function;
-        let arity = self
-            .vocab
-            .table()
-            .stack_arity(f)
-            .ok_or(RunError::UncoveredArity { call: f })?;
-
+        // The arity is resolved INSIDE the loop arms, not here: it is needed
+        // only by the condition-span walk, and computing it up front made
+        // `RETURN` — whose arity the core deliberately leaves uncovered —
+        // report `UncoveredArity`, which points an author at the vocabulary
+        // when the true answer is that this ENGINE does not execute the byte.
         match f {
             FnIndex::IF => {
                 let cond = self.pop(f)?;
@@ -223,13 +294,29 @@ impl<'a, V: Vocabulary, D: Dialect> Interpreter<'a, V, D> {
             }
             FnIndex::REPEAT => {
                 let n = self.pop(f)?;
-                let count = self.dialect.repeat_count(&n).min(self.iteration_cap);
+                let count = self.dialect.repeat_count(&n);
+                // REFUSE, never clamp. `min` ran the capped prefix and
+                // returned `Ok`, so a 200_000-iteration repeat reported
+                // success having run 100_000 times — a wrong answer presented
+                // as a right one, and inconsistent with WHILE, which reports
+                // the cap in the same situation.
+                if count > self.iteration_cap {
+                    return Err(RunError::IterationCap {
+                        call: f,
+                        cap: self.iteration_cap,
+                    });
+                }
                 for _ in 0..count {
                     self.branch(f, call.values[0])?;
                 }
             }
             FnIndex::WHILE | FnIndex::REPEAT_UNTIL => {
                 let until = f == FnIndex::REPEAT_UNTIL;
+                let arity = self
+                    .vocab
+                    .table()
+                    .stack_arity(f)
+                    .ok_or(RunError::UncoveredArity { call: f })?;
                 // Where the condition's own calls begin — re-running THEM is
                 // what makes the next test a new test.
                 let cond_start = self.operand_span_start(body, pc, arity)?;
@@ -240,14 +327,19 @@ impl<'a, V: Vocabulary, D: Dialect> Interpreter<'a, V, D> {
                     if truthy == until {
                         break;
                     }
-                    self.branch(f, call.values[0])?;
-                    iters += 1;
+                    // The cap is checked when ANOTHER iteration is requested,
+                    // never after the last one ran. Checked afterwards it
+                    // rejected a loop that terminates in exactly `cap`
+                    // iterations — inside the advertised ceiling — and at
+                    // `cap = 0` it ran the body once before refusing.
                     if iters >= self.iteration_cap {
                         return Err(RunError::IterationCap {
                             call: f,
                             cap: self.iteration_cap,
                         });
                     }
+                    self.branch(f, call.values[0])?;
+                    iters += 1;
                     for i in cond_start..pc {
                         let c = body.call(i).expect("in bounds: span already walked");
                         if self.vocab.table().branches(c.function) {
@@ -270,7 +362,19 @@ impl<'a, V: Vocabulary, D: Dialect> Interpreter<'a, V, D> {
         if idx == 0 || idx >= self.program.functions.len() {
             return Err(RunError::UnresolvedBody { call, target });
         }
-        self.run_function(idx)
+        if self.depth >= self.recursion_depth {
+            return Err(RunError::RecursionDepth {
+                call,
+                depth: self.recursion_depth,
+            });
+        }
+        self.depth += 1;
+        let r = self.run_function(idx);
+        // Restored on the error path too: an interpreter a caller inspects
+        // after a failure would otherwise report a depth that never unwound,
+        // and one reused after a caught error would refuse legal programs.
+        self.depth -= 1;
+        r
     }
 
     fn pop(&mut self, call: FnIndex) -> Result<D::Value, RunError<D::Error>> {
@@ -867,6 +971,227 @@ mod tests {
             interp.dialect.counter_reads >= 6,
             "condition re-runs happened: {} reads",
             interp.dialect.counter_reads
+        );
+    }
+
+    /// Records every call the dialect is handed, and succeeds on all of them.
+    ///
+    /// The point is the recording: a refusal the engine owes is only proven
+    /// if the byte never reached a dialect that would have accepted it.
+    #[derive(Default)]
+    struct Permissive {
+        seen: Vec<u8>,
+    }
+    impl Dialect for Permissive {
+        type Value = i64;
+        type Error = ();
+        fn truthy(&self, v: &i64) -> bool {
+            *v != 0
+        }
+        fn repeat_count(&self, v: &i64) -> u32 {
+            u32::try_from(*v).unwrap_or(0)
+        }
+        fn call(&mut self, f: FnIndex, values: [u8; 3], stack: &mut Vec<i64>) -> Result<(), ()> {
+            self.seen.push(f.0);
+            if f == FnIndex::NUMBER {
+                stack.push(i64::from(values[0]));
+            }
+            Ok(())
+        }
+    }
+
+    /// FAILS IF: the engine decides what to execute with `Vocabulary::branches`.
+    ///
+    /// That predicate is `body_refs(f) > 0` and answers a CODEGEN question —
+    /// its own doc says so. `BREAK`, `CONTINUE`, `STOP`, `RETURN` and `WAIT`
+    /// reference no body, so under it they are not control flow, and every one
+    /// was handed to `Dialect::call`. A permissive dialect then accepts them
+    /// and the run reports success, while this module's contract promises
+    /// `UnhandledControlFlow`.
+    ///
+    /// The existing `an_unproven_control_flow_call_is_refused_not_approximated`
+    /// could not see this: it uses `FOR_EACH`, which HAS a body reference, so
+    /// it took the branching path and reached the refusal. The fixture's SHAPE
+    /// was the coverage gap, not its content.
+    #[test]
+    fn a_body_less_control_byte_is_refused_by_the_engine_not_offered_to_the_dialect() {
+        for byte in [
+            FnIndex::BREAK,
+            FnIndex::CONTINUE,
+            FnIndex::STOP,
+            FnIndex::RETURN,
+            FnIndex::WAIT,
+        ] {
+            // Anti-vacuity: each really is body-less, so the old predicate
+            // really did call it a non-branch. Without this the test could
+            // pass by accidentally picking branching bytes.
+            let vocab = validate(CoreOnly).expect("conforms");
+            assert_eq!(
+                vocab.table().body_refs(byte),
+                0,
+                "{byte:?} must be body-less or this row proves nothing"
+            );
+
+            let entry = FunctionBody::from_calls(
+                LaneShape::Pairs,
+                &[Call::with_value(FnIndex::NUMBER, 1), Call::new(byte)],
+            )
+            .unwrap();
+            let p = Program {
+                functions: vec![entry],
+            };
+            let mut interp = Interpreter::new(&vocab, &p, Permissive::default());
+            assert_eq!(
+                interp.run(),
+                Err(RunError::UnhandledControlFlow { call: byte }),
+                "{byte:?} must be refused by the engine"
+            );
+            assert!(
+                !interp.dialect.seen.contains(&byte.0),
+                "{byte:?} was offered to the dialect: {:?}",
+                interp.dialect.seen
+            );
+        }
+    }
+
+    /// FAILS IF: `REPEAT` clamps an over-cap count instead of refusing it.
+    ///
+    /// `min(count, cap)` ran the capped prefix and returned `Ok`, so a
+    /// 200_000-iteration repeat reported SUCCESS having run 100_000 times — a
+    /// wrong answer presented as a right one, and inconsistent with `WHILE`,
+    /// which reports the cap in exactly this situation.
+    #[test]
+    fn a_repeat_count_above_the_cap_is_refused_rather_than_truncated() {
+        let entry = FunctionBody::from_calls(
+            LaneShape::Pairs,
+            &[
+                Call::with_value(FnIndex::NUMBER, 10),
+                Call::with_value(FnIndex::REPEAT, 1),
+            ],
+        )
+        .unwrap();
+        let body =
+            FunctionBody::from_calls(LaneShape::Pairs, &[Call::with_value(FnIndex::NUMBER, 1)])
+                .unwrap();
+        let p = Program {
+            functions: vec![entry, body],
+        };
+        let vocab = validate(CoreOnly).expect("conforms");
+        let mut interp = Interpreter::new(&vocab, &p, Permissive::default()).with_iteration_cap(4);
+        assert_eq!(
+            interp.run(),
+            Err(RunError::IterationCap {
+                call: FnIndex::REPEAT,
+                cap: 4
+            })
+        );
+        // The second half, and the one the clamp would fail: refusing means
+        // running NOTHING. A version that ran the capped prefix and then
+        // errored would satisfy the assertion above and still be wrong.
+        assert!(
+            !interp.dialect.seen.contains(&FnIndex::NUMBER.0) || interp.dialect.seen.len() == 1,
+            "the body must not have run: {:?}",
+            interp.dialect.seen
+        );
+    }
+
+    /// FAILS IF: a cycle of bodies recurses until the native stack is gone.
+    ///
+    /// `Program::references_are_resolvable` rejects only target `0` and
+    /// out-of-range targets — it does NOT reject cycles, so two bodies that
+    /// branch to each other pass validation. Unbounded, that is a stack
+    /// overflow, which ABORTS THE PROCESS: the one failure an orchestration
+    /// engine must never turn a bad program into, and one no `RunError` can
+    /// report because there is no stack left to return on.
+    #[test]
+    fn two_bodies_that_branch_to_each_other_are_refused_not_overflowed() {
+        // 1 -> 2 -> 1 -> ... , each hop guarded by an always-true IF.
+        let hop = |target: u8| {
+            FunctionBody::from_calls(
+                LaneShape::Pairs,
+                &[
+                    Call::with_value(FnIndex::NUMBER, 1),
+                    Call::with_value(FnIndex::IF, target),
+                ],
+            )
+            .unwrap()
+        };
+        let p = Program {
+            functions: vec![hop(1), hop(2), hop(1)],
+        };
+        let vocab = validate(CoreOnly).expect("conforms");
+        // Anti-vacuity: the cycle really does pass the program's own check,
+        // so this is a defect in the ENGINE and not something validation
+        // was already catching.
+        assert!(
+            p.references_are_resolvable(&vocab),
+            "the fixture must be a program validation accepts, or it proves nothing"
+        );
+        let mut interp = Interpreter::new(&vocab, &p, Permissive::default());
+        assert_eq!(
+            interp.run(),
+            Err(RunError::RecursionDepth {
+                call: FnIndex::IF,
+                depth: DEFAULT_RECURSION_DEPTH
+            })
+        );
+    }
+
+    /// FAILS IF: the iteration cap is charged after the last body instead of
+    /// before the next one.
+    ///
+    /// Checked afterwards, a loop that terminates in EXACTLY `cap` iterations
+    /// — inside the advertised ceiling — was rejected, because the cap fired
+    /// before the condition could be re-tested one final time. At `cap = 0`
+    /// the same ordering ran the body once before refusing, which is a cap of
+    /// zero that executes.
+    #[test]
+    fn a_loop_terminating_in_exactly_cap_iterations_is_accepted() {
+        // counter = 3; while counter > 0 { counter -= 1 } — exactly 3 bodies.
+        let entry = FunctionBody::from_calls(
+            LaneShape::Pairs,
+            &[
+                Call::with_value(FnIndex::NUMBER, 3),
+                Call::with_value(FnIndex::VAR_SET, 0),
+                Call::with_value(FnIndex::VAR_GET, 0),
+                Call::with_value(FnIndex::NUMBER, 0),
+                Call::new(FnIndex::GT),
+                Call::with_value(FnIndex::WHILE, 1),
+            ],
+        )
+        .unwrap();
+        let body = FunctionBody::from_calls(
+            LaneShape::Pairs,
+            &[
+                Call::with_value(FnIndex::VAR_GET, 0),
+                Call::with_value(FnIndex::NUMBER, 1),
+                Call::new(FnIndex::SUB),
+                Call::with_value(FnIndex::VAR_SET, 0),
+            ],
+        )
+        .unwrap();
+        let p = Program {
+            functions: vec![entry, body],
+        };
+        let vocab = validate(CoreOnly).expect("conforms");
+        let mut interp = Interpreter::new(&vocab, &p, I64Dialect::default()).with_iteration_cap(3);
+        interp
+            .run()
+            .expect("3 iterations under a cap of 3 must run");
+        assert_eq!(interp.dialect.vars[0], 0, "the loop ran to completion");
+
+        // The paired half: a cap of ZERO must refuse before running anything.
+        let mut zero = Interpreter::new(&vocab, &p, I64Dialect::default()).with_iteration_cap(0);
+        assert_eq!(
+            zero.run(),
+            Err(RunError::IterationCap {
+                call: FnIndex::WHILE,
+                cap: 0
+            })
+        );
+        assert_eq!(
+            zero.dialect.vars[0], 3,
+            "a cap of zero must not execute a body"
         );
     }
 }
