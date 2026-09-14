@@ -649,4 +649,80 @@ mod tests {
         let mut interp = Interpreter::new(&vocab, &p, RefuseAll);
         assert_eq!(interp.run(), Err(RunError::Dialect(())));
     }
+
+    /// The silent twin of the test above, and the half that was missing.
+    ///
+    /// FAILS IF: the engine routes a control-flow call to the dialect. The
+    /// split is a claim in BOTH directions — the dialect sees every
+    /// non-branching call (above) and never sees a branching one (here) — and
+    /// a suite that only pins the first would pass an engine that handed
+    /// `IF` to the dialect and let it improvise a branch.
+    #[test]
+    fn control_flow_never_reaches_the_dialect() {
+        /// Records every call the engine delegates.
+        #[derive(Default)]
+        struct Recorder {
+            seen: Vec<u8>,
+        }
+        impl Dialect for Recorder {
+            type Value = i64;
+            type Error = ();
+            fn truthy(&self, v: &i64) -> bool {
+                *v != 0
+            }
+            fn repeat_count(&self, v: &i64) -> u32 {
+                u32::try_from(*v).unwrap_or(0)
+            }
+            fn call(
+                &mut self,
+                f: FnIndex,
+                values: [u8; 3],
+                stack: &mut Vec<i64>,
+            ) -> Result<(), ()> {
+                self.seen.push(f.0);
+                if f == FnIndex::NUMBER {
+                    stack.push(i64::from(values[0]));
+                }
+                Ok(())
+            }
+        }
+
+        // NUMBER 1, IF -> body(1); NUMBER 2, REPEAT -> body(1).
+        let entry = FunctionBody::from_calls(
+            LaneShape::Pairs,
+            &[
+                Call::with_value(FnIndex::NUMBER, 1),
+                Call::with_value(FnIndex::IF, 1),
+                Call::with_value(FnIndex::NUMBER, 2),
+                Call::with_value(FnIndex::REPEAT, 1),
+            ],
+        )
+        .unwrap();
+        let body =
+            FunctionBody::from_calls(LaneShape::Pairs, &[Call::with_value(FnIndex::NUMBER, 9)])
+                .unwrap();
+        let p = Program {
+            functions: vec![entry, body],
+        };
+        let vocab = validate(CoreOnly).expect("conforms");
+        let mut interp = Interpreter::new(&vocab, &p, Recorder::default());
+        interp.run().expect("runs");
+
+        let seen = &interp.dialect.seen;
+        // Anti-vacuity: the program really did execute control flow — the IF
+        // branched once and the REPEAT ran twice, so the body's NUMBER 9 ran
+        // three times in total. Without this the silence below would hold for
+        // a program that never branched at all.
+        assert_eq!(
+            seen.iter().filter(|b| **b == FnIndex::NUMBER.0).count(),
+            5,
+            "2 in the entry + 3 from the branched body: {seen:?}"
+        );
+        for cf in [FnIndex::IF, FnIndex::REPEAT] {
+            assert!(
+                !seen.contains(&cf.0),
+                "control flow {cf:?} was handed to the dialect: {seen:?}"
+            );
+        }
+    }
 }
