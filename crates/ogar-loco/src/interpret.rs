@@ -304,7 +304,17 @@ impl<'a, V: Vocabulary, D: Dialect> Interpreter<'a, V, D> {
             let arity = table
                 .stack_arity(c.function)
                 .ok_or(RunError::UncoveredArity { call: c.function })?;
-            need -= 1;
+            // A call satisfies one operand only if it PRODUCES one. The
+            // non-pushing set is not hypothetical: it is every control-flow
+            // byte in the shared core, plus whatever void verbs a domain
+            // declares. Crediting one of those with an operand stops the walk
+            // early and drops the call that actually produces the condition.
+            if table
+                .pushes_result(c.function)
+                .ok_or(RunError::UncoveredArity { call: c.function })?
+            {
+                need -= 1;
+            }
             need += usize::from(arity);
         }
         Ok(i)
@@ -385,9 +395,21 @@ mod tests {
                     let (b, a) = (pop(stack)?, pop(stack)?);
                     stack.push(a - b);
                 }
+                FnIndex::MUL => {
+                    let (b, a) = (pop(stack)?, pop(stack)?);
+                    stack.push(a * b);
+                }
+                FnIndex::DIV => {
+                    let (b, a) = (pop(stack)?, pop(stack)?);
+                    stack.push(if b == 0 { 0 } else { a / b });
+                }
                 FnIndex::MOD => {
                     let (b, a) = (pop(stack)?, pop(stack)?);
                     stack.push(if b == 0 { 0 } else { a % b });
+                }
+                FnIndex::EQ => {
+                    let (b, a) = (pop(stack)?, pop(stack)?);
+                    stack.push(i64::from(a == b));
                 }
                 FnIndex::GT => {
                     let (b, a) = (pop(stack)?, pop(stack)?);
@@ -724,5 +746,127 @@ mod tests {
                 "control flow {cf:?} was handed to the dialect: {seen:?}"
             );
         }
+    }
+
+    /// A vocabulary with one VOID domain byte: pops an operand, pushes
+    /// nothing. Legal, declared, and exactly what a thinking dialect's
+    /// side-effecting verbs look like.
+    struct WithVoidOp;
+    impl WithVoidOp {
+        const VOID: FnIndex = FnIndex(0x90);
+    }
+    impl Vocabulary for WithVoidOp {
+        fn domain_stack_arity(&self, f: FnIndex) -> Option<u8> {
+            (f == Self::VOID).then_some(1)
+        }
+        fn domain_body_refs(&self, _f: FnIndex) -> u8 {
+            0
+        }
+        fn domain_pushes_result(&self, f: FnIndex) -> Option<bool> {
+            (f == Self::VOID).then_some(false)
+        }
+    }
+
+    /// FAILS IF: the backward operand-span walk assumes every call it steps
+    /// over produced a value.
+    ///
+    /// It does not. The vocabulary declares `pushes_result` per byte, and the
+    /// non-pushing set is not hypothetical — it is every control-flow byte in
+    /// the shared core, plus whatever void verbs a domain declares. Stepping
+    /// over one and crediting it with an operand stops the walk too early, so
+    /// the span misses the call that actually produces the condition, and the
+    /// re-run leaves the stack one short.
+    ///
+    /// The program: `counter = 3`, then the condition producer `VAR_GET 0`,
+    /// then a void statement (`NUMBER 0; VOID`) sitting between it and the
+    /// `WHILE`. The correct span starts at the `VAR_GET`; a walk that credits
+    /// `VOID` with a push starts at the `NUMBER` instead, and the re-run then
+    /// pushes one value and immediately voids it.
+    #[test]
+    fn the_span_walk_does_not_credit_a_void_call_with_an_operand() {
+        struct VoidDialect {
+            counter: i64,
+            counter_reads: u32,
+        }
+        impl Dialect for VoidDialect {
+            type Value = i64;
+            type Error = ();
+            fn truthy(&self, v: &i64) -> bool {
+                *v != 0
+            }
+            fn repeat_count(&self, v: &i64) -> u32 {
+                u32::try_from(*v).unwrap_or(0)
+            }
+            fn call(
+                &mut self,
+                f: FnIndex,
+                values: [u8; 3],
+                stack: &mut Vec<i64>,
+            ) -> Result<(), ()> {
+                match f {
+                    FnIndex::NUMBER => stack.push(i64::from(values[0])),
+                    FnIndex::SUB => {
+                        let b = stack.pop().ok_or(())?;
+                        let a = stack.pop().ok_or(())?;
+                        stack.push(a - b);
+                    }
+                    FnIndex::VAR_GET => {
+                        self.counter_reads += 1;
+                        stack.push(self.counter);
+                    }
+                    FnIndex::VAR_SET => self.counter = stack.pop().ok_or(())?,
+                    WithVoidOp::VOID => {
+                        stack.pop().ok_or(())?;
+                    }
+                    _ => return Err(()),
+                }
+                Ok(())
+            }
+        }
+
+        let entry = FunctionBody::from_calls(
+            LaneShape::Pairs,
+            &[
+                Call::with_value(FnIndex::NUMBER, 3),
+                Call::with_value(FnIndex::VAR_SET, 0),
+                Call::with_value(FnIndex::VAR_GET, 0),
+                Call::with_value(FnIndex::NUMBER, 0),
+                Call::new(WithVoidOp::VOID),
+                Call::with_value(FnIndex::WHILE, 1),
+            ],
+        )
+        .unwrap();
+        let body = FunctionBody::from_calls(
+            LaneShape::Pairs,
+            &[
+                Call::with_value(FnIndex::VAR_GET, 0),
+                Call::with_value(FnIndex::NUMBER, 1),
+                Call::new(FnIndex::SUB),
+                Call::with_value(FnIndex::VAR_SET, 0),
+            ],
+        )
+        .unwrap();
+        let p = Program {
+            functions: vec![entry, body],
+        };
+        let vocab = validate(WithVoidOp).expect("conforms");
+        let mut interp = Interpreter::new(
+            &vocab,
+            &p,
+            VoidDialect {
+                counter: 0,
+                counter_reads: 0,
+            },
+        );
+        interp.run().expect("the loop runs down to zero");
+        assert_eq!(interp.dialect.counter, 0, "the loop ran to completion");
+        // Anti-vacuity: the condition really was re-evaluated, three times in
+        // the span plus once per body pass. A span that never re-ran would
+        // read the counter far fewer times.
+        assert!(
+            interp.dialect.counter_reads >= 6,
+            "condition re-runs happened: {} reads",
+            interp.dialect.counter_reads
+        );
     }
 }
