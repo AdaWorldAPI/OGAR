@@ -120,6 +120,7 @@
 use serde::{Deserialize, Serialize};
 
 pub mod basin;
+pub mod interpret;
 pub mod node;
 pub mod pool;
 pub mod program;
@@ -128,6 +129,7 @@ pub mod statements;
 pub mod telemetry;
 pub mod vocabulary;
 
+pub use interpret::{Dialect, Interpreter, RunError};
 pub use node::FunctionNode;
 pub use pool::{Constant, ConstantPool, PoolError};
 pub use program::{Program, branches_of};
