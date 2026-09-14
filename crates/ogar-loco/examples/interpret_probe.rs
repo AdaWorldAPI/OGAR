@@ -14,6 +14,26 @@
 //! classic small algorithms, several real inputs each), and check the four
 //! pre-registered kill conditions honestly.
 //!
+//! # ⊘ STATUS — the library now carries the engine (2026-09-14)
+//!
+//! This probe's own interpreter is no longer the only one: `ogar_loco::
+//! interpret::{Interpreter, Dialect}` is the canonical engine, and it
+//! exists BECAUSE this probe ran. The five control-flow ops it executes are
+//! exactly the ones validated here against the reference implementations
+//! below; the library refuses the rest rather than guessing, on the reasoning
+//! that behaviour nothing has executed should not ship.
+//!
+//! This file is kept as the RECORD — the pre-registration, the kill
+//! conditions, the four algorithms and the honest report — not as the
+//! canonical engine. It is deliberately NOT rewritten on top of the library
+//! yet, for one concrete reason: it traces every executed call, and the
+//! library's split puts control flow permanently out of a dialect's sight
+//! (`control_flow_never_reaches_the_dialect`), so a dialect cannot observe a
+//! branch. Tracing branch decisions needs an observation seam on the engine,
+//! which is a capability question and not a refactor. Until that lands, do
+//! not treat this interpreter as a second opinion on semantics: where the two
+//! disagree, the library is canonical.
+//!
 //! # Scope — what this probe does NOT attempt
 //!
 //! This interpreter executes only the **shared computational core**
