@@ -102,7 +102,7 @@ Cost: one arm in `run_branching`, plus a loop-safety question `IF`/`REPEAT` do
 not have (a `GOTO` can build a cycle the structured ops cannot).
 
 **And "the iteration cap already covers it" is wrong — that sentence stood here
-and CodeRabbit was right to reject it.** `iteration_cap` is a PER-LOOP ceiling:
+and review was right to reject it.** `iteration_cap` is a PER-LOOP ceiling:
 `REPEAT`, `WHILE` and `REPEAT_UNTIL` each check their own count against it. A
 `GOTO` cycle contains no loop construct, so it checks nothing and runs forever
 inside a cap that is never consulted. A per-loop ceiling cannot bound a
@@ -169,8 +169,18 @@ Two things this changes that must be re-pinned, not absorbed:
   rewrite, and it is exactly the machinery
   `while_reruns_its_condition_span_and_computes_gcd` already falsifies — so
   the test that guards it exists before the change does.
-- **The iteration cap becomes a BUDGET spendable across resumptions.** That is
-  also how LangGraph-style step limits fall out for free.
+- **`step_budget` persists across resumptions; `iteration_cap` stays per-loop.**
+  A resumed run continues spending the same budget rather than receiving a
+  fresh one — which is what makes step limits fall out for free, and what
+  stops suspend-resume-repeat from being an unbounded-execution loophole.
+
+  ⊘ This bullet used to read *"the iteration cap becomes a BUDGET spendable
+  across resumptions"*, which contradicted G1's spec four sections above — a
+  spec whose own text rejects exactly that reading (*"'the iteration cap
+  already covers it' is wrong"*). So the correction was written in one section
+  and the error left standing in another. **A second section is a second place
+  to be wrong**, and the one that summarizes is the one a reader reaches
+  first.
 
 ## G3 — a dialect snapshot seam
 
@@ -196,7 +206,7 @@ are — the named half of the state model, already addressable.
 
 ### Where those bytes are allowed to live — the boundary, stated
 
-CodeRabbit asked this and the doc did not answer it, which is a real omission
+Review asked this and the doc did not answer it, which is a real omission
 rather than a nit: a byte seam whose destination is unspecified is one review
 away from becoming a serialization channel.
 
