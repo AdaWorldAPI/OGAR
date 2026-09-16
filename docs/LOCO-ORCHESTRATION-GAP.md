@@ -131,9 +131,14 @@ Until that exists, `GOTO` stays refused alongside `STOP` / `RETURN` / `BREAK` /
 
 ## G2 — an explicit frame stack (the keystone)
 
-**Today** `Interpreter::run_function(index)` RECURSES. The interpreter's state
-therefore lives in the Rust call stack, where it cannot be paused, persisted,
-or examined.
+**Today** `Interpreter::branch` RECURSES into `run_body`. The interpreter's
+state therefore lives in the Rust call stack, where it cannot be paused,
+persisted, or examined.
+
+(It was `run_function(index)` until #304 split resolution out of execution —
+`run_body` takes an already-resolved body so no path through it can fail to
+find one and silently succeed. The recursion this gap is about is unchanged;
+only where the address is resolved moved.)
 
 **Needed:** `frames: Vec<Frame { func: u16, pc: u16 }>`, walked iteratively.
 Then the whole interpreter state is `(frames, dialect_state, stack)`.
