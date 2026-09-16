@@ -117,7 +117,7 @@ impl VecInventory {
     /// than a wrong branch at run time.
     ///
     /// ⊘ The order here is the fix, not the check. The first version pushed to
-    /// both vectors and converted afterwards, which CodeRabbit caught on
+    /// both vectors and converted afterwards, which review caught on
     /// OGAR #304: a caller that catches the panic is then holding an inventory
     /// with 65 537 entries whose last one no `FnAddr` can name, and `len()`
     /// counts it. Converting FIRST makes the failure leave nothing behind —
@@ -158,7 +158,7 @@ impl FromIterator<FunctionBody> for VecInventory {
     /// Panics on more than [`MAX_ADDRESSES`] bodies, exactly as [`push`] does.
     ///
     /// ⊘ The first version collected straight into the `Vec` with no check,
-    /// which codex flagged: it bypassed the bound `push` enforces, so a
+    /// which review flagged: it bypassed the bound `push` enforces, so a
     /// 65 537-body iterator produced an inventory whose tail no `FnAddr` can
     /// name while `len()` still counted it. A silently unaddressable entry is
     /// worse than a panic — the bound is the address space, not a policy.
@@ -245,7 +245,7 @@ mod tests {
 
     /// FAILS IF: `FromIterator` collects without the bound `push` enforces.
     ///
-    /// Codex flagged exactly this on OGAR #304: the 65 537th body has no
+    /// Review flagged exactly this on OGAR #304: the 65 537th body has no
     /// `FnAddr` that can name it, so a silent collect produces an inventory
     /// whose tail is unreachable while `len()` still counts it. The bound is
     /// the address space, not a policy, so it panics rather than truncates.

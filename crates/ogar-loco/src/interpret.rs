@@ -102,13 +102,25 @@ pub enum RunError<E> {
         /// The call whose arity is unknown.
         call: FnIndex,
     },
-    /// A branch named a function index the program does not contain.
+    /// A branch named a function index that did not RESOLVE to a body.
+    ///
+    /// Not merely "out of range": the bound is whether the backing answers
+    /// with a body, so a sparse [`Inventory`] with a hole at a legal address
+    /// lands here too. See [`Interpreter::branch`] for why the two cannot be
+    /// separate rules.
     UnresolvedBody {
         /// The branching call.
         call: FnIndex,
         /// The index it named.
         target: u8,
     },
+    /// [`Interpreter::run`] found no body at the entry address.
+    ///
+    /// Distinct from [`RunError::UnresolvedBody`] because there is no
+    /// branching call to name: nothing asked for this body, the run simply
+    /// had nowhere to start. Reported rather than returning `Ok(())`, which
+    /// is what an empty program and an unresolvable entry used to share.
+    MissingEntryBody,
     /// A loop ran past [`Interpreter::iteration_cap`].
     IterationCap {
         /// The loop call.
@@ -221,7 +233,7 @@ impl<'a, V: Vocabulary, D: Dialect> Interpreter<'a, V, D> {
     /// scan or a cache implements [`Inventory`] and the interpreter branches
     /// into bodies it has never seen inside a `Program`.
     ///
-    /// ⊘ Landed after codex flagged, correctly, that `inventory.rs` shipped a
+    /// ⊘ Landed after review flagged, correctly, that `inventory.rs` shipped a
     /// trait no execution path could reach — `Interpreter::new` took only a
     /// `Program` and both resolution sites went through `program.functions`, so
     /// the advertised behaviour was unavailable to any caller. Two built ends
@@ -239,14 +251,6 @@ impl<'a, V: Vocabulary, D: Dialect> Interpreter<'a, V, D> {
         match self.inventory {
             Some(inv) => u16::try_from(index).ok().and_then(|i| inv.body(FnAddr(i))),
             None => self.program.functions.get(index),
-        }
-    }
-
-    /// How many addresses the backing can answer — the bound `branch` checks.
-    fn body_count(&self) -> usize {
-        match self.inventory {
-            Some(inv) => inv.len(),
-            None => self.program.functions.len(),
         }
     }
 
@@ -283,15 +287,25 @@ impl<'a, V: Vocabulary, D: Dialect> Interpreter<'a, V, D> {
     }
 
     /// Run the program's entry function.
+    ///
+    /// Errors with [`RunError::MissingEntryBody`] when the entry address does
+    /// not resolve. It used to return `Ok(())`, which made "there was nothing
+    /// to run" indistinguishable from "it ran and did nothing" — and under an
+    /// [`Inventory`] backing, a body the store could not produce then read as
+    /// a completed run.
     pub fn run(&mut self) -> Result<(), RunError<D::Error>> {
-        self.run_function(0)
+        match self.body_at(0) {
+            Some(body) => self.run_body(body),
+            None => Err(RunError::MissingEntryBody),
+        }
     }
 
-    /// Run one function body to completion.
-    fn run_function(&mut self, index: usize) -> Result<(), RunError<D::Error>> {
-        let Some(body) = self.body_at(index) else {
-            return Ok(());
-        };
+    /// Run one already-resolved body to completion.
+    ///
+    /// Takes the body rather than an address on purpose: resolution is the
+    /// caller's to do and to report on, so there is no path through here that
+    /// can fail to find one and silently succeed.
+    fn run_body(&mut self, body: &'a FunctionBody) -> Result<(), RunError<D::Error>> {
         let mut pc = 0usize;
         while let Some(call) = body.call(pc) {
             let f = call.function;
@@ -402,11 +416,27 @@ impl<'a, V: Vocabulary, D: Dialect> Interpreter<'a, V, D> {
     }
 
     /// Recurse into the body a branch names.
+    ///
+    /// The bound is **whether a body comes back**, never a length.
+    /// [`Inventory::len`]'s own doc says so — *"used only for diagnostics;
+    /// `body` returning `None` is the real bound"* — and this call site used
+    /// to check the length anyway, which is a contract a backing can satisfy
+    /// while still having a hole: an [`Inventory`] over a node store or a
+    /// cache answers `len()` from its address space and `body()` from what it
+    /// can actually produce. A miss then passed the bound, resolved to
+    /// nothing, and the run reported success.
+    ///
+    /// Address 0 stays refused separately: it is the ENTRY body, and a branch
+    /// into it is a re-entry the recursion ceiling cannot tell from a
+    /// legitimate cycle.
     fn branch(&mut self, call: FnIndex, target: u8) -> Result<(), RunError<D::Error>> {
         let idx = usize::from(target);
-        if idx == 0 || idx >= self.body_count() {
+        if idx == 0 {
             return Err(RunError::UnresolvedBody { call, target });
         }
+        let Some(body) = self.body_at(idx) else {
+            return Err(RunError::UnresolvedBody { call, target });
+        };
         if self.depth >= self.recursion_depth {
             return Err(RunError::RecursionDepth {
                 call,
@@ -414,7 +444,7 @@ impl<'a, V: Vocabulary, D: Dialect> Interpreter<'a, V, D> {
             });
         }
         self.depth += 1;
-        let r = self.run_function(idx);
+        let r = self.run_body(body);
         // Restored on the error path too: an interpreter a caller inspects
         // after a failure would otherwise report a depth that never unwound,
         // and one reused after a caught error would refuse legal programs.
@@ -667,6 +697,107 @@ mod tests {
             d.vars[0], 21,
             "address 1 exists in the inventory, not the program"
         );
+    }
+
+    /// An inventory with a HOLE: it reports a length that COVERS an address
+    /// and answers `None` for that address anyway.
+    ///
+    /// Not a contrived shape. It is what a node store, a Lance scan or a
+    /// cache does whenever a row is absent, evicted, or not yet materialized
+    /// — the length comes from the address space, the body from what the
+    /// backing can actually produce. [`Inventory::len`]'s own doc says the
+    /// two are different questions; this is the test double that makes the
+    /// difference observable.
+    struct HolePunchedInventory {
+        /// One slot per address; `None` is a hole inside the length.
+        bodies: Vec<Option<FunctionBody>>,
+    }
+
+    impl Inventory for HolePunchedInventory {
+        fn body(&self, addr: FnAddr) -> Option<&FunctionBody> {
+            self.bodies.get(addr.0 as usize)?.as_ref()
+        }
+
+        fn len(&self) -> usize {
+            self.bodies.len()
+        }
+    }
+
+    /// FAILS IF: `branch` bounds on a LENGTH instead of on whether a body came
+    /// back. Address 1 is inside `len()` and resolves to nothing, so the old
+    /// `idx >= self.body_count()` check passed it, `run_function` found no
+    /// body and returned `Ok(())`, and the run reported success having
+    /// executed nothing — three times over, once per `REPEAT` iteration.
+    ///
+    /// Two-sided: filling the same hole must run to 21, so an implementation
+    /// that simply refuses every inventory branch cannot pass.
+    #[test]
+    fn a_branch_into_a_hole_is_reported_not_silently_completed() {
+        let full = step_program(7);
+
+        let holed = HolePunchedInventory {
+            bodies: vec![Some(full.functions[0]), None],
+        };
+        // The premise, asserted rather than assumed: the hole is INSIDE the
+        // reported length. Without this the test could pass for an ordinary
+        // out-of-range address and prove nothing about sparseness.
+        assert_eq!(holed.len(), 2, "the hole lies inside the reported length");
+        assert!(holed.body(FnAddr(1)).is_none(), "and address 1 is the hole");
+
+        match run_with_inventory(&full, &holed) {
+            Err(RunError::UnresolvedBody { target: 1, .. }) => {}
+            Err(other) => panic!("expected UnresolvedBody at address 1, got {other:?}"),
+            Ok(d) => panic!(
+                "a branch that resolved to nothing was read as a completed run \
+                 (var0 = {}, the loop iterated and did nothing)",
+                d.vars[0]
+            ),
+        }
+
+        let filled = HolePunchedInventory {
+            bodies: vec![Some(full.functions[0]), Some(full.functions[1])],
+        };
+        let d = run_with_inventory(&full, &filled)
+            .expect("the same shape with the hole filled still runs");
+        assert_eq!(d.vars[0], 21, "so the refusal is the hole, not the backing");
+    }
+
+    /// FAILS IF: an entry address that does not resolve is read as a finished
+    /// run. `run` used to be `run_function(0)`, which returned `Ok(())` on a
+    /// missing body — so "there was nothing to run" and "it ran and did
+    /// nothing" were the same answer.
+    ///
+    /// Both backings are pinned, because the silent `Ok(())` was shared: the
+    /// inventory path is the one a store can hit in production, and the empty
+    /// program is the behaviour change a pre-`Inventory` caller would see.
+    #[test]
+    fn an_unresolvable_entry_is_reported_not_read_as_a_finished_run() {
+        let program = step_program(7);
+
+        let no_entry = HolePunchedInventory {
+            bodies: vec![None, Some(program.functions[1])],
+        };
+        assert_eq!(no_entry.len(), 2, "the entry address is inside the length");
+        match run_with_inventory(&program, &no_entry) {
+            Err(RunError::MissingEntryBody) => {}
+            Err(other) => panic!("expected MissingEntryBody, got {other:?}"),
+            Ok(d) => panic!(
+                "an entry that resolved to nothing was read as a finished run \
+                 (var0 = {})",
+                d.vars[0]
+            ),
+        }
+
+        let empty = Program { functions: vec![] };
+        assert!(
+            matches!(run(&empty), Err(RunError::MissingEntryBody)),
+            "a program with no bodies reports it rather than succeeding"
+        );
+
+        // The silent half: an entry that DOES resolve still runs, so this
+        // cannot pass for an implementation that refuses every run.
+        let d = run(&program).expect("a program with an entry body runs");
+        assert_eq!(d.vars[0], 21);
     }
 
     /// `sum 1..=n` with `REPEAT`: var0 = total, var1 = counter.
