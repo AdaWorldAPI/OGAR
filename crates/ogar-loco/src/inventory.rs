@@ -177,14 +177,27 @@ impl FromIterator<FunctionBody> for VecInventory {
 }
 
 impl Inventory for VecInventory {
+    /// A plain index, because registration order IS the address here. `None`
+    /// past the end rather than a wrap.
     fn body(&self, addr: FnAddr) -> Option<&FunctionBody> {
         self.bodies.get(addr.0 as usize)
     }
 
+    /// `None` for an entry pushed without a key — this backing never mints
+    /// one, so an unkeyed entry stays unkeyed rather than acquiring a zero key
+    /// that would collide with every other unminted function.
     fn key_of(&self, addr: FnAddr) -> Option<[u8; 16]> {
         self.keys.get(addr.0 as usize).copied().flatten()
     }
 
+    /// How many addresses are registered.
+    ///
+    /// **Diagnostic only**, as the trait says — [`Inventory::body`] returning
+    /// `None` is the real bound. The two happen to agree here only because a
+    /// `Vec` is dense; a backing over a node store, a Lance scan or a cache
+    /// answers this from its address space and `body` from what it can
+    /// actually produce, and a consumer that bounds on this number instead of
+    /// on a resolved body reads a hole as a success (OGAR #304).
     fn len(&self) -> usize {
         self.bodies.len()
     }

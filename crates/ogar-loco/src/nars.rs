@@ -133,28 +133,38 @@ pub fn byte_of_id(id: u8) -> Option<FnIndex> {
 pub struct NarsVocabulary;
 
 impl Vocabulary for NarsVocabulary {
+    /// Two operands for a [`Bucket::Datapath`] byte, one for [`Bucket::Gate`]
+    /// and [`Bucket::Control`].
+    ///
+    /// POLICY, not a measurement — see the module doc. The catalogue records
+    /// each recipe's bucket, not its arity, so these numbers are this
+    /// vocabulary's reading of the bucket rather than a fact it carries.
     fn domain_stack_arity(&self, f: FnIndex) -> Option<u8> {
-        // POLICY, not a measurement — see the module doc.
         tier_of(f).map(|b| match b {
             Bucket::Datapath => 2,
             Bucket::Gate | Bucket::Control => 1,
         })
     }
 
+    /// Zero for every recipe, [`Bucket::Control`] included.
+    ///
+    /// See "the seam this does NOT close" in the module doc: a body reference
+    /// here would branch through a path nothing has executed.
     fn domain_body_refs(&self, _f: FnIndex) -> u8 {
-        // Zero for every recipe, Control included. See "the seam this does
-        // NOT close" in the module doc: a body reference here would branch
-        // through a path nothing has executed.
         0
     }
 
+    /// Every tier answers with something — `Datapath` a mask, `Gate` a
+    /// marker, `Control` a verdict — so all three push.
+    ///
+    /// Declared rather than left unknown so bodies using these bytes are
+    /// statement-segmentable instead of refused.
     fn domain_pushes_result(&self, f: FnIndex) -> Option<bool> {
-        // All three tiers answer with something: Datapath a mask, Gate a
-        // marker, Control a verdict. Declared so bodies using these bytes are
-        // statement-segmentable rather than refused.
         tier_of(f).map(|_| true)
     }
 
+    /// The recipe's own `code` from the shared catalogue, so a legend renders
+    /// the canonical name rather than a byte this crate invented.
     fn domain_name(&self, f: FnIndex) -> Option<&'static str> {
         recipe_at(f).map(|r| r.code)
     }
