@@ -41,6 +41,7 @@
 //! truthy condition, and would pass any test whose loop runs zero or one
 //! times.
 
+use crate::inventory::{FnAddr, Inventory};
 use crate::vocabulary::conformance::CheckedVocabulary;
 use crate::{Call, FnIndex, FunctionBody, Program, Vocabulary};
 
@@ -184,6 +185,13 @@ pub const DEFAULT_RECURSION_DEPTH: u32 = 64;
 pub struct Interpreter<'a, V: Vocabulary, D: Dialect> {
     vocab: &'a CheckedVocabulary<V>,
     program: &'a Program,
+    /// Where bodies come from, when a caller supplies one.
+    ///
+    /// `None` resolves against `program.functions`, which is what every
+    /// pre-`Inventory` caller does and what keeps this change behaviour-neutral
+    /// for them: a `VecInventory` built from a program's own `functions` has
+    /// registration order as its address, so the two agree row for row.
+    inventory: Option<&'a dyn Inventory>,
     dialect: D,
     stack: Vec<D::Value>,
     iteration_cap: u32,
@@ -197,11 +205,48 @@ impl<'a, V: Vocabulary, D: Dialect> Interpreter<'a, V, D> {
         Self {
             vocab,
             program,
+            inventory: None,
             dialect,
             stack: Vec::new(),
             iteration_cap: DEFAULT_ITERATION_CAP,
             recursion_depth: DEFAULT_RECURSION_DEPTH,
             depth: 0,
+        }
+    }
+
+    /// Resolve bodies through an [`Inventory`] instead of the program's own
+    /// `functions` list.
+    ///
+    /// This is the consumer half of functions-as-objects: a node store, a Lance
+    /// scan or a cache implements [`Inventory`] and the interpreter branches
+    /// into bodies it has never seen inside a `Program`.
+    ///
+    /// ⊘ Landed after codex flagged, correctly, that `inventory.rs` shipped a
+    /// trait no execution path could reach — `Interpreter::new` took only a
+    /// `Program` and both resolution sites went through `program.functions`, so
+    /// the advertised behaviour was unavailable to any caller. Two built ends
+    /// that did not meet, which is the exact shape this session kept naming
+    /// elsewhere.
+    #[must_use]
+    pub fn with_inventory(mut self, inventory: &'a dyn Inventory) -> Self {
+        self.inventory = Some(inventory);
+        self
+    }
+
+    /// The body at `index`, from whichever backing this interpreter resolves
+    /// against. One place, so the two call sites cannot disagree.
+    fn body_at(&self, index: usize) -> Option<&'a FunctionBody> {
+        match self.inventory {
+            Some(inv) => u16::try_from(index).ok().and_then(|i| inv.body(FnAddr(i))),
+            None => self.program.functions.get(index),
+        }
+    }
+
+    /// How many addresses the backing can answer — the bound `branch` checks.
+    fn body_count(&self) -> usize {
+        match self.inventory {
+            Some(inv) => inv.len(),
+            None => self.program.functions.len(),
         }
     }
 
@@ -244,7 +289,7 @@ impl<'a, V: Vocabulary, D: Dialect> Interpreter<'a, V, D> {
 
     /// Run one function body to completion.
     fn run_function(&mut self, index: usize) -> Result<(), RunError<D::Error>> {
-        let Some(body) = self.program.functions.get(index) else {
+        let Some(body) = self.body_at(index) else {
             return Ok(());
         };
         let mut pc = 0usize;
@@ -359,7 +404,7 @@ impl<'a, V: Vocabulary, D: Dialect> Interpreter<'a, V, D> {
     /// Recurse into the body a branch names.
     fn branch(&mut self, call: FnIndex, target: u8) -> Result<(), RunError<D::Error>> {
         let idx = usize::from(target);
-        if idx == 0 || idx >= self.program.functions.len() {
+        if idx == 0 || idx >= self.body_count() {
             return Err(RunError::UnresolvedBody { call, target });
         }
         if self.depth >= self.recursion_depth {
@@ -428,6 +473,7 @@ impl<'a, V: Vocabulary, D: Dialect> Interpreter<'a, V, D> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::inventory::VecInventory;
     use crate::vocabulary::conformance::validate;
     use crate::{Call, LaneShape};
 
@@ -535,6 +581,92 @@ mod tests {
         let mut interp = Interpreter::new(&vocab, program, I64Dialect::default());
         interp.run()?;
         Ok(interp.dialect)
+    }
+
+    /// Run a program whose bodies come from an [`Inventory`] instead of from
+    /// the program's own `functions` list.
+    fn run_with_inventory(
+        program: &Program,
+        inv: &dyn Inventory,
+    ) -> Result<I64Dialect, RunError<I64Error>> {
+        let vocab = validate(CoreOnly).expect("core-only vocabulary conforms");
+        let mut interp =
+            Interpreter::new(&vocab, program, I64Dialect::default()).with_inventory(inv);
+        interp.run()?;
+        Ok(interp.dialect)
+    }
+
+    /// `total = 0; REPEAT 3 -> body 1`, where body 1 adds `step` to `total`.
+    /// The entry is identical in both backings; only body 1 differs, so the
+    /// result says which backing was actually read.
+    fn step_program(step: u8) -> Program {
+        let entry = FunctionBody::from_calls(
+            LaneShape::Pairs,
+            &[
+                Call::with_value(FnIndex::NUMBER, 0),
+                Call::with_value(FnIndex::VAR_SET, 0),
+                Call::with_value(FnIndex::NUMBER, 3),
+                Call::with_value(FnIndex::REPEAT, 1),
+            ],
+        )
+        .unwrap();
+        let body = FunctionBody::from_calls(
+            LaneShape::Pairs,
+            &[
+                Call::with_value(FnIndex::VAR_GET, 0),
+                Call::with_value(FnIndex::NUMBER, step),
+                Call::new(FnIndex::ADD),
+                Call::with_value(FnIndex::VAR_SET, 0),
+            ],
+        )
+        .unwrap();
+        Program {
+            functions: vec![entry, body],
+        }
+    }
+
+    /// FAILS IF: `with_inventory` does not actually redirect body resolution —
+    /// if `run_function` or `branch` still reads `program.functions`, the run
+    /// returns the PROGRAM's 3 rather than the INVENTORY's 21.
+    ///
+    /// Two-sided on purpose: the same program run WITHOUT an inventory must
+    /// still return 3, so this cannot pass by an implementation that ignores
+    /// the program entirely.
+    #[test]
+    fn with_inventory_resolves_bodies_the_program_does_not_carry() {
+        let program = step_program(1);
+        let without = run(&program).expect("runs");
+        assert_eq!(
+            without.vars[0], 3,
+            "the program's own body adds 1, three times"
+        );
+
+        // Same entry, a DIFFERENT body 1 — reachable only through the trait.
+        let other = step_program(7);
+        let inv: VecInventory = other.functions.iter().copied().collect();
+        let with = run_with_inventory(&program, &inv).expect("runs");
+        assert_eq!(with.vars[0], 21, "the inventory's body adds 7, three times");
+        assert_ne!(
+            without.vars[0], with.vars[0],
+            "if these agree the inventory was never consulted"
+        );
+    }
+
+    /// FAILS IF: `branch`'s bound reads the program's length while bodies come
+    /// from the inventory. A one-body program with a two-body inventory must
+    /// reach address 1; the old `self.program.functions.len()` refuses it.
+    #[test]
+    fn the_branch_bound_follows_the_inventory_not_the_program() {
+        let full = step_program(7);
+        let entry_only = Program {
+            functions: vec![full.functions[0]],
+        };
+        let inv: VecInventory = full.functions.iter().copied().collect();
+        let d = run_with_inventory(&entry_only, &inv).expect("runs");
+        assert_eq!(
+            d.vars[0], 21,
+            "address 1 exists in the inventory, not the program"
+        );
     }
 
     /// `sum 1..=n` with `REPEAT`: var0 = total, var1 = counter.

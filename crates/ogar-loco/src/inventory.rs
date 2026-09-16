@@ -48,6 +48,12 @@ use crate::FunctionBody;
 #[repr(transparent)]
 pub struct FnAddr(pub u16);
 
+/// How many addresses a [`VecInventory`] can name: 65 536, the `u16` space.
+///
+/// ONE spelling, read by both [`VecInventory::push`] and the `FromIterator`
+/// impl, so the two cannot enforce different bounds.
+pub const MAX_ADDRESSES: usize = u16::MAX as usize + 1;
+
 impl FnAddr {
     /// The entry address. Reserved: a body-reference byte of `0` means
     /// "unset", so no call may branch to it — the same rule
@@ -134,8 +140,22 @@ impl VecInventory {
 }
 
 impl FromIterator<FunctionBody> for VecInventory {
+    /// Panics on more than [`MAX_ADDRESSES`] bodies, exactly as [`push`] does.
+    ///
+    /// ⊘ The first version collected straight into the `Vec` with no check,
+    /// which codex flagged: it bypassed the bound `push` enforces, so a
+    /// 65 537-body iterator produced an inventory whose tail no `FnAddr` can
+    /// name while `len()` still counted it. A silently unaddressable entry is
+    /// worse than a panic — the bound is the address space, not a policy.
+    ///
+    /// [`push`]: VecInventory::push
     fn from_iter<I: IntoIterator<Item = FunctionBody>>(iter: I) -> Self {
         let bodies: Vec<FunctionBody> = iter.into_iter().collect();
+        assert!(
+            bodies.len() <= MAX_ADDRESSES,
+            "inventory exceeds the u16 address space: {} bodies, max {MAX_ADDRESSES}",
+            bodies.len()
+        );
         let keys = vec![None; bodies.len()];
         Self { bodies, keys }
     }
@@ -152,5 +172,85 @@ impl Inventory for VecInventory {
 
     fn len(&self) -> usize {
         self.bodies.len()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{Call, FnIndex, LaneShape};
+
+    fn body(v: u8) -> FunctionBody {
+        FunctionBody::from_calls(LaneShape::Pairs, &[Call::with_value(FnIndex::NUMBER, v)])
+            .expect("a one-call body is well formed")
+    }
+
+    /// FAILS IF: an address stops being registration order, or `key_of`
+    /// invents a key for an unkeyed entry. The `None` is the load-bearing
+    /// half — answering `[0u8; 16]` would be a GUID colliding with every
+    /// other unminted function.
+    #[test]
+    fn an_address_is_registration_order_and_an_unkeyed_entry_has_no_key() {
+        let mut inv = VecInventory::new();
+        let a = inv.push(body(1));
+        let b = inv.push(body(2));
+        assert_eq!((a, b), (FnAddr(0), FnAddr(1)));
+        assert_eq!(inv.len(), 2);
+        assert_eq!(inv.body(a), Some(&body(1)));
+        assert_eq!(inv.body(b), Some(&body(2)));
+        assert_eq!(inv.key_of(a), None, "an unkeyed entry must not invent one");
+        assert_eq!(
+            inv.body(FnAddr(2)),
+            None,
+            "past the end is None, not a wrap"
+        );
+    }
+
+    /// FAILS IF: `push_keyed` does not bind the key to the address it
+    /// returned, or `addr_of` matches a key it was never given. Two entries,
+    /// so a "return the only key" implementation cannot pass.
+    #[test]
+    fn a_minted_key_round_trips_to_its_own_address() {
+        let mut inv = VecInventory::new();
+        let k1 = [1u8; 16];
+        let k2 = [2u8; 16];
+        let a = inv.push_keyed(k1, body(1));
+        let b = inv.push_keyed(k2, body(2));
+        assert_ne!(a, b);
+        assert_eq!(inv.key_of(a), Some(k1));
+        assert_eq!(inv.key_of(b), Some(k2));
+        assert_eq!(inv.addr_of(&k1), Some(a));
+        assert_eq!(inv.addr_of(&k2), Some(b));
+        assert_eq!(
+            inv.addr_of(&[9u8; 16]),
+            None,
+            "an absent key has no address"
+        );
+    }
+
+    /// FAILS IF: `FromIterator` collects without the bound `push` enforces.
+    ///
+    /// Codex flagged exactly this on OGAR #304: the 65 537th body has no
+    /// `FnAddr` that can name it, so a silent collect produces an inventory
+    /// whose tail is unreachable while `len()` still counts it. The bound is
+    /// the address space, not a policy, so it panics rather than truncates.
+    #[test]
+    #[should_panic(expected = "exceeds the u16 address space")]
+    fn from_iter_refuses_more_bodies_than_the_address_space_can_name() {
+        let _: VecInventory = std::iter::repeat_n(body(1), MAX_ADDRESSES + 1).collect();
+    }
+
+    /// The paired silent half: EXACTLY the address space is legal, and every
+    /// one of its addresses resolves. Without this the test above would pass
+    /// for an implementation that rejects any non-trivial iterator.
+    #[test]
+    fn from_iter_accepts_exactly_the_address_space() {
+        let inv: VecInventory = std::iter::repeat_n(body(1), MAX_ADDRESSES).collect();
+        assert_eq!(inv.len(), MAX_ADDRESSES);
+        assert!(inv.body(FnAddr(0)).is_some(), "the first address resolves");
+        assert!(
+            inv.body(FnAddr(u16::MAX)).is_some(),
+            "the LAST address resolves — this is the one an off-by-one loses"
+        );
     }
 }
