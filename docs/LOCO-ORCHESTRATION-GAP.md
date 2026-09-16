@@ -99,8 +99,35 @@ the right posture: they were never validated by a probe. `GOTO` joins that
 list, and lands the same way — with a falsifier, not with a guess.
 
 Cost: one arm in `run_branching`, plus a loop-safety question `IF`/`REPEAT` do
-not have (a `GOTO` can build a cycle the structured ops cannot). The iteration
-cap is already the answer; it just has to cover jumps as well as loops.
+not have (a `GOTO` can build a cycle the structured ops cannot).
+
+**And "the iteration cap already covers it" is wrong — that sentence stood here
+and CodeRabbit was right to reject it.** `iteration_cap` is a PER-LOOP ceiling:
+`REPEAT`, `WHILE` and `REPEAT_UNTIL` each check their own count against it. A
+`GOTO` cycle contains no loop construct, so it checks nothing and runs forever
+inside a cap that is never consulted. A per-loop ceiling cannot bound a
+control-flow graph; only a shared budget can.
+
+So `GOTO` lands with a second, distinct quantity, and the spec is the part that
+has to exist before the arm does:
+
+- **`step_budget`** — one counter for the whole run, decremented **once per
+  call executed**, whatever executed it. A structured loop body, a `GOTO`
+  target, a branch into another function, and a resumed run after a suspension
+  all consume it identically, because they are all "a call ran".
+- **`iteration_cap` stays, and stays per-loop.** It is a different guarantee:
+  it bounds ONE construct's repetitions so a runaway loop is attributable to
+  that loop. The budget bounds the RUN. Neither subsumes the other — a program
+  can exhaust the budget with no loop at all, and a single loop can hit its cap
+  while the budget is barely touched.
+- **Exhaustion is a refusal, not a truncation:** `RunError::StepBudget`,
+  carrying the call that spent the last step, so a caller can see where.
+- **A resumed run does NOT get a fresh budget.** The remaining count is part of
+  what `snapshot` persists (see G3 below) — otherwise suspension is an
+  unbounded-execution loophole: suspend, resume, repeat.
+
+Until that exists, `GOTO` stays refused alongside `STOP` / `RETURN` / `BREAK` /
+`CONTINUE`, which is the correct posture and not a gap.
 
 ## G2 — an explicit frame stack (the keystone)
 
@@ -161,6 +188,35 @@ A dialect whose state is already facet rows writes them directly; one holding
 `[i64; 256]` writes 2 KiB; one holding masks writes mask words. The engine
 never looks inside. `VAR_GET`/`VAR_SET`'s 256 slots stay exactly what they
 are — the named half of the state model, already addressable.
+
+### Where those bytes are allowed to live — the boundary, stated
+
+CodeRabbit asked this and the doc did not answer it, which is a real omission
+rather than a nit: a byte seam whose destination is unspecified is one review
+away from becoming a serialization channel.
+
+**The snapshot is HOST-LOCAL and OUTSIDE the hot path. It does not cross a
+mailbox.** A suspended run's bytes belong to whoever is holding that run — a
+scheduler slot, a local arena, a durable store the host owns — and they are
+read back by the same host on resume. That is what makes `snapshot` cheap
+enough to be worth having.
+
+This is not a preference; it is what the repo's own non-negotiables already
+require:
+
+- **ADR-022 / ADR-023 — the Firewall.** No serialization in the hot path; the
+  IR is wire truth. An opaque dialect blob is by construction NOT the IR, so it
+  is exactly the thing that must not be on a wire. Writing it host-locally is
+  not a crossing; handing it to another mailbox would be.
+- **Therefore:** if a suspension ever has to move between owners, it does not
+  travel as a snapshot blob. It travels as the IR — the program, its address,
+  and the facet rows that are already the state model — and the receiving host
+  rebuilds. `snapshot` is a resume aid for one host, never a transport.
+
+The falsifier, so this cannot quietly erode: **no snapshot byte may appear in
+any type that crosses an owner boundary.** If a future `Baton`, envelope, or
+mailbox row grows a field carrying `Dialect::snapshot` output, that is the
+violation, and it is greppable rather than a matter of judgement.
 
 ## G4 — fan-out is a MASK op, not a task pool
 

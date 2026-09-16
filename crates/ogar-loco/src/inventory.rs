@@ -109,15 +109,30 @@ impl VecInventory {
     }
 
     /// Append a body, returning the address it landed at.
+    /// Panics past [`MAX_ADDRESSES`] — and does so BEFORE mutating.
+    ///
+    /// A `u16` address space means the 65 537th body has nowhere to live.
+    /// Saturating would silently alias it onto the last legal address, so the
+    /// conversion is checked and the overflow is a panic at BUILD time rather
+    /// than a wrong branch at run time.
+    ///
+    /// ⊘ The order here is the fix, not the check. The first version pushed to
+    /// both vectors and converted afterwards, which CodeRabbit caught on
+    /// OGAR #304: a caller that catches the panic is then holding an inventory
+    /// with 65 537 entries whose last one no `FnAddr` can name, and `len()`
+    /// counts it. Converting FIRST makes the failure leave nothing behind —
+    /// the conversion IS the check, so there is no second rule to keep in
+    /// step with it.
     pub fn push(&mut self, body: FunctionBody) -> FnAddr {
-        let a = self.bodies.len();
+        let Ok(addr) = u16::try_from(self.bodies.len()) else {
+            panic!(
+                "inventory exceeds the u16 address space: {} bodies, max {MAX_ADDRESSES}",
+                self.bodies.len()
+            );
+        };
         self.bodies.push(body);
         self.keys.push(None);
-        // A `u16` address space means the 65,537th body has nowhere to live.
-        // Saturating would silently alias it onto the last legal address, so
-        // the cast is checked and the overflow is a panic at BUILD time, not
-        // a wrong branch at run time.
-        FnAddr(u16::try_from(a).expect("inventory exceeds the u16 address space"))
+        FnAddr(addr)
     }
 
     /// Append a body with its minted key.
@@ -238,6 +253,33 @@ mod tests {
     #[should_panic(expected = "exceeds the u16 address space")]
     fn from_iter_refuses_more_bodies_than_the_address_space_can_name() {
         let _: VecInventory = std::iter::repeat_n(body(1), MAX_ADDRESSES + 1).collect();
+    }
+
+    /// FAILS IF: `push` mutates before it validates. A caught panic must leave
+    /// the inventory EXACTLY as it was — `len()` unchanged and every address
+    /// still resolvable — because a caller that recovers is otherwise holding
+    /// an entry no `FnAddr` can name.
+    ///
+    /// The `len()` check is the load-bearing assertion: the old order pushed
+    /// to both vectors first, so this would read `MAX_ADDRESSES + 1`.
+    #[test]
+    fn a_refused_push_leaves_the_inventory_untouched() {
+        let mut inv: VecInventory = std::iter::repeat_n(body(1), MAX_ADDRESSES).collect();
+        assert_eq!(inv.len(), MAX_ADDRESSES, "full to the last address");
+
+        let refused = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            inv.push(body(2));
+        }));
+        assert!(refused.is_err(), "the 65 537th push must be refused");
+        assert_eq!(
+            inv.len(),
+            MAX_ADDRESSES,
+            "a refused push must not have grown the inventory"
+        );
+        assert!(
+            inv.body(FnAddr(u16::MAX)).is_some(),
+            "the last legal address still resolves"
+        );
     }
 
     /// The paired silent half: EXACTLY the address space is legal, and every
