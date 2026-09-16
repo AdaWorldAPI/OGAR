@@ -14,3 +14,13 @@ serde = ["dep:serde"]
 
 [dependencies]
 serde = { workspace = true, optional = true }
+
+# The 34 NARS reasoning recipes (`recipes::RECIPES`) — the rung-3 runbooks this
+# crate's `nars` vocabulary addresses as domain bytes. `lance-graph-contract` is
+# itself ZERO-DEP ("a trait-only crate ... MUST stay dependency-free even of
+# optional path deps"), so this costs nothing in dependency weight. EIGHT sibling
+# OGAR crates already pull it on this exact coordinate — ogar-auth,
+# ogar-class-view, ogar-doc-ir, ogar-from-ruff, ogar-r2il, ogar-rbac,
+# ogar-render-askama, ogar-render-typst — so `branch = "main"` here is this
+# repo's own established convention, measured rather than assumed.
+lance-graph-contract = { git = "https://github.com/AdaWorldAPI/lance-graph", branch = "main" }
