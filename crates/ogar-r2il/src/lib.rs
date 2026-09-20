@@ -1074,6 +1074,11 @@ mod tests {
 
     /// `words()` is the same mask `contains` reads — bit for bit, including
     /// the straddling word and the bits just under `len`.
+    ///
+    /// An AGREEMENT test, not a slicing one: it reads only indices below
+    /// `len`, which live in the same words under either slice width, so it
+    /// is green whether or not the carrier is over-exposed. It falsifies a
+    /// wrong word index or a wrong bit order — nothing about the width.
     #[test]
     fn words_agrees_with_contains_bit_for_bit() {
         for shape in [LaneShape::Pairs, LaneShape::Triples, LaneShape::Quads] {
@@ -1123,10 +1128,18 @@ mod tests {
         }
     }
 
-    /// A complement's tail is clear **within the slice** — the property a
+    /// A complement sets no bit at or past `len` — the property a
     /// plane-shaped consumer relies on when it clears its own tail against
-    /// the same `len`. `not()` already clears per-word; this pins that the
-    /// slice never exposes a set bit at or past `len`.
+    /// the same `len`.
+    ///
+    /// **This guards [`not`](CallMask::not), not [`words`](CallMask::words).**
+    /// Measured: it stays green when `words()` is widened to the full
+    /// carrier, because `not` already clears the phantom words per-word, so
+    /// a wider slice exposes zeros rather than ones. It goes red when `not`
+    /// is reduced to a plain `!w` over every word. The slice itself is
+    /// falsified by `words_is_sliced_to_the_population_not_the_carrier`;
+    /// keeping the two claims in separate tests is what makes each one's
+    /// disable run mean something.
     #[test]
     fn words_exposes_no_bit_at_or_past_len() {
         for shape in [LaneShape::Pairs, LaneShape::Triples, LaneShape::Quads] {
@@ -1136,15 +1149,20 @@ mod tests {
                 complement.len(),
                 "{shape:?}: !empty must be full"
             );
+            // Every bit the slice PHYSICALLY spans, past the population,
+            // read directly. Deriving the straddling word's in-range width
+            // arithmetically underflows as soon as the slice is wider than
+            // `len` implies, and the test then fails by panic instead of by
+            // assertion — detection for the wrong reason.
             let w = complement.words();
-            let tail_bits = (w.len() as u32) * 64 - complement.len();
-            if tail_bits > 0 {
-                let last = w[w.len() - 1];
-                let in_range = complement.len() - ((w.len() as u32 - 1) * 64);
+            let spanned = (w.len() as u32) * 64;
+            for i in complement.len()..spanned {
+                let bit = (w[(i / 64) as usize] >> (i % 64)) & 1;
                 assert_eq!(
-                    last >> in_range,
+                    bit,
                     0,
-                    "{shape:?}: {tail_bits} tail bit(s) set in the last slice word"
+                    "{shape:?}: bit {i} is set but the population is only {} wide",
+                    complement.len()
                 );
             }
         }
