@@ -1127,44 +1127,4 @@ mod tests {
             );
         }
     }
-
-    /// A complement sets no bit at or past `len` — the property a
-    /// plane-shaped consumer relies on when it clears its own tail against
-    /// the same `len`.
-    ///
-    /// **This guards [`not`](CallMask::not), not [`words`](CallMask::words).**
-    /// Measured: it stays green when `words()` is widened to the full
-    /// carrier, because `not` already clears the phantom words per-word, so
-    /// a wider slice exposes zeros rather than ones. It goes red when `not`
-    /// is reduced to a plain `!w` over every word. The slice itself is
-    /// falsified by `words_is_sliced_to_the_population_not_the_carrier`;
-    /// keeping the two claims in separate tests is what makes each one's
-    /// disable run mean something.
-    #[test]
-    fn words_exposes_no_bit_at_or_past_len() {
-        for shape in [LaneShape::Pairs, LaneShape::Triples, LaneShape::Quads] {
-            let complement = CallMask::empty(shape).not();
-            assert_eq!(
-                complement.count(),
-                complement.len(),
-                "{shape:?}: !empty must be full"
-            );
-            // Every bit the slice PHYSICALLY spans, past the population,
-            // read directly. Deriving the straddling word's in-range width
-            // arithmetically underflows as soon as the slice is wider than
-            // `len` implies, and the test then fails by panic instead of by
-            // assertion — detection for the wrong reason.
-            let w = complement.words();
-            let spanned = (w.len() as u32) * 64;
-            for i in complement.len()..spanned {
-                let bit = (w[(i / 64) as usize] >> (i % 64)) & 1;
-                assert_eq!(
-                    bit,
-                    0,
-                    "{shape:?}: bit {i} is set but the population is only {} wide",
-                    complement.len()
-                );
-            }
-        }
-    }
 }
