@@ -296,7 +296,21 @@ alignment costs. Until measured: 3×4 stands.
 - **PII:** never emit German PII labels (medcare-rs leaf-rename at the
   adapter is the guarantee). Word-boundary abort-guard before commit.
 - **No model identifier** in any committed artifact (chat only).
-- **Shell discipline:** `grep`/`sed`/`tail`/`head`/`awk` via Bash are
-  prohibited — use the Grep/Read/Glob tools.
+- **Evidence discipline (SUPERSEDES the shell rule):** ⊘ the rule here was
+  *"`grep`/`sed`/`tail`/`head`/`awk` via Bash are prohibited — use the
+  Grep/Read/Glob tools."* That policed which Unix command is typed, not the
+  failure it was written for. The governing rule is now epistemic:
+  **SEARCH IS NAVIGATION, NEVER EVIDENCE.** A search may establish only
+  *"candidates are X, Y, Z"* — never what a type means, what a function
+  guarantees, that a consumer does not exist, who owns something, or which way
+  a dependency runs. `0 hits` proves nothing; a global negative needs a CLOSED,
+  explicitly named search space; a partial Read is not evidence for a
+  whole-file claim; and **a search must never be the last tool result before
+  an architectural conclusion.** `sed`/`head`/`tail`/`awk` stay prohibited for
+  SOURCE INSPECTION specifically (a numeric slice has no semantic boundary),
+  while limiting a non-search command's output stays fine. Full law, the
+  auto-deepen triggers, the paging rule and the delegation/escalation levels:
+  lance-graph `.claude/knowledge/FIRST-HAND-SOURCE-LAW.md`, enforced by that
+  repo's `PreToolUse` guard.
 - **Append-only canon:** never delete a ledger entry; regrade in place;
   corrections cite their pass (savant / G-pass / canon-pass).

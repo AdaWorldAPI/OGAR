@@ -468,6 +468,31 @@ impl CallMask {
         self.words.iter().map(|w| w.count_ones()).sum()
     }
 
+    /// The mask's **active** words, borrowed — the zero-copy way out of this
+    /// carrier and into a plane-shaped consumer.
+    ///
+    /// Sliced to `len.div_ceil(64)`, NOT the full [`MASK_WORDS`] inline
+    /// array: only `Pairs` (180 calls) fills three words; `Triples` (120) and
+    /// `Quads` (90) fill two, and their third word is a phantom the
+    /// population does not have. Handing it out would give a consumer a word
+    /// count that disagrees with [`len`](Self::len) — and a consumer whose
+    /// own complement clears the tail against a DIFFERENT word count than
+    /// this mask's [`not`](Self::not) does would then disagree on the
+    /// phantom's bits while agreeing on every real one. That is a
+    /// wrong-answer shape, not a wasted-word shape.
+    ///
+    /// **Population identity travels with the words, never inside them.**
+    /// The bits alone do not say what they index: a consumer needs
+    /// [`len`](Self::len) (the bit count) and [`shape`](Self::shape) (the
+    /// index space) to read them at all. In particular these indices are
+    /// CALL SLOTS WITHIN ONE BODY — at most 180 — and are not row ordinals
+    /// of any table; a row-population consumer sharing this carrier's
+    /// Boolean algebra shares the algebra, not the index space.
+    #[must_use]
+    pub fn words(&self) -> &[u64] {
+        &self.words[..(self.len.div_ceil(64) as usize)]
+    }
+
     fn zip(&self, other: &Self, f: impl Fn(u64, u64) -> u64) -> Self {
         debug_assert_eq!(self.shape, other.shape, "masks of different shapes");
         Self {
@@ -1004,6 +1029,101 @@ mod tests {
             assert_eq!(
                 got_full, want_full,
                 "{shape:?}: full mask must yield 0..len"
+            );
+        }
+    }
+
+    /// **The accessor is sliced to the POPULATION, not to the carrier.**
+    ///
+    /// `MASK_WORDS` is 3 because `Pairs` (180 calls) needs three words. The
+    /// other two shapes do not: `Triples` is 120 calls and `Quads` is 90,
+    /// both two words, and their third inline word is a phantom the body
+    /// never had. Two-sided on purpose — the assertion that a narrow shape
+    /// yields FEWER words than the carrier holds is what fails if
+    /// `words()` is ever changed to hand out `&self.words` whole.
+    #[test]
+    fn words_is_sliced_to_the_population_not_the_carrier() {
+        assert_eq!(MASK_WORDS, 3, "carrier width changed; re-derive the table");
+
+        for (shape, want_words, want_len) in [
+            (LaneShape::Pairs, 3usize, 180u32),
+            (LaneShape::Triples, 2, 120),
+            (LaneShape::Quads, 2, 90),
+        ] {
+            let m = CallMask::all(shape);
+            assert_eq!(m.len(), want_len, "{shape:?}: population");
+            assert_eq!(
+                m.words().len(),
+                want_words,
+                "{shape:?}: words() must span len.div_ceil(64), not MASK_WORDS"
+            );
+            assert_eq!(
+                m.words().len(),
+                (m.len().div_ceil(64)) as usize,
+                "{shape:?}: slice width must be derived from len, never hardcoded"
+            );
+        }
+
+        // Anti-vacuity: at least one shape must be NARROWER than the carrier,
+        // or the two readings agree by accident and this test proves nothing.
+        assert!(
+            CallMask::all(LaneShape::Quads).words().len() < MASK_WORDS,
+            "no shape is narrower than the carrier: the slice cannot be falsified"
+        );
+    }
+
+    /// `words()` is the same mask `contains` reads — bit for bit, including
+    /// the straddling word and the bits just under `len`.
+    ///
+    /// An AGREEMENT test, not a slicing one: it reads only indices below
+    /// `len`, which live in the same words under either slice width, so it
+    /// is green whether or not the carrier is over-exposed. It falsifies a
+    /// wrong word index or a wrong bit order — nothing about the width.
+    #[test]
+    fn words_agrees_with_contains_bit_for_bit() {
+        for shape in [LaneShape::Pairs, LaneShape::Triples, LaneShape::Quads] {
+            let mut m = CallMask::empty(shape);
+            // Seeded scatter plus every boundary this shape can express: the
+            // word edges (63/64, 127/128) and its own last two slots.
+            let mut seeded = 0u32;
+            for i in 0..m.len() {
+                if i % 7 == 0 || i % 13 == 3 {
+                    m.set(i);
+                    seeded += 1;
+                }
+            }
+            for edge in [
+                0,
+                1,
+                62,
+                63,
+                64,
+                65,
+                126,
+                127,
+                128,
+                m.len() - 2,
+                m.len() - 1,
+            ] {
+                if edge < m.len() {
+                    m.set(edge);
+                }
+            }
+            assert!(seeded > 0, "{shape:?}: fixture set no bits");
+
+            let w = m.words();
+            for i in 0..m.len() {
+                let from_words = (w[(i / 64) as usize] >> (i % 64)) & 1 == 1;
+                assert_eq!(
+                    m.contains(i),
+                    from_words,
+                    "{shape:?}: bit {i} disagrees between contains() and words()"
+                );
+            }
+            assert_eq!(
+                w.iter().map(|x| x.count_ones()).sum::<u32>(),
+                m.count(),
+                "{shape:?}: popcount over the slice must equal count()"
             );
         }
     }
