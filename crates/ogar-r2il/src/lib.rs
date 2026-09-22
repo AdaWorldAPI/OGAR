@@ -28,9 +28,19 @@
 //! `ruff_r2il` (the ruff-side R2IL→SPO harvest) is NOT on this path and never
 //! will be: converting live V4 R2IL down to a V3 SPO projection before running
 //! it is a lossy static shadow of semantics the interpreter already has
-//! first-class. The runtime path is r2sleigh's interpreter executing R2IL in
-//! realtime; this crate is the addressing glue that makes those calls
-//! loco-addressable — not a converter, not a harvest.
+//! first-class. The MACHINE reading's runtime path is r2sleigh's interpreter
+//! executing R2IL in realtime; this crate is the addressing glue that makes
+//! those calls loco-addressable — not a converter, not a harvest.
+//!
+//! **Scope note (2026-09-22), NOT a reversal.** The ruling rules out the
+//! `ruff_r2il` SPO pre-pass, and that stands unchanged. What the sentence
+//! above no longer implies is that r2sleigh's interpreter is the ONLY lawful
+//! runtime path for these bytes: the fold extension band below introduces a
+//! second READING of the same table under its own concept id, whose dialect
+//! lives in a consumer (lance-graph), not here. Both readings execute R2IL;
+//! neither pre-converts it. This crate remains an arity table and addressing
+//! glue under either, which is why the ruling needs no storno — only this
+//! narrowing of "the runtime path" to "the machine reading's runtime path".
 //!
 //! **Always on** means exactly this: no feature gate, no `optional = true`,
 //! no `cfg`. A consumer that has `ogar-loco` has R2IL semantics available,
@@ -321,6 +331,219 @@ const PUSHES: [bool; R2IL_OPS] = [
     true, true, true, true, true, true,
 ];
 
+// ── The fold extension band (0xE2..=0xED) ───────────────────────────────────
+//
+// **One table, two classids.** `R2ILVocabulary` answers for TWO readings of
+// the SAME `VocabularyTable`, plugged into a [`ogar_loco::VocabularyRegistry`]
+// under two distinct concept ids ([`CONCEPT_R2IL_MACHINE`] and
+// [`CONCEPT_R2IL_FOLD`]). Composition (`VocabularyTable::compose`) samples
+// `domain_stack_arity`/`domain_pushes_result`/`domain_body_refs` exactly
+// once, so arity, pushes and body_refs are IDENTICAL under both classids by
+// construction — only the *dialect* interpreting a resolved call differs.
+// Plugging one table under two ids is not a workaround for missing per-
+// classid state; it is the whole point: the table describes SHAPE, and shape
+// does not change when the reader's intent does.
+//
+// **The fold band's rows are declarations of arity, not implementations.**
+// This crate never executes anything — it is proxy glue (see the module
+// docs) — so `FOLD_ARITY`/`FOLD_PUSHES` are the same kind of fact as
+// `ARITY`/`PUSHES` above: a machine dialect refuses every `0xE2..` byte by
+// name (scalar R2IL has no lane population to fold over), and a fold
+// dialect refuses `CBranch` (branching on a population is not a single
+// decision) and the unsigned compares `IntLess`/`IntLessEqual` (mask-risc,
+// the fold dialect's target machine, has no unsigned lane compare — only
+// the signed pair `IntSLess`/`IntSLessEqual`). Declaring those refusals is
+// each dialect's job, not this table's; the table only says what SHAPE a
+// byte has when it is not refused.
+//
+// **Why each of the twelve exists.** Every row is backed by a mask-risc
+// `Pred`/`Terminal` that already earned its existence in a prior wave with
+// its own parity case — minting a byte here NAMES what already passed,
+// rather than speculating ahead of one:
+//   - `VIA`        — indexed gather, the lane-population read.
+//   - `RANGE`       — the iota/arange population constructor (arity 0: it
+//                     needs no input population, only the shape it fills).
+//   - `SUM`/`MIN`/`MAX` — the three reduction terminals.
+//   - `GROUP_SUM`   — grouped reduction (population, key, accumulator).
+//   - `KEY_RUNS`    — run-length grouping over a sorted key population.
+//   - `ANY`/`ALL`   — the two Boolean reduction terminals.
+//   - `KEEP`        — the compaction/select-by-mask terminal (no push: it
+//                     narrows a population in place rather than producing a
+//                     new scalar).
+//   - `SCATTER_OR`  — scatter-write with OR-merge (a write-shaped terminal:
+//                     no push).
+//   - `BLEND`       — three-input predicated merge over a population.
+//
+// **Why `VIA` does not reuse `PtrAdd` (R2IL ordinal 71, arity 2).** Scalar
+// pointer arithmetic (`PtrAdd`: base + offset, one machine word) and a
+// lane-indexed gather (`VIA`: an index population selecting FROM a lane
+// population) are different operations over different domains — one scalar,
+// one population-shaped. Reusing `PtrAdd`'s mnemonic for the fold reading
+// would make the same byte lie about its own arity's *meaning* even though
+// the arity numeral (2) happens to coincide.
+//
+// **Why `BLEND` does not reuse `Multiequal` (R2IL ordinal 72).**
+// `Multiequal`'s shared-table arity is `None` — REFUSED, being one of the
+// two genuinely variadic R2IL opcodes (`variadic_opcodes_are_refused_rather_
+// than_called_nullary` pins this). Changing that refusal to `Some(3)` so
+// `BLEND` could ride the same byte would change the MACHINE reading, which
+// the "answers exactly as before" invariant (below) forbids. `BLEND` earns
+// its own byte instead.
+//
+// **What is deliberately NOT minted here, and why.** A row minted before its
+// falsifier passed is enum explosion — the exact failure mode `ARITY`'s own
+// doc comment above records (a first draft invented nine variants from
+// memory). Held back:
+//   - `FIRST`         — the witness terminal; earns a byte when a
+//                        `receive`-shaped probe demonstrably fails without
+//                        one.
+//   - `MATCH`         — `MatchU32`/`MatchU64` have no P-Code spelling and no
+//                        frontend emits them yet.
+//   - `SCATTER_COUNT` — the mask-risc terminal exists but is HELD pending
+//                        its own parity case.
+//
+// **`Load` (R2IL ordinal 1, arity 1, pushes true) needs no new byte.**
+// P-Code's own shape already carries the fold reading: the single stack
+// operand IS the lane index (the offset), and the lane KIND rides the
+// call's immediate as the address SPACE — 0 = u32 lane space, 1 = i32,
+// 2 = u64, matching `LaneRef::{U32,I32,U64}`. `Load` is therefore already
+// arity-correct under both dialects without joining this band.
+
+/// First `FnIndex` this crate's extension band owns — immediately after the
+/// R2IL band, never a hand-written literal.
+pub const FOLD_BASE: u8 = R2IL_BASE + R2IL_OPS as u8;
+
+/// How many fold-band opcodes this table covers.
+pub const FOLD_OPS: usize = 12;
+
+/// One extension-band opcode, as its `ogar-loco` function index.
+///
+/// Mirrors [`R2ILFn`]'s newtype-over-index shape for the same reason: the
+/// ordinal IS the identity, and a mirrored enum would be the second
+/// vocabulary this crate exists to avoid.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct FoldFn(pub FnIndex);
+
+impl FoldFn {
+    /// The function index for fold-band opcode `ordinal`, or [`None`] past
+    /// the table.
+    #[must_use]
+    pub const fn from_ordinal(ordinal: usize) -> Option<Self> {
+        if ordinal < FOLD_OPS {
+            Some(Self(FnIndex(FOLD_BASE + ordinal as u8)))
+        } else {
+            None
+        }
+    }
+
+    /// The fold-band ordinal for `f`, or [`None`] when `f` is not ours — the
+    /// R2IL band and every other domain both answer `None` here.
+    #[must_use]
+    pub const fn ordinal(f: FnIndex) -> Option<usize> {
+        if f.0 < FOLD_BASE {
+            return None;
+        }
+        let o = (f.0 - FOLD_BASE) as usize;
+        if o < FOLD_OPS { Some(o) } else { None }
+    }
+
+    /// The canonical mnemonic.
+    #[must_use]
+    pub fn mnemonic(self) -> Option<&'static str> {
+        Self::ordinal(self.0).map(|o| FOLD_MNEMONICS[o])
+    }
+}
+
+/// The fold-band mnemonics, in [`FoldFn::from_ordinal`] order.
+const FOLD_MNEMONICS: [&str; FOLD_OPS] = [
+    "VIA",
+    "RANGE",
+    "SUM",
+    "MIN",
+    "MAX",
+    "GROUP_SUM",
+    "KEY_RUNS",
+    "ANY",
+    "ALL",
+    "KEEP",
+    "SCATTER_OR",
+    "BLEND",
+];
+
+/// How many operands each fold-band opcode pops, in [`FOLD_MNEMONICS`]
+/// order — the same "data read from a source, not written from memory" rule
+/// as [`ARITY`]: each row is the arity of an already-existing, already
+/// parity-cased mask-risc `Pred`/`Terminal` (see the band doc above), never
+/// a guess ahead of one.
+const FOLD_ARITY: [Option<u8>; FOLD_OPS] = [
+    Some(2), // VIA
+    Some(0), // RANGE
+    Some(2), // SUM
+    Some(2), // MIN
+    Some(2), // MAX
+    Some(3), // GROUP_SUM
+    Some(2), // KEY_RUNS
+    Some(1), // ANY
+    Some(1), // ALL
+    Some(1), // KEEP
+    Some(2), // SCATTER_OR
+    Some(3), // BLEND
+];
+
+/// Which fold-band opcodes push a result, in [`FOLD_MNEMONICS`] order.
+const FOLD_PUSHES: [bool; FOLD_OPS] = [
+    true, true, true, true, true, false, true, true, true, false, false, false,
+];
+
+/// `VIA` — indexed gather (ordinal 0).
+pub const VIA: FnIndex = FnIndex(FOLD_BASE);
+/// `RANGE` — population constructor (ordinal 1).
+pub const RANGE: FnIndex = FnIndex(FOLD_BASE + 1);
+/// `SUM` — reduction terminal (ordinal 2).
+pub const SUM: FnIndex = FnIndex(FOLD_BASE + 2);
+/// `MIN` — reduction terminal (ordinal 3).
+pub const MIN: FnIndex = FnIndex(FOLD_BASE + 3);
+/// `MAX` — reduction terminal (ordinal 4).
+pub const MAX: FnIndex = FnIndex(FOLD_BASE + 4);
+/// `GROUP_SUM` — grouped reduction (ordinal 5).
+pub const GROUP_SUM: FnIndex = FnIndex(FOLD_BASE + 5);
+/// `KEY_RUNS` — run-length grouping (ordinal 6).
+pub const KEY_RUNS: FnIndex = FnIndex(FOLD_BASE + 6);
+/// `ANY` — Boolean reduction terminal (ordinal 7).
+pub const ANY: FnIndex = FnIndex(FOLD_BASE + 7);
+/// `ALL` — Boolean reduction terminal (ordinal 8).
+pub const ALL: FnIndex = FnIndex(FOLD_BASE + 8);
+/// `KEEP` — the demanded mask itself, as a terminal (ordinal 9).
+///
+/// NOT compaction: it hands back the population as a mask, never a dense
+/// array of survivors. An earlier doc said "compaction", which would invite
+/// exactly the materialisation the zero-copy law forbids.
+pub const KEEP: FnIndex = FnIndex(FOLD_BASE + 9);
+/// `SCATTER_OR` — scatter-write with OR-merge (ordinal 10).
+pub const SCATTER_OR: FnIndex = FnIndex(FOLD_BASE + 10);
+/// `BLEND` — three-input predicated merge (ordinal 11).
+pub const BLEND: FnIndex = FnIndex(FOLD_BASE + 11);
+
+/// The machine reading's concept id — R2IL as scalar machine semantics.
+///
+/// **PROVISIONAL.** Not yet minted in `ogar-vocab`'s canonical codebook; no
+/// persisted GUID may use this value until it is. Chosen from
+/// `ogar_vocab::ConceptDomain::BinaryLifting`'s `0xC4XX` range (the domain
+/// this crate's own subject matter — normalized machine-code semantics —
+/// already names and reserves), at `0xC400`: the first slot of that domain,
+/// unclaimed as of this writing (grepped clean across the workspace before
+/// picking it).
+pub const CONCEPT_R2IL_MACHINE: u16 = 0xC400;
+
+/// The folded reading's concept id — the same table over populations.
+///
+/// **PROVISIONAL**, on the same footing as [`CONCEPT_R2IL_MACHINE`]: not yet
+/// minted, no persisted GUID may use it until it is. Chosen as the adjacent
+/// slot in `ConceptDomain::BinaryLifting`'s `0xC4XX` range, `0xC401`, so the
+/// two readings of one table sit next to each other in the codebook the way
+/// they sit next to each other in this file.
+pub const CONCEPT_R2IL_FOLD: u16 = 0xC401;
+
 /// The R2IL vocabulary — a table, not a translator.
 ///
 /// Zero-sized: it holds no state and allocates nothing, so a consumer can
@@ -331,24 +554,34 @@ const PUSHES: [bool; R2IL_OPS] = [
 pub struct R2ILVocabulary;
 
 impl Vocabulary for R2ILVocabulary {
+    /// R2IL band first ([`ARITY`]), then the fold band ([`FOLD_ARITY`]);
+    /// `None` outside both. The R2IL half is byte-for-byte the original
+    /// expression — `the_r2il_band_answers_exactly_as_before` pins that the
+    /// extension changed nothing about it.
     fn domain_stack_arity(&self, f: FnIndex) -> Option<u8> {
-        R2ILFn::ordinal(f).and_then(|o| ARITY[o])
+        R2ILFn::ordinal(f)
+            .and_then(|o| ARITY[o])
+            .or_else(|| FoldFn::ordinal(f).and_then(|o| FOLD_ARITY[o]))
     }
 
-    /// Wires the [`PUSHES`] column into the segmentation seam.
+    /// Wires the [`PUSHES`] column into the segmentation seam, then the fold
+    /// band's [`FOLD_PUSHES`] column.
     ///
     /// Without this override, `ogar_loco::statement_bounds` refuses every
     /// R2IL call as `Uncovered` — the crate shipped the pushes data (the
     /// inherent [`R2ILVocabulary::pushes_result`]) but never answered the
     /// trait hook that the statement walk actually reads, leaving R2IL
     /// bodies lowerable but not segmentable. Found by the counterfactual
-    /// witness probe on its first run against a mixed core+R2IL body.
+    /// witness probe on its first run against a mixed core+R2IL body. The
+    /// R2IL half (`Self::pushes_result(f)`) is unchanged by the fold-band
+    /// addition — it already answers `None` for a non-R2IL byte, which is
+    /// exactly the case the `or_else` fold-band lookup fills in.
     fn domain_pushes_result(&self, f: FnIndex) -> Option<bool> {
-        Self::pushes_result(f)
+        Self::pushes_result(f).or_else(|| FoldFn::ordinal(f).map(|o| FOLD_PUSHES[o]))
     }
 
-    /// **Zero, for every R2IL opcode** — and that is a semantic statement, not
-    /// a stub.
+    /// **Zero, for every R2IL opcode and every fold-band opcode alike** —
+    /// and that is a semantic statement, not a stub.
     ///
     /// A body reference is loco's mechanism for a call that branches to
     /// another *function node*. R2IL's control flow branches to an
@@ -356,9 +589,29 @@ impl Vocabulary for R2ILVocabulary {
     /// function. `Branch`/`Call` are therefore leaf calls here: R2IL is a
     /// flat instruction stream that loco stores, never a call tree loco
     /// walks. Returning non-zero would make `Program::references_are_resolvable`
-    /// chase operands that are addresses.
+    /// chase operands that are addresses. The fold band's twelve opcodes
+    /// reference no bodies either — they are terminals over an already-
+    /// resolved population, never a call to another function node — so the
+    /// same `0` covers both bands without a branch.
     fn domain_body_refs(&self, _f: FnIndex) -> u8 {
         0
+    }
+
+    /// The canonical mnemonic — [`R2ILFn::MNEMONICS`] for an R2IL byte,
+    /// [`FOLD_MNEMONICS`] for a fold-band byte, `None` outside both.
+    ///
+    /// Additive fix, not new surface: before this override,
+    /// `VocabularyTable::name()` was `None` for every one of the 82 R2IL
+    /// opcodes even though [`R2ILFn::MNEMONICS`] already existed — the trait
+    /// hook was simply never wired, the same shape of gap
+    /// `domain_pushes_result` closed above.
+    /// `domain_name_now_answers_for_the_r2il_band_too` pins the closed gap.
+    fn domain_name(&self, f: FnIndex) -> Option<&'static str> {
+        if let Some(o) = R2ILFn::ordinal(f) {
+            Some(R2ILFn::MNEMONICS[o])
+        } else {
+            FoldFn::ordinal(f).map(|o| FOLD_MNEMONICS[o])
+        }
     }
 }
 
@@ -1125,6 +1378,177 @@ mod tests {
                 m.count(),
                 "{shape:?}: popcount over the slice must equal count()"
             );
+        }
+    }
+
+    // ── The fold extension band ─────────────────────────────────────────
+
+    /// FAILS IF: `FOLD_BASE` drifts from `R2IL_BASE + R2IL_OPS` — either the
+    /// arithmetic identity or the literal byte it must equal today.
+    #[test]
+    fn the_fold_band_starts_exactly_where_r2il_ends() {
+        assert_eq!(FOLD_BASE, R2IL_BASE + R2IL_OPS as u8);
+        assert_eq!(FOLD_BASE, 0xE2);
+    }
+
+    /// FAILS IF: the fold band's last byte overflows `u8`, or drifts from
+    /// its known last opcode `BLEND` at `0xED`.
+    #[test]
+    fn the_fold_band_fits_under_the_byte_ceiling() {
+        let last = FoldFn::from_ordinal(FOLD_OPS - 1).unwrap();
+        assert!(last.0.0 as usize <= 0xFF, "fold band must fit under 0xFF");
+        assert_eq!(last.0.0, 0xED, "BLEND must sit at the last fold byte");
+    }
+
+    /// FAILS IF: any of the three fold-band arrays drifts in length from the
+    /// other two, or from the independently pinned `FOLD_OPS == 12`.
+    #[test]
+    fn the_three_fold_arrays_agree_on_length() {
+        assert_eq!(FOLD_OPS, 12);
+        assert_eq!(FOLD_MNEMONICS.len(), FOLD_OPS);
+        assert_eq!(FOLD_ARITY.len(), FOLD_OPS);
+        assert_eq!(FOLD_PUSHES.len(), FOLD_OPS);
+    }
+
+    /// FAILS IF: any fold-band byte is missing an arity, a name, or has an
+    /// empty name — a gap in the band that a caller could silently fall
+    /// through.
+    #[test]
+    fn every_fold_byte_has_an_arity_a_pushes_and_a_name() {
+        let v = R2ILVocabulary;
+        let last = FOLD_BASE + (FOLD_OPS as u8 - 1);
+        for b in FOLD_BASE..=last {
+            let f = FnIndex(b);
+            assert!(
+                v.domain_stack_arity(f).is_some(),
+                "byte {b:#04x} has no arity"
+            );
+            let name = v.domain_name(f);
+            assert!(name.is_some(), "byte {b:#04x} has no name");
+            assert!(!name.unwrap().is_empty(), "byte {b:#04x} has an empty name");
+        }
+    }
+
+    /// FAILS IF: a fold-band byte is also claimed by the R2IL band, or vice
+    /// versa — both directions, since a one-sided check could not catch a
+    /// band that silently grew into its neighbour.
+    #[test]
+    fn no_fold_byte_collides_with_the_r2il_band() {
+        for o in 0..FOLD_OPS {
+            let f = FoldFn::from_ordinal(o).unwrap().0;
+            assert!(
+                R2ILFn::ordinal(f).is_none(),
+                "fold byte {:#04x} is also claimed by the R2IL band",
+                f.0
+            );
+        }
+        for o in 0..R2IL_OPS {
+            let f = R2ILFn::from_ordinal(o).unwrap().0;
+            assert!(
+                FoldFn::ordinal(f).is_none(),
+                "R2IL byte {:#04x} is also claimed by the fold band",
+                f.0
+            );
+        }
+    }
+
+    /// FAILS IF: adding the fold band changed a single R2IL byte's answer —
+    /// the no-regression pin for the whole extension.
+    #[test]
+    fn the_r2il_band_answers_exactly_as_before() {
+        let v = R2ILVocabulary;
+        for (o, (&arity, &name)) in ARITY.iter().zip(R2ILFn::MNEMONICS.iter()).enumerate() {
+            let f = R2ILFn::from_ordinal(o).unwrap().0;
+            assert_eq!(v.domain_stack_arity(f), arity, "{name}");
+            assert_eq!(
+                v.domain_pushes_result(f),
+                R2ILVocabulary::pushes_result(f),
+                "{name}"
+            );
+        }
+    }
+
+    /// FAILS IF: `R2ILVocabulary` fails `ogar_loco`'s own conformance check
+    /// once the fold band is present — the fold band must not break the
+    /// shared-core-is-unforgeable / shape-consistency guarantees every
+    /// vocabulary must pass.
+    #[test]
+    fn the_vocabulary_still_conforms_with_the_fold_band_present() {
+        ogar_loco::vocabulary::conformance::validate(R2ILVocabulary)
+            .expect("R2ILVocabulary must still conform with the fold band present");
+    }
+
+    /// FAILS IF: the same composed table cannot plug into a
+    /// [`ogar_loco::VocabularyRegistry`] under two distinct concept ids with
+    /// equal results, or a repeated concept id is not refused — the "one
+    /// table, two classids" claim, proven both ways.
+    #[test]
+    fn one_table_plugs_under_both_concept_ids() {
+        let checked = ogar_loco::vocabulary::conformance::validate(R2ILVocabulary).unwrap();
+        let mut registry = ogar_loco::VocabularyRegistry::new();
+
+        registry
+            .plug(CONCEPT_R2IL_MACHINE, &checked)
+            .expect("machine-reading plug must succeed");
+        registry
+            .plug(CONCEPT_R2IL_FOLD, &checked)
+            .expect("fold-reading plug must succeed");
+
+        let machine = registry.resolve_concept(CONCEPT_R2IL_MACHINE);
+        let fold = registry.resolve_concept(CONCEPT_R2IL_FOLD);
+        assert!(machine.is_some(), "machine concept id must resolve");
+        assert!(fold.is_some(), "fold concept id must resolve");
+        assert_eq!(
+            machine, fold,
+            "one table plugged under two ids must resolve identically"
+        );
+
+        // …and the anti-vacuity half: a repeat plug under an already-used id
+        // is refused loudly, never silently accepted.
+        assert_eq!(
+            registry.plug(CONCEPT_R2IL_MACHINE, &checked),
+            Err(ogar_loco::RegistryError::ConceptTaken {
+                concept_id: CONCEPT_R2IL_MACHINE
+            }),
+            "a second plug under a taken concept id must be refused"
+        );
+    }
+
+    /// FAILS IF: `domain_name` still answers `None` for the R2IL band — the
+    /// additive fix must be live, not merely present for the fold band.
+    #[test]
+    fn domain_name_now_answers_for_the_r2il_band_too() {
+        let v = R2ILVocabulary;
+        let load = R2ILFn::from_ordinal(1).unwrap().0; // "Load"
+        let int_equal = R2ILFn::from_ordinal(27).unwrap().0; // "IntEqual"
+        assert_eq!(v.domain_name(load), Some("Load"));
+        assert_eq!(v.domain_name(int_equal), Some("IntEqual"));
+    }
+
+    /// FAILS IF: the fold-band arrays are reordered — this is the readable
+    /// pin, spelling out every (name, arity, pushes) triple by hand so a
+    /// silent reorder of the arrays fails HERE, not only in a byte-count
+    /// check that cannot see order.
+    #[test]
+    fn the_fold_arities_are_the_ones_the_fold_dialect_needs() {
+        let expected: [(&str, Option<u8>, bool); FOLD_OPS] = [
+            ("VIA", Some(2), true),
+            ("RANGE", Some(0), true),
+            ("SUM", Some(2), true),
+            ("MIN", Some(2), true),
+            ("MAX", Some(2), true),
+            ("GROUP_SUM", Some(3), false),
+            ("KEY_RUNS", Some(2), true),
+            ("ANY", Some(1), true),
+            ("ALL", Some(1), true),
+            ("KEEP", Some(1), false),
+            ("SCATTER_OR", Some(2), false),
+            ("BLEND", Some(3), false),
+        ];
+        for (o, (name, arity, pushes)) in expected.iter().enumerate() {
+            assert_eq!(FOLD_MNEMONICS[o], *name, "ordinal {o} name");
+            assert_eq!(FOLD_ARITY[o], *arity, "ordinal {o} ({name}) arity");
+            assert_eq!(FOLD_PUSHES[o], *pushes, "ordinal {o} ({name}) pushes");
         }
     }
 }

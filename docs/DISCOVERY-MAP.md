@@ -2152,3 +2152,55 @@ isolation. The map's job is to keep them visible.
   withdrawn as canonical population-basin semantics; population geometry is
   an accepted vacancy on the lance-graph side. Append-only: D-BASIN-CODEBOOK
   (#295) is unaffected and stands.
+- **[D-R2IL-FOLD-BAND] one R2IL arity table, TWO readings — the machine one and
+  a folded one — plugged under two concept ids; the 0xE2..=0xED extension band
+  names the twelve population ops P-Code cannot spell — `ogar-r2il` — [G] —
+  CODED (table only; no executor here) — depends D-LOCO-ORCHESTRATION,
+  lance-graph mask-risc.** The capstone ruling this discharges: *stop
+  re-implementing programs as Rust enum variants*. `mask_risc::{Pred,
+  Terminal}`, `quack::{Filter, Agg}` and lgj's `LgjOpDesc` are three mirror
+  enums of one meaning; the carrier that removes the mirroring is a loco body
+  under a vocabulary, and the vocabulary already existed. **What is shared is
+  the TABLE, never the meaning:** `VocabularyRegistry::plug` refuses only a
+  taken concept id and copies `*v.table()`, so one `CheckedVocabulary` plugs
+  under `CONCEPT_R2IL_MACHINE` and `CONCEPT_R2IL_FOLD` with no code change,
+  and arity/pushes/body_refs are IDENTICAL under both by construction —
+  `compose` samples the hooks once. Only the *dialect* differs. Three
+  selection findings removed rows nobody has to mint: `Load` (ordinal 1,
+  **arity 1, pushes true**) needs no new byte because P-Code's own shape
+  already fits — the lane index is the single stack operand and the lane KIND
+  rides the immediate as the address SPACE (0=u32, 1=i32, 2=u64, exactly
+  `LaneRef`'s three variants); P-Code's signed/unsigned split maps onto
+  mask-risc's, so `IntSLess` + operand ORDER covers `LtI32`/`GtI32` and four
+  compare bytes cover all six (P-Code has no `Greater`, as no ISA does); and
+  `GROUP_SUM` selects `GroupSumI32` vs `GroupSumViaI32` off whether its key
+  operand is `Addr::Lane` or `Addr::Via`, so one byte covers both terminal
+  shapes. **Each of the twelve is backed by a mask-risc `Pred`/`Terminal` that
+  already earned its existence in a prior wave with its own parity case** —
+  a byte names what passed, which is the line between this and enum
+  explosion. NOT minted, each for want of a falsifier: `FIRST` (the witness;
+  earns 0xEE when a `receive`-shaped probe fails without it), `MATCH`
+  (`MatchU32`/`MatchU64` — no P-Code spelling, no frontend emits it),
+  `SCATTER_COUNT` (the mask-risc terminal is HELD). 18 slots stay free.
+  **The band is separate arrays on purpose:** the drift test asserts
+  `MNEMONICS.len() == R2IL_OPS` against r2sleigh's own enum, so a row added to
+  `MNEMONICS`/`ARITY`/`PUSHES` would break the pin that keeps R2IL honest —
+  all three are byte-identical to `origin/main`, verified, and both guard
+  tests are unchanged. Additive side-fix: `domain_name` was never wired, so
+  `VocabularyTable::name()` was `None` for all 82 R2IL opcodes even though
+  `MNEMONICS` existed — the same shape of gap `domain_pushes_result` closed
+  earlier; nothing outside this crate depends on it (only comment mentions),
+  so the fix is observable and safe. Concept ids are **PROVISIONAL** at
+  `0xC400`/`0xC401` in `ConceptDomain::BinaryLifting` — the domain whose own
+  doc names architecture-agnostic lift/IR and hands platform facts like
+  `$D021` to `0xC6XX` instead; no persisted GUID may use them until minted,
+  and minting stays an operator decision. 10 tests, 5 disable arms
+  red-then-green. **Scope, stated so it does not drift:** this crate gains no
+  executor and stays proxy glue, so the 2026-08-26 ruling needs no storno —
+  only a narrowing of *"the runtime path is r2sleigh's interpreter"* to *"the
+  MACHINE reading's runtime path"*, applied in place. The fold dialect lives
+  in a consumer (lance-graph's excluded-tier probe), where the measured gap is
+  that `Dialect::truthy` returns a bare `bool` through `&self`: a branch on a
+  population is DETECTABLE via a poison flag, never ABORTABLE. Making it a
+  true refusal needs `truthy -> Result<bool, Self::Error>` in `ogar-loco` —
+  its own PR, its own blast radius, named here rather than done quietly.
