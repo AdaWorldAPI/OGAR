@@ -358,6 +358,34 @@ parsing · composition `DocNode` · `DocOp` · `FieldView` enum +
 `ProjectionRenderer` trait · **named** ClassViews (`WorkPackage.inline` vs
 `.summary` — today's registry is one view per class) · `ogar-render-typst`.
 
+> **2026-09-23: the `Table` arm is realized at the RESOLVE layer, not in
+> `FieldView` and not in `DocNode`.** Status: VERIFIED-IN-CODE
+> (`crates/ogar-doc-ir/src/resolve.rs`: `ResolvedGrid`, `GridAxis`,
+> `SlotOutcome::Grid`, `DocObjectSource::grid_of`;
+> `crates/ogar-render-typst/src/lib.rs`: `emit_grid`).
+>
+> The gap was that flat `(label, value)` rows cannot carry an object that is
+> addressed by two coordinates. The first consumer is a lance-graph aggregate
+> result embedded through an `ObjectSlot`. `u8` rail positions cannot address
+> its coordinates, and encoding the second axis into labels would be lossy.
+>
+> The primitive is:
+> - a two-axis projection of ONE addressed object through ONE named view;
+> - an optional source answer, `grid_of`, which defaults to `None`, so every
+>   existing source is unchanged;
+> - fail-closed on a malformed shape, and still gated by the root-class
+>   agreement check.
+>
+> Three consequences:
+> - **Orientation belongs to the view.** Rotating a table means naming another
+>   view, never re-deriving the object.
+> - **Axis keys keep the canonical coordinates.** A rendered cell stays
+>   traceable to its aggregate coordinate.
+> - **Nothing enters `DocNode`.** A report or matrix is an object reached
+>   through a slot, per §3, so no `doc-compose.v2` bump is needed. The §2
+>   `FieldView::Table(TableView)` widening remains the askama-side spelling.
+>   It is still unbuilt.
+
 ## §9 Gates & sequencing
 
 - **IR gate:** `docs/OGAR-AS-IR.md` MUST be read before the composition

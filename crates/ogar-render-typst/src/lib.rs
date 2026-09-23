@@ -91,6 +91,43 @@ pub fn emit_field_view(class_view: &str, title: &str, fields: &[FieldView]) -> S
     out
 }
 
+/// Emit one resolved two-axis projection (a grid-shaped view of one addressed
+/// object) as a Typst table — the paged sibling of [`emit_field_view`] for
+/// objects addressed by two coordinates. `header` is the column-header row
+/// (its first entry labels the row-header column); each `rows` entry is one
+/// presented row: its row label first, then its cells. Nothing here knows
+/// what produced the grid; orientation was chosen by the slot's view before
+/// this point, so a rotated table is simply other rows.
+#[must_use]
+pub fn emit_grid(class_view: &str, title: &str, header: &[String], rows: &[Vec<String>]) -> String {
+    let mut out = String::new();
+    out.push_str("#block[\n");
+    out.push_str(&format!(
+        "*{}* #text(size: 0.8em)[({})]\n",
+        escape_typst(title),
+        escape_typst(class_view)
+    ));
+    out.push_str(&format!("#table(\n  columns: {},\n", header.len().max(1)));
+    let line = |cells: &[String], bold: bool| {
+        let mut l = String::from("  ");
+        for c in cells {
+            if bold {
+                l.push_str(&format!("[*{}*], ", escape_typst(c)));
+            } else {
+                l.push_str(&format!("[{}], ", escape_typst(c)));
+            }
+        }
+        l.push('\n');
+        l
+    };
+    out.push_str(&line(header, true));
+    for r in rows {
+        out.push_str(&line(r, false));
+    }
+    out.push_str(")\n]\n");
+    out
+}
+
 /// Emit an explicit unresolved-slot marker — the paged form of the ActionText
 /// missing-object fallback: the snapshot's content address is shown, never
 /// silently dropped.
@@ -118,6 +155,29 @@ pub fn emit_text(text: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn emit_grid_lays_out_header_and_rows_in_the_given_orientation() {
+        let h = |v: &[&str]| v.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        let t = emit_grid(
+            "r.view",
+            "T",
+            &h(&["", "c0", "c1"]),
+            &[h(&["r0", "1", "2"]), h(&["r1", "3", ""])],
+        );
+        assert!(t.contains("columns: 3"));
+        assert!(t.contains("[*c0*], [*c1*]"));
+        assert!(t.contains("[r1], [3], [], "), "{t}");
+        // Rotation is other rows, not a flag: the transposed input yields the
+        // transposed table.
+        let r = emit_grid(
+            "r.view",
+            "T",
+            &h(&["", "r0", "r1"]),
+            &[h(&["c0", "1", "3"]), h(&["c1", "2", ""])],
+        );
+        assert!(r.contains("[c1], [2], [], "));
+    }
 
     fn fv(position: u8, label: &str, value: &str) -> FieldView {
         FieldView {
