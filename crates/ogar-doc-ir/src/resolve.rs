@@ -58,6 +58,65 @@ pub struct ResolvedField {
     pub value: String,
 }
 
+/// One axis of a resolved grid: per member tuple, its CANONICAL coordinate
+/// (fixed-width ordinals, kept so a rendered cell can be traced back to the
+/// aggregate coordinate it came from) and its display labels (resolved at
+/// this boundary, never earlier).
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct GridAxis {
+    /// Canonical coordinate of each member tuple, in presentation order.
+    pub keys: Vec<Vec<u32>>,
+    /// Display labels of each member tuple (one label per axis dimension).
+    pub labels: Vec<Vec<String>>,
+}
+
+/// A two-axis projection of a resolved object — the renderer-neutral table.
+///
+/// This is the one shape the flat `(label, value)` rows cannot carry: an
+/// object whose projection is addressed by TWO coordinates (a pivot, a
+/// cross-tab, a matrix-shaped measurement). It is still a projection of ONE
+/// addressed object through ONE named view — orientation is the view's
+/// choice, so two slots naming the same target through two views present
+/// the same cells rotated, and nothing about the object is copied into the
+/// composed document.
+///
+/// `cells` is row-major: `cells[(r * columns + c) * measures + m]`.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct ResolvedGrid {
+    /// Row axis.
+    pub rows: GridAxis,
+    /// Column axis.
+    pub columns: GridAxis,
+    /// Measure (value) labels — one or more values per cell.
+    pub measures: Vec<String>,
+    /// Formatted cell values, row-major, `measures.len()` per cell. An empty
+    /// string is an empty cell (the source's NULL), never a zero.
+    pub cells: Vec<String>,
+}
+
+impl ResolvedGrid {
+    /// Whether the shape is internally consistent (every axis carries one
+    /// label tuple per key, and there is exactly one value per
+    /// row × column × measure).
+    #[must_use]
+    pub fn is_well_formed(&self) -> bool {
+        self.rows.keys.len() == self.rows.labels.len()
+            && self.columns.keys.len() == self.columns.labels.len()
+            && self.cells.len()
+                == self.rows.keys.len() * self.columns.keys.len() * self.measures.len()
+    }
+
+    /// The value at row `r`, column `c`, measure `m`.
+    #[must_use]
+    pub fn cell(&self, r: usize, c: usize, m: usize) -> Option<&str> {
+        let (nc, nm) = (self.columns.keys.len(), self.measures.len());
+        if r >= self.rows.keys.len() || c >= nc || m >= nm {
+            return None;
+        }
+        self.cells.get((r * nc + c) * nm + m).map(String::as_str)
+    }
+}
+
 /// How one slot resolved.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SlotOutcome {
@@ -67,6 +126,14 @@ pub enum SlotOutcome {
         class: ClassId,
         /// The projected rows (view mask ∩ presence, nested via rails).
         fields: Vec<ResolvedField>,
+    },
+    /// The target resolved to a two-axis projection (see [`ResolvedGrid`]):
+    /// its source answered [`DocObjectSource::grid_of`] for the slot's view.
+    Grid {
+        /// The root object's class.
+        class: ClassId,
+        /// The projected table.
+        grid: ResolvedGrid,
     },
     /// The target was unresolvable and the slot carried a snapshot fallback —
     /// the explicit ActionText missing-object path, surfaced as the
@@ -140,6 +207,18 @@ pub trait DocObjectSource {
     /// The view a NESTED hop's class projects through (the per-class binding
     /// the walk uses below the root). `None` prunes that subtree.
     fn view_for_class(&self, class: ClassId) -> Option<ViewId>;
+
+    /// The two-axis projection of `key` through `view`, when that view is
+    /// grid-shaped for this source — `None` (the default) means "project
+    /// through the rail walk as usual", so every existing source is
+    /// unaffected. A source whose objects are addressed by two coordinates
+    /// (an aggregate result, a matrix-shaped measurement) answers here; the
+    /// orientation is the VIEW's, so rotating a table is naming another
+    /// view, never re-deriving the object.
+    fn grid_of(&self, key: <Self::Graph as RailGraph>::Key, view: ViewId) -> Option<ResolvedGrid> {
+        let _ = (key, view);
+        None
+    }
 }
 
 /// Resolve a composed document into renderer-neutral blocks.
@@ -206,6 +285,23 @@ where
     };
 
     let outcome = match resolved {
+        // A grid-shaped view: the source projects the table itself. A
+        // malformed grid fails closed (never a half-rendered table).
+        Some((root, root_view, root_class)) if let Some(grid) = source.grid_of(root, root_view) => {
+            if grid.is_well_formed() {
+                SlotOutcome::Grid {
+                    class: root_class,
+                    grid,
+                }
+            } else {
+                match &slot.fallback {
+                    Some(snap) => SlotOutcome::Fallback {
+                        content_sha256_hex: hex32(&snap.content_sha256),
+                    },
+                    None => SlotOutcome::Unresolvable,
+                }
+            }
+        }
         Some((root, root_view, root_class)) => {
             let graph = source.graph();
             let mut fields = Vec::new();
@@ -417,6 +513,111 @@ mod tests {
                 _ => None,
             }
         }
+    }
+
+    /// A source that answers `grid_of` for ONE view on ONE object — the
+    /// minimal two-axis projection source (the "M" object below).
+    struct GridSrc {
+        inner: Src,
+        grid_view: ViewId,
+        malformed: bool,
+    }
+    impl DocObjectSource for GridSrc {
+        type Graph = G;
+        fn graph(&self) -> &G {
+            &self.inner.graph
+        }
+        fn lookup(&self, target: &ObjectRef, mode: &ResolutionMode) -> Option<K> {
+            self.inner.lookup(target, mode)
+        }
+        fn value_of(&self, key: K, position: u8) -> Option<String> {
+            self.inner.value_of(key, position)
+        }
+        fn view_by_name(&self, name: &str) -> Option<ViewId> {
+            if name == "wp.grid" {
+                Some(self.grid_view)
+            } else {
+                self.inner.view_by_name(name)
+            }
+        }
+        fn view_for_class(&self, class: ClassId) -> Option<ViewId> {
+            self.inner.view_for_class(class)
+        }
+        fn grid_of(&self, key: K, view: ViewId) -> Option<ResolvedGrid> {
+            (key == K::Wp1 && view == self.grid_view).then(|| ResolvedGrid {
+                rows: GridAxis {
+                    keys: vec![vec![0], vec![1]],
+                    labels: vec![vec!["r0".into()], vec!["r1".into()]],
+                },
+                columns: GridAxis {
+                    keys: vec![vec![0], vec![1], vec![2]],
+                    labels: vec![vec!["c0".into()], vec!["c1".into()], vec!["c2".into()]],
+                },
+                measures: vec!["m".into()],
+                cells: if self.malformed {
+                    vec!["1".into()]
+                } else {
+                    (0..6).map(|i| i.to_string()).collect()
+                },
+            })
+        }
+    }
+
+    fn grid_setup(malformed: bool) -> (GridSrc, ViewRegistry) {
+        let (inner, mut registry) = setup();
+        let grid_view = registry.register(NamedView::new(
+            WP,
+            WideFieldMask::from(0),
+            DisplayTemplate::Detail,
+        ));
+        (
+            GridSrc {
+                inner,
+                grid_view,
+                malformed,
+            },
+            registry,
+        )
+    }
+
+    #[test]
+    fn a_grid_view_resolves_to_a_grid_and_other_views_still_walk_rails() {
+        let (src, registry) = grid_setup(false);
+        let r = resolve_slot(&slot("wp1", "wp.grid", None), &src, &TestView, &registry, 4);
+        let SlotOutcome::Grid { class, grid } = &r.outcome else {
+            panic!("expected Grid, got {:?}", r.outcome);
+        };
+        assert_eq!(*class, WP);
+        assert_eq!(grid.cell(1, 2, 0), Some("5"));
+        assert_eq!(grid.cell(2, 0, 0), None);
+        // Can-stay-silent twin: the SAME object through a non-grid view is
+        // the ordinary rail walk — the default `grid_of` changes nothing.
+        let r = resolve_slot(
+            &slot("wp1", "work_package.summary", None),
+            &src,
+            &TestView,
+            &registry,
+            4,
+        );
+        assert!(matches!(r.outcome, SlotOutcome::Resolved { .. }));
+    }
+
+    #[test]
+    fn a_malformed_grid_fails_closed() {
+        let (src, registry) = grid_setup(true);
+        let r = resolve_slot(&slot("wp1", "wp.grid", None), &src, &TestView, &registry, 4);
+        assert_eq!(r.outcome, SlotOutcome::Unresolvable);
+    }
+
+    #[test]
+    fn a_grid_view_still_obeys_root_class_agreement() {
+        // The grid view projects WP; aimed at a USER object it must not
+        // resolve (the class gate runs before `grid_of` is consulted).
+        let (src, registry) = grid_setup(false);
+        let mut s = slot("alice", "wp.grid", None);
+        s.target.class = "user".into();
+        let r = resolve_slot(&s, &src, &TestView, &registry, 4);
+        assert_eq!(r.outcome, SlotOutcome::Unresolvable);
     }
 
     fn slot(target_id: &str, view: &str, fallback: Option<SnapshotRef>) -> ObjectSlot {

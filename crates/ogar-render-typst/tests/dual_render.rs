@@ -425,6 +425,20 @@ fn render_html(blocks: &[ResolvedBlock]) -> String {
                 SlotOutcome::Unresolvable => {
                     html.push_str(&format!("<p class=\"unresolvable\">{}</p>\n", rs.uri));
                 }
+                SlotOutcome::Grid { grid, .. } => {
+                    html.push_str(&format!("<table data-view=\"{}\">", rs.class_view));
+                    for (r, labels) in grid.rows.labels.iter().enumerate() {
+                        html.push_str(&format!("<tr><th>{}</th>", labels.join("/")));
+                        for c in 0..grid.columns.keys.len() {
+                            html.push_str(&format!(
+                                "<td>{}</td>",
+                                grid.cell(r, c, 0).unwrap_or("")
+                            ));
+                        }
+                        html.push_str("</tr>");
+                    }
+                    html.push_str("</table>\n");
+                }
             },
         }
     }
@@ -448,6 +462,25 @@ fn render_typst(blocks: &[ResolvedBlock]) -> String {
                 }
                 SlotOutcome::Unresolvable => {
                     out.push_str(&typst::emit_text(&format!("unresolvable: {}", rs.uri)));
+                }
+                SlotOutcome::Grid { grid, .. } => {
+                    let mut header = vec![String::new()];
+                    header.extend(grid.columns.labels.iter().map(|l| l.join("/")));
+                    let rows: Vec<Vec<String>> = grid
+                        .rows
+                        .labels
+                        .iter()
+                        .enumerate()
+                        .map(|(r, l)| {
+                            let mut row = vec![l.join("/")];
+                            row.extend(
+                                (0..grid.columns.keys.len())
+                                    .map(|c| grid.cell(r, c, 0).unwrap_or("").to_string()),
+                            );
+                            row
+                        })
+                        .collect();
+                    out.push_str(&typst::emit_grid(&rs.class_view, "", &header, &rows));
                 }
             },
         }
