@@ -7,17 +7,19 @@
 //!
 //! ## What lives here
 //!
-//! Nothing is implemented in this crate. It is a thin, documented re-export
-//! of [`encryption`] (the ndarray fork's audited, wasm-capable crypto
-//! module):
+//! [`kdf`] and [`envelope`] are implemented here on `argon2` 0.6 from the
+//! `AdaWorldAPI/password-hashes` fork (feature `ndarray-simd`: the
+//! compression function runs on `ndarray::simd::U64x8`). The rest of the
+//! forward suite is a documented re-export of [`encryption`] (the ndarray
+//! fork's wasm-capable crypto module):
 //!
 //! | Module / item | Primitive | Role |
 //! |---|---|---|
-//! | [`kdf`] | Argon2id | password/secret → raw key derivation |
+//! | [`kdf`] | Argon2id (0.6, local) | password/secret → raw key derivation |
 //! | [`aead`] | XChaCha20-Poly1305 | authenticated encryption |
 //! | [`hash`] | SHA-384 | merkle / fingerprint hashing |
 //! | [`sign`] | Ed25519 | licence / audit signatures |
-//! | [`envelope`] | seal / open | wasm-capable zero-knowledge envelope |
+//! | [`envelope`] | seal / open (local) | zero-knowledge envelope, `ADAC` v1 byte layout |
 //! | [`seal`], [`open`] | — | root-level aliases for `envelope::seal` / `envelope::open` |
 //! | [`EnvelopeError`], [`KdfParams`] | — | root-level aliases for the envelope's error + parameter types |
 //! | [`RngError`] | — | the platform-CSPRNG-unavailable error |
@@ -26,10 +28,9 @@
 //! ## Generic, classid-agnostic, no secrets — by construction
 //!
 //! This crate carries **no consumer specifics**: no classid, no tenant, no
-//! key material, no wire DTO. It is pure re-export surface — every symbol
-//! here is exactly what [`encryption`] exports, unmodified. That is the
-//! point: the forward suite must never diverge into per-consumer copies, and
-//! a crate that re-exports and adds nothing cannot dilute it.
+//! key material, no wire DTO. [`kdf`] and [`envelope`] keep the API of
+//! [`encryption`]'s modules of the same name; everything else is re-exported
+//! unmodified.
 //!
 //! ## Who builds on this
 //!
@@ -54,21 +55,32 @@
 
 #![forbid(unsafe_code)]
 
-// ── The forward suite: re-exported wholesale from the ndarray `encryption`
-// crate. Reused, never re-implemented (see crate docs). A consumer that pulls
-// `ogar-encryption` gets the entire forward crypto surface under one import.
-pub use encryption::{aead, envelope, hash, kdf, sign};
+// ── KDF + envelope: implemented here on argon2 0.6 (see crate docs).
+pub mod envelope;
+pub mod kdf;
 
-// ── Root-level convenience aliases, mirrored from `encryption`'s own root
-// re-exports (`envelope::{seal, open}` plus the envelope's error/parameter
-// types), so callers that used the upstream crate's short paths keep them.
-pub use encryption::{EnvelopeError, KdfParams, open, seal};
+// ── The rest of the forward suite: re-exported from the ndarray `encryption`
+// crate, unmodified.
+pub use encryption::{aead, hash, sign};
+
+// ── Root-level convenience aliases, so callers that used the upstream
+// crate's short paths keep them.
+pub use envelope::{EnvelopeError, KdfParams, open, seal};
 
 // ── The platform-CSPRNG-unavailable error, mirrored from `encryption`'s
 // crate root.
 pub use encryption::RngError;
 
+/// Fill `buf` from the platform CSPRNG (`getrandom`; on wasm32 this is
+/// `crypto.getRandomValues`). The single entropy chokepoint of this crate.
+pub(crate) fn fill_random(buf: &mut [u8]) -> Result<(), RngError> {
+    getrandom::getrandom(buf).map_err(|_| RngError)
+}
+
 /// wasm-bindgen bindings for browser consumers (forwarded from
 /// [`encryption`]'s `wasm-bindings` feature via this crate's `wasm` feature).
+///
+/// NOTE: these bindings still run [`encryption`]'s own envelope (argon2 0.5);
+/// moving them here is a follow-up.
 #[cfg(feature = "wasm")]
 pub use encryption::wasm;

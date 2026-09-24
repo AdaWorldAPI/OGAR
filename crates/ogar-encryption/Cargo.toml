@@ -4,16 +4,24 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
-description = "OGAR's single, generic, classid-agnostic encryption surface: a thin re-export of the ndarray `encryption` crate (Argon2id KDF, XChaCha20-Poly1305 AEAD, Ed25519 signatures, SHA-384 hash, the wasm-capable zero-knowledge seal/open envelope). Every Ada consumer that needs raw forward crypto pulls THIS crate rather than depping the ndarray fork directly or hand-rolling argon2/chacha/ed25519. Carries no secrets and no consumer specifics; ogar-auth builds its auth-specific flows (password/totp/legacy) on top of this."
+description = "OGAR's single, generic, classid-agnostic encryption surface: the Argon2id KDF + zero-knowledge seal/open envelope (argon2 0.6 from the AdaWorldAPI/password-hashes fork) plus a re-export of the ndarray `encryption` crate for XChaCha20-Poly1305 AEAD, Ed25519 signatures and SHA-384 hash. Every Ada consumer that needs raw forward crypto pulls THIS crate rather than depping the ndarray fork directly or hand-rolling argon2/chacha/ed25519. Carries no secrets and no consumer specifics; ogar-auth builds its auth-specific flows (password/totp/legacy) on top of this."
 
 [dependencies]
-# The forward crypto suite — REUSED from the ndarray fork, never re-implemented
-# here. Argon2id KDF, XChaCha20-Poly1305 AEAD, Ed25519 signatures, SHA-384, and
-# the wasm-capable zero-knowledge envelope all live in `encryption`; this crate
-# re-exports them verbatim (see lib.rs) so every consumer imports ONE crate.
-# Git dep, matching the ogar-auth precedent (ndarray's default branch is
-# `master`).
+# XChaCha20-Poly1305 AEAD, Ed25519 signatures and SHA-384 are REUSED from the
+# ndarray fork's `encryption` crate and re-exported verbatim (see lib.rs). The
+# Argon2 half (kdf + envelope) is owned here — see below.
 encryption = { git = "https://github.com/AdaWorldAPI/ndarray", branch = "master" }
+
+# Not in ndarray: `kdf` and `envelope` run here on argon2 0.6
+# from the AdaWorldAPI/password-hashes fork. `ndarray-simd` puts the block
+# compression on `ndarray::simd::U64x8` (compile-time dispatch, no `unsafe`).
+# Branch pin until password-hashes#1 merges.
+argon2 = { git = "https://github.com/AdaWorldAPI/password-hashes", branch = "claude/argon2-ndarray-simd", default-features = false, features = ["alloc", "ndarray-simd"] }
+zeroize = { version = "1", features = ["derive"] }
+getrandom = "0.2"
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+getrandom = { version = "0.2", features = ["js"] }
 
 [features]
 # Forward to the ndarray crate's wasm bindings, so browser consumers (e.g. a
