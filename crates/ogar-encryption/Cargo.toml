@@ -14,9 +14,9 @@ encryption = { git = "https://github.com/AdaWorldAPI/ndarray", branch = "master"
 
 # Not in ndarray: `kdf` and `envelope` run here on argon2 0.6
 # from the AdaWorldAPI/password-hashes fork. `ndarray-simd` puts the block
-# compression on `ndarray::simd::U64x8` (compile-time dispatch, no `unsafe`).
-# Branch pin until password-hashes#1 merges.
-argon2 = { git = "https://github.com/AdaWorldAPI/password-hashes", branch = "claude/argon2-ndarray-simd", default-features = false, features = ["alloc", "ndarray-simd"] }
+# compression on `ndarray::simd::U64x8` (compile-time dispatch, no `unsafe`;
+# password-hashes#1).
+argon2 = { git = "https://github.com/AdaWorldAPI/password-hashes", branch = "master", default-features = false, features = ["alloc", "ndarray-simd"] }
 zeroize = { version = "1", features = ["derive"] }
 getrandom = "0.2"
 
