@@ -40,9 +40,9 @@ getrandom = "0.2"
 # Argon2id PHC hash+verify — the login-credential path. Password hashing, not
 # encryption, so this crate pins argon2 itself rather than going through
 # `ogar-encryption`. argon2 0.6 from the AdaWorldAPI/password-hashes fork
-# (`ndarray-simd` = block compression on `ndarray::simd::U64x8`); branch pin
-# until password-hashes#1 merges.
-argon2 = { git = "https://github.com/AdaWorldAPI/password-hashes", branch = "claude/argon2-ndarray-simd", default-features = false, features = ["alloc", "password-hash", "ndarray-simd"] }
+# (`ndarray-simd` = block compression on `ndarray::simd::U64x8`;
+# password-hashes#1).
+argon2 = { git = "https://github.com/AdaWorldAPI/password-hashes", branch = "master", default-features = false, features = ["alloc", "password-hash", "ndarray-simd"] }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 getrandom = { version = "0.2", features = ["js"] }
