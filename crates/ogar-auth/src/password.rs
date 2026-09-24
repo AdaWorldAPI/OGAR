@@ -13,7 +13,7 @@
 //! old hashes verify against their own embedded parameters.
 
 use argon2::Argon2;
-use argon2::password_hash::{PasswordHash, PasswordHasher, PasswordVerifier, SaltString};
+use argon2::password_hash::{PasswordHasher, PasswordVerifier, phc::PasswordHash};
 
 use crate::{AuthError, AuthResult};
 
@@ -27,10 +27,8 @@ use crate::{AuthError, AuthResult};
 pub fn hash_password(password: &str) -> AuthResult<String> {
     let mut salt_bytes = [0u8; 16];
     getrandom::getrandom(&mut salt_bytes).map_err(|_| AuthError::Password("CSPRNG unavailable"))?;
-    let salt = SaltString::encode_b64(&salt_bytes)
-        .map_err(|_| AuthError::Password("salt encode failed"))?;
     Argon2::default()
-        .hash_password(password.as_bytes(), &salt)
+        .hash_password_with_salt(password.as_bytes(), &salt_bytes)
         .map(|h| h.to_string())
         .map_err(|_| AuthError::Password("argon2 hashing failed"))
 }

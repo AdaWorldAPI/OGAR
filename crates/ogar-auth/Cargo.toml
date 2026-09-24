@@ -8,12 +8,8 @@ description = "OGAR auth arm: the reusable authentication SDK for OGAR consumers
 
 [dependencies]
 # Forward suite — REUSED via OGAR's own generic encryption surface, never
-# re-implemented here. Argon2id KDF, XChaCha20-Poly1305 AEAD, Ed25519
-# signatures, SHA-384, and the wasm-capable zero-knowledge envelope all live
-# in `encryption` (the ndarray fork); `ogar-encryption` is the single
-# classid-agnostic re-export every Ada consumer pulls, and ogar-auth builds
-# its auth-specific flows (password/totp/legacy) on top of it. Path dep,
-# in-workspace sibling.
+# re-implemented here. `ogar-encryption` owns the KDF + envelope and re-exports
+# XChaCha20-Poly1305, Ed25519 and SHA-384. Path dep, in-workspace sibling.
 ogar-encryption = { path = "../ogar-encryption" }
 
 # The canonical identity envelope (`auth::ActorContext`) this crate PRODUCES.
@@ -22,10 +18,6 @@ ogar-encryption = { path = "../ogar-encryption" }
 # only — the contract is zero-dep and never reaches back into OGAR. Same git
 # pattern as `ogar-class-view`.
 lance-graph-contract = { git = "https://github.com/AdaWorldAPI/lance-graph", branch = "main" }
-
-# Argon2id PHC hash+verify (the login-credential path — distinct from the
-# envelope KDF). Default features carry `password-hash` + `rand` (OsRng salt).
-argon2 = "0.5"
 
 # RFC 6238 TOTP: HMAC-SHA1 over the time-step counter. SHA1 here is
 # interop-mandated by the authenticator-app ecosystem and MAC-keyed (HMAC),
@@ -44,6 +36,13 @@ base64 = "0.22"
 # The single entropy chokepoint (TOTP secret minting). On wasm32 the `js`
 # feature routes to crypto.getRandomValues; mirrors the encryption crate.
 getrandom = "0.2"
+
+# Argon2id PHC hash+verify — the login-credential path. Password hashing, not
+# encryption, so this crate pins argon2 itself rather than going through
+# `ogar-encryption`. argon2 0.6 from the AdaWorldAPI/password-hashes fork
+# (`ndarray-simd` = block compression on `ndarray::simd::U64x8`); branch pin
+# until password-hashes#1 merges.
+argon2 = { git = "https://github.com/AdaWorldAPI/password-hashes", branch = "claude/argon2-ndarray-simd", default-features = false, features = ["alloc", "password-hash", "ndarray-simd"] }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 getrandom = { version = "0.2", features = ["js"] }
