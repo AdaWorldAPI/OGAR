@@ -82,9 +82,12 @@ serde = { version = "1.0", features = ["derive"] }
 # `E-LANCE-IS-UPSTREAM-AUTHORITATIVE-1`, this family is consumed from
 # crates.io upstream and NEVER from a fork — the AdaWorldAPI/lance and
 # /lancedb repos exist but are deliberately not depended on.
+#
+# 2026-09-25 — realigned 9.0.0/0.33.0 → 12.0.0/0.39.0 (lancedb 0.39.0 pins
+# `lance = "=12.0.0"`; arrow 58 / datafusion 54 unchanged). Still dormant.
 # ─────────────────────────────────────────────────────────────────────
-lance        = "=9.0.0"
-lancedb      = "=0.33.0"
+lance        = "=12.0.0"
+lancedb      = "=0.39.0"
 datafusion   = "54"
 arrow        = "58"
 arrow-array  = "58"
