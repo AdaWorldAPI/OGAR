@@ -97,7 +97,7 @@ impl KdfParams {
     /// Rejecting must therefore be *cheap* — a comparison, not an attempt.
     ///
     /// ```
-    /// use encryption::kdf::{CostLimits, KdfParams, KdfError};
+    /// use ogar_encryption::kdf::{CostLimits, KdfParams, KdfError};
     ///
     /// assert!(KdfParams::INTERACTIVE.validate().is_ok());
     ///
