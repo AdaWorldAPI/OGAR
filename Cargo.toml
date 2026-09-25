@@ -83,8 +83,14 @@ serde = { version = "1.0", features = ["derive"] }
 # crates.io upstream and NEVER from a fork — the AdaWorldAPI/lance and
 # /lancedb repos exist but are deliberately not depended on.
 # ─────────────────────────────────────────────────────────────────────
-lance        = "=12.0.0"
-lancedb      = "=0.39.0"
+# 2026-09-25 — the patch FLOATS (ecosystem pin rule: "never pin to x.0.0,
+# always float x.*"). lancedb 0.39 itself demands `lance = "=12.0.0"`, so the
+# float resolves to exactly that today and can never be narrower than what
+# the family asks. When a crate first consumes `lancedb` it needs
+# `features = ["remote"]`: 0.39.0 does not compile without it (`default = []`,
+# yet `job.rs` builds the `remote`-gated `Error::Http`).
+lance        = "12.*"
+lancedb      = "0.39.*"
 datafusion   = "54"
 arrow        = "58"
 arrow-array  = "58"
