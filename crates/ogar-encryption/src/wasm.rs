@@ -34,8 +34,13 @@ fn params(interactive: bool) -> KdfParams {
 /// Seal `plaintext` under `password` client-side. With
 /// `interactive = true` the browser-grade Argon2id cost is used.
 #[wasm_bindgen]
-pub fn seal_envelope(password: &[u8], plaintext: &[u8], interactive: bool) -> Result<Vec<u8>, JsError> {
-    envelope::seal(password, plaintext, &params(interactive)).map_err(|e| JsError::new(&e.to_string()))
+pub fn seal_envelope(
+    password: &[u8],
+    plaintext: &[u8],
+    interactive: bool,
+) -> Result<Vec<u8>, JsError> {
+    envelope::seal(password, plaintext, &params(interactive))
+        .map_err(|e| JsError::new(&e.to_string()))
 }
 
 /// Open a sealed envelope. Throws on wrong password or tampering.
@@ -75,7 +80,11 @@ pub fn sign_message(seed: &[u8], message: &[u8]) -> Result<Vec<u8>, JsError> {
 /// Verify a signature; returns a plain boolean, throws only on
 /// malformed lengths.
 #[wasm_bindgen]
-pub fn verify_signature(public_key: &[u8], message: &[u8], signature: &[u8]) -> Result<bool, JsError> {
+pub fn verify_signature(
+    public_key: &[u8],
+    message: &[u8],
+    signature: &[u8],
+) -> Result<bool, JsError> {
     let pk: [u8; PUBLIC_KEY_LEN] = public_key
         .try_into()
         .map_err(|_| JsError::new("public key must be 32 bytes"))?;
