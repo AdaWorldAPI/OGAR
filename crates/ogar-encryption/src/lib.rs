@@ -23,7 +23,7 @@
 //! | [`seal`], [`open`] | — | root-level aliases for `envelope::seal` / `envelope::open` |
 //! | [`EnvelopeError`], [`KdfParams`] | — | root-level aliases for the envelope's error + parameter types |
 //! | [`RngError`] | — | the platform-CSPRNG-unavailable error |
-//! | [`wasm`] (feature `wasm`) | — | wasm-bindgen bindings for browser consumers |
+//! | [`wasm`] (feature `wasm`, local) | — | wasm-bindgen bindings for browser consumers |
 //!
 //! ## Generic, classid-agnostic, no secrets — by construction
 //!
@@ -77,10 +77,7 @@ pub(crate) fn fill_random(buf: &mut [u8]) -> Result<(), RngError> {
     getrandom::getrandom(buf).map_err(|_| RngError)
 }
 
-/// wasm-bindgen bindings for browser consumers (forwarded from
-/// [`encryption`]'s `wasm-bindings` feature via this crate's `wasm` feature).
-///
-/// NOTE: these bindings still run [`encryption`]'s own envelope (argon2 0.5);
-/// moving them here is a follow-up.
+/// wasm-bindgen bindings for browser consumers (feature `wasm`): seal/open
+/// on this crate's argon2-0.6 envelope, plus Ed25519 and SHA-384.
 #[cfg(feature = "wasm")]
-pub use encryption::wasm;
+pub mod wasm;

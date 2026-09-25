@@ -10,7 +10,9 @@ description = "OGAR's single, generic, classid-agnostic encryption surface: the 
 # XChaCha20-Poly1305 AEAD, Ed25519 signatures and SHA-384 are REUSED from the
 # ndarray fork's `encryption` crate and re-exported verbatim (see lib.rs). The
 # Argon2 half (kdf + envelope) is owned here — see below.
-encryption = { git = "https://github.com/AdaWorldAPI/ndarray", branch = "master" }
+# `default-features = false` drops that crate's own argon2-0.5 KDF + envelope
+# (its `kdf` feature, ndarray #333); this crate carries both on argon2 0.6.
+encryption = { git = "https://github.com/AdaWorldAPI/ndarray", branch = "master", default-features = false }
 
 # Not in ndarray: `kdf` and `envelope` run here on argon2 0.6
 # from the AdaWorldAPI/password-hashes fork. `ndarray-simd` puts the block
@@ -20,11 +22,14 @@ argon2 = { git = "https://github.com/AdaWorldAPI/password-hashes", branch = "mas
 zeroize = { version = "1", features = ["derive"] }
 getrandom = "0.2"
 
+# Optional browser bindings (src/wasm.rs), built on this crate's own envelope.
+wasm-bindgen = { version = "0.2", optional = true }
+
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 getrandom = { version = "0.2", features = ["js"] }
 
 [features]
-# Forward to the ndarray crate's wasm bindings, so browser consumers (e.g. a
-# hub-client-style SPA that wants client-side `envelope::seal` before secrets
-# ever reach a server) get the wasm-bindgen surface through this crate too.
-wasm = ["encryption/wasm-bindings"]
+# wasm-bindgen bindings, so browser consumers (e.g. a hub-client-style SPA that
+# wants client-side `envelope::seal` before secrets ever reach a server) get
+# seal/open, Ed25519 and SHA-384 from this crate.
+wasm = ["dep:wasm-bindgen"]
