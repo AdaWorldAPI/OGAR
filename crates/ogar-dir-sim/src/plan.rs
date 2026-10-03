@@ -119,6 +119,15 @@ pub enum PlanError {
     NotDesired(VersionId),
     /// The target is unknown.
     UnknownVersion(VersionId),
+    /// The latest observation (`basis`) no longer has the node set the
+    /// desired version (`target`) was built on: users or groups were
+    /// created or deleted since. Simulate again from the new observation.
+    NodeSetChanged {
+        /// The latest observation.
+        basis: VersionId,
+        /// The desired version.
+        target: VersionId,
+    },
 }
 
 #[cfg(test)]
