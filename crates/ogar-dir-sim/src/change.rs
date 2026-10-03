@@ -45,8 +45,30 @@ pub enum Change {
     },
 }
 
-/// Comparison form of a UPN / SMTP address: trimmed and ASCII-lowercased
-/// (Exchange and Entra compare these case-insensitively).
+/// Comparison form of a UPN / SMTP address: trimmed and lowercased with
+/// Unicode case mapping (Exchange and Entra compare these
+/// case-insensitively, and neither restricts them to ASCII).
+///
+/// ASCII-only lowercasing would keep `Ä` and `ä` apart, so two addresses the
+/// directory treats as equal could both pass the uniqueness invariant.
+/// This is lowercase mapping, not full case folding: `ß` and `ss` stay
+/// distinct.
 pub fn normalize(s: &str) -> String {
-    s.trim().to_ascii_lowercase()
+    s.trim().to_lowercase()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::normalize;
+
+    #[test]
+    fn normalize_folds_non_ascii_case() {
+        assert_eq!(
+            normalize(" Änne@Example.Test "),
+            normalize("änne@example.test")
+        );
+        assert_eq!(normalize("ÉLODIE@x.test"), "élodie@x.test");
+        // Still distinguishes genuinely different addresses.
+        assert_ne!(normalize("anne@x.test"), normalize("änne@x.test"));
+    }
 }
