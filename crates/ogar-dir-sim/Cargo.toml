@@ -6,8 +6,7 @@ license.workspace = true
 repository.workspace = true
 authors.workspace = true
 rust-version.workspace = true
-description = "Versioned directory graph simulator: observed state G0, pure rules producing hypothetical versions, invariant validation, semantic diff, and a side-effect-free ExecutionPlan boundary. No AD / Graph / Exchange / LDAP / PowerShell writes."
+description = "Semantic vocabulary for simulating directory desired state: the Change algebra, version provenance (observed / simulated, rule + evidence), structured invariant Violations and the side-effect-free ExecutionPlan boundary. Types only — execution lives in lance-graph (lance-graph-dir-sim) over Quack. No AD / Graph / Exchange / LDAP / PowerShell."
 
 [dependencies]
 ogar-dir-core = { path = "../ogar-dir-core" }
-ogar-ad = { path = "../ogar-ad" }

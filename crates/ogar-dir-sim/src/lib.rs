@@ -1,34 +1,26 @@
-//! # ogar-dir-sim — explore a directory future without touching reality
+//! # ogar-dir-sim — the vocabulary of a simulated directory future
 //!
 //! ```text
-//! observed G0 ──Rule──► G1 ──Rule──► G2 ──validate──► desired? ──diff(G0,G2)──► ExecutionPlan ──X
+//! observed G0 ──rule──► G1 ──rule──► G2 ──validate──► "desired" ──diff──► ExecutionPlan ──X
 //! ```
 //!
-//! * [`graph`] — the semantic state of one version and the [`Change`] algebra.
-//! * [`population`] — node sets as bitsets; rules select populations, not loops.
-//! * [`rule`] — pure rules: `&GraphState -> Vec<Change>`, no I/O handle.
-//! * [`store`] — append-only versions; provenance and tags ARE the audit trail.
-//! * [`validate`] — invariants returning structured [`Violation`]s.
-//! * [`plan`] — semantic [`ExecutionPlan`] with per-op preconditions. Never executed here.
-//! * [`observe`] — `ogar-ad` records → observed state.
+//! This crate holds only the **meaning** of that pipeline: what a change is,
+//! where a version came from, what a violation says, and what a plan asks an
+//! actuator to do. It executes nothing. Snapshots, versions, rules,
+//! invariant evaluation and diffs run in lance-graph
+//! (`crates/lance-graph-dir-sim`) over the SoA store and Quack's masking
+//! operators — OGAR is the IR, lance-graph the execution (OGAR-AS-IR).
 //!
-//! Nothing in this crate writes to AD, Entra, Exchange, LDAP or PowerShell,
-//! and nothing in it can: there is no network, process or file I/O.
-//! Design notes: `docs/DIRECTORY-SIMULATION-POC.md`.
+//! Identity is always [`Guid128`](ogar_dir_core::Guid128). Dense ordinals,
+//! dictionary ids and mask bits are execution detail and never appear here.
+//! Design: `docs/DIRECTORY-SIMULATION-POC.md`.
 
-pub mod graph;
-pub mod observe;
+pub mod change;
 pub mod plan;
-pub mod population;
-pub mod rule;
-pub mod store;
-pub mod validate;
+pub mod provenance;
+pub mod violation;
 
-pub use graph::{Attribute, Change, GraphState, Node, NodeKind};
+pub use change::{Attribute, Change, normalize};
 pub use plan::{ExecutionPlan, Operation, PlanError, PlannedOp, Precondition};
-pub use population::Population;
-pub use rule::{EvidenceRef, Rule, RuleId};
-pub use store::{
-    Origin, Rejection, SimError, TAG_DESIRED, TAG_OBSERVED, Version, VersionId, VersionStore,
-};
-pub use validate::{Endpoint, Violation, validate};
+pub use provenance::{EvidenceRef, Origin, RuleId, TAG_DESIRED, TAG_OBSERVED, Version, VersionId};
+pub use violation::{Endpoint, Violation};

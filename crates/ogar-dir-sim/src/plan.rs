@@ -1,22 +1,17 @@
-//! The execution boundary — derived, never executed here.
+//! The execution boundary — described, never executed.
 //!
-//! ```text
-//!   desired version ──diff from its observed basis──► ExecutionPlan ──X── actuator (later)
-//! ```
-//!
-//! A plan holds semantic operations only: no shell text, no cmdlet names,
-//! no endpoints, no credentials. Each operation carries the
-//! [`Precondition`] that held in the **observed basis** the plan was derived
-//! from. A future actuator re-reads that one fact from reality before acting:
-//! still true → execute; changed → re-observe and re-plan (optimistic
-//! concurrency). Nothing in this module performs that check or any I/O.
+//! A plan holds semantic operations only: no shell text, cmdlet names,
+//! endpoints or credentials. Every operation carries the [`Precondition`]
+//! that held in the **observed basis** it was derived from, so a future
+//! actuator can re-read that one fact from reality before acting (still
+//! true → execute; changed → re-observe and re-plan).
 
-use crate::graph::{Attribute, Change};
-use crate::store::{Origin, SimError, VersionId, VersionStore};
+use crate::change::{Attribute, Change};
+use crate::provenance::VersionId;
 use ogar_dir_core::Guid128;
 
 /// A technology-neutral directory operation.
-#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Operation {
     /// Add `member` to `group`.
     AddGroupMember {
@@ -44,7 +39,7 @@ pub enum Operation {
 }
 
 /// What reality must still look like for the operation to be safe.
-#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Precondition {
     /// The membership must still be absent.
     NotMember,
@@ -55,12 +50,46 @@ pub enum Precondition {
 }
 
 /// One planned step.
-#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct PlannedOp {
     /// What to do.
     pub op: Operation,
     /// What must still hold first.
     pub precondition: Precondition,
+}
+
+impl From<Change> for PlannedOp {
+    fn from(c: Change) -> Self {
+        match c {
+            Change::AddMembership { user, group } => Self {
+                op: Operation::AddGroupMember {
+                    group,
+                    member: user,
+                },
+                precondition: Precondition::NotMember,
+            },
+            Change::RemoveMembership { user, group } => Self {
+                op: Operation::RemoveGroupMember {
+                    group,
+                    member: user,
+                },
+                precondition: Precondition::IsMember,
+            },
+            Change::SetAttribute {
+                node,
+                attribute,
+                from,
+                to,
+            } => Self {
+                op: Operation::SetAttribute {
+                    object: node,
+                    attribute,
+                    value: to,
+                },
+                precondition: Precondition::AttributeEquals(from),
+            },
+        }
+    }
 }
 
 /// Semantic plan from an observed basis to a desired target.
@@ -70,8 +99,17 @@ pub struct ExecutionPlan {
     pub basis: VersionId,
     /// The desired version the plan reaches.
     pub target: VersionId,
-    /// Operations, deterministic order.
+    /// Operations, sorted (canonical order).
     pub ops: Vec<PlannedOp>,
+}
+
+impl ExecutionPlan {
+    /// Lower a semantic diff `basis → target` into a plan.
+    pub fn from_diff(basis: VersionId, target: VersionId, diff: Vec<Change>) -> Self {
+        let mut ops: Vec<PlannedOp> = diff.into_iter().map(PlannedOp::from).collect();
+        ops.sort();
+        Self { basis, target, ops }
+    }
 }
 
 /// Why no plan was derived.
@@ -79,65 +117,44 @@ pub struct ExecutionPlan {
 pub enum PlanError {
     /// The target is not the current `"desired"` version.
     NotDesired(VersionId),
-    /// Version lookup failed.
-    Sim(SimError),
-    /// The target creates or deletes nodes (not plannable in this slice).
-    NodeSetChanged,
+    /// The target is unknown.
+    UnknownVersion(VersionId),
 }
 
-fn lower(c: Change) -> PlannedOp {
-    match c {
-        Change::AddMembership { user, group } => PlannedOp {
-            op: Operation::AddGroupMember {
-                group,
-                member: user,
-            },
-            precondition: Precondition::NotMember,
-        },
-        Change::RemoveMembership { user, group } => PlannedOp {
-            op: Operation::RemoveGroupMember {
-                group,
-                member: user,
-            },
-            precondition: Precondition::IsMember,
-        },
-        Change::SetAttribute {
-            node,
-            attribute,
-            from,
-            to,
-        } => PlannedOp {
-            op: Operation::SetAttribute {
-                object: node,
-                attribute,
-                value: to,
-            },
-            precondition: Precondition::AttributeEquals(from),
-        },
-    }
-}
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-impl ExecutionPlan {
-    /// Derive the plan for the current `"desired"` version `target`, from
-    /// the observed root of its lineage.
-    pub fn derive(store: &VersionStore, target: VersionId) -> Result<Self, PlanError> {
-        if store.tag(crate::store::TAG_DESIRED) != Some(target) {
-            return Err(PlanError::NotDesired(target));
-        }
-        let basis = store.lineage(target).map_err(PlanError::Sim)?[0];
-        debug_assert!(matches!(
-            store.version(basis).map(|v| &v.origin),
-            Some(Origin::Observed { .. })
-        ));
-        let (b, t) = (
-            store.state(basis).map_err(PlanError::Sim)?,
-            store.state(target).map_err(PlanError::Sim)?,
+    #[test]
+    fn lowering_carries_the_basis_precondition_and_no_transport() {
+        let g = |n| Guid128([n; 16]);
+        let plan = ExecutionPlan::from_diff(
+            VersionId(0),
+            VersionId(2),
+            vec![
+                Change::SetAttribute {
+                    node: g(2),
+                    attribute: Attribute::PrimarySmtp,
+                    from: Some("bob@example.test".into()),
+                    to: Some("robert@example.test".into()),
+                },
+                Change::AddMembership {
+                    user: g(1),
+                    group: g(9),
+                },
+            ],
         );
-        if b.node_set_differs(&t) {
-            return Err(PlanError::NodeSetChanged);
-        }
-        let mut ops: Vec<PlannedOp> = b.diff(&t).into_iter().map(lower).collect();
-        ops.sort();
-        Ok(Self { basis, target, ops })
+        assert_eq!(
+            plan.ops[0].op,
+            Operation::AddGroupMember {
+                group: g(9),
+                member: g(1)
+            }
+        );
+        assert_eq!(plan.ops[0].precondition, Precondition::NotMember);
+        assert_eq!(
+            plan.ops[1].precondition,
+            Precondition::AttributeEquals(Some("bob@example.test".into()))
+        );
     }
 }
