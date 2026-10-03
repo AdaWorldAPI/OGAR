@@ -52,7 +52,8 @@ pub enum Change {
 /// ASCII-only lowercasing would keep `Ä` and `ä` apart, so two addresses the
 /// directory treats as equal could both pass the uniqueness invariant.
 /// This is lowercase mapping, not full case folding: `ß` and `ss` stay
-/// distinct.
+/// distinct. No Unicode normalization is applied either: a precomposed `ä`
+/// and `a` + U+0308 stay distinct.
 pub fn normalize(s: &str) -> String {
     s.trim().to_lowercase()
 }

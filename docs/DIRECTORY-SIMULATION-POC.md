@@ -83,8 +83,10 @@ The lifecycle stages are not a workflow enum:
 trait Rule { fn id(&self) -> RuleId; fn propose(&self, v: &View<'_>, evidence: &[EvidenceRef]) -> Vec<Change>; }
 ```
 
-A rule receives a borrowed `View` and has no I/O handle. There are three
-example rules:
+A rule receives a borrowed `View` and has no I/O handle. The trait and the
+rules live in lance-graph (`crates/lance-graph-dir-sim/src/rule.rs`), because a
+`View` is execution state; OGAR holds only the `RuleId` and `Change` they
+speak. There are three example rules:
 
 - **`GrantGroup`** handles a request-sized list of users. Its cost is
   proportional to the request.

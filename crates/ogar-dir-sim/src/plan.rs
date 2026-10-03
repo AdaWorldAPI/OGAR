@@ -108,6 +108,7 @@ impl ExecutionPlan {
     pub fn from_diff(basis: VersionId, target: VersionId, diff: Vec<Change>) -> Self {
         let mut ops: Vec<PlannedOp> = diff.into_iter().map(PlannedOp::from).collect();
         ops.sort();
+        ops.dedup();
         Self { basis, target, ops }
     }
 }
@@ -133,6 +134,16 @@ pub enum PlanError {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_repeated_change_is_planned_once() {
+        let c = Change::RemoveMembership {
+            user: Guid128([1; 16]),
+            group: Guid128([2; 16]),
+        };
+        let p = ExecutionPlan::from_diff(VersionId(0), VersionId(1), vec![c.clone(), c]);
+        assert_eq!(p.ops.len(), 1);
+    }
 
     #[test]
     fn lowering_carries_the_basis_precondition_and_no_transport() {
