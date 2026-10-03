@@ -1,0 +1,29 @@
+# Synthetic lab export (ldapsearch -LLL style). No real persons.
+version: 1
+
+dn:: Q049RXJpa2EgTcO8bGxlcixPVT1FeGNoYW5nZSxPVT1JbmZyYXN0cnVjdHVyZSxPVT1TdHV0dGdhcnQsREM9ZXhhbXBsZSxEQz1kZQ==
+objectClass: top
+objectClass: person
+objectClass: organizationalPerson
+objectClass: user
+objectGUID:: 4AQlP4lP0xGaDAMF6CwzAQ==
+sAMAccountName: emueller
+userPrincipalName: erika.mueller@example.de
+displayName:: RXJpa2EgTcO8bGxlcg==
+mail: erika.mueller@example.de
+proxyAddresses: SMTP:erika.mueller@example.de
+proxyAddresses: smtp:emueller@example.mail.onmicrosoft.com
+userAccountControl: 512
+whenChanged: 20261001120000.0Z
+msDS-SomeFutureAttribute: unknown to schema v1
+thumbnailPhoto:: AAEC
+
+dn: CN=Svc Backup,CN=Users,DC=example,DC=de
+objectClass: top
+objectClass: user
+objectClass: computer
+objectGUID:: 1MOyoQAAAECAAAAAAAC+7w==
+sAMAccountName: SVC-BACKUP$
+description: this attribute is not in v1 and the
+  value is folded over two lines
+userAccountControl: 4096

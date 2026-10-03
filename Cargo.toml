@@ -37,6 +37,9 @@ members = [
     "crates/ogar-ro",
     "crates/ogar-elk",
     "crates/ogar-osm",
+    "crates/ogar-dir-core",
+    "crates/ogar-ad",
+    "crates/ogar-az",
 ]
 
 [workspace.package]
