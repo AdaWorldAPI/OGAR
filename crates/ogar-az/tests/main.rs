@@ -120,3 +120,24 @@ fn malformed_pages_are_refused() {
         .is_err()
     );
 }
+
+// Bugbot #313: `attr_str` must not hand back the length-prefixed blob of a
+// multi-valued slot as if it were a string.
+#[test]
+fn attr_str_refuses_multi_values_and_attr_multi_reads_them() {
+    let (mut dict, mut pool) = (OuDictionary::new(), ValuePool::new());
+    let page = ingest_page(PAGE, tenant(), &mut dict, &mut pool, 99).unwrap();
+    assert_eq!(attr_str(&page.records[0], &pool, "proxyAddresses"), None);
+    assert_eq!(
+        ogar_az::attr_multi(&page.records[0], &pool, "proxyAddresses").unwrap(),
+        [
+            "SMTP:erika.mueller@example.de",
+            "smtp:emueller@example.mail.onmicrosoft.com"
+        ]
+    );
+    assert_eq!(
+        ogar_az::attr_multi(&page.records[1], &pool, "proxyAddresses").unwrap(),
+        Vec::<&str>::new()
+    );
+    assert_eq!(ogar_az::attr_multi(&page.records[0], &pool, "mail"), None);
+}

@@ -4,8 +4,9 @@
 //! Supported: `#` comments, a leading `version:` line, folded lines (a line
 //! starting with one space continues the previous one), `attr: value`,
 //! `attr:: base64` (binary or non-ASCII values — this is how `objectGUID`
-//! arrives), blank-line entry separation. Rejected: `attr:< URL` and
-//! change records (`changetype:`) — this is an observation reader.
+//! arrives), blank-line entry separation, and `changetype: add` (which
+//! `ldifde -f` emits on every entry). Rejected: `attr:< URL` and real change
+//! records (`modify` / `delete` / `modrdn`) — this is an observation reader.
 
 use crate::AdEntry;
 use ogar_dir_core::base64;
@@ -64,6 +65,13 @@ pub fn parse(text: &str) -> Result<Vec<AdEntry>, LdifError> {
             continue;
         }
         if name.eq_ignore_ascii_case("changetype") {
+            // `ldifde -f` writes `changetype: add` after every dn: that is the
+            // export marker, i.e. an observation. Real change records are not.
+            if cur.is_some()
+                && std::str::from_utf8(&value).is_ok_and(|v| v.trim().eq_ignore_ascii_case("add"))
+            {
+                continue;
+            }
             return Err(LdifError::Unsupported(ln));
         }
         match cur.as_mut() {

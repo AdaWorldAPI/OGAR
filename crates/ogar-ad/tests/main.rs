@@ -196,3 +196,32 @@ fn too_deep_dn_is_flagged_not_truncated() {
     assert_ne!(r.flags() & ogar_dir_core::record::FLAG_DN_UNENCODED, 0);
     assert!(d.is_empty(), "nothing interned for a refused path");
 }
+
+// Bugbot #313: `ldifde -f` emits `changetype: add` after every dn. That is the
+// export marker, not a change record — it must be accepted. Real change
+// records (modify/delete/modrdn) are still refused.
+#[test]
+fn ldifde_changetype_add_is_accepted_other_changetypes_refused() {
+    let ldifde = "dn: CN=E,OU=Exchange,DC=x\nchangetype: add\nobjectGUID:: 4AQlP4lP0xGaDAMF6CwzAQ==\nobjectClass: user\n";
+    let e = ldif::parse(ldifde).unwrap();
+    assert_eq!(e.len(), 1);
+    assert!(
+        e[0].attrs
+            .iter()
+            .all(|(n, _)| !n.eq_ignore_ascii_case("changetype"))
+    );
+    let (mut d, mut p) = (OuDictionary::new(), ValuePool::new());
+    assert!(
+        encode(&e[0], domain(), &mut d, &mut p, 0)
+            .unwrap()
+            .ignored
+            .is_empty()
+    );
+    for ct in ["modify", "delete", "modrdn", "moddn"] {
+        let text = format!("dn: CN=E,DC=x\nchangetype: {ct}\n");
+        assert!(
+            matches!(ldif::parse(&text), Err(ldif::LdifError::Unsupported(2))),
+            "{ct}"
+        );
+    }
+}

@@ -343,12 +343,26 @@ pub fn ingest_page(
     })
 }
 
-/// Read a string slot by attribute name.
+/// Read a single-valued string slot by attribute name. `None` for absent
+/// values and for attributes that are not [`AttrKind::Str`] (a multi-valued
+/// slot is a length-prefixed blob, never a string — use [`attr_multi`]).
 pub fn attr_str<'p>(rec: &DirRecord, pool: &'p ValuePool, name: &str) -> Option<&'p str> {
     let def = SCHEMA_V1
         .iter()
-        .find(|d| d.name == name && d.kind.is_pooled())?;
+        .find(|d| d.name == name && d.kind == AttrKind::Str)?;
     std::str::from_utf8(pool.get(rec.str_ref(def.slot as usize)?)?).ok()
+}
+
+/// Read a multi-valued string slot by attribute name. `None` for absent
+/// values and for attributes that are not [`AttrKind::MultiStr`].
+pub fn attr_multi<'p>(rec: &DirRecord, pool: &'p ValuePool, name: &str) -> Option<Vec<&'p str>> {
+    let def = SCHEMA_V1
+        .iter()
+        .find(|d| d.name == name && d.kind == AttrKind::MultiStr)?;
+    pool.get_multi(rec.str_ref(def.slot as usize)?)?
+        .into_iter()
+        .map(|v| std::str::from_utf8(v).ok())
+        .collect()
 }
 
 /// `SynchronizesTo` edges for AZ records whose `onPremisesImmutableId`
