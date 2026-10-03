@@ -1,0 +1,13 @@
+[package]
+name = "ogar-az"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+description = "Microsoft Entra ID / Microsoft Graph source-native schema for OGAR directory observations: Graph object id identity, tenant scope, onPremisesDistinguishedName -> OU-HHTL evidence, a schema-derived $select, read-only page ingest, and SynchronizesTo edges from onPremisesImmutableId. No IAM, no writes."
+
+[dependencies]
+ogar-dir-core = { path = "../ogar-dir-core" }
+serde_json = "1.0"

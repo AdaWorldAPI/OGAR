@@ -1,0 +1,39 @@
+{
+  "@odata.context": "https://graph.microsoft.com/v1.0/$metadata#users(id,userPrincipalName)",
+  "@odata.nextLink": "https://graph.microsoft.com/v1.0/users?$select=id&$top=2&$skiptoken=X",
+  "value": [
+    {
+      "id": "7a3c9e11-2b44-4c6d-9e8f-0123456789ab",
+      "userPrincipalName": "erika.mueller@example.de",
+      "displayName": "Erika Müller",
+      "givenName": "Erika",
+      "surname": "Müller",
+      "mail": "erika.mueller@example.de",
+      "mailNickname": "emueller",
+      "proxyAddresses": ["SMTP:erika.mueller@example.de", "smtp:emueller@example.mail.onmicrosoft.com"],
+      "accountEnabled": true,
+      "employeeId": null,
+      "department": "Infrastructure",
+      "companyName": null,
+      "officeLocation": "Stuttgart",
+      "userType": "Member",
+      "onPremisesSyncEnabled": true,
+      "onPremisesDistinguishedName": "CN=Erika Müller,OU=Exchange,OU=Infrastructure,OU=Stuttgart,DC=example,DC=de",
+      "onPremisesSamAccountName": "emueller",
+      "onPremisesDomainName": "example.de",
+      "onPremisesImmutableId": "4AQlP4lP0xGaDAMF6CwzAQ==",
+      "onPremisesSecurityIdentifier": "S-1-5-21-1-2-3-1104",
+      "onPremisesLastSyncDateTime": "2026-10-01T12:00:00Z",
+      "someNewGraphProperty": {"nested": true}
+    },
+    {
+      "id": "00000000-0000-0001-0123-456789abcdef",
+      "userPrincipalName": "cloud.only@example.onmicrosoft.com",
+      "accountEnabled": false,
+      "onPremisesSyncEnabled": null,
+      "onPremisesDistinguishedName": null,
+      "onPremisesImmutableId": null,
+      "proxyAddresses": []
+    }
+  ]
+}

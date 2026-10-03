@@ -1,0 +1,12 @@
+[package]
+name = "ogar-ad"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+description = "Active Directory (AD DS / LDAP) source-native schema for OGAR directory observations: objectGUID identity, DN -> OU-HHTL location, an embedded versioned attribute table, and a read-only LDIF ingest path. No IAM, no writes."
+
+[dependencies]
+ogar-dir-core = { path = "../ogar-dir-core" }

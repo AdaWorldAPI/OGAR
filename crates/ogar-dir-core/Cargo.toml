@@ -1,0 +1,11 @@
+[package]
+name = "ogar-dir-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+description = "Shared ABI for OGAR directory observations (ogar-ad / ogar-az): 128-bit source GUIDs, an 8x16-bit OU HHTL with an explicit per-parent dictionary, a fixed 512-byte NodeRow-shaped record, an out-of-line value pool, and a minimal GUID-pair edge record. Zero dependencies; no classid mint; no IAM semantics."
+
+[dependencies]
