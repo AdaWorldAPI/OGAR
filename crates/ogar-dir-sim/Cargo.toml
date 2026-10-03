@@ -1,0 +1,12 @@
+[package]
+name = "ogar-dir-sim"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+description = "Semantic vocabulary for simulating directory desired state: the Change algebra, version provenance (observed / simulated, rule + evidence), structured invariant Violations and the side-effect-free ExecutionPlan boundary. Types only — execution lives in lance-graph (lance-graph-dir-sim) over Quack. No AD / Graph / Exchange / LDAP / PowerShell."
+
+[dependencies]
+ogar-dir-core = { path = "../ogar-dir-core" }
