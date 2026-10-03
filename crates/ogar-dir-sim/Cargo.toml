@@ -1,0 +1,13 @@
+[package]
+name = "ogar-dir-sim"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+description = "Versioned directory graph simulator: observed state G0, pure rules producing hypothetical versions, invariant validation, semantic diff, and a side-effect-free ExecutionPlan boundary. No AD / Graph / Exchange / LDAP / PowerShell writes."
+
+[dependencies]
+ogar-dir-core = { path = "../ogar-dir-core" }
+ogar-ad = { path = "../ogar-ad" }
