@@ -153,7 +153,7 @@ no-population-intermediate rule.
 - **V3 — OU-HHTL depth 8 (blocked, needs a decision).** `OuHhtl` is
   `[u16; 8]`: 128 bits, per-parent segment ids up to 65,535. One `u64` holds
   4 such levels. The "HHTL64 (8 × u8)" candidate fits 8 levels only by
-  narrowing a segment to 256 children per parent, which changes the
+  narrowing a segment to 255 children per parent (zero ends the path), which changes the
   meaning of every persisted id and dictionary, and it leaves no bit for a
   domain. Domain context today is not per node at all: it is the scope of
   the `OuDictionary` (one per AD domain / Entra tenant), so two domains in
