@@ -154,6 +154,19 @@ pub enum PlanError {
     NotDesired(VersionId),
     /// The target is unknown.
     UnknownVersion(VersionId),
+    /// The latest observation (`basis`) already holds `node`, which the
+    /// desired version (`target`) creates, but with a kind, enabled flag or
+    /// OU that no change can converge yet (the change algebra sets only UPN
+    /// and primary SMTP). Rather than claim the create is done, no plan is
+    /// derived; simulate again from the new observation.
+    Unconvergeable {
+        /// The latest observation.
+        basis: VersionId,
+        /// The desired version.
+        target: VersionId,
+        /// The node whose observed state cannot reach the desired one.
+        node: Guid128,
+    },
 }
 
 #[cfg(test)]
