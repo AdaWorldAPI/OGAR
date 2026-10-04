@@ -6,10 +6,13 @@
 //! the two belongs to the variant layer, not to this type.
 
 /// Half-open `[start, end)` interval in base positions.
+///
+/// The fields are private so `start <= end` holds for every value: the only
+/// public constructor is [`Interval::new`], which refuses inverted bounds.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct Interval {
-    pub start: u64,
-    pub end: u64,
+    start: u64,
+    end: u64,
 }
 
 impl Interval {
@@ -20,6 +23,29 @@ impl Interval {
         } else {
             None
         }
+    }
+
+    /// Crate-internal constructor for bounds the caller has already ordered.
+    #[inline]
+    pub(crate) const fn ordered(start: u64, end: u64) -> Interval {
+        debug_assert!(start <= end);
+        Interval { start, end }
+    }
+
+    /// Crate-internal: grow a run by one base at its end.
+    #[inline]
+    pub(crate) fn extend_end(&mut self) {
+        self.end += 1;
+    }
+
+    #[inline]
+    pub const fn start(self) -> u64 {
+        self.start
+    }
+
+    #[inline]
+    pub const fn end(self) -> u64 {
+        self.end
     }
 
     #[inline]

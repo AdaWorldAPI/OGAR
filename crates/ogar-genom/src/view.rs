@@ -27,7 +27,7 @@ impl<'a> SeqView<'a> {
 
     /// View of a reference interval on a strand; `None` if out of range.
     pub fn of(seq: &'a PackedSeq, interval: Interval, strand: Strand) -> Option<SeqView<'a>> {
-        (interval.end <= seq.len()).then_some(SeqView {
+        (interval.end() <= seq.len()).then_some(SeqView {
             seq,
             interval,
             strand,
@@ -68,8 +68,8 @@ impl<'a> SeqView<'a> {
             self.len()
         );
         match self.strand {
-            Strand::Forward => self.interval.start + i,
-            Strand::Reverse => self.interval.end - 1 - i,
+            Strand::Forward => self.interval.start() + i,
+            Strand::Reverse => self.interval.end() - 1 - i,
         }
     }
 
@@ -95,18 +95,18 @@ impl<'a> SeqView<'a> {
     /// Sub-view by **view** coordinates (so on the reverse strand, `[0, k)` is
     /// the first `k` bases read 5'→3' on that strand). `None` if out of range.
     pub fn sub(&self, view_interval: Interval) -> Option<SeqView<'a>> {
-        if view_interval.end > self.len() {
+        if view_interval.end() > self.len() {
             return None;
         }
         let interval = match self.strand {
-            Strand::Forward => Interval {
-                start: self.interval.start + view_interval.start,
-                end: self.interval.start + view_interval.end,
-            },
-            Strand::Reverse => Interval {
-                start: self.interval.end - view_interval.end,
-                end: self.interval.end - view_interval.start,
-            },
+            Strand::Forward => Interval::ordered(
+                self.interval.start() + view_interval.start(),
+                self.interval.start() + view_interval.end(),
+            ),
+            Strand::Reverse => Interval::ordered(
+                self.interval.end() - view_interval.end(),
+                self.interval.end() - view_interval.start(),
+            ),
         };
         Some(SeqView { interval, ..*self })
     }

@@ -67,10 +67,10 @@ fn sidecars_are_maximal_runs() {
     let runs: Vec<_> = p
         .ambiguity_runs()
         .iter()
-        .map(|r| (r.interval.start, r.interval.end, r.set.to_iupac()))
+        .map(|r| (r.interval.start(), r.interval.end(), r.set.to_iupac()))
         .collect();
     assert_eq!(runs, vec![(2, 6, b'N'), (6, 8, b'R'), (10, 12, b'N')]);
-    let soft: Vec<_> = p.soft_mask().iter().map(|i| (i.start, i.end)).collect();
+    let soft: Vec<_> = p.soft_mask().iter().map(|i| (i.start(), i.end())).collect();
     assert_eq!(soft, vec![(8, 10)]);
 }
 
@@ -247,4 +247,17 @@ fn ambiguity_translates_only_when_determinate() {
         translate(SeqView::new(&p), Frame::ZERO).collect::<Vec<_>>(),
         b"*"
     );
+}
+
+#[test]
+fn inverted_intervals_cannot_be_constructed() {
+    // Fields are private: `Interval::new` is the only public constructor.
+    assert!(Interval::new(5, 3).is_none());
+    let empty = Interval::new(4, 4).unwrap();
+    assert!(empty.is_empty());
+    assert_eq!(empty.len(), 0);
+    let p = encode(b"ACGTACGT").unwrap();
+    let v = SeqView::of(&p, Interval::new(2, 6).unwrap(), Strand::Reverse).unwrap();
+    assert_eq!(v.len(), 4);
+    assert_eq!(v.sub(Interval::new(0, 4).unwrap()).unwrap().len(), 4);
 }

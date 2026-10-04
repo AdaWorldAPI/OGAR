@@ -62,11 +62,8 @@ pub fn encode(ascii: &[u8]) -> Result<PackedSeq, EncodeError> {
         let pos = i as u64;
         if c.is_ascii_lowercase() {
             match soft_mask.last_mut() {
-                Some(iv) if iv.end == pos => iv.end += 1,
-                _ => soft_mask.push(Interval {
-                    start: pos,
-                    end: pos + 1,
-                }),
+                Some(iv) if iv.end() == pos => iv.extend_end(),
+                _ => soft_mask.push(Interval::ordered(pos, pos + 1)),
             }
         }
         if let Some(b) = Base::from_ascii(c) {
@@ -78,12 +75,9 @@ pub fn encode(ascii: &[u8]) -> Result<PackedSeq, EncodeError> {
             _ => return Err(EncodeError::InvalidSymbol { pos, byte: c }),
         };
         match ambiguity.last_mut() {
-            Some(r) if r.interval.end == pos && r.set == set => r.interval.end += 1,
+            Some(r) if r.interval.end() == pos && r.set == set => r.interval.extend_end(),
             _ => ambiguity.push(AmbiguityRun {
-                interval: Interval {
-                    start: pos,
-                    end: pos + 1,
-                },
+                interval: Interval::ordered(pos, pos + 1),
                 set,
             }),
         }
@@ -104,10 +98,10 @@ pub fn decode(seq: &PackedSeq) -> Vec<u8> {
         .collect();
     for r in seq.ambiguity.iter() {
         let c = r.set.to_iupac();
-        out[r.interval.start as usize..r.interval.end as usize].fill(c);
+        out[r.interval.start() as usize..r.interval.end() as usize].fill(c);
     }
     for iv in seq.soft_mask.iter() {
-        for x in &mut out[iv.start as usize..iv.end as usize] {
+        for x in &mut out[iv.start() as usize..iv.end() as usize] {
             *x = x.to_ascii_lowercase();
         }
     }
@@ -157,7 +151,7 @@ impl PackedSeq {
 
     /// The ambiguity run covering `pos`, if any. O(log runs).
     pub fn ambiguity_at(&self, pos: u64) -> Option<AmbiguityRun> {
-        let k = self.ambiguity.partition_point(|r| r.interval.end <= pos);
+        let k = self.ambiguity.partition_point(|r| r.interval.end() <= pos);
         self.ambiguity
             .get(k)
             .copied()
@@ -179,15 +173,12 @@ impl PackedSeq {
 
     /// Whether `pos` is soft-masked (lower-case in the source). O(log runs).
     pub fn is_soft_masked(&self, pos: u64) -> bool {
-        let k = self.soft_mask.partition_point(|iv| iv.end <= pos);
+        let k = self.soft_mask.partition_point(|iv| iv.end() <= pos);
         self.soft_mask.get(k).is_some_and(|iv| iv.contains(pos))
     }
 
     /// Whole-sequence interval `[0, len)`.
     pub fn full(&self) -> Interval {
-        Interval {
-            start: 0,
-            end: self.len,
-        }
+        Interval::ordered(0, self.len)
     }
 }
