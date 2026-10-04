@@ -6,26 +6,30 @@
 //! actuator can re-read that one fact from reality before acting (still
 //! true → execute; changed → re-observe and re-plan).
 
-use crate::change::{Attribute, Change};
+use crate::change::{Attribute, Change, NodeState, normalize};
 use crate::provenance::VersionId;
 use ogar_dir_core::Guid128;
+use std::collections::{BTreeMap, BTreeSet};
 
 /// A technology-neutral directory operation.
+///
+/// Variant order is load-bearing and mirrors [`Change`]: removals, deletes,
+/// attribute sets, creates, adds. A sorted plan is therefore a safe
+/// execution order (an address is freed before it is claimed; a node's
+/// edges are gone before it is, and it exists before it gains one).
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Operation {
-    /// Add `member` to `group`.
-    AddGroupMember {
-        /// Group.
-        group: Guid128,
-        /// Member.
-        member: Guid128,
-    },
     /// Remove `member` from `group`.
     RemoveGroupMember {
         /// Group.
         group: Guid128,
         /// Member.
         member: Guid128,
+    },
+    /// Delete `object`.
+    DeleteObject {
+        /// Object.
+        object: Guid128,
     },
     /// Set an attribute (`None` clears it).
     SetAttribute {
@@ -35,6 +39,20 @@ pub enum Operation {
         attribute: Attribute,
         /// New value.
         value: Option<String>,
+    },
+    /// Create `object` with `state`.
+    CreateObject {
+        /// Object.
+        object: Guid128,
+        /// Its content.
+        state: NodeState,
+    },
+    /// Add `member` to `group`.
+    AddGroupMember {
+        /// Group.
+        group: Guid128,
+        /// Member.
+        member: Guid128,
     },
 }
 
@@ -47,6 +65,12 @@ pub enum Precondition {
     IsMember,
     /// The attribute must still hold this value.
     AttributeEquals(Option<String>),
+    /// No object with this identity may exist yet.
+    ObjectAbsent,
+    /// The object must still exist in exactly this state and have no
+    /// membership on either side (none was added since the observation, and
+    /// the plan's own removals have run), so a delete never strands an edge.
+    ObjectRemovable(NodeState),
 }
 
 /// One planned step.
@@ -61,6 +85,17 @@ pub struct PlannedOp {
 impl From<Change> for PlannedOp {
     fn from(c: Change) -> Self {
         match c {
+            Change::CreateNode { node, state } => Self {
+                op: Operation::CreateObject {
+                    object: node,
+                    state,
+                },
+                precondition: Precondition::ObjectAbsent,
+            },
+            Change::DeleteNode { node, state } => Self {
+                op: Operation::DeleteObject { object: node },
+                precondition: Precondition::ObjectRemovable(state),
+            },
             Change::AddMembership { user, group } => Self {
                 op: Operation::AddGroupMember {
                     group,
@@ -109,8 +144,88 @@ impl ExecutionPlan {
         let mut ops: Vec<PlannedOp> = diff.into_iter().map(PlannedOp::from).collect();
         ops.sort();
         ops.dedup();
+        order_value_transfers(&mut ops);
         Self { basis, target, ops }
     }
+}
+
+/// The value an attribute op claims, and the value it releases (by
+/// comparison form: uniqueness is case-insensitive).
+fn transfer(p: &PlannedOp) -> Option<((Attribute, String), (Attribute, String))> {
+    match (&p.op, &p.precondition) {
+        (
+            Operation::SetAttribute {
+                attribute, value, ..
+            },
+            Precondition::AttributeEquals(from),
+        ) => Some((
+            (
+                *attribute,
+                value.as_deref().map(normalize).unwrap_or_default(),
+            ),
+            (
+                *attribute,
+                from.as_deref().map(normalize).unwrap_or_default(),
+            ),
+        )),
+        _ => None,
+    }
+}
+
+/// Within the (contiguous) attribute-set block of a sorted plan, run every
+/// set that releases a value before any set on another object that claims
+/// it: object 2 `b → c` before object 1 `a → b`. Kahn's algorithm, ties
+/// broken by the canonical order, so the result is deterministic. Sets in a
+/// rename cycle (two objects swapping a value) cannot be ordered without a
+/// temporary value; they keep their canonical order at the end of the block.
+fn order_value_transfers(ops: &mut [PlannedOp]) {
+    let Some(start) = ops.iter().position(|p| transfer(p).is_some()) else {
+        return;
+    };
+    let len = ops[start..]
+        .iter()
+        .take_while(|p| transfer(p).is_some())
+        .count();
+    let block = &mut ops[start..start + len];
+    let keys: Vec<_> = block.iter().filter_map(transfer).collect();
+    let object = |p: &PlannedOp| match &p.op {
+        Operation::SetAttribute { object, .. } => Some(*object),
+        _ => None,
+    };
+    // releaser[v] = the ops releasing value v; an empty value releases nothing.
+    let mut releasers: BTreeMap<&(Attribute, String), Vec<usize>> = BTreeMap::new();
+    for (i, (_, released)) in keys.iter().enumerate() {
+        if !released.1.is_empty() {
+            releasers.entry(released).or_default().push(i);
+        }
+    }
+    // Edge r → c when r releases what c claims, on a different object.
+    let mut blockers = vec![0usize; len];
+    let mut unblocks: Vec<Vec<usize>> = vec![Vec::new(); len];
+    for (c, (claimed, _)) in keys.iter().enumerate() {
+        for &r in releasers.get(claimed).into_iter().flatten() {
+            if r != c && object(&block[r]) != object(&block[c]) {
+                blockers[c] += 1;
+                unblocks[r].push(c);
+            }
+        }
+    }
+    let mut ready: BTreeSet<usize> = (0..len).filter(|&i| blockers[i] == 0).collect();
+    let mut order = Vec::with_capacity(len);
+    while let Some(i) = ready.pop_first() {
+        order.push(i);
+        for &c in &unblocks[i] {
+            blockers[c] -= 1;
+            if blockers[c] == 0 {
+                ready.insert(c);
+            }
+        }
+    }
+    // A cycle leaves its members blocked: keep them, in canonical order.
+    let placed: BTreeSet<usize> = order.iter().copied().collect();
+    order.extend((0..len).filter(|i| !placed.contains(i)));
+    let sorted: Vec<PlannedOp> = order.into_iter().map(|i| block[i].clone()).collect();
+    block.clone_from_slice(&sorted);
 }
 
 /// Why no plan was derived.
@@ -120,20 +235,25 @@ pub enum PlanError {
     NotDesired(VersionId),
     /// The target is unknown.
     UnknownVersion(VersionId),
-    /// The latest observation (`basis`) no longer has the node set the
-    /// desired version (`target`) was built on: users or groups were
-    /// created or deleted since. Simulate again from the new observation.
-    NodeSetChanged {
+    /// The latest observation (`basis`) already holds `node`, which the
+    /// desired version (`target`) creates, but with a kind, enabled flag or
+    /// OU that no change can converge yet (the change algebra sets only UPN
+    /// and primary SMTP). Rather than claim the create is done, no plan is
+    /// derived; simulate again from the new observation.
+    Unconvergeable {
         /// The latest observation.
         basis: VersionId,
         /// The desired version.
         target: VersionId,
+        /// The node whose observed state cannot reach the desired one.
+        node: Guid128,
     },
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::change::NodeKind;
 
     #[test]
     fn a_repeated_change_is_planned_once() {
@@ -143,6 +263,125 @@ mod tests {
         };
         let p = ExecutionPlan::from_diff(VersionId(0), VersionId(1), vec![c.clone(), c]);
         assert_eq!(p.ops.len(), 1);
+    }
+
+    fn state(kind: NodeKind) -> NodeState {
+        NodeState {
+            kind,
+            active: true,
+            upn: None,
+            primary_smtp: None,
+            ou: None,
+        }
+    }
+
+    #[test]
+    fn a_sorted_plan_frees_before_it_claims() {
+        let g = |n| Guid128([n; 16]);
+        let with_smtp = |smtp: &str| NodeState {
+            primary_smtp: Some(smtp.into()),
+            ..state(NodeKind::User)
+        };
+        // Given in the worst order: user 5 is deleted and user 1 created
+        // with the address 5 had, user 3 is renamed, user 1 joins a group.
+        let plan = ExecutionPlan::from_diff(
+            VersionId(0),
+            VersionId(1),
+            vec![
+                Change::AddMembership {
+                    user: g(1),
+                    group: g(9),
+                },
+                Change::CreateNode {
+                    node: g(1),
+                    state: with_smtp("shared@example.test"),
+                },
+                Change::SetAttribute {
+                    node: g(3),
+                    attribute: Attribute::PrimarySmtp,
+                    from: Some("c@example.test".into()),
+                    to: Some("c2@example.test".into()),
+                },
+                Change::DeleteNode {
+                    node: g(5),
+                    state: with_smtp("shared@example.test"),
+                },
+                Change::RemoveMembership {
+                    user: g(5),
+                    group: g(9),
+                },
+            ],
+        );
+        let ops: Vec<_> = plan.ops.iter().map(|p| &p.op).collect();
+        assert!(matches!(ops[0], Operation::RemoveGroupMember { member, .. } if *member == g(5)));
+        // The delete frees "shared@" before the create claims it.
+        assert_eq!(ops[1], &Operation::DeleteObject { object: g(5) });
+        assert!(matches!(ops[2], Operation::SetAttribute { object, .. } if *object == g(3)));
+        assert!(matches!(ops[3], Operation::CreateObject { object, .. } if *object == g(1)));
+        assert!(matches!(ops[4], Operation::AddGroupMember { member, .. } if *member == g(1)));
+        assert_eq!(
+            plan.ops[1].precondition,
+            Precondition::ObjectRemovable(with_smtp("shared@example.test"))
+        );
+        assert_eq!(plan.ops[3].precondition, Precondition::ObjectAbsent);
+    }
+
+    fn rename(n: u8, from: &str, to: &str) -> Change {
+        Change::SetAttribute {
+            node: Guid128([n; 16]),
+            attribute: Attribute::PrimarySmtp,
+            from: Some(from.into()),
+            to: Some(to.into()),
+        }
+    }
+    fn renamed(plan: &ExecutionPlan) -> Vec<u8> {
+        plan.ops
+            .iter()
+            .filter_map(|p| match &p.op {
+                Operation::SetAttribute { object, .. } => Some(object.0[0]),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn a_value_is_released_before_another_object_claims_it() {
+        // 1: a → b, 2: b → c, 3: c → d. Canonical order is 1, 2, 3; the safe
+        // order is 3, 2, 1 (each frees what the previous one takes). Case
+        // differences do not hide the dependency.
+        let plan = ExecutionPlan::from_diff(
+            VersionId(0),
+            VersionId(1),
+            vec![
+                rename(1, "a@x.test", "B@x.test"),
+                rename(2, "b@x.test", "c@x.test"),
+                rename(3, "C@x.test", "d@x.test"),
+            ],
+        );
+        assert_eq!(renamed(&plan), vec![3, 2, 1]);
+    }
+
+    #[test]
+    fn independent_renames_keep_canonical_order_and_a_cycle_is_kept() {
+        let plan = ExecutionPlan::from_diff(
+            VersionId(0),
+            VersionId(1),
+            vec![
+                rename(2, "p@x.test", "q@x.test"),
+                rename(1, "r@x.test", "s@x.test"),
+            ],
+        );
+        assert_eq!(renamed(&plan), vec![1, 2]);
+        // A swap cannot be ordered: both stay, in canonical order.
+        let swap = ExecutionPlan::from_diff(
+            VersionId(0),
+            VersionId(1),
+            vec![
+                rename(1, "a@x.test", "b@x.test"),
+                rename(2, "b@x.test", "a@x.test"),
+            ],
+        );
+        assert_eq!(renamed(&swap), vec![1, 2]);
     }
 
     #[test]
@@ -165,15 +404,15 @@ mod tests {
             ],
         );
         assert_eq!(
-            plan.ops[0].op,
+            plan.ops[1].op,
             Operation::AddGroupMember {
                 group: g(9),
                 member: g(1)
             }
         );
-        assert_eq!(plan.ops[0].precondition, Precondition::NotMember);
+        assert_eq!(plan.ops[1].precondition, Precondition::NotMember);
         assert_eq!(
-            plan.ops[1].precondition,
+            plan.ops[0].precondition,
             Precondition::AttributeEquals(Some("bob@example.test".into()))
         );
     }

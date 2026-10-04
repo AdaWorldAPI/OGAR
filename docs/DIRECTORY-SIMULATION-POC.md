@@ -136,12 +136,41 @@ no-population-intermediate rule.
 - **V1 — Lance persistence.** `VersionedGraph` uses `u32` ids and an
   additions-only diff. Persisting this store needs 128-bit keys and
   removal- and attribute-aware diffs upstream, or a dedicated directory dataset.
-- **V2 — node creation and deletion.** These are not in the `Change` algebra
-  yet. A diff across different node sets returns `NodeSetChanged`.
-- **V3 — OU-HHTL lane width.** The packed lane addresses prefixes up to
-  depth 4, which is exact. Deeper prefixes are refused (`SubtreeTooDeep`). The
-  candidate HHTL64 (8 × u8) would make all 8 levels one `MatchU64`.
-- **V4 — "active" in Entra.** Active is derived only from AD
-  `userAccountControl`. Entra `accountEnabled` is not mapped yet.
+- **V2 — node creation and deletion (closed).** `Change::CreateNode` /
+  `Change::DeleteNode` carry a `NodeState` (kind, active, UPN, primary SMTP,
+  `OuHhtl`): the content to create, or the compare-and-set expectation of a
+  delete. A delete is refused while the node still has a membership on
+  either side, so an edge cannot be stranded; its plan precondition
+  (`ObjectRemovable`) re-checks that against reality. `Change` and
+  `Operation` variant order is a safe application order: membership
+  removals, deletes, attribute sets, creates, membership adds — an address
+  is freed before it is claimed, including along a chain of renames
+  (`b → c` runs before `a → b`). A cycle of renames (two nodes swapping an
+  address) is not orderable without a temporary value and stays open.
+  The plan is the desired version's net intent rebased onto the latest
+  observation: work reality already shows is dropped, and drift outside the
+  intent is neither planned nor reverted. Not representable yet: a change of
+  `active`, of OU or of kind on a node that exists in both versions.
+- **V3 — OU-HHTL depth 8 (blocked, needs a decision).** `OuHhtl` is
+  `[u16; 8]`: 128 bits, per-parent segment ids up to 65,535. One `u64` holds
+  4 such levels. The "HHTL64 (8 × u8)" candidate fits 8 levels only by
+  narrowing a segment to 255 children per parent (zero ends the path), which changes the
+  meaning of every persisted id and dictionary, and it leaves no bit for a
+  domain. Domain context today is not per node at all: it is the scope of
+  the `OuDictionary` (one per AD domain / Entra tenant), so two domains in
+  one snapshot already have ambiguous segment ids. Options: (a) two `u64`
+  lanes, levels 0..3 and 4..7, matched by two `MatchU64` in one program;
+  exact, no ABI change, but not one compare; (b) narrow to 8 × u8 with a
+  refusal past 255 children; (c) a scope id lane plus (a). The snapshot now
+  also keeps the exact `OuHhtl` per node, so no option loses data.
+- **V4 — "active" across AD and Entra (blocked, needs a decision).** Graph
+  `accountEnabled` is ingested by `ogar-az` (null = unknown), but an Entra
+  user is a different node from its AD source: `sync_edges` links them as
+  evidence and keeps both. There is therefore no node on which "AD active
+  and Entra active" is a pair. Separately, `from_ad` treats a missing
+  `userAccountControl` as enabled: unknown currently collapses into true.
+  Candidate policies: AD authoritative for synced users; Entra
+  authoritative; active only if every known source says enabled (unknown
+  ignored); active only if every source is known and enabled.
 - **V5 — CI.** CI builds `lance-graph-dir-sim` against the OGAR checkout, so
   it needs this OGAR PR merged first.
