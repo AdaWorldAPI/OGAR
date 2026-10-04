@@ -144,7 +144,8 @@ no-population-intermediate rule.
   (`ObjectRemovable`) re-checks that against reality. `Change` and
   `Operation` variant order is a safe application order: membership
   removals, deletes, attribute sets, creates, membership adds — an address
-  is freed before it is claimed. A cycle of renames (two nodes swapping an
+  is freed before it is claimed, including along a chain of renames
+  (`b → c` runs before `a → b`). A cycle of renames (two nodes swapping an
   address) is not orderable without a temporary value and stays open.
   The plan is the desired version's net intent rebased onto the latest
   observation: work reality already shows is dropped, and drift outside the

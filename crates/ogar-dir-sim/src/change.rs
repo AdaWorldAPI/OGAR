@@ -59,8 +59,10 @@ pub enum Attribute {
 /// 4. `CreateNode` — after every address it needs is free;
 /// 5. `AddMembership` — once both endpoints exist.
 ///
-/// Not orderable by kind: a cycle of renames (two nodes swapping an
-/// address) needs a temporary value, which no change list carries yet.
+/// Within step 3, the plan additionally orders a chain of renames (one
+/// object releases the value the next claims). A cycle of renames (two
+/// nodes swapping an address) needs a temporary value, which no change list
+/// carries yet.
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Change {
     /// `user` stops being a member of `group`.
