@@ -50,10 +50,45 @@ pub enum Attribute {
 /// canonical form (used for determinism).
 ///
 /// Variant order is load-bearing: a sorted list is also a safe application
-/// order. Nodes are created before memberships reference them, and every
-/// membership of a node is removed before the node is deleted.
+/// order, respecting every dependency between kinds of change:
+///
+/// 1. `RemoveMembership` — a node's edges go before the node;
+/// 2. `DeleteNode` — frees its UPN / SMTP before anything claims them;
+/// 3. `SetAttribute` — renames away from (or into) addresses only after
+///    deletes freed them and before creates take them;
+/// 4. `CreateNode` — after every address it needs is free;
+/// 5. `AddMembership` — once both endpoints exist.
+///
+/// Not orderable by kind: a cycle of renames (two nodes swapping an
+/// address) needs a temporary value, which no change list carries yet.
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Change {
+    /// `user` stops being a member of `group`.
+    RemoveMembership {
+        /// Member.
+        user: Guid128,
+        /// Group.
+        group: Guid128,
+    },
+    /// A node stops existing. Refused while it still has a membership: the
+    /// change list must remove those edges itself, so none is stranded.
+    DeleteNode {
+        /// Identity.
+        node: Guid128,
+        /// The state the deletion expects to remove (compare-and-set).
+        state: NodeState,
+    },
+    /// Compare-and-set of one attribute.
+    SetAttribute {
+        /// Object.
+        node: Guid128,
+        /// Which attribute.
+        attribute: Attribute,
+        /// Value the change expects to replace (raw, as observed).
+        from: Option<String>,
+        /// New value (raw).
+        to: Option<String>,
+    },
     /// A node that did not exist comes into existence.
     CreateNode {
         /// Identity.
@@ -67,32 +102,6 @@ pub enum Change {
         user: Guid128,
         /// Group.
         group: Guid128,
-    },
-    /// `user` stops being a member of `group`.
-    RemoveMembership {
-        /// Member.
-        user: Guid128,
-        /// Group.
-        group: Guid128,
-    },
-    /// Compare-and-set of one attribute.
-    SetAttribute {
-        /// Object.
-        node: Guid128,
-        /// Which attribute.
-        attribute: Attribute,
-        /// Value the change expects to replace (raw, as observed).
-        from: Option<String>,
-        /// New value (raw).
-        to: Option<String>,
-    },
-    /// A node stops existing. Refused while it still has a membership: the
-    /// change list must remove those edges itself, so none is stranded.
-    DeleteNode {
-        /// Identity.
-        node: Guid128,
-        /// The state the deletion expects to remove (compare-and-set).
-        state: NodeState,
     },
 }
 

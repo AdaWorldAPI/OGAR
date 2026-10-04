@@ -12,10 +12,33 @@ use ogar_dir_core::Guid128;
 
 /// A technology-neutral directory operation.
 ///
-/// Variant order is load-bearing, as in [`Change`]: a sorted plan creates
-/// objects first and deletes them last, so it is also a safe execution order.
+/// Variant order is load-bearing and mirrors [`Change`]: removals, deletes,
+/// attribute sets, creates, adds. A sorted plan is therefore a safe
+/// execution order (an address is freed before it is claimed; a node's
+/// edges are gone before it is, and it exists before it gains one).
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Operation {
+    /// Remove `member` from `group`.
+    RemoveGroupMember {
+        /// Group.
+        group: Guid128,
+        /// Member.
+        member: Guid128,
+    },
+    /// Delete `object`.
+    DeleteObject {
+        /// Object.
+        object: Guid128,
+    },
+    /// Set an attribute (`None` clears it).
+    SetAttribute {
+        /// Object.
+        object: Guid128,
+        /// Attribute.
+        attribute: Attribute,
+        /// New value.
+        value: Option<String>,
+    },
     /// Create `object` with `state`.
     CreateObject {
         /// Object.
@@ -30,27 +53,6 @@ pub enum Operation {
         /// Member.
         member: Guid128,
     },
-    /// Remove `member` from `group`.
-    RemoveGroupMember {
-        /// Group.
-        group: Guid128,
-        /// Member.
-        member: Guid128,
-    },
-    /// Set an attribute (`None` clears it).
-    SetAttribute {
-        /// Object.
-        object: Guid128,
-        /// Attribute.
-        attribute: Attribute,
-        /// New value.
-        value: Option<String>,
-    },
-    /// Delete `object`.
-    DeleteObject {
-        /// Object.
-        object: Guid128,
-    },
 }
 
 /// What reality must still look like for the operation to be safe.
@@ -64,8 +66,10 @@ pub enum Precondition {
     AttributeEquals(Option<String>),
     /// No object with this identity may exist yet.
     ObjectAbsent,
-    /// The object must still exist in exactly this state.
-    ObjectEquals(NodeState),
+    /// The object must still exist in exactly this state and have no
+    /// membership on either side (none was added since the observation, and
+    /// the plan's own removals have run), so a delete never strands an edge.
+    ObjectRemovable(NodeState),
 }
 
 /// One planned step.
@@ -89,7 +93,7 @@ impl From<Change> for PlannedOp {
             },
             Change::DeleteNode { node, state } => Self {
                 op: Operation::DeleteObject { object: node },
-                precondition: Precondition::ObjectEquals(state),
+                precondition: Precondition::ObjectRemovable(state),
             },
             Change::AddMembership { user, group } => Self {
                 op: Operation::AddGroupMember {
@@ -178,42 +182,54 @@ mod tests {
     }
 
     #[test]
-    fn a_sorted_plan_creates_first_and_deletes_last() {
+    fn a_sorted_plan_frees_before_it_claims() {
         let g = |n| Guid128([n; 16]);
-        // Given in the worst order: delete, its membership removal, an add
-        // to a node that is created last.
+        let with_smtp = |smtp: &str| NodeState {
+            primary_smtp: Some(smtp.into()),
+            ..state(NodeKind::User)
+        };
+        // Given in the worst order: user 5 is deleted and user 1 created
+        // with the address 5 had, user 3 is renamed, user 1 joins a group.
         let plan = ExecutionPlan::from_diff(
             VersionId(0),
             VersionId(1),
             vec![
-                Change::DeleteNode {
-                    node: g(5),
-                    state: state(NodeKind::User),
-                },
-                Change::RemoveMembership {
-                    user: g(5),
-                    group: g(9),
-                },
                 Change::AddMembership {
                     user: g(1),
                     group: g(9),
                 },
                 Change::CreateNode {
                     node: g(1),
-                    state: state(NodeKind::User),
+                    state: with_smtp("shared@example.test"),
+                },
+                Change::SetAttribute {
+                    node: g(3),
+                    attribute: Attribute::PrimarySmtp,
+                    from: Some("c@example.test".into()),
+                    to: Some("c2@example.test".into()),
+                },
+                Change::DeleteNode {
+                    node: g(5),
+                    state: with_smtp("shared@example.test"),
+                },
+                Change::RemoveMembership {
+                    user: g(5),
+                    group: g(9),
                 },
             ],
         );
         let ops: Vec<_> = plan.ops.iter().map(|p| &p.op).collect();
-        assert!(matches!(ops[0], Operation::CreateObject { object, .. } if *object == g(1)));
-        assert!(matches!(ops[1], Operation::AddGroupMember { .. }));
-        assert!(matches!(ops[2], Operation::RemoveGroupMember { .. }));
-        assert_eq!(ops[3], &Operation::DeleteObject { object: g(5) });
-        assert_eq!(plan.ops[0].precondition, Precondition::ObjectAbsent);
+        assert!(matches!(ops[0], Operation::RemoveGroupMember { member, .. } if *member == g(5)));
+        // The delete frees "shared@" before the create claims it.
+        assert_eq!(ops[1], &Operation::DeleteObject { object: g(5) });
+        assert!(matches!(ops[2], Operation::SetAttribute { object, .. } if *object == g(3)));
+        assert!(matches!(ops[3], Operation::CreateObject { object, .. } if *object == g(1)));
+        assert!(matches!(ops[4], Operation::AddGroupMember { member, .. } if *member == g(1)));
         assert_eq!(
-            plan.ops[3].precondition,
-            Precondition::ObjectEquals(state(NodeKind::User))
+            plan.ops[1].precondition,
+            Precondition::ObjectRemovable(with_smtp("shared@example.test"))
         );
+        assert_eq!(plan.ops[3].precondition, Precondition::ObjectAbsent);
     }
 
     #[test]
@@ -236,15 +252,15 @@ mod tests {
             ],
         );
         assert_eq!(
-            plan.ops[0].op,
+            plan.ops[1].op,
             Operation::AddGroupMember {
                 group: g(9),
                 member: g(1)
             }
         );
-        assert_eq!(plan.ops[0].precondition, Precondition::NotMember);
+        assert_eq!(plan.ops[1].precondition, Precondition::NotMember);
         assert_eq!(
-            plan.ops[1].precondition,
+            plan.ops[0].precondition,
             Precondition::AttributeEquals(Some("bob@example.test".into()))
         );
     }

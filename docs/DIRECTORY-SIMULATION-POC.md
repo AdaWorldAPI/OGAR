@@ -140,8 +140,12 @@ no-population-intermediate rule.
   `Change::DeleteNode` carry a `NodeState` (kind, active, UPN, primary SMTP,
   `OuHhtl`): the content to create, or the compare-and-set expectation of a
   delete. A delete is refused while the node still has a membership on
-  either side, so an edge cannot be stranded. `Change` and `Operation`
-  variant order is a safe application order (creates first, deletes last).
+  either side, so an edge cannot be stranded; its plan precondition
+  (`ObjectRemovable`) re-checks that against reality. `Change` and
+  `Operation` variant order is a safe application order: membership
+  removals, deletes, attribute sets, creates, membership adds — an address
+  is freed before it is claimed. A cycle of renames (two nodes swapping an
+  address) is not orderable without a temporary value and stays open.
   The plan is the desired version's net intent rebased onto the latest
   observation: work reality already shows is dropped, and drift outside the
   intent is neither planned nor reverted. Not representable yet: a change of
