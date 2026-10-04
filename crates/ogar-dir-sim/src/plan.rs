@@ -6,13 +6,23 @@
 //! actuator can re-read that one fact from reality before acting (still
 //! true → execute; changed → re-observe and re-plan).
 
-use crate::change::{Attribute, Change};
+use crate::change::{Attribute, Change, NodeState};
 use crate::provenance::VersionId;
 use ogar_dir_core::Guid128;
 
 /// A technology-neutral directory operation.
+///
+/// Variant order is load-bearing, as in [`Change`]: a sorted plan creates
+/// objects first and deletes them last, so it is also a safe execution order.
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Operation {
+    /// Create `object` with `state`.
+    CreateObject {
+        /// Object.
+        object: Guid128,
+        /// Its content.
+        state: NodeState,
+    },
     /// Add `member` to `group`.
     AddGroupMember {
         /// Group.
@@ -36,6 +46,11 @@ pub enum Operation {
         /// New value.
         value: Option<String>,
     },
+    /// Delete `object`.
+    DeleteObject {
+        /// Object.
+        object: Guid128,
+    },
 }
 
 /// What reality must still look like for the operation to be safe.
@@ -47,6 +62,10 @@ pub enum Precondition {
     IsMember,
     /// The attribute must still hold this value.
     AttributeEquals(Option<String>),
+    /// No object with this identity may exist yet.
+    ObjectAbsent,
+    /// The object must still exist in exactly this state.
+    ObjectEquals(NodeState),
 }
 
 /// One planned step.
@@ -61,6 +80,17 @@ pub struct PlannedOp {
 impl From<Change> for PlannedOp {
     fn from(c: Change) -> Self {
         match c {
+            Change::CreateNode { node, state } => Self {
+                op: Operation::CreateObject {
+                    object: node,
+                    state,
+                },
+                precondition: Precondition::ObjectAbsent,
+            },
+            Change::DeleteNode { node, state } => Self {
+                op: Operation::DeleteObject { object: node },
+                precondition: Precondition::ObjectEquals(state),
+            },
             Change::AddMembership { user, group } => Self {
                 op: Operation::AddGroupMember {
                     group,
@@ -120,20 +150,12 @@ pub enum PlanError {
     NotDesired(VersionId),
     /// The target is unknown.
     UnknownVersion(VersionId),
-    /// The latest observation (`basis`) no longer has the node set the
-    /// desired version (`target`) was built on: users or groups were
-    /// created or deleted since. Simulate again from the new observation.
-    NodeSetChanged {
-        /// The latest observation.
-        basis: VersionId,
-        /// The desired version.
-        target: VersionId,
-    },
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::change::NodeKind;
 
     #[test]
     fn a_repeated_change_is_planned_once() {
@@ -143,6 +165,55 @@ mod tests {
         };
         let p = ExecutionPlan::from_diff(VersionId(0), VersionId(1), vec![c.clone(), c]);
         assert_eq!(p.ops.len(), 1);
+    }
+
+    fn state(kind: NodeKind) -> NodeState {
+        NodeState {
+            kind,
+            active: true,
+            upn: None,
+            primary_smtp: None,
+            ou: None,
+        }
+    }
+
+    #[test]
+    fn a_sorted_plan_creates_first_and_deletes_last() {
+        let g = |n| Guid128([n; 16]);
+        // Given in the worst order: delete, its membership removal, an add
+        // to a node that is created last.
+        let plan = ExecutionPlan::from_diff(
+            VersionId(0),
+            VersionId(1),
+            vec![
+                Change::DeleteNode {
+                    node: g(5),
+                    state: state(NodeKind::User),
+                },
+                Change::RemoveMembership {
+                    user: g(5),
+                    group: g(9),
+                },
+                Change::AddMembership {
+                    user: g(1),
+                    group: g(9),
+                },
+                Change::CreateNode {
+                    node: g(1),
+                    state: state(NodeKind::User),
+                },
+            ],
+        );
+        let ops: Vec<_> = plan.ops.iter().map(|p| &p.op).collect();
+        assert!(matches!(ops[0], Operation::CreateObject { object, .. } if *object == g(1)));
+        assert!(matches!(ops[1], Operation::AddGroupMember { .. }));
+        assert!(matches!(ops[2], Operation::RemoveGroupMember { .. }));
+        assert_eq!(ops[3], &Operation::DeleteObject { object: g(5) });
+        assert_eq!(plan.ops[0].precondition, Precondition::ObjectAbsent);
+        assert_eq!(
+            plan.ops[3].precondition,
+            Precondition::ObjectEquals(state(NodeKind::User))
+        );
     }
 
     #[test]
