@@ -281,7 +281,7 @@ Reverse complement on chr21:
 | DNA2 materialized (word bit-reverse + NOT + funnel shift) | 2.8 ms | 11.7 MB |
 | **DNA2 word-streaming view** (reversed words produced on the fly into a fold) | **4.0 ms** | **0** |
 | DNA2 per-base view (`len−1−i` per base) | 42.8 ms | 0 |
-| strand-invariant fold (GC via `popcount((w>>1)^w)`) | 0.46 ms | 0 |
+| strand-invariant fold (GC via `popcount(((w>>1)^w) & 0x5555_5555_5555_5555)`) | 0.46 ms | 0 |
 
 What this shows:
 
@@ -621,7 +621,7 @@ Throughput, single core, chr21-measured rates extrapolated to 3.1 Gbp:
 | encode | 3.3 GB/s → ~1 s/genome | branchy per-byte classification |
 | strand-invariant composition (popcount) | ~25 GB/s of packed bytes → ~30 ms/genome | **memory** |
 | reverse-complement word view | ~3 GB/s of packed bytes | **compute** (bit reversal) |
-| translation, DNA2, 3 frames at once | ~1.9 ns/frame-codon → ~6 s per genome-frame | **compute** (codon extraction) |
+| translation, DNA2, 3 frames at once | ~0.64 ns per output codon (one per position) → ~2 s per 3-frame genome pass | **compute** (codon extraction) |
 | exact 12-mer, u8 `windows ==` | 1.4–1.8 GB/s | memcmp, vectorized |
 | exact 12-mer, DNA2 rolling scalar | 0.6–0.7 GB/s | **branch/serial dependency** |
 | V4 IUPAC motif over DNA2 (`vpshufb` onehot + AND-table + `cmpeq`) | 1.25–1.4 GB/s | compute |
