@@ -253,6 +253,15 @@ two halves of a cell. ADR‑026 names the cascade that ties them.
 | **D‑VALFACET** | **value‑slab homogeneous closure = the contained 16‑byte facet** `facet_classid(4)+helix‑place(6)+CAM‑PQ(6)` — identity⊥search⊥schema; the value‑side restatement of canon (key path = 6‑byte CAM‑PQ **address** D‑TILE256; this facet's CAM‑PQ = the **content/search** code; helix = place/residue D‑PHASE); lance‑graph value‑tenant harvest CONFIRMS — 9/10 slab tenants don't homogenize (KEEP/DEFER, only HelixResidue matches) + the slab↔parallel‑MailboxSoA two‑world seam | G (harvest facts) / H (facet closure, gated F‑1+F‑code) | EPIPHANY | `.claude/board/EPIPHANIES.md` E‑VALUE‑SLAB‑FACET; lance‑graph `soa-value-tenant-migration-v1-harvest.md` | D‑TILE256, D‑PHASE, D‑KEYKV, D‑CANON‑GUID |
 | **D‑ENVPARSE** | **classid defines V2/V3 + value‑schema + edge‑codec per file+consumer; ONE reusable envelope parser reads `classid → registry → parse`** (operator `0x1007` — a leading‑`1` generation marker before the domain self‑identifies new‑gen envelopes; versioning in the classid/schema‑pointer, never a GUID‑tail nibble) — no per‑file format byte; the single classid‑late‑bound read path that also reconciles the two‑world seam; the registry entry gains a **`tail_variant` (V2/V3)** axis beside `ReadMode {value_schema, edge_codec}`; same shape as D‑ACTIONHANDLER‑RESOLVER (renderer over the classid keyspace) | G (pieces: classid_read_mode / ClassView / new_v2 / cascade_key‑V3 / node_rows_from_le_bytes) / H (the composed parser, to‑wire) | EPIPHANY→to‑wire | `.claude/board/EPIPHANIES.md` E‑CLASSID‑ENVELOPE‑PARSER; lance‑graph `canonical_node.rs` | D‑VALFACET, D‑IDENTITY‑PIN, D‑KEYKV, D‑TILE256 |
 
+### 2.11 OGAR-GENOM (2026‑10‑04) — packed genomics feasibility; full text `docs/OGAR-GENOM-CAPSTONE.md`
+
+| ID | Shape | Grade | Status | Home | Deps |
+|---|---|:--:|:--:|---|---|
+| D‑GENOM‑DNA2 | resident sequence = DNA2 (2 b/base) + sparse ambiguity/soft‑mask run sidecars; V4 `BaseSet` = query/answer algebra, not storage (chr21: 52 N runs, 0 other IUPAC) | G (measured) | CODED | `crates/ogar-genom` | `canonical_node` out‑of‑line genome doctrine |
+| D‑GENOM‑VIEW | sub‑region / strand / frame = views (0 B moved); translation = allocation‑free fold; views must be word‑granular to compete with materialization (4.0 vs 42.8 ms) | G (measured) | CODED (per‑base) / IDEA (word kernel) | `crates/ogar-genom` | `ndarray::simd` for kernels |
+| D‑GENOM‑LINEAGE | ancestry ≠ storage version: two‑parent descent needs interval‑labelled edges (tree sequence / ARG); `LanceVersion` and `ScenarioBranch` are single‑parent — H7 falsified | H | EPIPHANY | capstone §11 | — |
+| D‑GENOM‑FITCH | Fitch parsimony state sets ARE V4 `BaseSet`s (∩ else ∪); candidate missing‑link reconstruction as lane‑parallel nibble algebra | H | IDEA | capstone §12 | D‑GENOM‑DNA2 |
+
 ---
 
 ## 3. The materialization pipeline — what's ready, what's blocked
