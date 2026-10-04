@@ -1,0 +1,11 @@
+[package]
+name = "ogar-genom"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+description = "Packed genomic sequence substrate (first proof): DNA2 resident sequence (2 bits/base) with exact-round-trip ambiguity and soft-mask interval sidecars, the V4 base-set alphabet for IUPAC ambiguity, half-open coordinates with strand, zero-copy reverse-complement views, and the codon translation fold over the standard genetic code. Zero dependencies; mints no classids (the Genetics domain 0x0E is operator-gated)."
+
+[dependencies]

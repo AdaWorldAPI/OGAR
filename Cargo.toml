@@ -41,6 +41,7 @@ members = [
     "crates/ogar-ad",
     "crates/ogar-az",
     "crates/ogar-dir-sim",
+    "crates/ogar-genom",
 ]
 
 [workspace.package]
