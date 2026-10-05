@@ -1,7 +1,8 @@
 //! Invariant violations as structured evidence — identities and the
-//! offending normalized value, never a message string. Resolution to names
+//! offending comparison key, never a message string. Resolution to names
 //! is an output projection done by whoever renders the violation.
 
+use crate::change::KeyId;
 use ogar_dir_core::Guid128;
 
 /// Which end of a membership edge is missing or of the wrong kind.
@@ -18,15 +19,15 @@ pub enum Endpoint {
 pub enum Violation {
     /// Two or more active users own the same normalized primary SMTP.
     DuplicateSmtp {
-        /// Normalized address.
-        address: String,
+        /// Comparison key of the address.
+        key: KeyId,
         /// Every owner, sorted.
         owners: Vec<Guid128>,
     },
     /// Two or more active users own the same normalized UPN.
     DuplicateUpn {
-        /// Normalized UPN.
-        upn: String,
+        /// Comparison key of the UPN.
+        key: KeyId,
         /// Every owner, sorted.
         owners: Vec<Guid128>,
     },

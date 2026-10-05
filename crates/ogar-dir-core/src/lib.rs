@@ -10,7 +10,7 @@
 //! | axis  | carrier                                   | module      |
 //! |-------|-------------------------------------------|-------------|
 //! | WHO   | [`Guid128`] source object id              | [`guid`]    |
-//! | WHERE | scope [`Guid128`] + [`OuHhtl`]            | [`hhtl`]    |
+//! | WHERE | scope [`Guid128`] + [`OuHhtl`] (ingress); [`DirectoryScope`] × [`Dn128`] (execution) | [`hhtl`], [`dn128`] |
 //! | WHAT  | schema-defined attribute slots + [`ValuePool`] | [`record`], [`pool`], [`schema`] |
 //! | LINKS | [`DirEdge`] records, never inline lists   | [`edge`]    |
 //! | WHEN  | `observed_at_ms` only (provenance hook)   | [`record`]  |
@@ -28,6 +28,7 @@
 
 pub mod base64;
 pub mod dn;
+pub mod dn128;
 pub mod edge;
 pub mod guid;
 pub mod hhtl;
@@ -36,6 +37,7 @@ pub mod record;
 pub mod schema;
 
 pub use dn::{Dn, DnError, Rdn};
+pub use dn128::{DN_CHILDREN, DN_LEVELS, DirectoryScope, Dn128, Dn128Error};
 pub use edge::{DirEdge, EdgeEvidence, EdgeKind};
 pub use guid::{Guid128, GuidParseError};
 pub use hhtl::{HhtlError, OU_LEVELS, OuDictionary, OuHhtl};

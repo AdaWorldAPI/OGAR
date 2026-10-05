@@ -2,8 +2,34 @@
 //! diff *reports* them. An attribute change carries the value it expects to
 //! replace (`from`): applying it where `from` no longer holds is refused, and
 //! the same expectation becomes a plan operation's [`Precondition`](crate::Precondition).
+//!
+//! ## No strings past ingress
+//!
+//! ```text
+//!   external String ──► ingress (normalize) ──► cold label/value store
+//!                                                 │ stable ValueId / KeyId
+//!   ════════════════════ numeric substrate ════════╧═══════════════════════
+//!     Change · NodeState · Violation · ExecutionPlan carry ids only
+//!   ═══════════════════════════════════════════════════════════════════════
+//!   actuator / UI / evidence formatting ──► resolve id ──► String
+//! ```
+//!
+//! A [`ValueId`] names one exact raw value; a [`KeyId`] names its comparison
+//! form ([`normalize`]). Both are issued by the store that owns the
+//! observations, append-only, so an id keeps its meaning from observation
+//! through simulation, the desired version, reconciliation and the plan. They
+//! are not snapshot ordinals.
 
-use ogar_dir_core::{Guid128, OuHhtl};
+use ogar_dir_core::{Dn128, Guid128};
+
+/// Stable identity of one exact raw attribute value (case and spacing kept).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct ValueId(pub u32);
+
+/// Stable identity of a value's comparison form ([`normalize`]): two values
+/// the directory treats as equal share one key.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct KeyId(pub u32);
 
 /// Kind of a directory node.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -29,12 +55,13 @@ pub struct NodeState {
     pub kind: NodeKind,
     /// Enabled. Users only: groups have no enabled flag and carry `true`.
     pub active: bool,
-    /// Raw UPN.
-    pub upn: Option<String>,
-    /// Raw primary SMTP.
-    pub primary_smtp: Option<String>,
-    /// OU location (numeric HHTL, never a DN), if known.
-    pub ou: Option<OuHhtl>,
+    /// UPN.
+    pub upn: Option<ValueId>,
+    /// Primary SMTP.
+    pub primary_smtp: Option<ValueId>,
+    /// Hierarchy location (numeric, within the store's directory scope;
+    /// never a DN), if known.
+    pub dn: Option<Dn128>,
 }
 
 /// Attribute a change can set.
@@ -86,10 +113,10 @@ pub enum Change {
         node: Guid128,
         /// Which attribute.
         attribute: Attribute,
-        /// Value the change expects to replace (raw, as observed).
-        from: Option<String>,
-        /// New value (raw).
-        to: Option<String>,
+        /// Value the change expects to replace (as observed).
+        from: Option<ValueId>,
+        /// New value.
+        to: Option<ValueId>,
     },
     /// A node that did not exist comes into existence.
     CreateNode {
@@ -107,7 +134,8 @@ pub enum Change {
     },
 }
 
-/// Comparison form of a UPN / SMTP address: trimmed and lowercased with
+/// Comparison form of a UPN / SMTP address, computed once at ingress (the
+/// store maps each [`ValueId`] to its [`KeyId`]); never during execution: trimmed and lowercased with
 /// Unicode case mapping (Exchange and Entra compare these
 /// case-insensitively, and neither restricts them to ASCII).
 ///

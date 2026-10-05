@@ -51,7 +51,14 @@ never the reverse.
 
 ## 3. Versions and structural sharing
 
-An observation becomes an immutable `Snapshot` behind an `Arc`.
+An observation becomes an immutable `Snapshot` behind an `Arc`: two
+populations (users, groups), each at most **65,536** nodes with its own dense
+`u16` ordinal space (`UserOrdinal`, `GroupOrdinal`; no value is reserved), and
+a sparse membership relation of `(UserOrdinal, GroupOrdinal)` rows — never a
+dense matrix. The row lanes are 32-bit because mask-risc has no 16-bit lane;
+the values are `u16`. A membership whose endpoint does not resolve is kept by
+identity in a side table, never as a lane value, so no ordinal means
+"missing".
 
 A simulated version stores only `parent`, `origin` (rule and evidence) and
 `delta`. A read folds the lineage's deltas into an `Overlay`:
@@ -64,9 +71,13 @@ Queries run over the base lanes, gated by "still live" planes, and over the
 overlay rows; the two results are combined by summing the sinks or OR-ing the
 masks. The base is never copied.
 
-**Measured** (`tests/alloc.rs`, using a counting allocator): one membership
-mutation allocates **853 B at 1,000 users and 853 B at 100,000 users**. The
-same-root diff allocates 1,208 B at both sizes.
+**Measured** (`tests/alloc.rs`, counting allocator; 1,000 / 16,384 / 65,536
+users, the last being the bound): one mutation allocates the same at every
+size — membership add 517 B, remove 205 B, attribute set 277 B, node create
+357 B. A node delete allocates 711 B at 1,000 and 2,631 B at 16,384 and at
+65,536: its membership guard runs one `Count` program whose scratch is one
+tile, and a tile is capped at 16,384 rows. The same-root diff is 458–1,056 B,
+flat in the same way.
 
 The lifecycle stages are not a workflow enum:
 
@@ -122,9 +133,20 @@ no-population-intermediate rule.
   order, so the semantic output does not depend on input order (test t17). A
   duplicate node in one observation is refused rather than resolved by
   ingestion order.
-- **Strings.** Strings live in the store's append-only dictionaries; lanes
-  carry ids. A string is resolved only for compare-and-set checks, evidence and
-  plans.
+- **Strings.** External string → ingress (`VersionStore::intern`, the
+  observation) → the store's append-only label/value table → `ValueId` (raw
+  value) and `KeyId` (comparison form, `normalize`). `Change`, `NodeState`,
+  `Violation`, `Operation` and `Precondition` carry ids; compare-and-set,
+  uniqueness and rename ordering compare ids. A string comes back only at
+  egress (`value`, `key_label`). The table lives as long as the store, so an
+  id means the same value from observation through simulation, the desired
+  version, re-observation, reconciliation and the plan. Ordinals are never
+  used as value ids.
+- **Value identity, audited.** `ogar-dir-core::ValuePool` (`StrRef` offsets)
+  is per record batch and not deduplicated, so its offsets are not a stable
+  identity. lance-graph's `Dicts` is append-only for the store's lifetime and
+  is reused as the cold store; `ValueId` / `KeyId` (in `ogar-dir-sim`) are its
+  ids.
 - **Remaining materialisations, all at the evidence or reconcile boundary:**
   - offending membership rows and duplicate owners, bounded by the number of
     violations;
@@ -150,25 +172,23 @@ no-population-intermediate rule.
   The plan is the desired version's net intent rebased onto the latest
   observation: work reality already shows is dropped, and drift outside the
   intent is neither planned nor reverted. Not representable yet: a change of
-  `active`, of OU or of kind on a node that exists in both versions.
-- **V3 — OU-HHTL depth 8 (blocked, needs a decision).** `OuHhtl` is
-  `[u16; 8]`: 128 bits, per-parent segment ids up to 65,535. One `u64` holds
-  4 such levels. The "HHTL64 (8 × u8)" candidate fits 8 levels only by
-  narrowing a segment to 255 children per parent (zero ends the path), which changes the
-  meaning of every persisted id and dictionary, and it leaves no bit for a
-  domain. Domain context today is not per node at all: it is the scope of
-  the `OuDictionary` (one per AD domain / Entra tenant), so two domains in
-  one snapshot already have ambiguous segment ids. Options: (a) two `u64`
-  lanes, levels 0..3 and 4..7, matched by two `MatchU64` in one program;
-  exact, no ABI change, but not one compare; (b) narrow to 8 × u8 with a
-  refusal past 255 children; (c) a scope id lane plus (a). The snapshot now
-  also keeps the exact `OuHhtl` per node, so no option loses data.
+  `active`, of location or of kind on a node that exists in both versions.
+- **V3 — hierarchy coordinate (closed by ruling).** The hot location is
+  `Dn128` (`ogar-dir-core::dn128`): 16 levels × `u8`, at most 256 distinct
+  child codes per parent, depth as explicit side metadata (code 0 is a real
+  level, no byte is stolen). The domain or tenant is not a level: it is the
+  `DirectoryScope` of the observation, and a subtree query in another scope is
+  refused. Subtree selection is one program: `located ∧ depth ≥ d ∧
+  MatchFacet16Strided(prefix, care)`, the 16 bytes read in place. `OuHhtl`
+  (`[u16; 8]`) stays the ingress and record-wire format; `Dn128::from_ou_hhtl`
+  converts it and **fails closed** at a 257th child (`ChildCodeOverflow`) —
+  `from_ad` then refuses the whole observation, never hashing or truncating.
 - **V4 — "active" across AD and Entra (blocked, needs a decision).** Graph
   `accountEnabled` is ingested by `ogar-az` (null = unknown), but an Entra
   user is a different node from its AD source: `sync_edges` links them as
   evidence and keeps both. There is therefore no node on which "AD active
-  and Entra active" is a pair. Separately, `from_ad` treats a missing
-  `userAccountControl` as enabled: unknown currently collapses into true.
+  and Entra active" is a pair. **Recorded, not fixed:** `from_ad` treats a
+  missing `userAccountControl` as enabled — unknown collapses into true.
   Candidate policies: AD authoritative for synced users; Entra
   authoritative; active only if every known source says enabled (unknown
   ignored); active only if every source is known and enabled.
