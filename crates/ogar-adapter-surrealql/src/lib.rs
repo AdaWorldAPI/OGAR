@@ -203,6 +203,9 @@ pub fn parse_surrealql_ddl(_input: &str) -> Result<Vec<Class>, ParseError> {
             generate_warnings: false,
             feature_bearer_access: false,
             feature_surrealism: false,
+            // The fork's `main` grows quirk flags; the rest stays at the
+            // parser's defaults so a new field does not break this build.
+            ..Config::default()
         };
         let (query, ast) = Parser::enter_parse::<surrealdb_ast::Query>(_input, cfg)
             .map_err(|e| ParseError::Parse(format!("{e:?}")))?;
