@@ -248,6 +248,15 @@ pub enum PlanError {
         /// The node whose observed state cannot reach the desired one.
         node: Guid128,
     },
+    /// The latest observation and the desired version describe different
+    /// directories (`DirectoryScope`). Hierarchy codes are only meaningful
+    /// within one scope, so the two are not compared and no plan is derived.
+    ScopeMismatch {
+        /// The latest observation.
+        basis: VersionId,
+        /// The desired version.
+        target: VersionId,
+    },
 }
 
 #[cfg(test)]
