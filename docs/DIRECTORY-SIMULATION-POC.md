@@ -34,7 +34,7 @@ never the reverse.
 | dangling edge | Quack `negate(Semijoin)` lowered to `MaskOp::Gather` (anti-join) over the kind planes | membership lanes plus kind planes | offending rows only | a bitmap of membership-row size | yes | yes |
 | graph diff (same root) | overlay touched-key comparison | delta-sized | no | delta-sized | yes | yes |
 | graph diff (different roots, i.e. reconcile) | merge of two effective relations | O(n+m) set | effective pairs | O(n+m) | no (documented) | yes |
-| subtree selection | Quack `Cmp::MatchU64` over a packed OU-HHTL lane | `u64` lane plus a presence plane | no | a node bitmap | yes | yes |
+| subtree selection | Quack `located ∧ GeI32(depth) ∧ Cmp::MatchFacet16Strided` over the `Dn128` lane, read in place | `[[u8;16]]` + depth lanes, presence plane | no | a node bitmap | yes | yes |
 | version snapshot read | `Arc<Snapshot>` plus the folded lineage overlay | shared base | no | delta-sized | yes | yes |
 
 **Considered and not used.**
@@ -159,8 +159,8 @@ no-population-intermediate rule.
   additions-only diff. Persisting this store needs 128-bit keys and
   removal- and attribute-aware diffs upstream, or a dedicated directory dataset.
 - **V2 — node creation and deletion (closed).** `Change::CreateNode` /
-  `Change::DeleteNode` carry a `NodeState` (kind, active, UPN, primary SMTP,
-  `OuHhtl`): the content to create, or the compare-and-set expectation of a
+  `Change::DeleteNode` carry a `NodeState` (kind, active, UPN and primary
+  SMTP as `ValueId`, location as `Option<Dn128>`): the content to create, or the compare-and-set expectation of a
   delete. A delete is refused while the node still has a membership on
   either side, so an edge cannot be stranded; its plan precondition
   (`ObjectRemovable`) re-checks that against reality. `Change` and
