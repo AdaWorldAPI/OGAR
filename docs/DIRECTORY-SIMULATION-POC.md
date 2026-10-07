@@ -274,7 +274,19 @@ no-population-intermediate rule.
   attributes to their cloud names (`physicalDeliveryOfficeName` →
   `officeLocation`, `userAccountControl` → `accountEnabled` via
   `effective_active`, `mS-DS-ConsistencyGuid` → `onPremisesImmutableId`);
-  `ogar-ad` schema v4 adds `physicalDeliveryOfficeName`. **Open:** the
-  executor (lance-graph) does not yet compute these three violations.
+  `ogar-ad` schema v4 adds `physicalDeliveryOfficeName`. The executor
+  (lance-graph `validate::address_rules`) computes the three violations.
+- **V9 — `onPremisesExtensionAttributes` is a bag.** Graph returns it as
+  one object of fifteen `extensionAttributeN` keys; AD stores fifteen
+  separate attributes. Both land in one pooled slot of `AttrKind::Bag`:
+  member *n* is `extensionAttribute(n+1)`, an empty member is absent, and a
+  bag with no values sets no slot. Member names are not stored, so the AD
+  and Graph bags are byte-identical and the pair syncs `Same`. Read a
+  member with `ValuePool::bag_member(r, n)` (1-based, `BAG_LEN` = 15).
+  `ogar-ad` v5 gathers the bag (and stops reporting its members as
+  ignored); `ogar-az` v2 requests it. `onPremisesDistinguishedName` and
+  `onPremisesSamAccountName` were already ingested: the DN's OU path
+  (leaf CN and DC dropped, root first) is interned into the shared OU
+  dictionary, so a synced user's `ou_hhtl` equals its AD object's.
 - **V5 — CI.** CI builds `lance-graph-dir-sim` against the OGAR checkout, so
   it needs this OGAR PR merged first.
