@@ -438,23 +438,28 @@ impl RemoteMailboxOp {
             Recipient::RemoteMailbox(m) => m.routing,
             _ => None,
         };
+        let mut hits = Self::candidates(routing)
+            .into_iter()
+            .filter(|op| op.apply(from).as_ref() == Ok(to));
+        let first = hits.next()?;
+        hits.next().is_none().then_some(first)
+    }
+
+    /// Every op that could produce a recipient routed at `routing`.
+    fn candidates(routing: Option<ValueId>) -> Vec<Self> {
         let kinds = [
             RemoteKind::User,
             RemoteKind::Room,
             RemoteKind::Equipment,
             RemoteKind::Shared,
         ];
-        let mut candidates = vec![Self::EnableArchive, Self::DisableArchive, Self::Disable];
-        candidates.extend(kinds.map(Self::SetType));
+        let mut c = vec![Self::EnableArchive, Self::DisableArchive, Self::Disable];
+        c.extend(kinds.map(Self::SetType));
         if let Some(routing) = routing {
-            candidates.extend(kinds.map(|kind| Self::Enable { kind, routing }));
-            candidates.push(Self::CompleteMove { routing });
+            c.extend(kinds.map(|kind| Self::Enable { kind, routing }));
+            c.push(Self::CompleteMove { routing });
         }
-        let mut hits = candidates
-            .into_iter()
-            .filter(|op| op.apply(from).as_ref() == Ok(to));
-        let first = hits.next()?;
-        hits.next().is_none().then_some(first)
+        c
     }
 }
 
@@ -659,6 +664,47 @@ mod tests {
 
     // `between` names the one step joining two states, and nothing when no
     // single step does.
+    #[test]
+    fn no_two_ops_reach_the_same_recipient() {
+        // Walk every recipient reachable from "not mail-enabled" or an
+        // on-premises mailbox, and check that each (from, to) pair has at
+        // most one op. `between` relies on this; an op added later that
+        // breaks it fails here instead of silently returning None.
+        let mut seen = vec![Recipient::NotMailEnabled];
+        seen.extend(
+            [
+                ArchiveState::None,
+                ArchiveState::Provisioned,
+                ArchiveState::Deprovisioned,
+            ]
+            .map(|archive| Recipient::OnPremisesMailbox { archive }),
+        );
+        let mut i = 0;
+        while i < seen.len() {
+            let from = seen[i];
+            let mut reached: Vec<Recipient> = Vec::new();
+            for op in RemoteMailboxOp::candidates(Some(R)) {
+                if let Ok(to) = op.apply(&from) {
+                    assert!(!reached.contains(&to), "{from:?} -> {to:?} twice");
+                    reached.push(to);
+                    if !seen.contains(&to) {
+                        seen.push(to);
+                    }
+                }
+            }
+            i += 1;
+        }
+        // Every listed code is reachable: the remote ones as remote
+        // mailboxes, 2 and 16 as on-premises mailboxes with a cloud archive.
+        let mut codes: Vec<u32> = seen
+            .iter()
+            .filter_map(|r| r.attributes().remote_recipient_type)
+            .collect();
+        codes.sort_unstable();
+        codes.dedup();
+        assert_eq!(codes, REMOTE_RECIPIENT_TYPES.to_vec());
+    }
+
     #[test]
     fn between_finds_the_single_step() {
         let user = RemoteMailboxOp::Enable {
