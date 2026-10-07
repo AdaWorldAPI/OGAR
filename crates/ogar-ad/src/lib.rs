@@ -301,9 +301,9 @@ fn decode_id(name: &str, raw: &[u8], kind: u16) -> Option<Guid128> {
     let g = match name {
         "mS-DS-ConsistencyGuid" => Guid128::from_ms_bytes(raw).ok()?,
         "msDS-ExternalDirectoryObjectId" => {
-            let (label, g) = label::strip(std::str::from_utf8(raw).ok()?)?;
-            let expected = cloud_label(AdKind::from_code(kind)?)?;
-            (label == expected).then_some(g)?
+            // The kind's own template: a User_ id on a group does not match.
+            let label = cloud_label(AdKind::from_code(kind)?)?;
+            label.pattern().strip(std::str::from_utf8(raw).ok()?)?
         }
         _ => return None,
     };

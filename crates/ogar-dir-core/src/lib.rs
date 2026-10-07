@@ -42,7 +42,7 @@ pub use dn128::{DN_CHILDREN, DN_LEVELS, DirectoryScope, Dn128, Dn128Error};
 pub use edge::{DirEdge, EdgeEvidence, EdgeKind};
 pub use guid::{Guid128, GuidParseError};
 pub use hhtl::{HhtlError, OU_LEVELS, OuDictionary, OuHhtl};
-pub use label::CloudLabel;
+pub use label::{CloudLabel, LabelPattern};
 pub use pool::{PoolError, StrRef, ValuePool};
 pub use record::{ABI_MAJOR, ABI_MINOR, DirRecord, GUID_SLOTS, RECORD_BYTES, RecordError};
 pub use schema::{AttrDef, AttrKind, SchemaFamily, SchemaId, SlotSpace};

@@ -246,7 +246,9 @@ no-population-intermediate rule.
   bytes become a `Guid128`; `User_` / `Group_` is stripped and must match the
   object kind (else the entry is refused). Out:
   `ogar_ad::external_directory_object_id` adds the label back from the kind,
-  `ogar_ad::consistency_guid` returns the AD bytes. The label codec has one
+  `ogar_ad::consistency_guid` returns the AD bytes. The label is a template,
+  `LabelPattern("User_{0}")` (`{0}` = the id): strip matches the text around
+  `{0}`, render substitutes into it, a new kind is one more template. It has one
   definition, `ogar_dir_core::label`, which `ogar_dir_sim::identity`
   re-exports. **Open:** no executor ingests them
   yet; matching an on-premises node to its cloud object by these ids is the
