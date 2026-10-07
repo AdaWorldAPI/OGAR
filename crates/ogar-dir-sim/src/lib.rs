@@ -21,7 +21,7 @@ pub mod provenance;
 pub mod violation;
 
 pub use change::{
-    Attribute, Change, KeyId, NodeKind, NodeState, ValueId, effective_active, normalize,
+    Attribute, Change, KeyId, NodeKind, NodeState, Refusal, ValueId, effective_active, normalize,
 };
 pub use plan::{ExecutionPlan, Operation, PlanError, PlannedOp, Precondition};
 pub use provenance::{EvidenceRef, Origin, RuleId, TAG_DESIRED, TAG_OBSERVED, Version, VersionId};

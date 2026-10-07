@@ -8,13 +8,13 @@
 
 use crate::change::{Attribute, Change, KeyId, NodeState, ValueId};
 use crate::provenance::VersionId;
-use ogar_dir_core::Guid128;
+use ogar_dir_core::{Dn128, Guid128};
 use std::collections::{BTreeMap, BTreeSet};
 
 /// A technology-neutral directory operation.
 ///
 /// Variant order is load-bearing and mirrors [`Change`]: removals, deletes,
-/// attribute sets, creates, adds. A sorted plan is therefore a safe
+/// attribute sets, enable/disable, moves, creates, adds. A sorted plan is therefore a safe
 /// execution order (an address is freed before it is claimed; a node's
 /// edges are gone before it is, and it exists before it gains one).
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -39,6 +39,23 @@ pub enum Operation {
         attribute: Attribute,
         /// New value.
         value: Option<ValueId>,
+    },
+    /// Enable or disable `object`. A `bool`, not an `Option`: an actuator
+    /// cannot write "unknown", so a change towards an unknown flag has no
+    /// operation.
+    SetEnabled {
+        /// Object.
+        object: Guid128,
+        /// Enabled.
+        enabled: bool,
+    },
+    /// Move `object` to a known location (numeric; the actuator resolves
+    /// it to its own addressing at the boundary).
+    MoveObject {
+        /// Object.
+        object: Guid128,
+        /// Destination.
+        to: Dn128,
     },
     /// Create `object` with `state`.
     CreateObject {
@@ -65,6 +82,10 @@ pub enum Precondition {
     IsMember,
     /// The attribute must still hold this value.
     AttributeEquals(Option<ValueId>),
+    /// The enabled flag must still read this (`None`: still unreported).
+    EnabledEquals(Option<bool>),
+    /// The object must still be at this location (`None`: still unknown).
+    LocationEquals(Option<Dn128>),
     /// No object with this identity may exist yet.
     ObjectAbsent,
     /// The object must still exist in exactly this state and have no
@@ -82,9 +103,29 @@ pub struct PlannedOp {
     pub precondition: Precondition,
 }
 
-impl From<Change> for PlannedOp {
-    fn from(c: Change) -> Self {
-        match c {
+impl PlannedOp {
+    /// Lower one change. `Err(node)` when the change has no operation: its
+    /// target is an unknown flag or location, which no actuator can write.
+    ///
+    /// # Errors
+    ///
+    /// The node of a non-actuatable change.
+    pub fn lower(c: Change) -> Result<Self, Guid128> {
+        Ok(match c {
+            Change::SetActive { node, from, to } => Self {
+                op: Operation::SetEnabled {
+                    object: node,
+                    enabled: to.ok_or(node)?,
+                },
+                precondition: Precondition::EnabledEquals(from),
+            },
+            Change::SetLocation { node, from, to } => Self {
+                op: Operation::MoveObject {
+                    object: node,
+                    to: to.ok_or(node)?,
+                },
+                precondition: Precondition::LocationEquals(from),
+            },
             Change::CreateNode { node, state } => Self {
                 op: Operation::CreateObject {
                     object: node,
@@ -123,7 +164,7 @@ impl From<Change> for PlannedOp {
                 },
                 precondition: Precondition::AttributeEquals(from),
             },
-        }
+        })
     }
 }
 
@@ -142,17 +183,30 @@ impl ExecutionPlan {
     /// Lower a semantic diff `basis → target` into a plan. `key` maps a
     /// value to its comparison key (the store's ingress mapping), so rename
     /// dependencies follow the directory's notion of equal addresses.
+    ///
+    /// # Errors
+    ///
+    /// [`PlanError::NotActuatable`] if a change targets an unknown flag or
+    /// location; no partial plan is returned.
     pub fn from_diff(
         basis: VersionId,
         target: VersionId,
         diff: Vec<Change>,
         key: impl Fn(ValueId) -> KeyId,
-    ) -> Self {
-        let mut ops: Vec<PlannedOp> = diff.into_iter().map(PlannedOp::from).collect();
+    ) -> Result<Self, PlanError> {
+        let mut ops = diff
+            .into_iter()
+            .map(PlannedOp::lower)
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|node| PlanError::NotActuatable {
+                basis,
+                target,
+                node,
+            })?;
         ops.sort();
         ops.dedup();
         order_value_transfers(&mut ops, &key);
-        Self { basis, target, ops }
+        Ok(Self { basis, target, ops })
     }
 }
 
@@ -236,16 +290,27 @@ pub enum PlanError {
     /// The target is unknown.
     UnknownVersion(VersionId),
     /// The latest observation (`basis`) already holds `node`, which the
-    /// desired version (`target`) creates, but with a kind, enabled flag or
-    /// OU that no change can converge yet (the change algebra sets only UPN
-    /// and primary SMTP). Rather than claim the create is done, no plan is
-    /// derived; simulate again from the new observation.
+    /// desired version (`target`) creates, but with another kind. Kind is
+    /// identity and no change alters it, so the create is neither done nor
+    /// doable; simulate again from the new observation. (Every other field
+    /// of an existing node converges through a compare-and-set change.)
     Unconvergeable {
         /// The latest observation.
         basis: VersionId,
         /// The desired version.
         target: VersionId,
         /// The node whose observed state cannot reach the desired one.
+        node: Guid128,
+    },
+    /// The desired version changes `node` towards an unknown enabled flag or
+    /// location. "Unknown" is an observation, not an intention: no actuator
+    /// can write it, so no plan is derived.
+    NotActuatable {
+        /// The observation.
+        basis: VersionId,
+        /// The desired version.
+        target: VersionId,
+        /// The node.
         node: Guid128,
     },
     /// The latest observation and the desired version describe different
@@ -279,7 +344,8 @@ mod tests {
             user: Guid128([1; 16]),
             group: Guid128([2; 16]),
         };
-        let p = ExecutionPlan::from_diff(VersionId(0), VersionId(1), vec![c.clone(), c], key);
+        let p =
+            ExecutionPlan::from_diff(VersionId(0), VersionId(1), vec![c.clone(), c], key).unwrap();
         assert_eq!(p.ops.len(), 1);
     }
 
@@ -330,7 +396,8 @@ mod tests {
                 },
             ],
             key,
-        );
+        )
+        .unwrap();
         let ops: Vec<_> = plan.ops.iter().map(|p| &p.op).collect();
         assert!(matches!(ops[0], Operation::RemoveGroupMember { member, .. } if *member == g(5)));
         // The delete frees value 70 before the create claims it.
@@ -374,7 +441,8 @@ mod tests {
             VersionId(1),
             vec![rename(1, 10, 21), rename(2, 20, 30), rename(3, 31, 40)],
             key,
-        );
+        )
+        .unwrap();
         assert_eq!(renamed(&plan), vec![3, 2, 1]);
     }
 
@@ -385,7 +453,8 @@ mod tests {
             VersionId(1),
             vec![rename(2, 50, 60), rename(1, 70, 80)],
             key,
-        );
+        )
+        .unwrap();
         assert_eq!(renamed(&plan), vec![1, 2]);
         // A swap cannot be ordered: both stay, in canonical order.
         let swap = ExecutionPlan::from_diff(
@@ -393,8 +462,105 @@ mod tests {
             VersionId(1),
             vec![rename(1, 10, 20), rename(2, 20, 10)],
             key,
-        );
+        )
+        .unwrap();
         assert_eq!(renamed(&swap), vec![1, 2]);
+    }
+
+    fn dn(l: &[u8]) -> Dn128 {
+        Dn128::new(l).unwrap()
+    }
+
+    // SetActive / SetLocation lower to typed operations carrying the
+    // observed value as their precondition (including an observed
+    // `None`), and the result is the same whatever the input order.
+    #[test]
+    fn property_changes_lower_with_their_observed_precondition() {
+        let g = |n| Guid128([n; 16]);
+        let cs = vec![
+            Change::SetLocation {
+                node: g(2),
+                from: None,
+                to: Some(dn(&[4, 1])),
+            },
+            Change::SetActive {
+                node: g(1),
+                from: Some(true),
+                to: Some(false),
+            },
+            Change::SetActive {
+                node: g(3),
+                from: None,
+                to: Some(true),
+            },
+        ];
+        let plan = ExecutionPlan::from_diff(VersionId(0), VersionId(1), cs.clone(), key).unwrap();
+        let mut rev = cs;
+        rev.reverse();
+        assert_eq!(
+            ExecutionPlan::from_diff(VersionId(0), VersionId(1), rev, key).unwrap(),
+            plan,
+            "deterministic"
+        );
+        assert_eq!(
+            plan.ops,
+            vec![
+                PlannedOp {
+                    op: Operation::SetEnabled {
+                        object: g(1),
+                        enabled: false
+                    },
+                    precondition: Precondition::EnabledEquals(Some(true)),
+                },
+                PlannedOp {
+                    op: Operation::SetEnabled {
+                        object: g(3),
+                        enabled: true
+                    },
+                    precondition: Precondition::EnabledEquals(None),
+                },
+                PlannedOp {
+                    op: Operation::MoveObject {
+                        object: g(2),
+                        to: dn(&[4, 1])
+                    },
+                    precondition: Precondition::LocationEquals(None),
+                },
+            ]
+        );
+    }
+
+    // "Unknown" is never an operation: a change towards an unknown flag or
+    // location refuses the whole plan instead of being dropped or guessed.
+    #[test]
+    fn a_change_towards_unknown_is_not_actuatable() {
+        let g = Guid128([5; 16]);
+        for c in [
+            Change::SetActive {
+                node: g,
+                from: Some(true),
+                to: None,
+            },
+            Change::SetLocation {
+                node: g,
+                from: Some(dn(&[1])),
+                to: None,
+            },
+        ] {
+            assert_eq!(
+                ExecutionPlan::from_diff(
+                    VersionId(0),
+                    VersionId(1),
+                    vec![rename(1, 10, 20), c],
+                    key
+                ),
+                Err(PlanError::NotActuatable {
+                    basis: VersionId(0),
+                    target: VersionId(1),
+                    node: g
+                })
+            );
+        }
     }
 
     #[test]
@@ -416,7 +582,8 @@ mod tests {
                 },
             ],
             key,
-        );
+        )
+        .unwrap();
         assert_eq!(
             plan.ops[1].op,
             Operation::AddGroupMember {
