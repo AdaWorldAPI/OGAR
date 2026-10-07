@@ -286,7 +286,7 @@ mod tests {
     fn state(kind: NodeKind) -> NodeState {
         NodeState {
             kind,
-            active: true,
+            active: Some(true),
             upn: None,
             primary_smtp: None,
             dn: None,
