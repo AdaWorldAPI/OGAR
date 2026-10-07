@@ -383,17 +383,14 @@ impl RemoteMailboxOp {
         };
         let live = |m: &RemoteMailbox| m.mailbox != MailboxState::Deprovisioned;
         match (self, from) {
-            (Self::Enable { kind, routing }, Recipient::NotMailEnabled) => {
-                if kind == RemoteKind::Shared {
-                    return Err(NotInTable);
-                }
-                remote(
-                    kind,
-                    MailboxState::Provisioned,
-                    ArchiveState::None,
-                    Some(routing),
-                )
-            }
+            // A shared mailbox has no "provisioned" code (97 is not listed),
+            // so the table refuses it; no separate check.
+            (Self::Enable { kind, routing }, Recipient::NotMailEnabled) => remote(
+                kind,
+                MailboxState::Provisioned,
+                ArchiveState::None,
+                Some(routing),
+            ),
             (Self::EnableArchive, Recipient::RemoteMailbox(m))
                 if live(m) && m.archive != ArchiveState::Provisioned =>
             {
