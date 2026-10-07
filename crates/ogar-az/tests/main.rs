@@ -19,13 +19,23 @@ fn schema_table_is_well_formed() {
 
 #[test]
 fn select_is_derived_from_the_schema() {
-    let q = select_query(1);
-    let names: Vec<&str> = q.split(',').collect();
-    assert_eq!(names[0], "id");
-    assert_eq!(names.len(), 1 + SCHEMA_V1.len());
-    for d in SCHEMA_V1 {
-        assert!(names.contains(&d.name), "{} missing from $select", d.name);
+    // Each version selects exactly the attributes that existed by then, and
+    // the current version selects all of them.
+    for v in 1..=ogar_az::SCHEMA_VERSION {
+        let q = select_query(v);
+        let names: Vec<&str> = q.split(',').collect();
+        assert_eq!(names[0], "id");
+        let want: Vec<&str> = SCHEMA_V1
+            .iter()
+            .filter(|d| d.since <= v)
+            .map(|d| d.name)
+            .collect();
+        assert_eq!(names[1..], want[..], "v{v}");
     }
+    assert_eq!(
+        select_query(ogar_az::SCHEMA_VERSION).split(',').count(),
+        1 + SCHEMA_V1.len()
+    );
     // a version before any attribute existed selects only the identity
     assert_eq!(select_query(0), "id");
     assert!(users_url(1, 5000).ends_with("&$top=999"));
@@ -140,4 +150,108 @@ fn attr_str_refuses_multi_values_and_attr_multi_reads_them() {
         Vec::<&str>::new()
     );
     assert_eq!(ogar_az::attr_multi(&page.records[0], &pool, "mail"), None);
+}
+
+// Every synced pair names an attribute each schema really ingests, and each
+// side is mapped once — so a rename on either side fails here.
+#[test]
+fn every_synced_attribute_exists_on_both_sides_once() {
+    use ogar_az::{SYNCED, SyncTransform, cloud_of};
+    for s in SYNCED {
+        assert!(
+            ogar_ad::SCHEMA_V1.iter().any(|d| d.name == s.ad),
+            "AD {}",
+            s.ad
+        );
+        assert!(
+            ogar_az::SCHEMA_V1.iter().any(|d| d.name == s.cloud),
+            "cloud {}",
+            s.cloud
+        );
+        assert_eq!(
+            SYNCED.iter().filter(|o| o.ad == s.ad).count(),
+            1,
+            "{}",
+            s.ad
+        );
+        assert_eq!(
+            SYNCED.iter().filter(|o| o.cloud == s.cloud).count(),
+            1,
+            "{}",
+            s.cloud
+        );
+    }
+    let office = cloud_of("physicalDeliveryOfficeName").unwrap();
+    assert_eq!(
+        (office.cloud, office.transform),
+        ("officeLocation", SyncTransform::Same)
+    );
+    assert_eq!(
+        cloud_of("userAccountControl").unwrap().cloud,
+        "accountEnabled"
+    );
+    assert_eq!(
+        cloud_of("targetAddress"),
+        None,
+        "the routing address is not synced"
+    );
+}
+
+// onPremisesExtensionAttributes is a bag: one positional slot, entry n is
+// extensionAttribute(n+1), null is absent. The AD side gathers its 15
+// numbered attributes into the identical bytes, so the pair syncs Same.
+#[test]
+fn the_extension_attribute_bag_matches_ad() {
+    let page = r#"{"value":[{"id":"7a3c9e11-2b44-4c6d-9e8f-0123456789ab",
+        "onPremisesExtensionAttributes":{"extensionAttribute1":"CC-4711",
+        "extensionAttribute2":null,"extensionAttribute7":"Berlin"}}]}"#;
+    let (mut d, mut p) = (OuDictionary::new(), ValuePool::new());
+    let rec = ingest_page(page, tenant(), &mut d, &mut p, 0)
+        .unwrap()
+        .records[0];
+    let slot = SCHEMA_V1
+        .iter()
+        .find(|a| a.name == "onPremisesExtensionAttributes")
+        .unwrap()
+        .slot as usize;
+    let r = rec.str_ref(slot).unwrap();
+    assert_eq!(p.bag_member(r, 1), Some(&b"CC-4711"[..]));
+    assert_eq!(p.bag_member(r, 7), Some(&b"Berlin"[..]));
+    assert_eq!(p.bag_member(r, 2), None, "null is absent");
+    assert_eq!(p.bag_member(r, 0), None);
+    assert_eq!(p.bag_member(r, 16), None);
+    assert_eq!(p.get_multi(r).unwrap().len(), ogar_dir_core::BAG_LEN);
+
+    let ldif = "dn: CN=E,OU=Staff,DC=example,DC=de\nobjectGUID:: 4AQlP4lP0xGaDAMF6CwzAQ==\nobjectClass: user\nextensionAttribute1: CC-4711\nextensionAttribute7: Berlin\n";
+    let (mut ad_d, mut ad_p) = (OuDictionary::new(), ValuePool::new());
+    let ad = ogar_ad::encode(
+        &ogar_ad::ldif::parse(ldif).unwrap()[0],
+        tenant(),
+        &mut ad_d,
+        &mut ad_p,
+        0,
+    )
+    .unwrap();
+    assert!(ad.ignored.is_empty(), "{:?}", ad.ignored);
+    let ad_slot = ogar_ad::SCHEMA_V1
+        .iter()
+        .find(|a| a.name == "extensionAttribute")
+        .unwrap()
+        .slot as usize;
+    assert_eq!(
+        ad_p.get(ad.record.str_ref(ad_slot).unwrap()),
+        p.get(r),
+        "the two bags are byte-identical"
+    );
+
+    // All null: no slot at all, as for any absent attribute.
+    let empty = r#"{"value":[{"id":"7a3c9e11-2b44-4c6d-9e8f-0123456789ab",
+        "onPremisesExtensionAttributes":{"extensionAttribute1":null}}]}"#;
+    let rec = ingest_page(empty, tenant(), &mut d, &mut p, 0)
+        .unwrap()
+        .records[0];
+    assert_eq!(rec.str_ref(slot), None);
+    // v2 requests the bag; v1 did not.
+    assert!(select_query(2).contains("onPremisesExtensionAttributes"));
+    assert!(!select_query(1).contains("onPremisesExtensionAttributes"));
 }

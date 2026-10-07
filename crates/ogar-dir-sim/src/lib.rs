@@ -26,10 +26,10 @@ pub use change::{
     Attribute, Change, KeyId, NodeKind, NodeState, Refusal, ValueId, effective_active, normalize,
 };
 pub use exchange::{
-    ArchiveState, LifecycleRefusal, MailboxState, Recipient, RecipientAttributes, RemoteKind,
-    RemoteMailbox, RemoteMailboxOp,
+    AddressTemplate, ArchiveState, LifecycleRefusal, MailboxState, ROUTING, Recipient,
+    RecipientAttributes, RemoteKind, RemoteMailbox, RemoteMailboxOp, routing_parts,
 };
 pub use identity::{CloudLabel, ExternalObjectId, SourceAnchor};
 pub use plan::{ExecutionPlan, Operation, PlanError, PlannedOp, Precondition};
 pub use provenance::{EvidenceRef, Origin, RuleId, TAG_DESIRED, TAG_OBSERVED, Version, VersionId};
-pub use violation::{Endpoint, Violation};
+pub use violation::{AddressRole, Endpoint, Violation};

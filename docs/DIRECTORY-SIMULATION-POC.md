@@ -253,5 +253,40 @@ no-population-intermediate rule.
   re-exports. **Open:** no executor ingests them
   yet; matching an on-premises node to its cloud object by these ids is the
   lance-graph side.
+- **V8 — Addresses are one space; the routing address is the alias.**
+  AD holds a remote mailbox's addresses as `proxyAddresses`
+  (`SMTP:{primary}`, `smtp:{secondary}`,
+  `smtp:{alias}@{tenant}.mail.onmicrosoft.com`) plus `targetAddress`
+  (`SMTP:{alias}@{tenant}.mail.onmicrosoft.com`); Exchange Online shows the
+  same set as `PrimarySmtpAddress` and `EmailAddresses`. The alias is
+  `mailNickname`. Vocabulary: `exchange::ROUTING` is the template
+  `{0}@{1}.mail.onmicrosoft.com` (`AddressTemplate`, render / strict match);
+  `routing_parts` returns `(alias, tenant)`. Three invariants, as
+  `Violation`s: `RoutingMismatch` (the routing address is not the template
+  for the node's own alias), `RoutingNotInProxies` (the mailbox does not
+  own its routing address as an SMTP proxy), and `AddressConflict` — UPN,
+  SMTP, `mail` and routing addresses share one key space, so a UPN or SMTP
+  address that is another object's SMTP, `mail` or routing address
+  conflicts, and so does a `mail` held by another object (an admin account
+  with `mail` set as a password-reset target but no mailbox). Each holder
+  carries its `AddressRole`; same-attribute collisions stay
+  `DuplicateSmtp` / `DuplicateUpn`. Sync: `ogar_az::SYNCED` maps the AD
+  attributes to their cloud names (`physicalDeliveryOfficeName` →
+  `officeLocation`, `userAccountControl` → `accountEnabled` via
+  `effective_active`, `mS-DS-ConsistencyGuid` → `onPremisesImmutableId`);
+  `ogar-ad` schema v4 adds `physicalDeliveryOfficeName`. The executor
+  (lance-graph `validate::address_rules`) computes the three violations.
+- **V9 — `onPremisesExtensionAttributes` is a bag.** Graph returns it as
+  one object of fifteen `extensionAttributeN` keys; AD stores fifteen
+  separate attributes. Both land in one pooled slot of `AttrKind::Bag`:
+  member *n* is `extensionAttribute(n+1)`, an empty member is absent, and a
+  bag with no values sets no slot. Member names are not stored, so the AD
+  and Graph bags are byte-identical and the pair syncs `Same`. Read a
+  member with `ValuePool::bag_member(r, n)` (1-based, `BAG_LEN` = 15).
+  `ogar-ad` v5 gathers the bag (and stops reporting its members as
+  ignored); `ogar-az` v2 requests it. `onPremisesDistinguishedName` and
+  `onPremisesSamAccountName` were already ingested: the DN's OU path
+  (leaf CN and DC dropped, root first) is interned into the shared OU
+  dictionary, so a synced user's `ou_hhtl` equals its AD object's.
 - **V5 — CI.** CI builds `lance-graph-dir-sim` against the OGAR checkout, so
   it needs this OGAR PR merged first.

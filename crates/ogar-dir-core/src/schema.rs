@@ -59,11 +59,20 @@ pub enum AttrKind {
     U32,
     /// Boolean (0/1), numeric slot. Absence (presence bit clear) = unknown/null.
     Bool,
+    /// A positional bag of [`BAG_LEN`] string members, one pooled
+    /// multi-value slot: entry `n` is member `n + 1`, an empty entry is an
+    /// absent member (LDAP has no empty values; Graph reports `null`). The
+    /// encoder gathers the members (AD `extensionAttribute1`..`15`, Graph
+    /// `onPremisesExtensionAttributes`), so no member name is stored.
+    Bag,
     /// A 128-bit id, inline guid slot (textual byte order). The encoder
     /// converts the source spelling (raw mixed-endian bytes, a labeled
     /// `User_<guid>`) on the way in; nothing about it is stored as text.
     Guid,
 }
+
+/// Members of an [`AttrKind::Bag`]: the 15 extension attributes.
+pub const BAG_LEN: usize = 15;
 
 /// Which slot space an attribute occupies.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -84,7 +93,7 @@ impl AttrKind {
     /// The slot space this kind occupies.
     pub fn space(self) -> SlotSpace {
         match self {
-            Self::Str | Self::Bytes | Self::MultiStr => SlotSpace::Pooled,
+            Self::Str | Self::Bytes | Self::MultiStr | Self::Bag => SlotSpace::Pooled,
             Self::U32 | Self::Bool => SlotSpace::Numeric,
             Self::Guid => SlotSpace::Guid,
         }

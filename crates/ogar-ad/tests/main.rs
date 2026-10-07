@@ -334,3 +334,46 @@ fn a_wrong_or_missing_label_is_refused() {
         assert_eq!(hybrid(class, &value).unwrap_err(), bad, "{class} {value}");
     }
 }
+
+// v4: the office is kept raw; it becomes the cloud's officeLocation.
+#[test]
+fn the_office_is_kept_raw() {
+    let text = "dn: CN=A,OU=Staff,DC=example,DC=test\nobjectGUID:: 4AQlP4lP0xGaDAMF6CwzAQ==\nobjectClass: user\nphysicalDeliveryOfficeName: Berlin 4.12\n";
+    let e = &ldif::parse(text).unwrap()[0];
+    let (mut dict, mut pool) = (OuDictionary::new(), ValuePool::new());
+    let enc = encode(e, domain(), &mut dict, &mut pool, 1).unwrap();
+    assert!(enc.ignored.is_empty(), "{:?}", enc.ignored);
+    let r = enc.record;
+    assert_eq!(
+        pool.get(r.str_ref(slot("physicalDeliveryOfficeName")).unwrap())
+            .unwrap(),
+        b"Berlin 4.12"
+    );
+}
+
+// v5: extensionAttribute1..15 are one bag; numbered members outside 1..15
+// stay unknown attributes; a member with two values is refused.
+#[test]
+fn extension_attributes_are_one_bag() {
+    let base = "dn: CN=A,OU=Staff,DC=example,DC=test\nobjectGUID:: 4AQlP4lP0xGaDAMF6CwzAQ==\nobjectClass: user\n";
+    let enc = |extra: &str| {
+        let e = ldif::parse(&format!("{base}{extra}")).unwrap().remove(0);
+        let (mut dict, mut pool) = (OuDictionary::new(), ValuePool::new());
+        encode(&e, domain(), &mut dict, &mut pool, 1).map(|x| (x, pool))
+    };
+    let (e, pool) = enc("extensionAttribute15: last\nextensionAttribute3: three\nextensionAttribute16: no\nextensionAttribute0: no\n").unwrap();
+    let r = e.record.str_ref(slot("extensionAttribute")).unwrap();
+    assert_eq!(pool.bag_member(r, 15), Some(&b"last"[..]));
+    assert_eq!(pool.bag_member(r, 3), Some(&b"three"[..]));
+    assert_eq!(pool.bag_member(r, 1), None);
+    assert_eq!(
+        e.ignored,
+        vec!["extensionAttribute16", "extensionAttribute0"]
+    );
+    assert_eq!(
+        enc("extensionAttribute2: a\nextensionAttribute2: b\n").unwrap_err(),
+        ogar_ad::AdError::MultipleValues("extensionAttribute")
+    );
+    let (none, _) = enc("").unwrap();
+    assert_eq!(none.record.str_ref(slot("extensionAttribute")), None);
+}

@@ -11,3 +11,6 @@ description = "Microsoft Entra ID / Microsoft Graph source-native schema for OGA
 [dependencies]
 ogar-dir-core = { path = "../ogar-dir-core" }
 serde_json = "1.0"
+
+[dev-dependencies]
+ogar-ad = { path = "../ogar-ad" }

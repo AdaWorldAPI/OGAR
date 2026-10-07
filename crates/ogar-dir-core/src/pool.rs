@@ -89,6 +89,13 @@ impl ValuePool {
     }
 
     /// Decode a multi-valued ref, `None` if malformed or out of range.
+    /// Member `n` (1-based) of a bag slot ([`crate::AttrKind::Bag`]);
+    /// `None` if out of range or absent (empty).
+    pub fn bag_member(&self, r: StrRef, n: usize) -> Option<&[u8]> {
+        let m = *self.get_multi(r)?.get(n.checked_sub(1)?)?;
+        (!m.is_empty()).then_some(m)
+    }
+
     pub fn get_multi(&self, r: StrRef) -> Option<Vec<&[u8]>> {
         let mut b = self.get(r)?;
         let mut out = Vec::new();

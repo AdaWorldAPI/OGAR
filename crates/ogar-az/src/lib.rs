@@ -20,13 +20,14 @@ use ogar_dir_core::dn::Dn;
 use ogar_dir_core::edge::{DirEdge, EdgeEvidence, EdgeKind};
 use ogar_dir_core::record::{FLAG_DN_UNENCODED, FLAG_NON_OU_CONTAINER};
 use ogar_dir_core::{
-    AttrDef, AttrKind, DirRecord, Guid128, OuDictionary, SchemaFamily, SchemaId, ValuePool, base64,
+    AttrDef, AttrKind, BAG_LEN, DirRecord, Guid128, OuDictionary, SchemaFamily, SchemaId,
+    ValuePool, base64,
 };
 use serde_json::Value;
 use std::collections::HashSet;
 
 /// Encoder schema version understood by this crate.
-pub const SCHEMA_VERSION: u16 = 1;
+pub const SCHEMA_VERSION: u16 = 2;
 /// This crate's schema id.
 pub const SCHEMA: SchemaId = SchemaId {
     family: SchemaFamily::MsGraph,
@@ -163,7 +164,111 @@ pub const SCHEMA_V1: &[AttrDef] = &[
         kind: AttrKind::Bool,
         since: 1,
     },
+    AttrDef {
+        name: "onPremisesExtensionAttributes",
+        slot: 18,
+        kind: AttrKind::Bag,
+        since: 2,
+    },
 ];
+
+/// How an AD value becomes its cloud counterpart under Entra Connect sync.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum SyncTransform {
+    /// The same value.
+    Same,
+    /// `accountEnabled` is `userAccountControl` without bit `0x2`
+    /// (ACCOUNTDISABLE); how the two flags combine is
+    /// `ogar_dir_sim::effective_active`.
+    AccountEnabled,
+    /// `onPremisesImmutableId` is the base64 of the 16
+    /// `mS-DS-ConsistencyGuid` bytes.
+    ImmutableId,
+    /// The cloud value is the AD value prefixed `onPremises*` evidence
+    /// (DN, sAMAccountName, SID): copied, not mapped to a cloud property.
+    OnPremisesEvidence,
+}
+
+/// One attribute AD and the cloud both hold, under their own names.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct SyncedAttribute {
+    /// The AD attribute (`ogar_ad::SCHEMA_V1`).
+    pub ad: &'static str,
+    /// The Graph property ([`SCHEMA_V1`]).
+    pub cloud: &'static str,
+    /// How the value travels.
+    pub transform: SyncTransform,
+}
+
+/// The AD → cloud correspondence for the attributes both schemas ingest.
+/// The cloud object id itself is not here: it is the record's identity, and
+/// AD's `msDS-ExternalDirectoryObjectId` is that id with its `User_` label
+/// (`ogar_dir_core::label`).
+pub const SYNCED: &[SyncedAttribute] = &[
+    synced(
+        "userPrincipalName",
+        "userPrincipalName",
+        SyncTransform::Same,
+    ),
+    synced("displayName", "displayName", SyncTransform::Same),
+    synced("givenName", "givenName", SyncTransform::Same),
+    synced("sn", "surname", SyncTransform::Same),
+    synced("mail", "mail", SyncTransform::Same),
+    synced("mailNickname", "mailNickname", SyncTransform::Same),
+    synced("proxyAddresses", "proxyAddresses", SyncTransform::Same),
+    synced(
+        "extensionAttribute",
+        "onPremisesExtensionAttributes",
+        SyncTransform::Same,
+    ),
+    synced(
+        "physicalDeliveryOfficeName",
+        "officeLocation",
+        SyncTransform::Same,
+    ),
+    synced(
+        "userAccountControl",
+        "accountEnabled",
+        SyncTransform::AccountEnabled,
+    ),
+    synced(
+        "mS-DS-ConsistencyGuid",
+        "onPremisesImmutableId",
+        SyncTransform::ImmutableId,
+    ),
+    synced(
+        "distinguishedName",
+        "onPremisesDistinguishedName",
+        SyncTransform::OnPremisesEvidence,
+    ),
+    synced(
+        "sAMAccountName",
+        "onPremisesSamAccountName",
+        SyncTransform::OnPremisesEvidence,
+    ),
+    synced(
+        "objectSid",
+        "onPremisesSecurityIdentifier",
+        SyncTransform::OnPremisesEvidence,
+    ),
+];
+
+const fn synced(
+    ad: &'static str,
+    cloud: &'static str,
+    transform: SyncTransform,
+) -> SyncedAttribute {
+    SyncedAttribute {
+        ad,
+        cloud,
+        transform,
+    }
+}
+
+/// The cloud counterpart of an AD attribute, if it is synced.
+pub fn cloud_of(ad: &str) -> Option<&'static SyncedAttribute> {
+    SYNCED.iter().find(|s| s.ad.eq_ignore_ascii_case(ad))
+}
 
 /// AZ object kinds (family-scoped codes). Only users are ingested in v1.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -255,6 +360,21 @@ pub fn encode_user(
                 let s = v.as_str().ok_or_else(bad)?;
                 let r = pool.push(s.as_bytes()).map_err(|e| st(&e))?;
                 rec.set_str(def.slot as usize, r).map_err(|e| st(&e))?;
+            }
+            AttrKind::Bag => {
+                // `{"extensionAttribute1": "x", "extensionAttribute2": null, …}`
+                let o = v.as_object().ok_or_else(bad)?;
+                let mut members: Vec<&str> = Vec::with_capacity(BAG_LEN);
+                for n in 1..=BAG_LEN {
+                    match o.get(&format!("extensionAttribute{n}")) {
+                        None | Some(Value::Null) => members.push(""),
+                        Some(m) => members.push(m.as_str().ok_or_else(bad)?),
+                    }
+                }
+                if members.iter().any(|m| !m.is_empty()) {
+                    let r = pool.push_multi(&members).map_err(|e| st(&e))?;
+                    rec.set_str(def.slot as usize, r).map_err(|e| st(&e))?;
+                }
             }
             AttrKind::MultiStr => {
                 let arr = v.as_array().ok_or_else(bad)?;
