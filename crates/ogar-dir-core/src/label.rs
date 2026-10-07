@@ -108,6 +108,10 @@ mod tests {
         for t in ["User_", "{0}{0}"] {
             assert_eq!(LabelPattern(t).strip(&format!("User_{ID}")), None, "{t}");
         }
+        // Even when the text would render back: a second {0} is refused, not
+        // left as a literal.
+        let two = LabelPattern("{0}x{0}");
+        assert_eq!(two.strip(&format!("{ID}x{{0}}")), None);
     }
 
     #[test]
