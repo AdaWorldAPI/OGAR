@@ -211,5 +211,27 @@ no-population-intermediate rule.
   separate node from its AD source (`sync_edges` links them as evidence), and
   no observation path merges the two, so today each node carries its one
   source's flag.
+- **V6 — Exchange hybrid recipients (2026-10-07).** What an object is to
+  Exchange comes from `msExchRemoteRecipientType` (flags: provision /
+  migrated / deprovision mailbox, provision / deprovision archive, room,
+  equipment, both = shared), `msExchRecipientDisplayType`,
+  `msExchRecipientTypeDetails` and `targetAddress` — not from the account's
+  enabled flag: a shared, room or equipment mailbox is a disabled account
+  and still a recipient. `ogar-ad` schema v2 ingests the triplet raw (type
+  details as its 64-bit decimal text). `ogar_dir_sim::exchange::Recipient`
+  decodes it strictly: exactly the 26 remote-recipient-type values the
+  hybrid lifecycle produces (with the display and type codes that go with
+  them, and the routing address while the mailbox exists), an on-premises
+  mailbox with its remote-archive state, not mail-enabled — anything else
+  stays raw (`Other`), never guessed. `RemoteMailboxOp` is the lifecycle:
+  `Enable` (user / room / equipment, with routing address), `EnableArchive`,
+  `DisableArchive`, `CompleteMove`, `SetType`, `Disable`; each step refuses
+  outside the table. `NodeState::recipient` (`None` = not read, distinct
+  from not mail-enabled) changes by compare-and-set (`SetRecipient`); a plan
+  lowers it to the single lifecycle step joining the two roles
+  (`Operation::RemoteMailbox`, precondition `RecipientEquals`), or refuses
+  (`NotActuatable`) when no single step does. **Open:** the `smtp:` routing
+  proxy `Enable-RemoteMailbox` stamps is not added to the proxy relation by
+  the vocabulary; the executor derives ownership of the routing address.
 - **V5 — CI.** CI builds `lance-graph-dir-sim` against the OGAR checkout, so
   it needs this OGAR PR merged first.

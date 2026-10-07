@@ -16,12 +16,17 @@
 //! Design: `docs/DIRECTORY-SIMULATION-POC.md`.
 
 pub mod change;
+pub mod exchange;
 pub mod plan;
 pub mod provenance;
 pub mod violation;
 
 pub use change::{
     Attribute, Change, KeyId, NodeKind, NodeState, Refusal, ValueId, effective_active, normalize,
+};
+pub use exchange::{
+    ArchiveState, LifecycleRefusal, MailboxState, Recipient, RecipientAttributes, RemoteKind,
+    RemoteMailbox, RemoteMailboxOp,
 };
 pub use plan::{ExecutionPlan, Operation, PlanError, PlannedOp, Precondition};
 pub use provenance::{EvidenceRef, Origin, RuleId, TAG_DESIRED, TAG_OBSERVED, Version, VersionId};

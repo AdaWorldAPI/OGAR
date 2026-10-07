@@ -23,14 +23,15 @@ use ogar_dir_core::{
 };
 
 /// Encoder schema version understood by this crate.
-pub const SCHEMA_VERSION: u16 = 1;
+pub const SCHEMA_VERSION: u16 = 2;
 /// This crate's schema id.
 pub const SCHEMA: SchemaId = SchemaId {
     family: SchemaFamily::AdDs,
     version: SCHEMA_VERSION,
 };
 
-/// The embedded AD attribute table, v1.
+/// The embedded AD attribute table. Append-only: each entry carries the
+/// schema version that introduced it (`since`); the name is kept from v1.
 ///
 /// Selection: the attributes needed to (a) name an account in every form AD
 /// and Exchange use (`sAMAccountName`, `userPrincipalName`, `mail`,
@@ -38,8 +39,14 @@ pub const SCHEMA: SchemaId = SchemaId {
 /// (`objectClass`, `objectSid`, `userAccountControl`), (c) say where it is
 /// (`distinguishedName`) and (d) date it (`whenCreated`, `whenChanged`), plus
 /// the display triplet. Group membership (`memberOf`/`member`) is a relation
-/// and becomes edges later, never an inline list. Further Exchange attributes
-/// (`msExch*`) are deferred until a consumer needs them.
+/// and becomes edges later, never an inline list.
+///
+/// v2 adds the Exchange recipient triplet, raw, for the hybrid recipient
+/// model (`ogar-dir-sim::exchange`): `msExchRemoteRecipientType` (flags,
+/// numeric), `msExchRecipientDisplayType` (signed, numeric, bit-cast like
+/// every signed LDAP integer here) and `msExchRecipientTypeDetails` (64-bit,
+/// so kept as its LDAP decimal text in a pooled slot). Other `msExch*`
+/// attributes stay out until a consumer needs them.
 pub const SCHEMA_V1: &[AttrDef] = &[
     AttrDef {
         name: "distinguishedName",
@@ -130,6 +137,24 @@ pub const SCHEMA_V1: &[AttrDef] = &[
         slot: 0,
         kind: AttrKind::U32,
         since: 1,
+    },
+    AttrDef {
+        name: "msExchRemoteRecipientType",
+        slot: 1,
+        kind: AttrKind::U32,
+        since: 2,
+    },
+    AttrDef {
+        name: "msExchRecipientDisplayType",
+        slot: 2,
+        kind: AttrKind::U32,
+        since: 2,
+    },
+    AttrDef {
+        name: "msExchRecipientTypeDetails",
+        slot: 14,
+        kind: AttrKind::Str,
+        since: 2,
     },
 ];
 

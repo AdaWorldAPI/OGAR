@@ -225,3 +225,29 @@ fn ldifde_changetype_add_is_accepted_other_changetypes_refused() {
         );
     }
 }
+
+// v2: the Exchange recipient triplet of a remote shared mailbox, as the
+// on-premises directory holds it. The display type is signed (bit-cast into
+// its u32 slot); the 64-bit type details stay their LDAP decimal text.
+#[test]
+fn exchange_recipient_attributes_are_kept_raw() {
+    let text = "dn: CN=Team,OU=Shared,DC=example,DC=test\nobjectGUID:: 4AQlP4lP0xGaDAMF6CwzAQ==\nobjectClass: user\nuserAccountControl: 514\nmsExchRemoteRecipientType: 100\nmsExchRecipientDisplayType: -2147483642\nmsExchRecipientTypeDetails: 34359738368\ntargetAddress: SMTP:team@tenant.mail.onmicrosoft.com\n";
+    let e = &ldif::parse(text).unwrap()[0];
+    let (mut dict, mut pool) = (OuDictionary::new(), ValuePool::new());
+    let enc = encode(e, domain(), &mut dict, &mut pool, 1).unwrap();
+    assert!(enc.ignored.is_empty(), "{:?}", enc.ignored);
+    let r = enc.record;
+    let num = |n: &str| SCHEMA_V1.iter().find(|d| d.name == n).unwrap().slot as usize;
+    assert_eq!(r.num(num("msExchRemoteRecipientType")), Some(100));
+    assert_eq!(
+        r.num(num("msExchRecipientDisplayType")).map(|n| n as i32),
+        Some(-2_147_483_642)
+    );
+    assert_eq!(
+        pool.get(r.str_ref(slot("msExchRecipientTypeDetails")).unwrap())
+            .unwrap(),
+        b"34359738368"
+    );
+    // The account is disabled: a shared mailbox is a disabled account.
+    assert_eq!(r.num(0), Some(514));
+}
