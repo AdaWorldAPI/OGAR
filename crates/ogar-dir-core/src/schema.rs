@@ -74,6 +74,27 @@ pub enum AttrKind {
 /// Members of an [`AttrKind::Bag`]: the 15 extension attributes.
 pub const BAG_LEN: usize = 15;
 
+/// The member number (1..=[`BAG_LEN`]) `name` names in the bag `bag`
+/// (`extensionAttribute7` in `extensionAttribute` is 7), or `None`.
+///
+/// Only the canonical spelling counts: the bag name in any ASCII case,
+/// then the number without sign, space or leading zero. Any other spelling
+/// (`extensionAttribute01`) is not a member, so an encoder reports it as
+/// ignored instead of dropping it. A name whose bag-length prefix ends
+/// inside a multi-byte character is not a member either.
+pub fn bag_member_of(bag: &str, name: &str) -> Option<usize> {
+    let (head, n) = name.split_at_checked(bag.len())?;
+    if !head.eq_ignore_ascii_case(bag)
+        || n.starts_with('0')
+        || n.is_empty()
+        || !n.bytes().all(|b| b.is_ascii_digit())
+    {
+        return None;
+    }
+    let n: usize = n.parse().ok()?;
+    (1..=BAG_LEN).contains(&n).then_some(n)
+}
+
 /// Which slot space an attribute occupies.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SlotSpace {

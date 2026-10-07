@@ -19,6 +19,7 @@
 use ogar_dir_core::dn::Dn;
 use ogar_dir_core::edge::{DirEdge, EdgeEvidence, EdgeKind};
 use ogar_dir_core::record::{FLAG_DN_UNENCODED, FLAG_NON_OU_CONTAINER};
+use ogar_dir_core::schema::bag_member_of;
 use ogar_dir_core::{
     AttrDef, AttrKind, BAG_LEN, DirRecord, Guid128, OuDictionary, SchemaFamily, SchemaId,
     ValuePool, base64,
@@ -184,9 +185,14 @@ pub enum SyncTransform {
     /// `onPremisesImmutableId` is the base64 of the 16
     /// `mS-DS-ConsistencyGuid` bytes.
     ImmutableId,
-    /// The cloud value is the AD value prefixed `onPremises*` evidence
-    /// (DN, sAMAccountName, SID): copied, not mapped to a cloud property.
+    /// The cloud value is the AD value, copied as `onPremises*` evidence
+    /// (DN, sAMAccountName), not mapped to a cloud property.
     OnPremisesEvidence,
+    /// `onPremisesSecurityIdentifier` is the string form (`S-1-5-21-...`)
+    /// of the binary `objectSid`: `ogar_dir_core::sid::sid_to_string`.
+    /// Comparing the raw bytes with the string would report drift on every
+    /// synced user.
+    SecurityIdentifier,
 }
 
 /// One attribute AD and the cloud both hold, under their own names.
@@ -249,7 +255,7 @@ pub const SYNCED: &[SyncedAttribute] = &[
     synced(
         "objectSid",
         "onPremisesSecurityIdentifier",
-        SyncTransform::OnPremisesEvidence,
+        SyncTransform::SecurityIdentifier,
     ),
 ];
 
@@ -265,9 +271,21 @@ const fn synced(
     }
 }
 
-/// The cloud counterpart of an AD attribute, if it is synced.
+/// The cloud counterpart of an AD attribute, if it is synced. A numbered
+/// member of a bag (`extensionAttribute7`) resolves to its bag's entry; only
+/// the canonical spelling does (`ogar_dir_core::schema::bag_member_of`).
 pub fn cloud_of(ad: &str) -> Option<&'static SyncedAttribute> {
-    SYNCED.iter().find(|s| s.ad.eq_ignore_ascii_case(ad))
+    SYNCED
+        .iter()
+        .find(|s| s.ad.eq_ignore_ascii_case(ad))
+        .or_else(|| {
+            SYNCED.iter().find(|s| {
+                let bag = SCHEMA_V1
+                    .iter()
+                    .any(|d| d.name == s.cloud && d.kind == AttrKind::Bag);
+                bag && bag_member_of(s.ad, ad).is_some()
+            })
+        })
 }
 
 /// AZ object kinds (family-scoped codes). Only users are ingested in v1.

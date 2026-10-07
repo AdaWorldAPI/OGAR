@@ -376,4 +376,9 @@ fn extension_attributes_are_one_bag() {
     );
     let (none, _) = enc("").unwrap();
     assert_eq!(none.record.str_ref(slot("extensionAttribute")), None);
+    // Codex P2: a non-canonical spelling is not member 1. It is neither
+    // stored nor silently dropped: it is reported as ignored.
+    let (odd, _) = enc("extensionAttribute01: x\n").unwrap();
+    assert_eq!(odd.record.str_ref(slot("extensionAttribute")), None);
+    assert_eq!(odd.ignored, vec!["extensionAttribute01"]);
 }

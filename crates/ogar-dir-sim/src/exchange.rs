@@ -543,10 +543,19 @@ pub const ROUTING: AddressTemplate = AddressTemplate("{0}@{1}.mail.onmicrosoft.c
 /// `(alias, tenant)` of a routing address, or `None` if it is not one.
 pub fn routing_parts(address: &str) -> Option<(&str, &str)> {
     match ROUTING.matches(address)?.as_slice() {
-        // One `@` in the whole address, and the tenant is a single label.
-        [alias, tenant] if !tenant.contains(['@', '.']) => Some((alias, tenant)),
+        // The tenant is a single DNS label, so the address has one `@`.
+        [alias, tenant] if is_dns_label(tenant) => Some((alias, tenant)),
         _ => None,
     }
+}
+
+/// One DNS label: 1..=63 ASCII letters, digits or hyphens, not starting or
+/// ending with a hyphen.
+fn is_dns_label(s: &str) -> bool {
+    (1..=63).contains(&s.len())
+        && !s.starts_with('-')
+        && !s.ends_with('-')
+        && s.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-')
 }
 
 #[cfg(test)]
@@ -577,6 +586,10 @@ mod tests {
             routing_parts("alice@contoso.mail.onmicrosoft.com"),
             Some(("alice", "contoso"))
         );
+        assert_eq!(
+            routing_parts("alice@contoso-eu.mail.onmicrosoft.com"),
+            Some(("alice", "contoso-eu"))
+        );
         for bad in [
             "alice@contoso.onmicrosoft.com",          // not the routing domain
             "alice@contoso.mail.onmicrosoft.co",      // suffix
@@ -584,6 +597,9 @@ mod tests {
             "alice@.mail.onmicrosoft.com",            // empty tenant
             "alice@sub.contoso.mail.onmicrosoft.com", // tenant with a dot
             "a@b@contoso.mail.onmicrosoft.com",       // alias with an @
+            "alice@bad tenant.mail.onmicrosoft.com",  // tenant not a DNS label
+            "alice@-contoso.mail.onmicrosoft.com",    // leading hyphen
+            "alice@contoso_x.mail.onmicrosoft.com",   // underscore
             "alice@contoso.mail.onmicrosoft.com.x",
         ] {
             assert_eq!(routing_parts(bad), None, "{bad}");
