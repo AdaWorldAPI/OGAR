@@ -253,5 +253,28 @@ no-population-intermediate rule.
   re-exports. **Open:** no executor ingests them
   yet; matching an on-premises node to its cloud object by these ids is the
   lance-graph side.
+- **V8 — Addresses are one space; the routing address is the alias.**
+  AD holds a remote mailbox's addresses as `proxyAddresses`
+  (`SMTP:{primary}`, `smtp:{secondary}`,
+  `smtp:{alias}@{tenant}.mail.onmicrosoft.com`) plus `targetAddress`
+  (`SMTP:{alias}@{tenant}.mail.onmicrosoft.com`); Exchange Online shows the
+  same set as `PrimarySmtpAddress` and `EmailAddresses`. The alias is
+  `mailNickname`. Vocabulary: `exchange::ROUTING` is the template
+  `{0}@{1}.mail.onmicrosoft.com` (`AddressTemplate`, render / strict match);
+  `routing_parts` returns `(alias, tenant)`. Three invariants, as
+  `Violation`s: `RoutingMismatch` (the routing address is not the template
+  for the node's own alias), `RoutingNotInProxies` (the mailbox does not
+  own its routing address as an SMTP proxy), and `AddressConflict` — UPN,
+  SMTP, `mail` and routing addresses share one key space, so a UPN or SMTP
+  address that is another object's SMTP, `mail` or routing address
+  conflicts, and so does a `mail` held by another object (an admin account
+  with `mail` set as a password-reset target but no mailbox). Each holder
+  carries its `AddressRole`; same-attribute collisions stay
+  `DuplicateSmtp` / `DuplicateUpn`. Sync: `ogar_az::SYNCED` maps the AD
+  attributes to their cloud names (`physicalDeliveryOfficeName` →
+  `officeLocation`, `userAccountControl` → `accountEnabled` via
+  `effective_active`, `mS-DS-ConsistencyGuid` → `onPremisesImmutableId`);
+  `ogar-ad` schema v4 adds `physicalDeliveryOfficeName`. **Open:** the
+  executor (lance-graph) does not yet compute these three violations.
 - **V5 — CI.** CI builds `lance-graph-dir-sim` against the OGAR checkout, so
   it needs this OGAR PR merged first.

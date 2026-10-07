@@ -464,6 +464,90 @@ impl RemoteMailboxOp {
     }
 }
 
+/// A string template with numbered placeholders `{0}`, `{1}`, … in order —
+/// the multi-value sibling of `ogar_dir_core::label::LabelPattern`. It
+/// renders by substitution and matches by splitting on the literal text
+/// between the placeholders; a match must render back to exactly the input.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct AddressTemplate(pub &'static str);
+
+impl AddressTemplate {
+    /// The literal text around the placeholders: one more literal than
+    /// placeholders. `None` unless `{0}`, `{1}`, … each appear once, in
+    /// order, separated by non-empty literals (else a match is ambiguous).
+    fn literals(self) -> Option<Vec<&'static str>> {
+        let mut lits = Vec::new();
+        let mut rest = self.0;
+        let mut n = 0;
+        while let Some(at) = rest.find('{') {
+            let tag = format!("{{{n}}}");
+            if !rest[at..].starts_with(&tag) {
+                return None;
+            }
+            lits.push(&rest[..at]);
+            rest = &rest[at + tag.len()..];
+            n += 1;
+        }
+        lits.push(rest);
+        (n > 0 && lits[1..lits.len() - 1].iter().all(|l| !l.is_empty())).then_some(lits)
+    }
+
+    /// The template with each `{i}` replaced by `values[i]`. `None` if the
+    /// number of values does not match.
+    pub fn render(self, values: &[&str]) -> Option<String> {
+        let lits = self.literals()?;
+        (values.len() == lits.len() - 1).then(|| {
+            let mut out = lits[0].to_string();
+            for (v, l) in values.iter().zip(&lits[1..]) {
+                out.push_str(v);
+                out.push_str(l);
+            }
+            out
+        })
+    }
+
+    /// The placeholder values of `s`, if `s` is this template with
+    /// non-empty values that render back to exactly `s`.
+    pub fn matches(self, s: &str) -> Option<Vec<&str>> {
+        let lits = self.literals()?;
+        let mut rest = s.strip_prefix(lits[0])?;
+        let mut values = Vec::new();
+        for (i, next) in lits[1..].iter().enumerate() {
+            let value = if i == lits.len() - 2 {
+                let v = rest.strip_suffix(next)?;
+                rest = "";
+                v
+            } else {
+                let at = rest.find(next)?;
+                let v = &rest[..at];
+                rest = &rest[at + next.len()..];
+                v
+            };
+            if value.is_empty() {
+                return None;
+            }
+            values.push(value);
+        }
+        (rest.is_empty() && self.render(&values).as_deref() == Some(s)).then_some(values)
+    }
+}
+
+/// A remote mailbox's routing address: `{alias}@{tenant}.mail.onmicrosoft.com`,
+/// where the alias is the object's `mailNickname` (the Exchange Online
+/// `Alias`). In AD it is `targetAddress` with the `SMTP:` prefix and also one
+/// of the `proxyAddresses` (`smtp:`); Exchange Online lists it among
+/// `EmailAddresses`. Matched against the normalized (lower-case) address.
+pub const ROUTING: AddressTemplate = AddressTemplate("{0}@{1}.mail.onmicrosoft.com");
+
+/// `(alias, tenant)` of a routing address, or `None` if it is not one.
+pub fn routing_parts(address: &str) -> Option<(&str, &str)> {
+    match ROUTING.matches(address)?.as_slice() {
+        // One `@` in the whole address, and the tenant is a single label.
+        [alias, tenant] if !tenant.contains(['@', '.']) => Some((alias, tenant)),
+        _ => None,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -482,6 +566,41 @@ mod tests {
     // Every code 0..=255: exactly the 27 listed codes decode to a lifecycle
     // state (with the type codes and routing address that belong to them);
     // every other code stays raw. Each decoded state re-encodes to its code.
+    #[test]
+    fn the_routing_template_renders_and_matches_alias_and_tenant() {
+        assert_eq!(
+            ROUTING.render(&["alice", "contoso"]).as_deref(),
+            Some("alice@contoso.mail.onmicrosoft.com")
+        );
+        assert_eq!(
+            routing_parts("alice@contoso.mail.onmicrosoft.com"),
+            Some(("alice", "contoso"))
+        );
+        for bad in [
+            "alice@contoso.onmicrosoft.com",          // not the routing domain
+            "alice@contoso.mail.onmicrosoft.co",      // suffix
+            "@contoso.mail.onmicrosoft.com",          // empty alias
+            "alice@.mail.onmicrosoft.com",            // empty tenant
+            "alice@sub.contoso.mail.onmicrosoft.com", // tenant with a dot
+            "a@b@contoso.mail.onmicrosoft.com",       // alias with an @
+            "alice@contoso.mail.onmicrosoft.com.x",
+        ] {
+            assert_eq!(routing_parts(bad), None, "{bad}");
+        }
+    }
+
+    #[test]
+    fn a_template_needs_numbered_placeholders_in_order_with_separators() {
+        for t in ["{1}@{0}", "{0}{1}", "{0}@{0}", "no placeholder", "{x}"] {
+            assert_eq!(AddressTemplate(t).render(&["a", "b"]), None, "{t}");
+            assert_eq!(AddressTemplate(t).matches("a@b"), None, "{t}");
+        }
+        let t = AddressTemplate("<{0}|{1}>");
+        assert_eq!(t.matches("<a|b>"), Some(vec!["a", "b"]));
+        assert_eq!(t.render(&["a"]), None, "value count");
+        assert_eq!(t.matches("<a|b>x"), None);
+    }
+
     #[test]
     fn exactly_the_27_listed_remote_recipient_types_decode() {
         let mut decoded = Vec::new();

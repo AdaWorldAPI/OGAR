@@ -165,6 +165,99 @@ pub const SCHEMA_V1: &[AttrDef] = &[
     },
 ];
 
+/// How an AD value becomes its cloud counterpart under Entra Connect sync.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum SyncTransform {
+    /// The same value.
+    Same,
+    /// `accountEnabled` is `userAccountControl` without bit `0x2`
+    /// (ACCOUNTDISABLE); how the two flags combine is
+    /// `ogar_dir_sim::effective_active`.
+    AccountEnabled,
+    /// `onPremisesImmutableId` is the base64 of the 16
+    /// `mS-DS-ConsistencyGuid` bytes.
+    ImmutableId,
+    /// The cloud value is the AD value prefixed `onPremises*` evidence
+    /// (DN, sAMAccountName, SID): copied, not mapped to a cloud property.
+    OnPremisesEvidence,
+}
+
+/// One attribute AD and the cloud both hold, under their own names.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct SyncedAttribute {
+    /// The AD attribute (`ogar_ad::SCHEMA_V1`).
+    pub ad: &'static str,
+    /// The Graph property ([`SCHEMA_V1`]).
+    pub cloud: &'static str,
+    /// How the value travels.
+    pub transform: SyncTransform,
+}
+
+/// The AD → cloud correspondence for the attributes both schemas ingest.
+/// The cloud object id itself is not here: it is the record's identity, and
+/// AD's `msDS-ExternalDirectoryObjectId` is that id with its `User_` label
+/// (`ogar_dir_core::label`).
+pub const SYNCED: &[SyncedAttribute] = &[
+    synced(
+        "userPrincipalName",
+        "userPrincipalName",
+        SyncTransform::Same,
+    ),
+    synced("displayName", "displayName", SyncTransform::Same),
+    synced("givenName", "givenName", SyncTransform::Same),
+    synced("sn", "surname", SyncTransform::Same),
+    synced("mail", "mail", SyncTransform::Same),
+    synced("mailNickname", "mailNickname", SyncTransform::Same),
+    synced("proxyAddresses", "proxyAddresses", SyncTransform::Same),
+    synced(
+        "physicalDeliveryOfficeName",
+        "officeLocation",
+        SyncTransform::Same,
+    ),
+    synced(
+        "userAccountControl",
+        "accountEnabled",
+        SyncTransform::AccountEnabled,
+    ),
+    synced(
+        "mS-DS-ConsistencyGuid",
+        "onPremisesImmutableId",
+        SyncTransform::ImmutableId,
+    ),
+    synced(
+        "distinguishedName",
+        "onPremisesDistinguishedName",
+        SyncTransform::OnPremisesEvidence,
+    ),
+    synced(
+        "sAMAccountName",
+        "onPremisesSamAccountName",
+        SyncTransform::OnPremisesEvidence,
+    ),
+    synced(
+        "objectSid",
+        "onPremisesSecurityIdentifier",
+        SyncTransform::OnPremisesEvidence,
+    ),
+];
+
+const fn synced(
+    ad: &'static str,
+    cloud: &'static str,
+    transform: SyncTransform,
+) -> SyncedAttribute {
+    SyncedAttribute {
+        ad,
+        cloud,
+        transform,
+    }
+}
+
+/// The cloud counterpart of an AD attribute, if it is synced.
+pub fn cloud_of(ad: &str) -> Option<&'static SyncedAttribute> {
+    SYNCED.iter().find(|s| s.ad.eq_ignore_ascii_case(ad))
+}
+
 /// AZ object kinds (family-scoped codes). Only users are ingested in v1.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(u16)]

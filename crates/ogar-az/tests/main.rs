@@ -141,3 +141,48 @@ fn attr_str_refuses_multi_values_and_attr_multi_reads_them() {
     );
     assert_eq!(ogar_az::attr_multi(&page.records[0], &pool, "mail"), None);
 }
+
+// Every synced pair names an attribute each schema really ingests, and each
+// side is mapped once — so a rename on either side fails here.
+#[test]
+fn every_synced_attribute_exists_on_both_sides_once() {
+    use ogar_az::{SYNCED, SyncTransform, cloud_of};
+    for s in SYNCED {
+        assert!(
+            ogar_ad::SCHEMA_V1.iter().any(|d| d.name == s.ad),
+            "AD {}",
+            s.ad
+        );
+        assert!(
+            ogar_az::SCHEMA_V1.iter().any(|d| d.name == s.cloud),
+            "cloud {}",
+            s.cloud
+        );
+        assert_eq!(
+            SYNCED.iter().filter(|o| o.ad == s.ad).count(),
+            1,
+            "{}",
+            s.ad
+        );
+        assert_eq!(
+            SYNCED.iter().filter(|o| o.cloud == s.cloud).count(),
+            1,
+            "{}",
+            s.cloud
+        );
+    }
+    let office = cloud_of("physicalDeliveryOfficeName").unwrap();
+    assert_eq!(
+        (office.cloud, office.transform),
+        ("officeLocation", SyncTransform::Same)
+    );
+    assert_eq!(
+        cloud_of("userAccountControl").unwrap().cloud,
+        "accountEnabled"
+    );
+    assert_eq!(
+        cloud_of("targetAddress"),
+        None,
+        "the routing address is not synced"
+    );
+}

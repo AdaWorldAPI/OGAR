@@ -334,3 +334,19 @@ fn a_wrong_or_missing_label_is_refused() {
         assert_eq!(hybrid(class, &value).unwrap_err(), bad, "{class} {value}");
     }
 }
+
+// v4: the office is kept raw; it becomes the cloud's officeLocation.
+#[test]
+fn the_office_is_kept_raw() {
+    let text = "dn: CN=A,OU=Staff,DC=example,DC=test\nobjectGUID:: 4AQlP4lP0xGaDAMF6CwzAQ==\nobjectClass: user\nphysicalDeliveryOfficeName: Berlin 4.12\n";
+    let e = &ldif::parse(text).unwrap()[0];
+    let (mut dict, mut pool) = (OuDictionary::new(), ValuePool::new());
+    let enc = encode(e, domain(), &mut dict, &mut pool, 1).unwrap();
+    assert!(enc.ignored.is_empty(), "{:?}", enc.ignored);
+    let r = enc.record;
+    assert_eq!(
+        pool.get(r.str_ref(slot("physicalDeliveryOfficeName")).unwrap())
+            .unwrap(),
+        b"Berlin 4.12"
+    );
+}

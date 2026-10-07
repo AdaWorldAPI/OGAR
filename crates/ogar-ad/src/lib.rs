@@ -24,7 +24,7 @@ use ogar_dir_core::{
 };
 
 /// Encoder schema version understood by this crate.
-pub const SCHEMA_VERSION: u16 = 3;
+pub const SCHEMA_VERSION: u16 = 4;
 /// This crate's schema id.
 pub const SCHEMA: SchemaId = SchemaId {
     family: SchemaFamily::AdDs,
@@ -56,6 +56,9 @@ pub const SCHEMA: SchemaId = SchemaId {
 /// `User_<cloud object id>`). The `User_` / `Group_` label is stripped on the
 /// way in — it must match the object's kind — and added back on the way out
 /// from the kind ([`external_directory_object_id`]); it is never stored.
+///
+/// v4 adds `physicalDeliveryOfficeName`, the attribute Entra Connect syncs
+/// to the cloud's `officeLocation` (see `ogar_az::SYNCED`).
 pub const SCHEMA_V1: &[AttrDef] = &[
     AttrDef {
         name: "distinguishedName",
@@ -176,6 +179,12 @@ pub const SCHEMA_V1: &[AttrDef] = &[
         slot: 1,
         kind: AttrKind::Guid,
         since: 3,
+    },
+    AttrDef {
+        name: "physicalDeliveryOfficeName",
+        slot: 15,
+        kind: AttrKind::Str,
+        since: 4,
     },
 ];
 
