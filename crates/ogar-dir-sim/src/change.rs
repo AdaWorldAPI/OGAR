@@ -20,6 +20,7 @@
 //! through simulation, the desired version, reconciliation and the plan. They
 //! are not snapshot ordinals.
 
+use crate::exchange::Recipient;
 use ogar_dir_core::{Dn128, Guid128};
 
 /// Stable identity of one exact raw attribute value (case and spacing kept).
@@ -62,6 +63,10 @@ pub struct NodeState {
     /// Hierarchy location (numeric, within the store's directory scope;
     /// never a DN), if known.
     pub dn: Option<Dn128>,
+    /// Exchange recipient role (`msExch*` + `targetAddress`); `None` = not
+    /// read by the source (unknown), which is different from
+    /// [`Recipient::NotMailEnabled`].
+    pub recipient: Option<Recipient>,
 }
 
 /// The one definition of "active" across sources (V4, decided 2026-10-07):
@@ -119,9 +124,9 @@ pub enum Attribute {
 /// 2. `DeleteNode` — frees its UPN / SMTP before anything claims them;
 /// 3. `SetAttribute` — renames away from (or into) addresses only after
 ///    deletes freed them and before creates take them;
-/// 4. `SetActive`, `SetLocation` — properties of a node that exists before
-///    and after; neither frees nor claims a value, so no other change
-///    depends on them;
+/// 4. `SetActive`, `SetLocation`, `SetRecipient` — properties of a node
+///    that exists before and after; none frees or claims a value, so no
+///    other change depends on them;
 /// 5. `CreateNode` — after every address it needs is free;
 /// 6. `AddMembership` — once both endpoints exist.
 ///
@@ -195,6 +200,17 @@ pub enum Change {
         from: Option<Dn128>,
         /// New location.
         to: Option<Dn128>,
+    },
+    /// Compare-and-set of the Exchange recipient role. A plan can actuate it
+    /// only where one lifecycle step joins `from` and `to`
+    /// ([`RemoteMailboxOp::between`](crate::RemoteMailboxOp::between)).
+    SetRecipient {
+        /// Object.
+        node: Guid128,
+        /// Role the change expects to replace (as observed).
+        from: Option<Recipient>,
+        /// New role.
+        to: Option<Recipient>,
     },
     /// A node that did not exist comes into existence.
     CreateNode {
@@ -270,6 +286,12 @@ impl NodeState {
                 }
                 next.dn = *to;
             }
+            Change::SetRecipient { from, to, .. } => {
+                if self.recipient != *from {
+                    return Err(Refusal::Stale);
+                }
+                next.recipient = *to;
+            }
             Change::RemoveMembership { .. }
             | Change::DeleteNode { .. }
             | Change::CreateNode { .. }
@@ -339,6 +361,7 @@ mod tests {
             upn: Some(ValueId(1)),
             primary_smtp: Some(ValueId(2)),
             dn,
+            recipient: None,
         }
     }
     fn dn(l: &[u8]) -> Option<Dn128> {
@@ -381,6 +404,7 @@ mod tests {
             upn: None,
             primary_smtp: None,
             dn: None,
+            recipient: None,
         };
         for (from, to) in [(Some(true), Some(false)), (Some(true), Some(true))] {
             assert_eq!(
@@ -472,6 +496,30 @@ mod tests {
                 assert_eq!(s.apply(&c), Err(Refusal::NotAPropertyChange));
             }
         }
+    }
+
+    // The recipient role is compare-and-set like every other property, and
+    // unknown (`None`) is distinct from "not mail-enabled".
+    #[test]
+    fn set_recipient_is_compare_and_set() {
+        use crate::exchange::Recipient;
+        let mut s = user(None, None);
+        s.recipient = Some(Recipient::NotMailEnabled);
+        let to = Some(Recipient::OnPremisesMailbox {
+            archive: crate::exchange::ArchiveState::None,
+        });
+        let ok = Change::SetRecipient {
+            node: N,
+            from: Some(Recipient::NotMailEnabled),
+            to,
+        };
+        assert_eq!(s.apply(&ok).map(|n| n.recipient), Ok(to));
+        let unknown = Change::SetRecipient {
+            node: N,
+            from: None,
+            to,
+        };
+        assert_eq!(s.apply(&unknown), Err(Refusal::Stale));
     }
 
     // The sorted order places the two new property changes after renames

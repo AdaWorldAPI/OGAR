@@ -7,6 +7,7 @@
 //! true → execute; changed → re-observe and re-plan).
 
 use crate::change::{Attribute, Change, KeyId, NodeState, ValueId};
+use crate::exchange::{Recipient, RemoteMailboxOp};
 use crate::provenance::VersionId;
 use ogar_dir_core::{Dn128, Guid128};
 use std::collections::{BTreeMap, BTreeSet};
@@ -14,7 +15,8 @@ use std::collections::{BTreeMap, BTreeSet};
 /// A technology-neutral directory operation.
 ///
 /// Variant order is load-bearing and mirrors [`Change`]: removals, deletes,
-/// attribute sets, enable/disable, moves, creates, adds. A sorted plan is therefore a safe
+/// attribute sets, enable/disable, moves, recipient lifecycle steps,
+/// creates, adds. A sorted plan is therefore a safe
 /// execution order (an address is freed before it is claimed; a node's
 /// edges are gone before it is, and it exists before it gains one).
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -57,6 +59,13 @@ pub enum Operation {
         /// Destination.
         to: Dn128,
     },
+    /// One step of the Exchange hybrid remote-mailbox lifecycle.
+    RemoteMailbox {
+        /// Object.
+        object: Guid128,
+        /// The step.
+        op: RemoteMailboxOp,
+    },
     /// Create `object` with `state`.
     CreateObject {
         /// Object.
@@ -86,6 +95,8 @@ pub enum Precondition {
     EnabledEquals(Option<bool>),
     /// The object must still be at this location (`None`: still unknown).
     LocationEquals(Option<Dn128>),
+    /// The object must still have exactly this recipient role.
+    RecipientEquals(Recipient),
     /// No object with this identity may exist yet.
     ObjectAbsent,
     /// The object must still exist in exactly this state and have no
@@ -105,7 +116,8 @@ pub struct PlannedOp {
 
 impl PlannedOp {
     /// Lower one change. `Err(node)` when the change has no operation: its
-    /// target is an unknown flag or location, which no actuator can write.
+    /// target is an unknown flag or location, which no actuator can write,
+    /// or a recipient change that no single lifecycle step performs.
     ///
     /// # Errors
     ///
@@ -126,6 +138,18 @@ impl PlannedOp {
                 },
                 precondition: Precondition::LocationEquals(from),
             },
+            Change::SetRecipient { node, from, to } => {
+                // Unknown on either side, or no single lifecycle step: no
+                // operation.
+                let (Some(from), Some(to)) = (from, to) else {
+                    return Err(node);
+                };
+                let op = RemoteMailboxOp::between(&from, &to).ok_or(node)?;
+                Self {
+                    op: Operation::RemoteMailbox { object: node, op },
+                    precondition: Precondition::RecipientEquals(from),
+                }
+            }
             Change::CreateNode { node, state } => Self {
                 op: Operation::CreateObject {
                     object: node,
@@ -303,8 +327,9 @@ pub enum PlanError {
         node: Guid128,
     },
     /// The desired version changes `node` towards an unknown enabled flag or
-    /// location. "Unknown" is an observation, not an intention: no actuator
-    /// can write it, so no plan is derived.
+    /// location ("unknown" is an observation, not an intention), or changes
+    /// its recipient role by something other than one lifecycle step. No
+    /// actuator can perform it, so no plan is derived.
     NotActuatable {
         /// The observation.
         basis: VersionId,
@@ -356,6 +381,7 @@ mod tests {
             upn: None,
             primary_smtp: None,
             dn: None,
+            recipient: None,
         }
     }
 
@@ -560,6 +586,54 @@ mod tests {
                     node: g
                 })
             );
+        }
+    }
+
+    // A recipient change lowers to the single lifecycle step joining its
+    // two states, preconditioned on the observed role; unknown on either
+    // side, or two steps at once, is not actuatable.
+    #[test]
+    fn a_recipient_change_lowers_to_one_lifecycle_step() {
+        use crate::exchange::{RemoteKind, RemoteMailboxOp as Op};
+        let g = Guid128([6; 16]);
+        let routing = ValueId(42);
+        let enabled = Op::Enable {
+            kind: RemoteKind::User,
+            routing,
+        }
+        .apply(&Recipient::NotMailEnabled)
+        .unwrap();
+        let set = |from, to| Change::SetRecipient { node: g, from, to };
+        let plan = ExecutionPlan::from_diff(
+            VersionId(0),
+            VersionId(1),
+            vec![set(Some(Recipient::NotMailEnabled), Some(enabled))],
+            key,
+        )
+        .unwrap();
+        assert_eq!(
+            plan.ops,
+            vec![PlannedOp {
+                op: Operation::RemoteMailbox {
+                    object: g,
+                    op: Op::Enable {
+                        kind: RemoteKind::User,
+                        routing
+                    }
+                },
+                precondition: Precondition::RecipientEquals(Recipient::NotMailEnabled),
+            }]
+        );
+        let archived = Op::EnableArchive.apply(&enabled).unwrap();
+        for c in [
+            set(Some(Recipient::NotMailEnabled), Some(archived)),
+            set(None, Some(enabled)),
+            set(Some(enabled), None),
+        ] {
+            assert!(matches!(
+                ExecutionPlan::from_diff(VersionId(0), VersionId(1), vec![c], key),
+                Err(PlanError::NotActuatable { node, .. }) if node == g
+            ));
         }
     }
 

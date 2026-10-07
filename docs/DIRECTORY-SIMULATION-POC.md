@@ -211,5 +211,47 @@ no-population-intermediate rule.
   separate node from its AD source (`sync_edges` links them as evidence), and
   no observation path merges the two, so today each node carries its one
   source's flag.
+- **V6 — Exchange hybrid recipients (2026-10-07).** What an object is to
+  Exchange comes from `msExchRemoteRecipientType` (flags: provision /
+  migrated / deprovision mailbox, provision / deprovision archive, room,
+  equipment, both = shared), `msExchRecipientDisplayType`,
+  `msExchRecipientTypeDetails` and `targetAddress` — not from the account's
+  enabled flag: a shared, room or equipment mailbox is a disabled account
+  and still a recipient. `ogar-ad` schema v2 ingests the triplet raw (type
+  details as its 64-bit decimal text). `ogar_dir_sim::exchange::Recipient`
+  decodes it strictly: exactly the 27 remote-recipient-type values (the script's 26 plus 97, provisioned shared) the
+  hybrid lifecycle produces (with the display and type codes that go with
+  them, and the routing address while the mailbox exists), an on-premises
+  mailbox with its remote-archive state, not mail-enabled — anything else
+  stays raw (`Other`), never guessed. `RemoteMailboxOp` is the lifecycle:
+  `Enable` (user / room / equipment / shared, with routing address), `EnableArchive`,
+  `DisableArchive`, `CompleteMove`, `SetType`, `Disable`; each step refuses
+  outside the table. `NodeState::recipient` (`None` = not read, distinct
+  from not mail-enabled) changes by compare-and-set (`SetRecipient`); a plan
+  lowers it to the single lifecycle step joining the two roles
+  (`Operation::RemoteMailbox`, precondition `RecipientEquals`), or refuses
+  (`NotActuatable`) when no single step does. **Open:** the `smtp:` routing
+  proxy `Enable-RemoteMailbox` stamps is not added to the proxy relation by
+  the vocabulary; the executor derives ownership of the routing address.
+- **V7 — Hybrid identity.** On-premises and cloud name each other by three
+  attributes: `mS-DS-ConsistencyGuid` (the source anchor; its base64 is the
+  cloud `ImmutableId`), `msDS-ExternalDirectoryObjectId` (Entra Connect
+  backsync, `User_<cloud object id>`) and `mailNickname` (the Exchange Online
+  `Alias`, ingested raw). The Entra (formerly MSOL) `ObjectId`, Exchange
+  Online's `ExternalDirectoryObjectId` and AD's `msDS-ExternalDirectoryObjectId`
+  are one id: the cloud spellings are the bare GUID, only AD's adds `User_`.
+  **Neither id is stored as a string.** `DirRecord` ABI minor 1 gives the
+  first 64 reserved bytes four inline 128-bit id slots (`AttrKind::Guid`);
+  `ogar-ad` schema v3 puts both anchors there. In: the anchor's mixed-endian
+  bytes become a `Guid128`; `User_` / `Group_` is stripped and must match the
+  object kind (else the entry is refused). Out:
+  `ogar_ad::external_directory_object_id` adds the label back from the kind,
+  `ogar_ad::consistency_guid` returns the AD bytes. The label is a template,
+  `LabelPattern("User_{0}")` (`{0}` = the id): strip matches the text around
+  `{0}`, render substitutes into it, a new kind is one more template. It has one
+  definition, `ogar_dir_core::label`, which `ogar_dir_sim::identity`
+  re-exports. **Open:** no executor ingests them
+  yet; matching an on-premises node to its cloud object by these ids is the
+  lance-graph side.
 - **V5 — CI.** CI builds `lance-graph-dir-sim` against the OGAR checkout, so
   it needs this OGAR PR merged first.

@@ -225,3 +225,112 @@ fn ldifde_changetype_add_is_accepted_other_changetypes_refused() {
         );
     }
 }
+
+// v2: the Exchange recipient triplet of a remote shared mailbox, as the
+// on-premises directory holds it. The display type is signed (bit-cast into
+// its u32 slot); the 64-bit type details stay their LDAP decimal text.
+#[test]
+fn exchange_recipient_attributes_are_kept_raw() {
+    let text = "dn: CN=Team,OU=Shared,DC=example,DC=test\nobjectGUID:: 4AQlP4lP0xGaDAMF6CwzAQ==\nobjectClass: user\nuserAccountControl: 514\nmsExchRemoteRecipientType: 100\nmsExchRecipientDisplayType: -2147483642\nmsExchRecipientTypeDetails: 34359738368\ntargetAddress: SMTP:team@tenant.mail.onmicrosoft.com\n";
+    let e = &ldif::parse(text).unwrap()[0];
+    let (mut dict, mut pool) = (OuDictionary::new(), ValuePool::new());
+    let enc = encode(e, domain(), &mut dict, &mut pool, 1).unwrap();
+    assert!(enc.ignored.is_empty(), "{:?}", enc.ignored);
+    let r = enc.record;
+    let num = |n: &str| SCHEMA_V1.iter().find(|d| d.name == n).unwrap().slot as usize;
+    assert_eq!(r.num(num("msExchRemoteRecipientType")), Some(100));
+    assert_eq!(
+        r.num(num("msExchRecipientDisplayType")).map(|n| n as i32),
+        Some(-2_147_483_642)
+    );
+    assert_eq!(
+        pool.get(r.str_ref(slot("msExchRecipientTypeDetails")).unwrap())
+            .unwrap(),
+        b"34359738368"
+    );
+    // The account is disabled: a shared mailbox is a disabled account.
+    assert_eq!(r.num(0), Some(514));
+}
+
+const CLOUD_ID: &str = "0b5c3a1e-7d2f-4c88-9e10-3f6a2b4c5d6e";
+
+fn hybrid_pool(
+    class: &str,
+    external: &str,
+) -> (Result<ogar_ad::Encoded, ogar_ad::AdError>, ValuePool) {
+    let text = format!(
+        "dn: CN=X,OU=Staff,DC=example,DC=test\nobjectGUID:: 4AQlP4lP0xGaDAMF6CwzAQ==\nobjectClass: {class}\nmS-DS-ConsistencyGuid:: 4AQlP4lP0xGaDAMF6CwzAQ==\nmsDS-ExternalDirectoryObjectId: {external}\n"
+    );
+    let e = &ldif::parse(&text).unwrap()[0];
+    let (mut dict, mut pool) = (OuDictionary::new(), ValuePool::new());
+    (encode(e, domain(), &mut dict, &mut pool, 1), pool)
+}
+fn hybrid(class: &str, external: &str) -> Result<ogar_ad::Encoded, ogar_ad::AdError> {
+    hybrid_pool(class, external).0
+}
+
+// In: the label is stripped and both anchors are 128-bit ids in guid slots —
+// no string slot holds them. Out: AD's spelling comes back exactly.
+#[test]
+fn hybrid_identity_anchors_are_ids_not_strings() {
+    let (enc, pool) = hybrid_pool("user", &format!("User_{CLOUD_ID}"));
+    let enc = enc.unwrap();
+    assert!(enc.ignored.is_empty(), "{:?}", enc.ignored);
+    let r = enc.record;
+    // Entra Connect seeds the anchor from objectGUID by default.
+    assert_eq!(r.guid(slot("mS-DS-ConsistencyGuid")), Some(r.node_guid()));
+    assert_eq!(
+        r.guid(slot("msDS-ExternalDirectoryObjectId")),
+        Some(Guid128::parse(CLOUD_ID).unwrap())
+    );
+    // Neither id is pooled: no string slot holds the label, the id text or
+    // the anchor's bytes (only the DN and objectClass are pooled here).
+    let anchor = ogar_dir_core::base64::decode("4AQlP4lP0xGaDAMF6CwzAQ==").unwrap();
+    let pooled: Vec<&[u8]> = (0..32)
+        .filter_map(|s| r.str_ref(s))
+        .map(|sr| pool.get(sr).unwrap())
+        .collect();
+    assert!(!pooled.is_empty());
+    for v in pooled {
+        let has = |n: &[u8]| v.windows(n.len()).any(|w| w == n);
+        assert!(!has(b"User_") && !has(CLOUD_ID.as_bytes()) && !has(&anchor));
+    }
+    // Out.
+    assert_eq!(
+        ogar_ad::external_directory_object_id(&r),
+        Some(format!("User_{CLOUD_ID}"))
+    );
+    assert_eq!(
+        ogar_ad::consistency_guid(&r).map(|b| b.to_vec()),
+        ogar_dir_core::base64::decode("4AQlP4lP0xGaDAMF6CwzAQ==")
+    );
+    // A group carries Group_, and gets it back.
+    let g = hybrid("group", &format!("Group_{CLOUD_ID}"))
+        .unwrap()
+        .record;
+    assert_eq!(
+        ogar_ad::external_directory_object_id(&g),
+        Some(format!("Group_{CLOUD_ID}"))
+    );
+}
+
+// The label must match the object kind, and the id must be one: otherwise
+// the entry is refused, never half-written and never stored as text.
+#[test]
+fn a_wrong_or_missing_label_is_refused() {
+    use ogar_ad::AdError::BadId;
+    let bad = BadId("msDS-ExternalDirectoryObjectId");
+    for (class, value) in [
+        ("user", format!("Group_{CLOUD_ID}")),
+        ("group", format!("User_{CLOUD_ID}")),
+        ("user", CLOUD_ID.to_string()),
+        ("user", format!("user_{CLOUD_ID}")),
+        ("contact", format!("User_{CLOUD_ID}")),
+        (
+            "user",
+            "User_00000000-0000-0000-0000-000000000000".to_string(),
+        ),
+    ] {
+        assert_eq!(hybrid(class, &value).unwrap_err(), bad, "{class} {value}");
+    }
+}

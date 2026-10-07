@@ -222,3 +222,53 @@ fn edge_record_round_trips_and_keeps_endpoints_distinct() {
     assert_eq!(DirEdge::from_bytes(&b), Some(e));
     assert_ne!(e.src.1, e.dst.1);
 }
+
+// ABI minor 1: four inline 128-bit id slots. A value round-trips through the
+// record bytes, each slot is independent of the others and of the pooled and
+// numeric slots, and a minor-0 record (zero bytes, presence clear) reads as
+// "no id".
+#[test]
+fn guid_slots_are_inline_and_additive() {
+    let id = g("0b5c3a1e-7d2f-4c88-9e10-3f6a2b4c5d6e");
+    let mut r = DirRecord::new(SCHEMA_AD1, 1, Guid128::NIL, Guid128::NIL, 0);
+    assert_eq!(r.abi(), (ABI_MAJOR, 1));
+    assert!((0..GUID_SLOTS).all(|s| r.guid(s).is_none()));
+    r.set_guid(1, id).unwrap();
+    assert_eq!(
+        r.set_guid(GUID_SLOTS, id),
+        Err(RecordError::Slot(GUID_SLOTS))
+    );
+    let back = DirRecord::from_bytes(r.as_bytes()).unwrap();
+    assert_eq!(back.guid(1), Some(id));
+    assert_eq!(back.guid(0), None);
+    assert!((0..32).all(|s| back.str_ref(s).is_none()));
+    assert!((0..4).all(|s| back.num(s).is_none()));
+    assert!(back.reserved_is_zero());
+    assert_eq!(&back.as_bytes()[off::GUIDS + 16..off::GUIDS + 32], &id.0);
+    // A minor-0 writer left these bytes zero and the presence bits clear.
+    let mut old = *DirRecord::new(SCHEMA_AD1, 1, Guid128::NIL, Guid128::NIL, 0).as_bytes();
+    old[off::ABI_MINOR] = 0;
+    let old = DirRecord::from_bytes(&old).unwrap();
+    assert!((0..GUID_SLOTS).all(|s| old.guid(s).is_none()));
+}
+
+#[test]
+fn schema_validation_knows_the_guid_space() {
+    let def = |name, slot, kind| AttrDef {
+        name,
+        slot,
+        kind,
+        since: 1,
+    };
+    // A guid slot may share an index with a pooled and a numeric slot.
+    assert!(
+        schema::validate(&[
+            def("a", 0, AttrKind::Str),
+            def("b", 0, AttrKind::U32),
+            def("c", 0, AttrKind::Guid),
+        ])
+        .is_ok()
+    );
+    assert!(schema::validate(&[def("a", 1, AttrKind::Guid), def("b", 1, AttrKind::Guid)]).is_err());
+    assert!(schema::validate(&[def("a", GUID_SLOTS as u8, AttrKind::Guid)]).is_err());
+}
