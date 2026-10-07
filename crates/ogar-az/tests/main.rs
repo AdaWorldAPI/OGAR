@@ -195,6 +195,16 @@ fn every_synced_attribute_exists_on_both_sides_once() {
         None,
         "the routing address is not synced"
     );
+    // A numbered extension attribute is synced as a member of the bag.
+    let ext = cloud_of("extensionAttribute7").unwrap();
+    assert_eq!(ext.cloud, "onPremisesExtensionAttributes");
+    assert_eq!(cloud_of("extensionAttribute16"), None);
+    assert_eq!(cloud_of("extensionAttribute07"), None);
+    // objectSid is binary in AD and a string in Graph: not copied as is.
+    assert_eq!(
+        cloud_of("objectSid").unwrap().transform,
+        SyncTransform::SecurityIdentifier
+    );
 }
 
 // onPremisesExtensionAttributes is a bag: one positional slot, entry n is

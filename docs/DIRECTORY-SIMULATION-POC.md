@@ -279,10 +279,15 @@ no-population-intermediate rule.
 - **V9 — `onPremisesExtensionAttributes` is a bag.** Graph returns it as
   one object of fifteen `extensionAttributeN` keys; AD stores fifteen
   separate attributes. Both land in one pooled slot of `AttrKind::Bag`:
-  member *n* is `extensionAttribute(n+1)`, an empty member is absent, and a
-  bag with no values sets no slot. Member names are not stored, so the AD
-  and Graph bags are byte-identical and the pair syncs `Same`. Read a
-  member with `ValuePool::bag_member(r, n)` (1-based, `BAG_LEN` = 15).
+  the entry at zero-based offset *i* is `extensionAttribute(i+1)`, an empty
+  entry is an absent member, and a bag with no values sets no slot. Member
+  names are not stored, so the AD and Graph bags are byte-identical and the
+  pair syncs `Same`. Read a member with `ValuePool::bag_member(r, n)`,
+  which is 1-based: `n = 1` is `extensionAttribute1`, `n = BAG_LEN` (15)
+  is `extensionAttribute15`. Only the canonical member spelling counts
+  (`schema::bag_member_of`): `extensionAttribute01` is reported as ignored.
+  `objectSid` syncs through `SyncTransform::SecurityIdentifier`, the
+  binary-to-`S-1-...` string form (`ogar_dir_core::sid::sid_to_string`).
   `ogar-ad` v5 gathers the bag (and stops reporting its members as
   ignored); `ogar-az` v2 requests it. `onPremisesDistinguishedName` and
   `onPremisesSamAccountName` were already ingested: the DN's OU path

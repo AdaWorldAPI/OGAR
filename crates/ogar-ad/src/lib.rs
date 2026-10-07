@@ -19,6 +19,7 @@ pub mod ldif;
 use ogar_dir_core::dn::Dn;
 use ogar_dir_core::label::{self, CloudLabel};
 use ogar_dir_core::record::{FLAG_DN_UNENCODED, FLAG_NON_OU_CONTAINER};
+use ogar_dir_core::schema::bag_member_of;
 use ogar_dir_core::{
     AttrDef, AttrKind, BAG_LEN, DirRecord, Guid128, OuDictionary, SchemaFamily, SchemaId, ValuePool,
 };
@@ -355,13 +356,7 @@ fn is_bag_member(base: &str) -> bool {
     SCHEMA_V1
         .iter()
         .filter(|d| d.kind == AttrKind::Bag)
-        .any(|d| {
-            base.len() > d.name.len()
-                && base[..d.name.len()].eq_ignore_ascii_case(d.name)
-                && base[d.name.len()..]
-                    .parse::<usize>()
-                    .is_ok_and(|n| (1..=BAG_LEN).contains(&n))
-        })
+        .any(|d| bag_member_of(d.name, base).is_some())
 }
 
 fn identity_or_dn(name: &str) -> bool {

@@ -36,6 +36,7 @@ pub mod label;
 pub mod pool;
 pub mod record;
 pub mod schema;
+pub mod sid;
 
 pub use dn::{Dn, DnError, Rdn};
 pub use dn128::{DN_CHILDREN, DN_LEVELS, DirectoryScope, Dn128, Dn128Error};

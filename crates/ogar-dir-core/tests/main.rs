@@ -272,3 +272,55 @@ fn schema_validation_knows_the_guid_space() {
     assert!(schema::validate(&[def("a", 1, AttrKind::Guid), def("b", 1, AttrKind::Guid)]).is_err());
     assert!(schema::validate(&[def("a", GUID_SLOTS as u8, AttrKind::Guid)]).is_err());
 }
+
+// A bag member is named by its exact canonical spelling only: `01` is not
+// member 1, and a name with a multi-byte character at the prefix boundary
+// is simply not a member (it must not panic).
+#[test]
+fn bag_members_are_named_exactly() {
+    use ogar_dir_core::schema::bag_member_of;
+    let bag = "extensionAttribute";
+    assert_eq!(bag_member_of(bag, "extensionAttribute7"), Some(7));
+    assert_eq!(bag_member_of(bag, "ExtensionAttribute15"), Some(15));
+    assert_eq!(bag_member_of(bag, "extensionattribute1"), Some(1));
+    for not in [
+        "extensionAttribute",
+        "extensionAttribute0",
+        "extensionAttribute01",
+        "extensionAttribute16",
+        "extensionAttribute+1",
+        "extensionAttribute 1",
+        "abcdefghijklmnopqé",
+        "extensionAttributé1",
+        "mail",
+    ] {
+        assert_eq!(bag_member_of(bag, not), None, "{not}");
+    }
+}
+
+// objectSid is binary; Graph's onPremisesSecurityIdentifier is its SDDL
+// string form, S-{revision}-{authority}-{subauthority}...
+#[test]
+fn a_binary_sid_renders_as_its_string_form() {
+    use ogar_dir_core::sid::sid_to_string;
+    let sid = [
+        0x01, 0x05, 0x00, 0x00, 0x00, 0x00, 0x00, 0x05, 0x15, 0x00, 0x00, 0x00, 0xdc, 0xf4, 0xdc,
+        0x3b, 0x83, 0x3d, 0x2b, 0x46, 0x82, 0x8b, 0xa6, 0x28, 0x00, 0x02, 0x00, 0x00,
+    ];
+    assert_eq!(
+        sid_to_string(&sid).as_deref(),
+        Some("S-1-5-21-1004336348-1177238915-682003330-512")
+    );
+    // Well-known SID with no sub-authorities beyond one: Everyone, S-1-1-0.
+    assert_eq!(
+        sid_to_string(&[1, 1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0]).as_deref(),
+        Some("S-1-1-0")
+    );
+    // The length must match the sub-authority count exactly.
+    assert_eq!(sid_to_string(&sid[..27]), None);
+    let mut long = sid.to_vec();
+    long.push(0);
+    assert_eq!(sid_to_string(&long), None);
+    assert_eq!(sid_to_string(&[]), None);
+    assert_eq!(sid_to_string(&[1]), None);
+}
