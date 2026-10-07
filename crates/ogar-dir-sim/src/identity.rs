@@ -4,13 +4,17 @@
 //! | on-premises (AD)                  | cloud                        |
 //! |-----------------------------------|------------------------------|
 //! | `mS-DS-ConsistencyGuid` (16 bytes) | `ImmutableId` = its base64  |
-//! | `msDS-ExternalDirectoryObjectId`  | `User_` + the cloud object id |
+//! | `msDS-ExternalDirectoryObjectId`  | the cloud object id, `User_`-prefixed |
 //! | `mailNickname`                    | Exchange Online `Alias`      |
 //!
-//! `msDS-ExternalDirectoryObjectId` is written back by Entra Connect. It is
-//! decoded into a [`Guid128`] plus a [`CloudLabel`]; the `User_` text is a
-//! label pattern rendered on egress, never a stored string. Both ids are
-//! therefore 128-bit and compare as ids, not as text.
+//! **One cloud object id, three spellings.** The Entra (formerly MSOL)
+//! `ObjectId`, Exchange Online's `ExternalDirectoryObjectId` and AD's
+//! `msDS-ExternalDirectoryObjectId` are the same 128-bit id. The two cloud
+//! spellings are the bare GUID; only AD's backsync copy carries the `User_`
+//! label. So the id is a [`Guid128`] (`ExternalObjectId::object_id`), the
+//! cloud spellings parse with [`Guid128::parse`], and the `User_` text is a
+//! [`CloudLabel`] rendered on egress to AD — never a stored string. All
+//! three compare as ids, not as text.
 //!
 //! The alias needs no type here: `mailNickname` is ingested raw and is the
 //! Exchange Online `Alias` as-is.
@@ -118,6 +122,20 @@ mod tests {
         // One id, two labels: the id compares equal, the objects do not.
         assert_eq!(group.object_id, user.object_id);
         assert_ne!(group, user);
+    }
+
+    #[test]
+    fn the_three_spellings_are_one_id() {
+        // Entra ObjectId and Exchange Online ExternalDirectoryObjectId are the
+        // bare GUID; AD's msDS-ExternalDirectoryObjectId adds the label.
+        let entra = Guid128::parse(ID).unwrap();
+        let exo = Guid128::parse(ID).unwrap();
+        let ad = ExternalObjectId::parse(&format!("User_{ID}")).unwrap();
+        assert_eq!(ad.object_id, entra);
+        assert_eq!(ad.object_id, exo);
+        // The bare cloud spelling is not AD's: it carries no label.
+        assert_eq!(ExternalObjectId::parse(ID), None);
+        assert_eq!(ad.object_id.to_string(), ID);
     }
 
     #[test]

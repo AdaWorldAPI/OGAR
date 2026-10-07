@@ -242,7 +242,9 @@ no-population-intermediate rule.
   to `Guid128`: `SourceAnchor` (mixed-endian like `objectGUID`, renders the
   `ImmutableId`) and `ExternalObjectId { label, object_id }`, where the
   `User_` / `Group_` text is a `CloudLabel` rendered on egress, never a
-  stored string. Decoding is strict: a value that does not render back to
+  stored string. The Entra (formerly MSOL) `ObjectId`, Exchange Online's
+  `ExternalDirectoryObjectId` and AD's `msDS-ExternalDirectoryObjectId` are
+  one id: the two cloud spellings are the bare GUID, only AD's adds `User_`. Decoding is strict: a value that does not render back to
   exactly what was observed stays raw. **Open:** no executor ingests them
   yet; matching an on-premises node to its cloud object by these ids is the
   lance-graph side.
