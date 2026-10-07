@@ -14,7 +14,9 @@
 //! label. So the id is a [`Guid128`] (`ExternalObjectId::object_id`), the
 //! cloud spellings parse with [`Guid128::parse`], and the `User_` text is a
 //! [`CloudLabel`] rendered on egress to AD — never a stored string. All
-//! three compare as ids, not as text.
+//! three compare as ids, not as text. `ogar-ad` already strips the label on
+//! ingest and stores the id in an inline guid slot; the label codec is the
+//! one in [`ogar_dir_core::label`].
 //!
 //! The alias needs no type here: `mailNickname` is ingested raw and is the
 //! Exchange Online `Alias` as-is.
@@ -22,27 +24,9 @@
 //! Decoding is strict, like [`crate::exchange`]: a value that does not
 //! re-render to exactly what was observed is not decoded.
 
-use ogar_dir_core::{Guid128, base64};
+use ogar_dir_core::{Guid128, base64, label};
 
-/// The object-type label Entra Connect puts in front of a cloud object id.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub enum CloudLabel {
-    /// `User_`.
-    User,
-    /// `Group_` (group writeback).
-    Group,
-}
-
-impl CloudLabel {
-    /// The text written in front of the id.
-    pub const fn prefix(self) -> &'static str {
-        match self {
-            Self::User => "User_",
-            Self::Group => "Group_",
-        }
-    }
-    const ALL: [Self; 2] = [Self::User, Self::Group];
-}
+pub use ogar_dir_core::label::CloudLabel;
 
 /// A decoded `msDS-ExternalDirectoryObjectId`: the cloud object id, plus the
 /// label its text form carries.
@@ -59,19 +43,13 @@ impl ExternalObjectId {
     /// not render back to exactly `s` (unknown label, upper-case hex, braces,
     /// a nil id); the caller keeps such a value raw.
     pub fn parse(s: &str) -> Option<Self> {
-        let (label, rest) = CloudLabel::ALL
-            .into_iter()
-            .find_map(|l| s.strip_prefix(l.prefix()).map(|r| (l, r)))?;
-        let id = Self {
-            label,
-            object_id: Guid128::parse(rest).ok()?,
-        };
-        (!id.object_id.is_nil() && id.render() == s).then_some(id)
+        let (label, object_id) = label::strip(s)?;
+        Some(Self { label, object_id })
     }
 
     /// The text form, as Entra Connect writes it.
     pub fn render(&self) -> String {
-        format!("{}{}", self.label.prefix(), self.object_id)
+        label::render(self.label, self.object_id)
     }
 }
 

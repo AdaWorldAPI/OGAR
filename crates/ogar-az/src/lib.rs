@@ -270,6 +270,14 @@ pub fn encode_user(
                 rec.set_num(def.slot as usize, b as u32)
                     .map_err(|e| st(&e))?;
             }
+            AttrKind::Guid => {
+                // Graph spells a 128-bit id as the bare GUID.
+                let g = v
+                    .as_str()
+                    .and_then(|s| Guid128::parse(s).ok())
+                    .ok_or_else(bad)?;
+                rec.set_guid(def.slot as usize, g).map_err(|e| st(&e))?;
+            }
             AttrKind::U32 => {
                 let n = v
                     .as_u64()

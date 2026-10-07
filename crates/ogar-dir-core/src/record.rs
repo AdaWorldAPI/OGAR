@@ -20,11 +20,21 @@
 //! 0x050..0x060  ou_hhtl          [16]  WHERE 8 × u16 LE, root first
 //! 0x060..0x068  observed_at_ms   i64   WHEN  unix ms the observation was taken (0 = unknown)
 //! 0x068..0x070  presence         u64   bit s = pooled slot s present (0..32);
-//!                                       bit 32+n = numeric slot n present (n < 4)
+//!                                       bit 32+n = numeric slot n present (n < 4);
+//!                                       bit 36+g = guid slot g present (g < 4)
 //! 0x070..0x080  num              4×u32 numeric slots (meaning per schema)
 //! 0x080..0x180  str_refs         32×(u32 off, u32 len) into the batch ValuePool
-//! 0x180..0x200  reserved         [128] zero; writers MUST zero, readers MUST ignore
+//! 0x180..0x1C0  guids            4×[16] 128-bit id slots, textual byte order (minor 1)
+//! 0x1C0..0x200  reserved         [64] zero; writers MUST zero, readers MUST ignore
 //! ```
+//!
+//! A 128-bit id attribute (`mS-DS-ConsistencyGuid`,
+//! `msDS-ExternalDirectoryObjectId`) lives inline in a guid slot, not as
+//! pooled text: it compares as 16 bytes, with no string in the hot path. The
+//! encoder converts the source spelling on the way in and renders it on the
+//! way out. Minor 1 gave the first 64 reserved bytes this meaning; a minor-0
+//! record has them zero with the presence bits clear, so it reads as "no id
+//! present".
 //!
 //! GUIDs are stored in textual byte order (see [`crate::guid`]). Strings never
 //! live in the record; an absent slot has its presence bit clear (a present
@@ -44,13 +54,15 @@ pub const RECORD_BYTES: usize = 512;
 /// Layout major: bump only when an existing offset changes meaning.
 pub const ABI_MAJOR: u16 = 1;
 /// Layout minor: bump when reserved bytes gain meaning (additive).
-pub const ABI_MINOR: u16 = 0;
+pub const ABI_MINOR: u16 = 1;
 /// Magic.
 pub const MAGIC: [u8; 4] = *b"OGDR";
 /// Pooled slot count.
 pub const STR_SLOTS: usize = 32;
 /// Numeric slot count.
 pub const NUM_SLOTS: usize = 4;
+/// 128-bit id slot count.
+pub const GUID_SLOTS: usize = 4;
 
 /// Offsets (public so a non-Rust reader can be generated from them).
 pub mod off {
@@ -72,7 +84,8 @@ pub mod off {
     pub const PRESENCE: usize = 0x068;
     pub const NUM: usize = 0x070;
     pub const STR_REFS: usize = 0x080;
-    pub const RESERVED: usize = 0x180;
+    pub const GUIDS: usize = 0x180;
+    pub const RESERVED: usize = 0x1C0;
     pub const END: usize = 0x200;
 }
 
@@ -86,7 +99,9 @@ pub const FLAG_DN_UNENCODED: u16 = 1 << 2;
 
 // Layout lock.
 const _: () = assert!(off::END == RECORD_BYTES);
-const _: () = assert!(off::STR_REFS + STR_SLOTS * 8 == off::RESERVED);
+const _: () = assert!(off::STR_REFS + STR_SLOTS * 8 == off::GUIDS);
+const _: () = assert!(off::GUIDS + GUID_SLOTS * 16 == off::RESERVED);
+const _: () = assert!(STR_SLOTS + NUM_SLOTS + GUID_SLOTS <= 64);
 const _: () = assert!(off::NUM + NUM_SLOTS * 4 == off::STR_REFS);
 const _: () = assert!(off::VALUE + 480 == RECORD_BYTES);
 const _: () = assert!(core::mem::size_of::<DirRecord>() == RECORD_BYTES);
@@ -308,6 +323,25 @@ impl DirRecord {
         Some(u32::from_le_bytes(
             self.bytes[o..o + 4].try_into().expect("4"),
         ))
+    }
+
+    /// Set a 128-bit id slot.
+    pub fn set_guid(&mut self, slot: usize, g: Guid128) -> Result<(), RecordError> {
+        if slot >= GUID_SLOTS {
+            return Err(RecordError::Slot(slot));
+        }
+        let o = off::GUIDS + slot * 16;
+        self.bytes[o..o + 16].copy_from_slice(&g.0);
+        self.set_presence_bit(STR_SLOTS + NUM_SLOTS + slot);
+        Ok(())
+    }
+
+    /// Read a 128-bit id slot.
+    pub fn guid(&self, slot: usize) -> Option<Guid128> {
+        if slot >= GUID_SLOTS || self.presence() & (1 << (STR_SLOTS + NUM_SLOTS + slot)) == 0 {
+            return None;
+        }
+        Some(self.guid_at(off::GUIDS + slot * 16))
     }
 
     /// Reserved bytes are zero (writer obligation).

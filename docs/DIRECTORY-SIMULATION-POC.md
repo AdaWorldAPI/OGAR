@@ -234,18 +234,21 @@ no-population-intermediate rule.
   proxy `Enable-RemoteMailbox` stamps is not added to the proxy relation by
   the vocabulary; the executor derives ownership of the routing address.
 - **V7 — Hybrid identity.** On-premises and cloud name each other by three
-  attributes, which `ogar-ad` schema v3 ingests raw: `mS-DS-ConsistencyGuid`
-  (the source anchor; its base64 is the cloud `ImmutableId`),
-  `msDS-ExternalDirectoryObjectId` (Entra Connect backsync,
-  `User_<cloud object id>`) and `mailNickname` (the Exchange Online
-  `Alias`, already ingested). `ogar_dir_sim::identity` decodes the two ids
-  to `Guid128`: `SourceAnchor` (mixed-endian like `objectGUID`, renders the
-  `ImmutableId`) and `ExternalObjectId { label, object_id }`, where the
-  `User_` / `Group_` text is a `CloudLabel` rendered on egress, never a
-  stored string. The Entra (formerly MSOL) `ObjectId`, Exchange Online's
-  `ExternalDirectoryObjectId` and AD's `msDS-ExternalDirectoryObjectId` are
-  one id: the two cloud spellings are the bare GUID, only AD's adds `User_`. Decoding is strict: a value that does not render back to
-  exactly what was observed stays raw. **Open:** no executor ingests them
+  attributes: `mS-DS-ConsistencyGuid` (the source anchor; its base64 is the
+  cloud `ImmutableId`), `msDS-ExternalDirectoryObjectId` (Entra Connect
+  backsync, `User_<cloud object id>`) and `mailNickname` (the Exchange Online
+  `Alias`, ingested raw). The Entra (formerly MSOL) `ObjectId`, Exchange
+  Online's `ExternalDirectoryObjectId` and AD's `msDS-ExternalDirectoryObjectId`
+  are one id: the cloud spellings are the bare GUID, only AD's adds `User_`.
+  **Neither id is stored as a string.** `DirRecord` ABI minor 1 gives the
+  first 64 reserved bytes four inline 128-bit id slots (`AttrKind::Guid`);
+  `ogar-ad` schema v3 puts both anchors there. In: the anchor's mixed-endian
+  bytes become a `Guid128`; `User_` / `Group_` is stripped and must match the
+  object kind (else the entry is refused). Out:
+  `ogar_ad::external_directory_object_id` adds the label back from the kind,
+  `ogar_ad::consistency_guid` returns the AD bytes. The label codec has one
+  definition, `ogar_dir_core::label`, which `ogar_dir_sim::identity`
+  re-exports. **Open:** no executor ingests them
   yet; matching an on-premises node to its cloud object by these ids is the
   lance-graph side.
 - **V5 — CI.** CI builds `lance-graph-dir-sim` against the OGAR checkout, so

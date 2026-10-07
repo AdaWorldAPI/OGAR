@@ -17,6 +17,7 @@
 pub mod ldif;
 
 use ogar_dir_core::dn::Dn;
+use ogar_dir_core::label::{self, CloudLabel};
 use ogar_dir_core::record::{FLAG_DN_UNENCODED, FLAG_NON_OU_CONTAINER};
 use ogar_dir_core::{
     AttrDef, AttrKind, DirRecord, Guid128, OuDictionary, SchemaFamily, SchemaId, ValuePool,
@@ -48,11 +49,13 @@ pub const SCHEMA: SchemaId = SchemaId {
 /// so kept as its LDAP decimal text in a pooled slot). Other `msExch*`
 /// attributes stay out until a consumer needs them.
 ///
-/// v3 adds the hybrid identity anchors, raw: `mS-DS-ConsistencyGuid` (16
-/// bytes, the source anchor whose base64 is the cloud `ImmutableId`) and
+/// v3 adds the hybrid identity anchors as 128-bit ids in inline guid slots,
+/// never as text: `mS-DS-ConsistencyGuid` (16 mixed-endian bytes, the source
+/// anchor whose base64 is the cloud `ImmutableId`) and
 /// `msDS-ExternalDirectoryObjectId` (written back by Entra Connect as
-/// `User_<cloud object id>`). Decoding both into 128-bit ids is
-/// `ogar-dir-sim::identity`'s job, not this crate's.
+/// `User_<cloud object id>`). The `User_` / `Group_` label is stripped on the
+/// way in — it must match the object's kind — and added back on the way out
+/// from the kind ([`external_directory_object_id`]); it is never stored.
 pub const SCHEMA_V1: &[AttrDef] = &[
     AttrDef {
         name: "distinguishedName",
@@ -164,14 +167,14 @@ pub const SCHEMA_V1: &[AttrDef] = &[
     },
     AttrDef {
         name: "mS-DS-ConsistencyGuid",
-        slot: 15,
-        kind: AttrKind::Bytes,
+        slot: 0,
+        kind: AttrKind::Guid,
         since: 3,
     },
     AttrDef {
         name: "msDS-ExternalDirectoryObjectId",
-        slot: 16,
-        kind: AttrKind::Str,
+        slot: 1,
+        kind: AttrKind::Guid,
         since: 3,
     },
 ];
@@ -195,6 +198,20 @@ pub enum AdKind {
 }
 
 impl AdKind {
+    /// From the record's `object_kind` code.
+    pub fn from_code(code: u16) -> Option<Self> {
+        [
+            Self::Other,
+            Self::User,
+            Self::Group,
+            Self::Computer,
+            Self::Contact,
+            Self::OrganizationalUnit,
+        ]
+        .into_iter()
+        .find(|k| *k as u16 == code)
+    }
+
     /// From `objectClass` values; most specific class wins.
     pub fn from_object_class<S: AsRef<str>>(classes: &[S]) -> Self {
         let has = |c: &str| classes.iter().any(|x| x.as_ref().eq_ignore_ascii_case(c));
@@ -245,6 +262,9 @@ pub enum AdError {
     MultipleValues(&'static str),
     /// A numeric attribute did not parse.
     BadNumber(&'static str),
+    /// A 128-bit id attribute was not a non-nil id in its source spelling
+    /// (16 raw bytes; `<Label>_<guid>` whose label matches the object kind).
+    BadId(&'static str),
     /// Pool or slot failure.
     Storage(String),
 }
@@ -264,6 +284,51 @@ pub struct Encoded {
     /// Attribute names present in the entry but not in the schema. They are
     /// not stored and cannot affect the fixed ABI.
     pub ignored: Vec<String>,
+}
+
+/// The label an object of this kind carries in
+/// `msDS-ExternalDirectoryObjectId`, if any.
+pub fn cloud_label(kind: AdKind) -> Option<CloudLabel> {
+    match kind {
+        AdKind::User => Some(CloudLabel::User),
+        AdKind::Group => Some(CloudLabel::Group),
+        _ => None,
+    }
+}
+
+/// Inbound: a 128-bit id attribute's source spelling → the id.
+fn decode_id(name: &str, raw: &[u8], kind: u16) -> Option<Guid128> {
+    let g = match name {
+        "mS-DS-ConsistencyGuid" => Guid128::from_ms_bytes(raw).ok()?,
+        "msDS-ExternalDirectoryObjectId" => {
+            let (label, g) = label::strip(std::str::from_utf8(raw).ok()?)?;
+            let expected = cloud_label(AdKind::from_code(kind)?)?;
+            (label == expected).then_some(g)?
+        }
+        _ => return None,
+    };
+    (!g.is_nil()).then_some(g)
+}
+
+fn guid_slot(name: &str) -> usize {
+    SCHEMA_V1
+        .iter()
+        .find(|d| d.name == name && d.kind == AttrKind::Guid)
+        .expect("a guid attribute of SCHEMA_V1")
+        .slot as usize
+}
+
+/// Outbound: `msDS-ExternalDirectoryObjectId` as AD spells it — the stored
+/// id with the label of the record's kind added back.
+pub fn external_directory_object_id(rec: &DirRecord) -> Option<String> {
+    let g = rec.guid(guid_slot("msDS-ExternalDirectoryObjectId"))?;
+    let label = cloud_label(AdKind::from_code(rec.object_kind())?)?;
+    Some(label::render(label, g))
+}
+
+/// Outbound: `mS-DS-ConsistencyGuid` as AD stores it (16 mixed-endian bytes).
+pub fn consistency_guid(rec: &DirRecord) -> Option<[u8; 16]> {
+    Some(rec.guid(guid_slot("mS-DS-ConsistencyGuid"))?.to_ms_bytes())
 }
 
 fn identity_or_dn(name: &str) -> bool {
@@ -321,6 +386,13 @@ pub fn encode(
                 }
                 let r = pool.push_multi(&vals).map_err(|e| st(&e))?;
                 rec.set_str(def.slot as usize, r).map_err(|e| st(&e))?;
+            }
+            AttrKind::Guid => {
+                let [v] = vals.as_slice() else {
+                    return Err(AdError::MultipleValues(def.name));
+                };
+                let g = decode_id(def.name, v, kind).ok_or(AdError::BadId(def.name))?;
+                rec.set_guid(def.slot as usize, g).map_err(|e| st(&e))?;
             }
             AttrKind::U32 | AttrKind::Bool => {
                 let [v] = vals.as_slice() else {

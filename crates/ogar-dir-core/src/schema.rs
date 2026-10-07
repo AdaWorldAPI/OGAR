@@ -59,12 +59,35 @@ pub enum AttrKind {
     U32,
     /// Boolean (0/1), numeric slot. Absence (presence bit clear) = unknown/null.
     Bool,
+    /// A 128-bit id, inline guid slot (textual byte order). The encoder
+    /// converts the source spelling (raw mixed-endian bytes, a labeled
+    /// `User_<guid>`) on the way in; nothing about it is stored as text.
+    Guid,
+}
+
+/// Which slot space an attribute occupies.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SlotSpace {
+    /// The 32 pooled slots.
+    Pooled,
+    /// The 4 numeric slots.
+    Numeric,
+    /// The 4 inline 128-bit id slots.
+    Guid,
 }
 
 impl AttrKind {
     /// True for pool-backed kinds (string slot space), false for numeric.
     pub fn is_pooled(self) -> bool {
-        matches!(self, Self::Str | Self::Bytes | Self::MultiStr)
+        self.space() == SlotSpace::Pooled
+    }
+    /// The slot space this kind occupies.
+    pub fn space(self) -> SlotSpace {
+        match self {
+            Self::Str | Self::Bytes | Self::MultiStr => SlotSpace::Pooled,
+            Self::U32 | Self::Bool => SlotSpace::Numeric,
+            Self::Guid => SlotSpace::Guid,
+        }
     }
 }
 
@@ -74,7 +97,7 @@ pub struct AttrDef {
     /// Source-native attribute name, exactly as the source spells it
     /// (`sAMAccountName`, `onPremisesDistinguishedName`).
     pub name: &'static str,
-    /// Slot index within its slot space (pooled 0..32, numeric 0..4).
+    /// Slot index within its slot space (pooled 0..32, numeric 0..4, guid 0..4).
     pub slot: u8,
     /// Storage kind.
     pub kind: AttrKind,
@@ -86,10 +109,10 @@ pub struct AttrDef {
 /// name used twice, `since` ≥ 1. Returns the first problem found.
 pub fn validate(attrs: &[AttrDef]) -> Result<(), String> {
     for (i, a) in attrs.iter().enumerate() {
-        let limit = if a.kind.is_pooled() {
-            crate::record::STR_SLOTS
-        } else {
-            crate::record::NUM_SLOTS
+        let limit = match a.kind.space() {
+            SlotSpace::Pooled => crate::record::STR_SLOTS,
+            SlotSpace::Numeric => crate::record::NUM_SLOTS,
+            SlotSpace::Guid => crate::record::GUID_SLOTS,
         };
         if a.slot as usize >= limit {
             return Err(format!("{}: slot {} out of range", a.name, a.slot));
@@ -101,7 +124,7 @@ pub fn validate(attrs: &[AttrDef]) -> Result<(), String> {
             if b.name == a.name {
                 return Err(format!("{}: duplicate name", a.name));
             }
-            if b.slot == a.slot && b.kind.is_pooled() == a.kind.is_pooled() {
+            if b.slot == a.slot && b.kind.space() == a.kind.space() {
                 return Err(format!("{} and {}: same slot {}", b.name, a.name, a.slot));
             }
         }
