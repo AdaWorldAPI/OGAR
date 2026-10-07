@@ -97,7 +97,10 @@ pub const fn effective_active(ad: Option<bool>, entra: Option<bool>) -> Option<b
     }
 }
 
-/// Attribute a change can set.
+/// Dictionary-backed attribute a [`Change::SetAttribute`] can set. Its
+/// values are [`ValueId`]s; the enabled flag and the location are not
+/// dictionary values and have their own typed compare-and-set changes
+/// ([`Change::SetActive`], [`Change::SetLocation`]).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Attribute {
     /// userPrincipalName.
@@ -116,8 +119,26 @@ pub enum Attribute {
 /// 2. `DeleteNode` — frees its UPN / SMTP before anything claims them;
 /// 3. `SetAttribute` — renames away from (or into) addresses only after
 ///    deletes freed them and before creates take them;
-/// 4. `CreateNode` — after every address it needs is free;
-/// 5. `AddMembership` — once both endpoints exist.
+/// 4. `SetActive`, `SetLocation` — properties of a node that exists before
+///    and after; neither frees nor claims a value, so no other change
+///    depends on them;
+/// 5. `CreateNode` — after every address it needs is free;
+/// 6. `AddMembership` — once both endpoints exist.
+///
+/// ## Every property of an existing node, and `kind`
+///
+/// A node present in both versions differs only through compare-and-set
+/// changes: UPN and primary SMTP ([`Change::SetAttribute`]), the enabled
+/// flag ([`Change::SetActive`]) and the location ([`Change::SetLocation`]).
+/// [`NodeState::apply`] is their one reference semantics.
+///
+/// **`kind` is identity, not a property, and no change alters it.** Users
+/// and groups are separate populations with separate ordinal spaces, a
+/// membership is typed (`user`, `group`) by its endpoints, and a directory
+/// object does not turn from a user into a group. A different kind under the
+/// same identity is a different object, so it is not representable as a
+/// mutation — and re-creating an identity under another kind is refused by
+/// the executor, never planned.
 ///
 /// Within step 3, the plan additionally orders a chain of renames (one
 /// object releases the value the next claims). A cycle of renames (two
@@ -151,6 +172,30 @@ pub enum Change {
         /// New value.
         to: Option<ValueId>,
     },
+    /// Compare-and-set of the enabled flag, all three values: `Some(true)`
+    /// enabled, `Some(false)` disabled, `None` unknown. Users only (a group
+    /// has no flag). A diff reports `→ None` when a later observation stops
+    /// reporting the flag; no plan can actuate it (an actuator cannot write
+    /// "unknown").
+    SetActive {
+        /// Object.
+        node: Guid128,
+        /// Flag the change expects to replace (as observed).
+        from: Option<bool>,
+        /// New flag.
+        to: Option<bool>,
+    },
+    /// Compare-and-set of the hierarchy location (numeric; never a DN).
+    /// `None` = unknown location. A move to `None` is reportable by a diff
+    /// but not actuatable.
+    SetLocation {
+        /// Object.
+        node: Guid128,
+        /// Location the change expects to replace (as observed).
+        from: Option<Dn128>,
+        /// New location.
+        to: Option<Dn128>,
+    },
     /// A node that did not exist comes into existence.
     CreateNode {
         /// Identity.
@@ -165,6 +210,73 @@ pub enum Change {
         /// Group.
         group: Guid128,
     },
+}
+
+/// Why [`NodeState::apply`] refused a change.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Refusal {
+    /// The change is not a property change of one existing node
+    /// (memberships, creates and deletes act on the directory, not on a
+    /// node's state).
+    NotAPropertyChange,
+    /// The node no longer holds the value the change expects to replace.
+    Stale,
+    /// [`Change::SetActive`] on a group: groups carry no enabled flag.
+    NoEnabledFlag,
+}
+
+impl NodeState {
+    /// The reference semantics of a compare-and-set property change on one
+    /// existing node: the state after it, or why it is refused. Every
+    /// executor must agree with it.
+    ///
+    /// The change applies only if the node still holds its `from`;
+    /// otherwise it is [`Refusal::Stale`], whatever `to` is. `kind` is never
+    /// changed (no change can express it).
+    ///
+    /// # Errors
+    ///
+    /// [`Refusal`].
+    pub fn apply(&self, c: &Change) -> Result<Self, Refusal> {
+        let mut next = self.clone();
+        match c {
+            Change::SetAttribute {
+                attribute,
+                from,
+                to,
+                ..
+            } => {
+                let slot = match attribute {
+                    Attribute::Upn => &mut next.upn,
+                    Attribute::PrimarySmtp => &mut next.primary_smtp,
+                };
+                if slot != from {
+                    return Err(Refusal::Stale);
+                }
+                *slot = *to;
+            }
+            Change::SetActive { from, to, .. } => {
+                if self.kind == NodeKind::Group {
+                    return Err(Refusal::NoEnabledFlag);
+                }
+                if self.active != *from {
+                    return Err(Refusal::Stale);
+                }
+                next.active = *to;
+            }
+            Change::SetLocation { from, to, .. } => {
+                if self.dn != *from {
+                    return Err(Refusal::Stale);
+                }
+                next.dn = *to;
+            }
+            Change::RemoveMembership { .. }
+            | Change::DeleteNode { .. }
+            | Change::CreateNode { .. }
+            | Change::AddMembership { .. } => return Err(Refusal::NotAPropertyChange),
+        }
+        Ok(next)
+    }
 }
 
 /// Comparison form of a UPN / SMTP address, computed once at ingress (the
@@ -212,6 +324,179 @@ mod tests {
             // Source order does not matter.
             assert_eq!(effective_active(entra, ad), want, "swapped");
         }
+    }
+
+    use super::{Attribute, Change, NodeKind, NodeState, Refusal, ValueId};
+    use ogar_dir_core::{Dn128, Guid128};
+
+    const N: Guid128 = Guid128([7; 16]);
+    const STATES: [Option<bool>; 3] = [Some(true), Some(false), None];
+
+    fn user(active: Option<bool>, dn: Option<Dn128>) -> NodeState {
+        NodeState {
+            kind: NodeKind::User,
+            active,
+            upn: Some(ValueId(1)),
+            primary_smtp: Some(ValueId(2)),
+            dn,
+        }
+    }
+    fn dn(l: &[u8]) -> Option<Dn128> {
+        Some(Dn128::new(l).unwrap())
+    }
+    fn set_active(from: Option<bool>, to: Option<bool>) -> Change {
+        Change::SetActive { node: N, from, to }
+    }
+    fn set_location(from: Option<Dn128>, to: Option<Dn128>) -> Change {
+        Change::SetLocation { node: N, from, to }
+    }
+
+    // Every one of the nine (from, to) pairs over the three flag values:
+    // applies when `from` is current, and lands exactly on `to` — `None`
+    // stays `None`, never collapsing to either known value. A change whose
+    // `from` is any OTHER value is stale, whatever its `to`.
+    #[test]
+    fn set_active_is_compare_and_set_over_all_three_values() {
+        for current in STATES {
+            for from in STATES {
+                for to in STATES {
+                    let got = user(current, None).apply(&set_active(from, to));
+                    if from == current {
+                        assert_eq!(got, Ok(user(to, None)), "{current:?}: {from:?}->{to:?}");
+                    } else {
+                        assert_eq!(got, Err(Refusal::Stale), "{current:?}: {from:?}->{to:?}");
+                    }
+                }
+            }
+        }
+    }
+
+    // A group has no flag: even a "no-op" `Some(true) -> Some(true)` is
+    // refused, so no executor can grow a group flag lane.
+    #[test]
+    fn a_group_has_no_enabled_flag_to_set() {
+        let group = NodeState {
+            kind: NodeKind::Group,
+            active: Some(true),
+            upn: None,
+            primary_smtp: None,
+            dn: None,
+        };
+        for (from, to) in [(Some(true), Some(false)), (Some(true), Some(true))] {
+            assert_eq!(
+                group.apply(&set_active(from, to)),
+                Err(Refusal::NoEnabledFlag)
+            );
+        }
+        // Its location is a property like any other.
+        assert_eq!(
+            group.apply(&set_location(None, dn(&[3]))).map(|s| s.dn),
+            Ok(dn(&[3]))
+        );
+    }
+
+    #[test]
+    fn set_location_moves_between_known_and_unknown() {
+        let (a, b) = (dn(&[0, 1]), dn(&[2]));
+        for (from, to) in [(None, a), (a, None), (a, b)] {
+            assert_eq!(
+                user(None, from).apply(&set_location(from, to)),
+                Ok(user(None, to))
+            );
+        }
+        // Stale: expected A while the node is at B, or expected a known
+        // location while it is unknown (and the other way round).
+        for (current, from) in [(b, a), (None, a), (a, None)] {
+            assert_eq!(
+                user(None, current).apply(&set_location(from, b)),
+                Err(Refusal::Stale)
+            );
+        }
+    }
+
+    #[test]
+    fn set_attribute_is_compare_and_set() {
+        let ok = Change::SetAttribute {
+            node: N,
+            attribute: Attribute::Upn,
+            from: Some(ValueId(1)),
+            to: Some(ValueId(9)),
+        };
+        let mut want = user(None, None);
+        want.upn = Some(ValueId(9));
+        assert_eq!(user(None, None).apply(&ok), Ok(want));
+        let stale = Change::SetAttribute {
+            node: N,
+            attribute: Attribute::PrimarySmtp,
+            from: Some(ValueId(1)),
+            to: None,
+        };
+        assert_eq!(user(None, None).apply(&stale), Err(Refusal::Stale));
+    }
+
+    // `kind` is identity: no property change alters it, from either kind,
+    // and the changes that are not property changes are refused here.
+    #[test]
+    fn no_change_alters_kind() {
+        for kind in [NodeKind::User, NodeKind::Group] {
+            let s = NodeState {
+                kind,
+                ..user(Some(true), dn(&[1]))
+            };
+            for c in [
+                set_active(Some(true), Some(false)),
+                set_location(dn(&[1]), dn(&[2])),
+                Change::SetAttribute {
+                    node: N,
+                    attribute: Attribute::Upn,
+                    from: Some(ValueId(1)),
+                    to: None,
+                },
+            ] {
+                if let Ok(next) = s.apply(&c) {
+                    assert_eq!(next.kind, kind);
+                }
+            }
+            for c in [
+                Change::CreateNode {
+                    node: N,
+                    state: s.clone(),
+                },
+                Change::DeleteNode {
+                    node: N,
+                    state: s.clone(),
+                },
+                Change::AddMembership { user: N, group: N },
+                Change::RemoveMembership { user: N, group: N },
+            ] {
+                assert_eq!(s.apply(&c), Err(Refusal::NotAPropertyChange));
+            }
+        }
+    }
+
+    // The sorted order places the two new property changes after renames
+    // and before creates.
+    #[test]
+    fn property_changes_sort_between_renames_and_creates() {
+        let mut cs = [
+            Change::CreateNode {
+                node: N,
+                state: user(None, None),
+            },
+            set_location(None, dn(&[1])),
+            set_active(None, Some(true)),
+            Change::SetAttribute {
+                node: N,
+                attribute: Attribute::Upn,
+                from: None,
+                to: None,
+            },
+        ];
+        cs.sort();
+        assert!(matches!(cs[0], Change::SetAttribute { .. }));
+        assert!(matches!(cs[1], Change::SetActive { .. }));
+        assert!(matches!(cs[2], Change::SetLocation { .. }));
+        assert!(matches!(cs[3], Change::CreateNode { .. }));
     }
 
     use super::normalize;

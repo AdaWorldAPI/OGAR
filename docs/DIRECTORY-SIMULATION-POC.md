@@ -171,8 +171,23 @@ no-population-intermediate rule.
   address) is not orderable without a temporary value and stays open.
   The plan is the desired version's net intent rebased onto the latest
   observation: work reality already shows is dropped, and drift outside the
-  intent is neither planned nor reverted. Not representable yet: a change of
-  `active`, of location or of kind on a node that exists in both versions.
+  intent is neither planned nor reverted.
+- **V2b — properties of an existing node (closed, 2026-10-07).** Every
+  property of a node present in both versions now changes by compare-and-set:
+  `SetAttribute` (UPN, primary SMTP, as `ValueId`), `SetActive` (the
+  three-valued flag, all nine `from → to` pairs) and `SetLocation`
+  (`Option<Dn128>`, never a DN string). `NodeState::apply` is the one
+  reference semantics: a change applies only where the node still holds its
+  `from` (else `Stale`), and `SetActive` on a group is refused (groups carry
+  no flag). Plans lower them to `SetEnabled { enabled: bool }` and
+  `MoveObject { to: Dn128 }` with `EnabledEquals` / `LocationEquals`
+  preconditions read from the observation. A change *towards* an unknown flag
+  or location is reportable by a diff but refused by the planner
+  (`PlanError::NotActuatable`): "unknown" is an observation, not an intention.
+  **`kind` is immutable by design**: it is identity (separate user and group
+  populations and ordinal spaces, typed membership endpoints), no change can
+  express it, and the planner's `Unconvergeable` now covers exactly a kind
+  mismatch.
 - **V3 — hierarchy coordinate (closed by ruling).** The hot location is
   `Dn128` (`ogar-dir-core::dn128`): 16 levels × `u8`, at most 256 distinct
   child codes per parent, depth as explicit side metadata (code 0 is a real
