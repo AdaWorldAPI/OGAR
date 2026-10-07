@@ -45,16 +45,16 @@ pub enum NodeKind {
 /// node carries it as the compare-and-set expectation (delete what was
 /// read, never whatever is there now).
 ///
-/// `active` is the single enabled flag as observed by the one source the
-/// node came from (AD: `userAccountControl` ACCOUNTDISABLE clear). How AD
-/// and Entra enabled state combine is not settled; see
-/// `docs/DIRECTORY-SIMULATION-POC.md` V4.
+/// `active` is three-valued: `Some(true)` enabled, `Some(false)` disabled,
+/// `None` unknown (no source reported a flag). An unknown flag is never read
+/// as enabled. Several sources combine through [`effective_active`].
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct NodeState {
     /// Kind.
     pub kind: NodeKind,
-    /// Enabled. Users only: groups have no enabled flag and carry `true`.
-    pub active: bool,
+    /// Enabled; `None` = unknown. Users only: groups have no enabled flag
+    /// and carry `Some(true)`.
+    pub active: Option<bool>,
     /// UPN.
     pub upn: Option<ValueId>,
     /// Primary SMTP.
@@ -62,6 +62,39 @@ pub struct NodeState {
     /// Hierarchy location (numeric, within the store's directory scope;
     /// never a DN), if known.
     pub dn: Option<Dn128>,
+}
+
+/// The one definition of "active" across sources (V4, decided 2026-10-07):
+/// **active iff at least one source is known and no known source says
+/// disabled. An unknown source abstains.**
+///
+/// ```text
+/// known_any ∧ ¬known_disabled
+/// = (ad_known ∨ entra_known) ∧ (¬ad_known ∨ ad_enabled) ∧ (¬entra_known ∨ entra_enabled)
+/// ```
+///
+/// | AD | Entra | effective |
+/// |---|---|---|
+/// | enabled | enabled | active |
+/// | enabled | unknown | active |
+/// | unknown | enabled | active |
+/// | disabled | enabled | inactive |
+/// | enabled | disabled | inactive |
+/// | disabled | unknown | inactive |
+/// | unknown | disabled | inactive |
+/// | unknown | unknown | unknown |
+///
+/// Absence of evidence never disables; negative evidence always does; two
+/// unknowns stay unknown rather than collapsing to either value. Every
+/// executor that derives "active" from more than one source must agree with
+/// this function row for row.
+#[must_use]
+pub const fn effective_active(ad: Option<bool>, entra: Option<bool>) -> Option<bool> {
+    match (ad, entra) {
+        (None, None) => None,
+        (Some(false), _) | (_, Some(false)) => Some(false),
+        _ => Some(true),
+    }
 }
 
 /// Attribute a change can set.
@@ -150,6 +183,37 @@ pub fn normalize(s: &str) -> String {
 
 #[cfg(test)]
 mod tests {
+    use super::effective_active;
+
+    /// The full 3×3 table, every row. A combinator that read unknown as
+    /// enabled (the old `from_ad` default) fails the `(None, None)` row; one
+    /// that read it as disabled fails the four rows with a single known
+    /// `true`.
+    #[test]
+    fn effective_active_is_the_v4_table() {
+        let (e, d, u) = (Some(true), Some(false), None);
+        let rows = [
+            (e, e, e),
+            (e, u, e),
+            (u, e, e),
+            (d, e, d),
+            (e, d, d),
+            (d, u, d),
+            (u, d, d),
+            (d, d, d),
+            (u, u, u),
+        ];
+        for (ad, entra, want) in rows {
+            assert_eq!(
+                effective_active(ad, entra),
+                want,
+                "ad={ad:?} entra={entra:?}"
+            );
+            // Source order does not matter.
+            assert_eq!(effective_active(entra, ad), want, "swapped");
+        }
+    }
+
     use super::normalize;
 
     #[test]

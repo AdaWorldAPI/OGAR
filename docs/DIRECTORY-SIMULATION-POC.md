@@ -183,14 +183,18 @@ no-population-intermediate rule.
   (`[u16; 8]`) stays the ingress and record-wire format; `Dn128::from_ou_hhtl`
   converts it and **fails closed** at a 257th child (`ChildCodeOverflow`) —
   `from_ad` then refuses the whole observation, never hashing or truncating.
-- **V4 — "active" across AD and Entra (blocked, needs a decision).** Graph
-  `accountEnabled` is ingested by `ogar-az` (null = unknown), but an Entra
-  user is a different node from its AD source: `sync_edges` links them as
-  evidence and keeps both. There is therefore no node on which "AD active
-  and Entra active" is a pair. **Recorded, not fixed:** `from_ad` treats a
-  missing `userAccountControl` as enabled — unknown collapses into true.
-  Candidate policies: AD authoritative for synced users; Entra
-  authoritative; active only if every known source says enabled (unknown
-  ignored); active only if every source is known and enabled.
+- **V4 — "active" across AD and Entra (closed by ruling, 2026-10-07).**
+  `NodeState::active` is three-valued (`Some(true)` / `Some(false)` /
+  `None` = unknown). Across sources, **active iff at least one source is
+  known and no known source says disabled; an unknown source abstains**:
+  `(ad_known ∨ entra_known) ∧ (¬ad_known ∨ ad_enabled) ∧ (¬entra_known ∨
+  entra_enabled)`. Absence of evidence never disables, negative evidence
+  always does, and unknown/unknown stays unknown. The one definition is
+  `ogar_dir_sim::effective_active`, pinned row for row; every executor must
+  agree with it. `from_ad` no longer reads a missing `userAccountControl` as
+  enabled: it is unknown. **Not yet wired:** an Entra user is still a
+  separate node from its AD source (`sync_edges` links them as evidence), and
+  no observation path merges the two, so today each node carries its one
+  source's flag.
 - **V5 — CI.** CI builds `lance-graph-dir-sim` against the OGAR checkout, so
   it needs this OGAR PR merged first.
