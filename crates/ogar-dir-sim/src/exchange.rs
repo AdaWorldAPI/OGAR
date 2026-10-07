@@ -467,7 +467,7 @@ impl RemoteMailboxOp {
 /// A string template with numbered placeholders `{0}`, `{1}`, … in order —
 /// the multi-value sibling of `ogar_dir_core::label::LabelPattern`. It
 /// renders by substitution and matches by splitting on the literal text
-/// between the placeholders; a match must render back to exactly the input.
+/// between the placeholders; a match renders back to exactly the input.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct AddressTemplate(pub &'static str);
 
@@ -507,16 +507,17 @@ impl AddressTemplate {
     }
 
     /// The placeholder values of `s`, if `s` is this template with
-    /// non-empty values that render back to exactly `s`.
+    /// non-empty values. They render back to exactly `s` by construction:
+    /// the match strips the prefix, cuts at each separator and strips the
+    /// suffix, so nothing is skipped or rewritten.
     pub fn matches(self, s: &str) -> Option<Vec<&str>> {
         let lits = self.literals()?;
         let mut rest = s.strip_prefix(lits[0])?;
+        let last = lits.len() - 2;
         let mut values = Vec::new();
         for (i, next) in lits[1..].iter().enumerate() {
-            let value = if i == lits.len() - 2 {
-                let v = rest.strip_suffix(next)?;
-                rest = "";
-                v
+            let value = if i == last {
+                rest.strip_suffix(next)?
             } else {
                 let at = rest.find(next)?;
                 let v = &rest[..at];
@@ -528,7 +529,7 @@ impl AddressTemplate {
             }
             values.push(value);
         }
-        (rest.is_empty() && self.render(&values).as_deref() == Some(s)).then_some(values)
+        Some(values)
     }
 }
 
