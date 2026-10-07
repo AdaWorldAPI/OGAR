@@ -14,8 +14,10 @@
 //!
 //! The decode accepts exactly the combinations the hybrid lifecycle
 //! produces (the 26 `msExchRemoteRecipientType` values of
-//! `jahube/PShell RemoteMailbox-Archive/Enable-Remotemailbox.PS1`, with the
-//! type and display codes that go with them). Anything else is kept raw as
+//! `jahube/PShell RemoteMailbox-Archive/Enable-Remotemailbox.PS1`, plus 97 =
+//! 64 + 32 + 1, the provisioned shared mailbox that `New-RemoteMailbox
+//! -Shared` writes and the script's table does not list; with the type and
+//! display codes that go with them). Anything else is kept raw as
 //! [`Recipient::Other`] and never guessed into a nearby state.
 //!
 //! **The enabled flag is not part of this.** A shared, room or equipment
@@ -149,12 +151,13 @@ pub enum Recipient {
 
 /// The `msExchRemoteRecipientType` values the lifecycle produces. A remote
 /// mailbox state is valid iff its code is listed; codes 2 and 16 belong to
-/// an on-premises mailbox with a remote archive.
-pub const REMOTE_RECIPIENT_TYPES: [u32; 26] = [
+/// an on-premises mailbox with a remote archive. Shared is room + equipment
+/// (96): 97 provisioned, 100 migrated.
+pub const REMOTE_RECIPIENT_TYPES: [u32; 27] = [
     1, 2, 3, 4, 6, 8, 10, 16, 17, 20, 24, // user
     33, 35, 36, 38, 49, 52, // room
     65, 67, 68, 70, 81, 84, // equipment
-    100, 102, 116, // shared
+    97, 100, 102, 116, // shared
 ];
 
 fn archive_bits(a: ArchiveState) -> u32 {
@@ -383,8 +386,6 @@ impl RemoteMailboxOp {
         };
         let live = |m: &RemoteMailbox| m.mailbox != MailboxState::Deprovisioned;
         match (self, from) {
-            // A shared mailbox has no "provisioned" code (97 is not listed),
-            // so the table refuses it; no separate check.
             (Self::Enable { kind, routing }, Recipient::NotMailEnabled) => remote(
                 kind,
                 MailboxState::Provisioned,
@@ -478,11 +479,11 @@ mod tests {
         }
     }
 
-    // Every code 0..=255: exactly the 26 listed codes decode to a lifecycle
+    // Every code 0..=255: exactly the 27 listed codes decode to a lifecycle
     // state (with the type codes and routing address that belong to them);
     // every other code stays raw. Each decoded state re-encodes to its code.
     #[test]
-    fn exactly_the_26_listed_remote_recipient_types_decode() {
+    fn exactly_the_27_listed_remote_recipient_types_decode() {
         let mut decoded = Vec::new();
         for code in 0..=255u32 {
             let mut hit = None;
@@ -603,16 +604,29 @@ mod tests {
     fn steps_outside_the_table_are_refused() {
         use LifecycleRefusal::{NotApplicable, NotInTable};
         let enable = |kind| RemoteMailboxOp::Enable { kind, routing: R };
-        // No shared variant of enable; a provisioned shared mailbox is not listed.
+        // A provisioned shared mailbox is 97 = 64 + 32 + 1; archiving it
+        // gives 99, which no lifecycle writes.
+        let shared = enable(RemoteKind::Shared)
+            .apply(&Recipient::NotMailEnabled)
+            .unwrap();
+        assert_eq!(shared.attributes().remote_recipient_type, Some(97));
         assert_eq!(
-            enable(RemoteKind::Shared).apply(&Recipient::NotMailEnabled),
+            RemoteMailboxOp::EnableArchive.apply(&shared),
             Err(NotInTable)
         );
         let room = enable(RemoteKind::Room)
             .apply(&Recipient::NotMailEnabled)
             .unwrap();
+        // A provisioned room may become shared (33 -> 97); an archived one
+        // may not (35 -> 99 is not listed).
+        assert!(
+            RemoteMailboxOp::SetType(RemoteKind::Shared)
+                .apply(&room)
+                .is_ok()
+        );
+        let archived_room = RemoteMailboxOp::EnableArchive.apply(&room).unwrap();
         assert_eq!(
-            RemoteMailboxOp::SetType(RemoteKind::Shared).apply(&room),
+            RemoteMailboxOp::SetType(RemoteKind::Shared).apply(&archived_room),
             Err(NotInTable)
         );
         // Disable is listed for user mailboxes only.

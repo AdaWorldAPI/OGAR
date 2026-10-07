@@ -17,6 +17,7 @@
 
 pub mod change;
 pub mod exchange;
+pub mod identity;
 pub mod plan;
 pub mod provenance;
 pub mod violation;
@@ -28,6 +29,7 @@ pub use exchange::{
     ArchiveState, LifecycleRefusal, MailboxState, Recipient, RecipientAttributes, RemoteKind,
     RemoteMailbox, RemoteMailboxOp,
 };
+pub use identity::{CloudLabel, ExternalObjectId, SourceAnchor};
 pub use plan::{ExecutionPlan, Operation, PlanError, PlannedOp, Precondition};
 pub use provenance::{EvidenceRef, Origin, RuleId, TAG_DESIRED, TAG_OBSERVED, Version, VersionId};
 pub use violation::{Endpoint, Violation};

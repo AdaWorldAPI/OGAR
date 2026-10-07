@@ -23,7 +23,7 @@ use ogar_dir_core::{
 };
 
 /// Encoder schema version understood by this crate.
-pub const SCHEMA_VERSION: u16 = 2;
+pub const SCHEMA_VERSION: u16 = 3;
 /// This crate's schema id.
 pub const SCHEMA: SchemaId = SchemaId {
     family: SchemaFamily::AdDs,
@@ -47,6 +47,12 @@ pub const SCHEMA: SchemaId = SchemaId {
 /// every signed LDAP integer here) and `msExchRecipientTypeDetails` (64-bit,
 /// so kept as its LDAP decimal text in a pooled slot). Other `msExch*`
 /// attributes stay out until a consumer needs them.
+///
+/// v3 adds the hybrid identity anchors, raw: `mS-DS-ConsistencyGuid` (16
+/// bytes, the source anchor whose base64 is the cloud `ImmutableId`) and
+/// `msDS-ExternalDirectoryObjectId` (written back by Entra Connect as
+/// `User_<cloud object id>`). Decoding both into 128-bit ids is
+/// `ogar-dir-sim::identity`'s job, not this crate's.
 pub const SCHEMA_V1: &[AttrDef] = &[
     AttrDef {
         name: "distinguishedName",
@@ -155,6 +161,18 @@ pub const SCHEMA_V1: &[AttrDef] = &[
         slot: 14,
         kind: AttrKind::Str,
         since: 2,
+    },
+    AttrDef {
+        name: "mS-DS-ConsistencyGuid",
+        slot: 15,
+        kind: AttrKind::Bytes,
+        since: 3,
+    },
+    AttrDef {
+        name: "msDS-ExternalDirectoryObjectId",
+        slot: 16,
+        kind: AttrKind::Str,
+        since: 3,
     },
 ];
 

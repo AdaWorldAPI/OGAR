@@ -251,3 +251,27 @@ fn exchange_recipient_attributes_are_kept_raw() {
     // The account is disabled: a shared mailbox is a disabled account.
     assert_eq!(r.num(0), Some(514));
 }
+
+#[test]
+fn hybrid_identity_anchors_are_kept_raw() {
+    // Entra Connect seeds mS-DS-ConsistencyGuid from objectGUID by default,
+    // so the same bytes appear twice; the backsync id is plain text.
+    let text = "dn: CN=Alice,OU=Staff,DC=example,DC=test\nobjectGUID:: 4AQlP4lP0xGaDAMF6CwzAQ==\nobjectClass: user\nmailNickname: alice\nmS-DS-ConsistencyGuid:: 4AQlP4lP0xGaDAMF6CwzAQ==\nmsDS-ExternalDirectoryObjectId: User_0b5c3a1e-7d2f-4c88-9e10-3f6a2b4c5d6e\n";
+    let e = &ldif::parse(text).unwrap()[0];
+    let (mut dict, mut pool) = (OuDictionary::new(), ValuePool::new());
+    let enc = encode(e, domain(), &mut dict, &mut pool, 1).unwrap();
+    assert!(enc.ignored.is_empty(), "{:?}", enc.ignored);
+    let r = enc.record;
+    let raw = |n: &str| pool.get(r.str_ref(slot(n)).unwrap()).unwrap().to_vec();
+    let anchor = raw("mS-DS-ConsistencyGuid");
+    assert_eq!(anchor.len(), 16);
+    assert_eq!(
+        ogar_dir_core::Guid128::from_ms_bytes(&anchor).unwrap(),
+        r.node_guid()
+    );
+    assert_eq!(
+        raw("msDS-ExternalDirectoryObjectId"),
+        b"User_0b5c3a1e-7d2f-4c88-9e10-3f6a2b4c5d6e"
+    );
+    assert_eq!(raw("mailNickname"), b"alice");
+}

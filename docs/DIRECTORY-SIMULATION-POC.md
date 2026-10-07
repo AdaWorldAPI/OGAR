@@ -219,12 +219,12 @@ no-population-intermediate rule.
   enabled flag: a shared, room or equipment mailbox is a disabled account
   and still a recipient. `ogar-ad` schema v2 ingests the triplet raw (type
   details as its 64-bit decimal text). `ogar_dir_sim::exchange::Recipient`
-  decodes it strictly: exactly the 26 remote-recipient-type values the
+  decodes it strictly: exactly the 27 remote-recipient-type values (the script's 26 plus 97, provisioned shared) the
   hybrid lifecycle produces (with the display and type codes that go with
   them, and the routing address while the mailbox exists), an on-premises
   mailbox with its remote-archive state, not mail-enabled — anything else
   stays raw (`Other`), never guessed. `RemoteMailboxOp` is the lifecycle:
-  `Enable` (user / room / equipment, with routing address), `EnableArchive`,
+  `Enable` (user / room / equipment / shared, with routing address), `EnableArchive`,
   `DisableArchive`, `CompleteMove`, `SetType`, `Disable`; each step refuses
   outside the table. `NodeState::recipient` (`None` = not read, distinct
   from not mail-enabled) changes by compare-and-set (`SetRecipient`); a plan
@@ -233,5 +233,18 @@ no-population-intermediate rule.
   (`NotActuatable`) when no single step does. **Open:** the `smtp:` routing
   proxy `Enable-RemoteMailbox` stamps is not added to the proxy relation by
   the vocabulary; the executor derives ownership of the routing address.
+- **V7 — Hybrid identity.** On-premises and cloud name each other by three
+  attributes, which `ogar-ad` schema v3 ingests raw: `mS-DS-ConsistencyGuid`
+  (the source anchor; its base64 is the cloud `ImmutableId`),
+  `msDS-ExternalDirectoryObjectId` (Entra Connect backsync,
+  `User_<cloud object id>`) and `mailNickname` (the Exchange Online
+  `Alias`, already ingested). `ogar_dir_sim::identity` decodes the two ids
+  to `Guid128`: `SourceAnchor` (mixed-endian like `objectGUID`, renders the
+  `ImmutableId`) and `ExternalObjectId { label, object_id }`, where the
+  `User_` / `Group_` text is a `CloudLabel` rendered on egress, never a
+  stored string. Decoding is strict: a value that does not render back to
+  exactly what was observed stays raw. **Open:** no executor ingests them
+  yet; matching an on-premises node to its cloud object by these ids is the
+  lance-graph side.
 - **V5 — CI.** CI builds `lance-graph-dir-sim` against the OGAR checkout, so
   it needs this OGAR PR merged first.
