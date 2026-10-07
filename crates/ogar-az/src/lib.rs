@@ -20,13 +20,14 @@ use ogar_dir_core::dn::Dn;
 use ogar_dir_core::edge::{DirEdge, EdgeEvidence, EdgeKind};
 use ogar_dir_core::record::{FLAG_DN_UNENCODED, FLAG_NON_OU_CONTAINER};
 use ogar_dir_core::{
-    AttrDef, AttrKind, DirRecord, Guid128, OuDictionary, SchemaFamily, SchemaId, ValuePool, base64,
+    AttrDef, AttrKind, BAG_LEN, DirRecord, Guid128, OuDictionary, SchemaFamily, SchemaId,
+    ValuePool, base64,
 };
 use serde_json::Value;
 use std::collections::HashSet;
 
 /// Encoder schema version understood by this crate.
-pub const SCHEMA_VERSION: u16 = 1;
+pub const SCHEMA_VERSION: u16 = 2;
 /// This crate's schema id.
 pub const SCHEMA: SchemaId = SchemaId {
     family: SchemaFamily::MsGraph,
@@ -163,6 +164,12 @@ pub const SCHEMA_V1: &[AttrDef] = &[
         kind: AttrKind::Bool,
         since: 1,
     },
+    AttrDef {
+        name: "onPremisesExtensionAttributes",
+        slot: 18,
+        kind: AttrKind::Bag,
+        since: 2,
+    },
 ];
 
 /// How an AD value becomes its cloud counterpart under Entra Connect sync.
@@ -209,6 +216,11 @@ pub const SYNCED: &[SyncedAttribute] = &[
     synced("mail", "mail", SyncTransform::Same),
     synced("mailNickname", "mailNickname", SyncTransform::Same),
     synced("proxyAddresses", "proxyAddresses", SyncTransform::Same),
+    synced(
+        "extensionAttribute",
+        "onPremisesExtensionAttributes",
+        SyncTransform::Same,
+    ),
     synced(
         "physicalDeliveryOfficeName",
         "officeLocation",
@@ -348,6 +360,21 @@ pub fn encode_user(
                 let s = v.as_str().ok_or_else(bad)?;
                 let r = pool.push(s.as_bytes()).map_err(|e| st(&e))?;
                 rec.set_str(def.slot as usize, r).map_err(|e| st(&e))?;
+            }
+            AttrKind::Bag => {
+                // `{"extensionAttribute1": "x", "extensionAttribute2": null, …}`
+                let o = v.as_object().ok_or_else(bad)?;
+                let mut members: Vec<&str> = Vec::with_capacity(BAG_LEN);
+                for n in 1..=BAG_LEN {
+                    match o.get(&format!("extensionAttribute{n}")) {
+                        None | Some(Value::Null) => members.push(""),
+                        Some(m) => members.push(m.as_str().ok_or_else(bad)?),
+                    }
+                }
+                if members.iter().any(|m| !m.is_empty()) {
+                    let r = pool.push_multi(&members).map_err(|e| st(&e))?;
+                    rec.set_str(def.slot as usize, r).map_err(|e| st(&e))?;
+                }
             }
             AttrKind::MultiStr => {
                 let arr = v.as_array().ok_or_else(bad)?;

@@ -20,11 +20,11 @@ use ogar_dir_core::dn::Dn;
 use ogar_dir_core::label::{self, CloudLabel};
 use ogar_dir_core::record::{FLAG_DN_UNENCODED, FLAG_NON_OU_CONTAINER};
 use ogar_dir_core::{
-    AttrDef, AttrKind, DirRecord, Guid128, OuDictionary, SchemaFamily, SchemaId, ValuePool,
+    AttrDef, AttrKind, BAG_LEN, DirRecord, Guid128, OuDictionary, SchemaFamily, SchemaId, ValuePool,
 };
 
 /// Encoder schema version understood by this crate.
-pub const SCHEMA_VERSION: u16 = 4;
+pub const SCHEMA_VERSION: u16 = 5;
 /// This crate's schema id.
 pub const SCHEMA: SchemaId = SchemaId {
     family: SchemaFamily::AdDs,
@@ -59,6 +59,10 @@ pub const SCHEMA: SchemaId = SchemaId {
 ///
 /// v4 adds `physicalDeliveryOfficeName`, the attribute Entra Connect syncs
 /// to the cloud's `officeLocation` (see `ogar_az::SYNCED`).
+///
+/// v5 adds `extensionAttribute1`..`15` as one positional bag
+/// ([`AttrKind::Bag`]), the shape Graph returns them in
+/// (`onPremisesExtensionAttributes`).
 pub const SCHEMA_V1: &[AttrDef] = &[
     AttrDef {
         name: "distinguishedName",
@@ -185,6 +189,12 @@ pub const SCHEMA_V1: &[AttrDef] = &[
         slot: 15,
         kind: AttrKind::Str,
         since: 4,
+    },
+    AttrDef {
+        name: "extensionAttribute",
+        slot: 16,
+        kind: AttrKind::Bag,
+        since: 5,
     },
 ];
 
@@ -340,6 +350,20 @@ pub fn consistency_guid(rec: &DirRecord) -> Option<[u8; 16]> {
     Some(rec.guid(guid_slot("mS-DS-ConsistencyGuid"))?.to_ms_bytes())
 }
 
+/// `base` is a member of a bag attribute (`extensionAttribute7`).
+fn is_bag_member(base: &str) -> bool {
+    SCHEMA_V1
+        .iter()
+        .filter(|d| d.kind == AttrKind::Bag)
+        .any(|d| {
+            base.len() > d.name.len()
+                && base[..d.name.len()].eq_ignore_ascii_case(d.name)
+                && base[d.name.len()..]
+                    .parse::<usize>()
+                    .is_ok_and(|n| (1..=BAG_LEN).contains(&n))
+        })
+}
+
 fn identity_or_dn(name: &str) -> bool {
     name.eq_ignore_ascii_case("objectGUID") || name.eq_ignore_ascii_case("dn")
 }
@@ -369,6 +393,23 @@ pub fn encode(
     let st = |e: &dyn std::fmt::Debug| AdError::Storage(format!("{e:?}"));
 
     for def in SCHEMA_V1 {
+        if def.kind == AttrKind::Bag {
+            // Gather the numbered members into one positional bag.
+            let mut members: Vec<&[u8]> = Vec::with_capacity(BAG_LEN);
+            for n in 1..=BAG_LEN {
+                match entry.values(&format!("{}{n}", def.name)).as_slice() {
+                    [] => members.push(b""),
+                    [v] if std::str::from_utf8(v).is_ok() => members.push(v),
+                    [_] => return Err(AdError::NotUtf8(def.name)),
+                    _ => return Err(AdError::MultipleValues(def.name)),
+                }
+            }
+            if members.iter().any(|m| !m.is_empty()) {
+                let r = pool.push_multi(&members).map_err(|e| st(&e))?;
+                rec.set_str(def.slot as usize, r).map_err(|e| st(&e))?;
+            }
+            continue;
+        }
         let mut vals = entry.values(def.name);
         // The DN line is authoritative for distinguishedName when the
         // attribute itself was not requested.
@@ -389,6 +430,8 @@ pub fn encode(
                 let r = pool.push(v).map_err(|e| st(&e))?;
                 rec.set_str(def.slot as usize, r).map_err(|e| st(&e))?;
             }
+            // Gathered before the match.
+            AttrKind::Bag => {}
             AttrKind::MultiStr => {
                 if vals.iter().any(|v| std::str::from_utf8(v).is_err()) {
                     return Err(AdError::NotUtf8(def.name));
@@ -446,7 +489,9 @@ pub fn encode(
         .map(|(n, _)| n.clone())
         .filter(|n| {
             let base = n.split(';').next().unwrap_or(n);
-            !identity_or_dn(base) && !SCHEMA_V1.iter().any(|d| d.name.eq_ignore_ascii_case(base))
+            !identity_or_dn(base)
+                && !SCHEMA_V1.iter().any(|d| d.name.eq_ignore_ascii_case(base))
+                && !is_bag_member(base)
         })
         .collect();
     ignored.dedup();
