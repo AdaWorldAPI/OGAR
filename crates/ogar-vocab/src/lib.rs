@@ -7238,7 +7238,7 @@ mod mail_classid_mint_tests {
             canonical_concept_domain(class_ids::EMAIL),
             ConceptDomain::Auth
         );
-        assert!(class_ids::EMAIL > class_ids::AUTH_ORY_KETO);
+        const { assert!(class_ids::EMAIL > class_ids::AUTH_ORY_KETO) };
         assert_eq!(canonical_concept_id("email"), Some(0x0B05));
         assert_eq!(email().canonical_id(), Some(class_ids::EMAIL));
         // No Mail domain was opened for it.
