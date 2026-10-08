@@ -56,7 +56,7 @@
 #![warn(missing_docs)]
 
 use lance_graph_contract::rbac::{
-    ActorId, ClassGrant, ClassId, ClassRbac, Operation, RoleId, grants_permit,
+    ActorId, ClassGrant, ClassId, ClassRbac, Operation, RoleId, ScopeSpec, grants_permit,
 };
 use lance_graph_rbac::authorize::{ScopedDecision, authorize_scoped};
 use ogar_auth::user::AuthenticatedUser;
@@ -74,6 +74,14 @@ pub trait GrantSource {
 
     /// The typed `granted` set of `role` — its `(target_classid, op_mask)` pairs.
     fn grants_of(&self, role: RoleId) -> &[ClassGrant];
+
+    /// Where `role`'s grants on `class` apply — the axis-3 row scope, including
+    /// a nested [`ScopePath`](lance_graph_contract::rbac::ScopePath) when roles
+    /// are bound to a level of a hierarchy (a namespace, a database, an org).
+    /// `None` (the default) is global: every existing source is unchanged.
+    fn scope_of(&self, _role: RoleId, _class: ClassId) -> Option<ScopeSpec> {
+        None
+    }
 }
 
 /// OGAR's canonical [`ClassRbac`] authority.
@@ -130,9 +138,12 @@ impl<S: GrantSource> ClassRbac for OgarRbac<S> {
     fn grant_permits(&self, role: RoleId, class: ClassId, op: &Operation<'_>) -> bool {
         grants_permit(self.source.grants_of(role), class, op)
     }
-    // Axes 2/3/4 (`roles_reaching` / `row_scope` / `field_mask`) inherit the
-    // contract defaults until the Core carries the data for them — a follow-up
-    // seam, not this patch. `field_mask`'s default is now WideFieldMask, so a
+
+    fn row_scope(&self, role: RoleId, class: ClassId) -> Option<ScopeSpec> {
+        self.source.scope_of(role, class)
+    }
+    // Axes 2/4 (`roles_reaching` / `field_mask`) inherit the contract defaults
+    // until the Core carries the data for them — a follow-up seam. `field_mask`'s default is now WideFieldMask, so a
     // grant on a position >= 64 survives once a source supplies one.
 }
 
@@ -385,5 +396,42 @@ mod tests {
             "position 92 must survive — the narrow u64 mask dropped it"
         );
         assert_eq!(d.field_mask.count(), 3);
+    }
+
+    /// Axis 3 reaches the decision: a source that binds a role to a level of a
+    /// hierarchy gets that scope back on the `Allow`, and a source that does not
+    /// stays global. The scope travels; the kernel does not interpret it.
+    #[test]
+    fn a_sources_row_scope_travels_with_the_decision() {
+        use lance_graph_contract::rbac::{ScopePath, ScopeSpec};
+
+        struct Scoped(Fixture);
+        impl GrantSource for Scoped {
+            fn roles_of(&self, actor: ActorId<'_>) -> &[RoleId] {
+                self.0.roles_of(actor)
+            }
+            fn grants_of(&self, role: RoleId) -> &[ClassGrant] {
+                self.0.grants_of(role)
+            }
+            fn scope_of(&self, role: RoleId, _class: ClassId) -> Option<ScopeSpec> {
+                (role == "physician").then(|| ScopeSpec {
+                    path: ScopePath::new(&[3, 1]).expect("depth"),
+                    ..ScopeSpec::default()
+                })
+            }
+        }
+
+        let read = || Operation::Read {
+            depth: PrefetchDepth::Identity,
+        };
+        let scoped = OgarRbac::new(Scoped(authority().source));
+        let d = authorize_scoped(&scoped, "dr-house", patient_class(), read());
+        assert_eq!(d.decision, AccessDecision::Allow);
+        let scope = d.scope.expect("a bound role yields a scope");
+        assert!(scope.admits(&ScopePath::new(&[3, 1, 9]).expect("depth")));
+        assert!(!scope.admits(&ScopePath::new(&[3, 2]).expect("depth")));
+
+        let global = authorize_scoped(&authority(), "dr-house", patient_class(), read());
+        assert_eq!(global.scope, None, "a source without scopes stays global");
     }
 }
