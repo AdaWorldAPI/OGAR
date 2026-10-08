@@ -642,7 +642,7 @@ pub const WEATHERNEXT_ALIASES: &[(&str, u16)] = &[
 // ── Spear (the mail hub) port ────────────────────────────────────────
 
 /// Spear's `PortSpec`: its public names onto canon concepts — mail onto
-/// `email` (`0x0501`, OGIT `ogit:Email`), documents and drive items onto the
+/// `email` (`0x0B05`, OGIT `ogit:Email`), documents and drive items onto the
 /// existing `document` (`0x080B`). `0x000A` is Spear's render skin.
 pub struct SpearPort;
 
@@ -670,12 +670,12 @@ mod tests {
 
     #[test]
     fn spear_classview_composes_canon_high_custom_low() {
-        assert_eq!(SpearPort::class_id("Email"), Some(0x0501));
-        assert_eq!(SpearPort::class_id("Message"), Some(0x0501));
+        assert_eq!(SpearPort::class_id("Email"), Some(0x0B05));
+        assert_eq!(SpearPort::class_id("Message"), Some(0x0B05));
         assert_eq!(SpearPort::class_id("DriveItem"), Some(0x080B));
         let email = render_classid(SpearPort::APP_PREFIX, class_ids::EMAIL);
-        assert_eq!(email, 0x0501_000A);
-        assert_eq!(concept_of(email), 0x0501);
+        assert_eq!(email, 0x0B05_000A);
+        assert_eq!(concept_of(email), 0x0B05);
         assert_eq!(app_of(email), 0x000A);
     }
 

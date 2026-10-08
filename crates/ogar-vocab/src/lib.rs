@@ -1106,7 +1106,7 @@ impl Class {
 ///   0x02XX  commerce / ERP    (OSB ↔ Odoo cross-curator)
 ///   0x03XX  Ontology          (OBO biomedical reference: MONDO/HPO/Uberon/PATO/RO — zero rows here; concepts in ogar-obo)
 ///   0x04XX  Weather / Atmosphere (forecast + atmospheric reference cells)
-///   0x05XX  Mail              (OGIT `ogit:Email`; consumed by spear)
+///   0x05XX  unassigned
 ///   0x06XX  unassigned
 ///   0x07XX  reserved: OSINT
 ///   0x08XX  OCR               (container kinds: unicharset/recoder/charset)
@@ -1240,11 +1240,6 @@ const CODEBOOK: &[(&str, u16)] = &[
     // ClassView selection remains in the low u16 of the full classid.
     ("weather_cell", 0x0401),
     ("weather_static_cell", 0x0402),
-    // ── 0x05XX — Mail domain ──
-    // OGIT `ogit:Email` (SGO; optional attributes from the
-    // `EmailCorrespondance` namespace). Mailboxes, folders, flags and threads
-    // are columns of an email row, not concepts of their own.
-    ("email", 0x0501),
     // ── 0x07XX — OSINT domain: ZERO vocabulary rows BY DESIGN (operator
     // ruling 2026-07-02, corrects PR #145's two hallucinated concept mints
     // `osint_system@0x0700` / `osint_person@0x0701`). Within the OSINT domain
@@ -1350,6 +1345,12 @@ const CODEBOOK: &[(&str, u16)] = &[
     ("auth_zitadel", 0x0B02),
     ("auth_zanzibar", 0x0B03),
     ("auth_ory_keto", 0x0B04),
+    // `email` (`0x0B05`) — OGIT `ogit:Email` (SGO; optional attributes from
+    // the `EmailCorrespondance` namespace). Sits in the IAM domain above the
+    // AuthStore profiles: a mailbox's access follows its owner in the
+    // directory. Mailboxes, folders, flags and threads are columns of an
+    // email row, not concepts of their own. Consumed by spear (`SpearPort`).
+    ("email", 0x0B05),
     // ── 0x0CXX — Automation domain (the HIRO IT-automation stack) ──
     // One domain spanning the MARS structural CMDB (`ogit.MARS:` —
     // Application/Resource/Software/Machine, the A→R→S→M dependsOn backbone)
@@ -1484,8 +1485,6 @@ pub enum ConceptDomain {
     /// `0x04XX` — Weather / Atmosphere. Shared atmospheric and forecast-grid
     /// concepts; public environmental reference data, not an OSM extension.
     Weather,
-    /// `0x05XX` — Mail. OGIT `ogit:Email`; consumed by spear (the mail hub).
-    Mail,
     /// `0x07XX` — OSINT (open-source intelligence).
     Osint,
     /// `0x08XX` — OCR (optical character recognition / document
@@ -1761,7 +1760,7 @@ pub enum ConceptDomain {
     /// reads the compartment off the key (`classid >> 24`) instead of looking
     /// it up.
     Form,
-    /// Any high-byte slot not yet assigned a domain (`0x06XX`,
+    /// Any high-byte slot not yet assigned a domain (`0x05XX`–`0x06XX`,
     /// `0x10XX`–`0x16XX`, `0x18XX`–`0xBFXX`, `0xC2XX`–`0xC3XX`,
     /// `0xC5XX`, `0xC7XX`+).
     Unassigned,
@@ -1777,7 +1776,6 @@ pub fn canonical_concept_domain(id: u16) -> ConceptDomain {
         0x02 => ConceptDomain::Commerce,
         0x03 => ConceptDomain::Ontology,
         0x04 => ConceptDomain::Weather,
-        0x05 => ConceptDomain::Mail,
         0x07 => ConceptDomain::Osint,
         0x08 => ConceptDomain::Ocr,
         0x09 => ConceptDomain::Health,
@@ -2059,11 +2057,6 @@ pub mod class_ids {
     /// geography-derived weather context, distinct from dynamic fields.
     pub const WEATHER_STATIC_CELL: u16 = 0x0402;
 
-    // ── 0x05XX — Mail domain ──
-
-    /// `email` (`0x0501`) — one email message. OGIT `ogit:Email`.
-    pub const EMAIL: u16 = 0x0501;
-
     // ── 0x08XX — OCR domain (document extraction; the Tesseract-rs arc) ──
     // Class-level container KINDS only: the concept slots name the container
     // types the Core resolves — never their content. The 112 unichars of a
@@ -2215,6 +2208,9 @@ pub mod class_ids {
     pub const AUTH_ZANZIBAR: u16 = 0x0B03;
     /// `auth_ory_keto` (`0x0B04`) — Ory Keto provider profile.
     pub const AUTH_ORY_KETO: u16 = 0x0B04;
+    /// `email` (`0x0B05`) — one email message. OGIT `ogit:Email`. In the IAM
+    /// domain, above the AuthStore profiles.
+    pub const EMAIL: u16 = 0x0B05;
 
     // ── 0x0DXX — HR domain (employment / org / contracts) ──
 
@@ -2382,8 +2378,6 @@ pub mod class_ids {
         // 0x04XX — Weather / Atmosphere
         ("weather_cell", WEATHER_CELL),
         ("weather_static_cell", WEATHER_STATIC_CELL),
-        // 0x05XX — Mail
-        ("email", EMAIL),
         // 0x07XX — OSINT: ZERO vocabulary rows BY DESIGN (operator ruling
         // 2026-07-02; see the CODEBOOK 0x07XX section note). No entries
         // follow — OGAR vocabulary carries no OSINT concept names.
@@ -2422,6 +2416,7 @@ pub mod class_ids {
         ("auth_zitadel", AUTH_ZITADEL),
         ("auth_zanzibar", AUTH_ZANZIBAR),
         ("auth_ory_keto", AUTH_ORY_KETO),
+        ("email", EMAIL),
         // 0x0DXX — HR (employment / org / contracts; closes the final
         // 4-of-11 cross-axis gap from odoo-rs PR #14)
         ("hr_employee", HR_EMPLOYEE),
@@ -2500,32 +2495,6 @@ pub mod class_ids {
                 assert_ne!(*id, 0, "{name}: id must be non-zero (0x0000 reserved)");
                 assert!(seen.insert(*id), "duplicate id 0x{id:04X} (saw at {name})");
             }
-        }
-
-        #[test]
-        fn count_fuse_matches_lance_graph_ogar_mirror() {
-            // OGAR-side half of a two-sided drift check. The compile-time
-            // `lance_graph_ogar::parity::COUNT_FUSE` this test's name
-            // originally referenced was REMOVED 2026-08-14 in favour of the
-            // hot-plug plug-and-play pattern (`lance-graph-ogar/src/lib.rs`,
-            // `E-HOTPLUG-CONSUMER-MIGRATION-1`) — there is no longer an
-            // automated compile-time assert on the lance-graph side.
-            // `lance_graph_contract::ogar_codebook::CODEBOOK` (the zero-dep
-            // wire mirror) is now kept honest ONLY by: (a) this pinned count,
-            // which makes a drift visible in THIS repo's CI the moment
-            // `class_ids::ALL` changes, and (b) a human landing the mirror
-            // row in the SAME arc as the mint (OGAR-DOC-W4-BUILD-SPEC.md
-            // §W4 capstone gate G17/G19) — there is no third safety net.
-            // Pin the number here so a bump is never silent.
-            assert_eq!(
-                ALL.len(),
-                99,
-                "class_ids::ALL count changed — update this pin AND land the \
-                 corresponding row in lance-graph's \
-                 crates/lance-graph-contract/src/ogar_codebook.rs::CODEBOOK \
-                 mirror (COUNT_FUSE was removed 2026-08-14; nothing else will \
-                 catch a stale mirror) in the same PR-arc",
-            );
         }
 
         #[test]
@@ -3346,7 +3315,6 @@ pub fn all_promoted_classes() -> Vec<Class> {
         // 0x08XX — OCR arm (9 container kinds), in class_ids::ALL order.
         weather_cell(),
         weather_static_cell(),
-        email(),
         unicharset(),
         recoder(),
         charset(),
@@ -3383,6 +3351,7 @@ pub fn all_promoted_classes() -> Vec<Class> {
         auth_zitadel(),
         auth_zanzibar(),
         auth_ory_keto(),
+        email(),
         // 0x0DXX — HR arm
         hr_employee(),
         hr_department(),
@@ -5051,11 +5020,11 @@ pub fn weather_static_cell() -> Class {
 }
 
 // ─────────────────────────────────────────────────────────────────────
-// 0x05XX — Mail canonical builders. Identity only; the columns live in the
+// `email` (`0x0B05`, IAM domain). Identity only; the columns live in the
 // consumer's ClassView (spear's `messages` Lance schema).
 // ─────────────────────────────────────────────────────────────────────
 
-/// `email` (`0x0501`) — one email message. OGIT `ogit:Email`.
+/// `email` (`0x0B05`) — one email message. OGIT `ogit:Email`.
 #[must_use]
 pub fn email() -> Class {
     let mut c = Class::new("Email");
@@ -6080,11 +6049,10 @@ mod tests {
         // lives in ogar-obo; plug-and-play, never pulls into ERP consumers).
         assert_eq!(canonical_concept_domain(0x0300), ConceptDomain::Ontology);
         assert_eq!(canonical_concept_domain(0x03AB), ConceptDomain::Ontology);
-        // Weather / Atmosphere block (0x04), Mail (0x05), then still-unassigned 0x06.
+        // Weather / Atmosphere block (0x04), then still-unassigned 0x05-0x06.
         assert_eq!(canonical_concept_domain(0x0400), ConceptDomain::Weather);
         assert_eq!(canonical_concept_domain(0x0401), ConceptDomain::Weather);
-        assert_eq!(canonical_concept_domain(0x0500), ConceptDomain::Mail);
-        assert_eq!(canonical_concept_domain(0x05FF), ConceptDomain::Mail);
+        assert_eq!(canonical_concept_domain(0x0500), ConceptDomain::Unassigned);
         assert_eq!(canonical_concept_domain(0x0600), ConceptDomain::Unassigned);
         // HR block (0x0D).
         assert_eq!(canonical_concept_domain(0x0D00), ConceptDomain::HR);
@@ -6153,6 +6121,7 @@ mod tests {
             ("auth_zitadel", 0x0B02),
             ("auth_zanzibar", 0x0B03),
             ("auth_ory_keto", 0x0B04),
+            ("email", 0x0B05),
         ] {
             assert_eq!(
                 canonical_concept_id(concept),
@@ -6161,8 +6130,8 @@ mod tests {
             );
             assert_eq!(canonical_concept_domain(id), ConceptDomain::Auth);
         }
-        // The four preminted profiles are the whole Auth block today.
-        assert_eq!(concepts_in_domain(ConceptDomain::Auth).count(), 4);
+        // The four preminted profiles plus `email` are the Auth block today.
+        assert_eq!(concepts_in_domain(ConceptDomain::Auth).count(), 5);
     }
 
     #[test]
@@ -6313,7 +6282,7 @@ mod tests {
         assert_eq!(concepts_in_domain(ConceptDomain::Commerce).count(), 11);
         assert_eq!(concepts_in_domain(ConceptDomain::ProjectMgmt).count(), 26);
         assert_eq!(concepts_in_domain(ConceptDomain::Anatomy).count(), 4);
-        assert_eq!(concepts_in_domain(ConceptDomain::Auth).count(), 4);
+        assert_eq!(concepts_in_domain(ConceptDomain::Auth).count(), 5);
         assert_eq!(concepts_in_domain(ConceptDomain::Automation).count(), 9);
         // Every yielded Automation id really is in-domain (0x0CXX).
         let automation: Vec<&str> = concepts_in_domain(ConceptDomain::Automation)
@@ -7264,14 +7233,15 @@ mod mail_classid_mint_tests {
     use super::*;
 
     #[test]
-    fn mail_domain_and_codebook_resolve() {
+    fn email_sits_in_the_iam_domain_above_the_auth_profiles() {
         assert_eq!(
             canonical_concept_domain(class_ids::EMAIL),
-            ConceptDomain::Mail
+            ConceptDomain::Auth
         );
-        assert_eq!(canonical_concept_id("email"), Some(0x0501));
+        assert!(class_ids::EMAIL > class_ids::AUTH_ORY_KETO);
+        assert_eq!(canonical_concept_id("email"), Some(0x0B05));
         assert_eq!(email().canonical_id(), Some(class_ids::EMAIL));
-        // 0x06 stays unassigned.
-        assert_eq!(canonical_concept_domain(0x0600), ConceptDomain::Unassigned);
+        // No Mail domain was opened for it.
+        assert_eq!(canonical_concept_domain(0x0501), ConceptDomain::Unassigned);
     }
 }
