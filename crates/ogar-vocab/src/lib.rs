@@ -1345,6 +1345,7 @@ const CODEBOOK: &[(&str, u16)] = &[
     ("auth_zitadel", 0x0B02),
     ("auth_zanzibar", 0x0B03),
     ("auth_ory_keto", 0x0B04),
+    ("auth_surrealdb", 0x0B05),
     // ── 0x0CXX — Automation domain (the HIRO IT-automation stack) ──
     // One domain spanning the MARS structural CMDB (`ogit.MARS:` —
     // Application/Resource/Software/Machine, the A→R→S→M dependsOn backbone)
@@ -1494,7 +1495,7 @@ pub enum ConceptDomain {
     Anatomy,
     /// `0x0BXX` — Auth (IAM; provider-agnostic — the AuthStore class
     /// family: `auth_store` + per-IdP profiles `auth_zitadel` /
-    /// `auth_zanzibar` / `auth_ory_keto`). See
+    /// `auth_zanzibar` / `auth_ory_keto` / `auth_surrealdb`). See
     /// `docs/CLASSID-RBAC-KEYSTONE-SPEC.md` §7.
     Auth,
     /// `0x0CXX` — Automation (the HIRO IT-automation stack). One domain
@@ -2202,6 +2203,11 @@ pub mod class_ids {
     pub const AUTH_ZANZIBAR: u16 = 0x0B03;
     /// `auth_ory_keto` (`0x0B04`) — Ory Keto provider profile.
     pub const AUTH_ORY_KETO: u16 = 0x0B04;
+    /// `auth_surrealdb` (`0x0B05`) — SurrealDB IAM provider profile:
+    /// system users and record access, Viewer / Editor / Owner roles bound to
+    /// a level (root ⊃ namespace ⊃ database ⊃ record). Claims `ID` / `RL` /
+    /// `NS` (+ `DB`, `AC`). Harvested in `crates/ogar-auth-surrealdb`.
+    pub const AUTH_SURREALDB: u16 = 0x0B05;
 
     // ── 0x0DXX — HR domain (employment / org / contracts) ──
 
@@ -2407,6 +2413,7 @@ pub mod class_ids {
         ("auth_zitadel", AUTH_ZITADEL),
         ("auth_zanzibar", AUTH_ZANZIBAR),
         ("auth_ory_keto", AUTH_ORY_KETO),
+        ("auth_surrealdb", AUTH_SURREALDB),
         // 0x0DXX — HR (employment / org / contracts; closes the final
         // 4-of-11 cross-axis gap from odoo-rs PR #14)
         ("hr_employee", HR_EMPLOYEE),
@@ -2504,7 +2511,7 @@ pub mod class_ids {
             // Pin the number here so a bump is never silent.
             assert_eq!(
                 ALL.len(),
-                98,
+                99,
                 "class_ids::ALL count changed — update this pin AND land the \
                  corresponding row in lance-graph's \
                  crates/lance-graph-contract/src/ogar_codebook.rs::CODEBOOK \
@@ -3367,6 +3374,7 @@ pub fn all_promoted_classes() -> Vec<Class> {
         auth_zitadel(),
         auth_zanzibar(),
         auth_ory_keto(),
+        auth_surrealdb(),
         // 0x0DXX — HR arm
         hr_employee(),
         hr_department(),
@@ -4863,6 +4871,15 @@ pub fn auth_ory_keto() -> Class {
     auth_provider("AuthOryKeto", "auth_ory_keto")
 }
 
+/// The `auth_surrealdb` (`0x0B05`) provider profile — SurrealDB IAM. Claims:
+/// subject `ID`, roles `RL`, namespace `NS`; `DB` and `AC` narrow the scope.
+/// Roles are bound to a level, which enters authorization as a nested scope
+/// path, not as the tenant.
+#[must_use]
+pub fn auth_surrealdb() -> Class {
+    auth_provider("AuthSurrealDb", "auth_surrealdb")
+}
+
 // ── 0x0AXX — Anatomy domain builders (FMA reference kinds) ──
 //
 // The public anatomical reference frame consumed by the splat-native arc
@@ -6040,6 +6057,7 @@ mod tests {
         assert_eq!(canonical_concept_domain(0x0900), ConceptDomain::Health);
         assert_eq!(canonical_concept_domain(0x0B00), ConceptDomain::Auth);
         assert_eq!(canonical_concept_domain(0x0B04), ConceptDomain::Auth);
+        assert_eq!(canonical_concept_domain(0x0B05), ConceptDomain::Auth);
         // Anatomy block (0x0A) — FMA reference kinds.
         assert_eq!(canonical_concept_domain(0x0A00), ConceptDomain::Anatomy);
         assert_eq!(canonical_concept_domain(0x0A03), ConceptDomain::Anatomy);
@@ -6122,6 +6140,7 @@ mod tests {
             ("auth_zitadel", 0x0B02),
             ("auth_zanzibar", 0x0B03),
             ("auth_ory_keto", 0x0B04),
+            ("auth_surrealdb", 0x0B05),
         ] {
             assert_eq!(
                 canonical_concept_id(concept),
@@ -6130,8 +6149,8 @@ mod tests {
             );
             assert_eq!(canonical_concept_domain(id), ConceptDomain::Auth);
         }
-        // The four preminted profiles are the whole Auth block today.
-        assert_eq!(concepts_in_domain(ConceptDomain::Auth).count(), 4);
+        // The base and its four provider profiles are the whole Auth block.
+        assert_eq!(concepts_in_domain(ConceptDomain::Auth).count(), 5);
     }
 
     #[test]
@@ -6282,7 +6301,7 @@ mod tests {
         assert_eq!(concepts_in_domain(ConceptDomain::Commerce).count(), 11);
         assert_eq!(concepts_in_domain(ConceptDomain::ProjectMgmt).count(), 26);
         assert_eq!(concepts_in_domain(ConceptDomain::Anatomy).count(), 4);
-        assert_eq!(concepts_in_domain(ConceptDomain::Auth).count(), 4);
+        assert_eq!(concepts_in_domain(ConceptDomain::Auth).count(), 5);
         assert_eq!(concepts_in_domain(ConceptDomain::Automation).count(), 9);
         // Every yielded Automation id really is in-domain (0x0CXX).
         let automation: Vec<&str> = concepts_in_domain(ConceptDomain::Automation)
