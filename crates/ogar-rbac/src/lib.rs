@@ -55,9 +55,15 @@
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
 
+use lance_graph_contract::class_view::WideFieldMask;
+use lance_graph_contract::rbac::Membership;
 use lance_graph_contract::rbac::{
     ActorId, ClassGrant, ClassId, ClassRbac, Operation, RoleId, ScopeSpec, grants_permit,
 };
+use lance_graph_contract::rbac_plug::{
+    ActorSource, RbacAuthority, RbacBinding, RbacDrift, RbacPlug, verify_concepts_against_mirror,
+};
+use lance_graph_rbac::authorize::{MembershipDecision, authorize_memberships};
 use lance_graph_rbac::authorize::{ScopedDecision, authorize_scoped};
 use ogar_auth::user::AuthenticatedUser;
 
@@ -80,6 +86,19 @@ pub trait GrantSource {
     /// are bound to a level of a hierarchy (a namespace, a database, an org).
     /// `None` (the default) is global: every existing source is unchanged.
     fn scope_of(&self, _role: RoleId, _class: ClassId) -> Option<ScopeSpec> {
+        None
+    }
+
+    /// Whether this source defines `role` at all — what an RBAC plug's role
+    /// list is checked against. Defaults to "has at least one grant"; a source
+    /// that knows grant-less roles overrides it.
+    fn defines_role(&self, role: RoleId) -> bool {
+        !self.grants_of(role).is_empty()
+    }
+
+    /// The column projection `role` is limited to on `concept`, if any. `None`
+    /// (the default) leaves the class unrestricted by column for that role.
+    fn field_mask_of(&self, _role: RoleId, _concept: u16) -> Option<WideFieldMask> {
         None
     }
 }
@@ -145,6 +164,140 @@ impl<S: GrantSource> ClassRbac for OgarRbac<S> {
     // Axes 2/4 (`roles_reaching` / `field_mask`) inherit the contract defaults
     // until the Core carries the data for them — a follow-up seam. `field_mask`'s default is now WideFieldMask, so a
     // grant on a position >= 64 survives once a source supplies one.
+}
+
+/// OGAR as the RBAC authority: binds a consumer's [`RbacPlug`] to this
+/// source's grants, the authorization twin of `OgarAuthority` for
+/// capabilities.
+///
+/// Every plugged classid must be minted in `ogar-vocab` and agree with the
+/// contract's wire mirror; every plugged role must be one the source defines.
+/// The binding then carries exactly the plugged roles' grants and field masks
+/// on the plugged classids.
+impl<S: GrantSource> RbacAuthority for OgarRbac<S> {
+    fn bind(&self, plug: &RbacPlug) -> Result<RbacBinding, RbacDrift> {
+        let mut concepts = Vec::with_capacity(plug.classids.len());
+        for &id in plug.classids {
+            let name =
+                ogar_vocab::canonical_concept_name(id).ok_or(RbacDrift::UnknownClassid(id))?;
+            concepts.push((name.to_string(), id));
+        }
+        verify_concepts_against_mirror(&concepts)?;
+
+        let mut grants = Vec::with_capacity(plug.roles.len());
+        let mut masks = Vec::new();
+        for &role in plug.roles {
+            if !self.source.defines_role(role) {
+                return Err(RbacDrift::UnknownRole(role.to_string()));
+            }
+            grants.push((role, self.source.grants_of(role).to_vec()));
+            for &id in plug.classids {
+                if let Some(mask) = self.source.field_mask_of(role, id) {
+                    masks.push((role, id, mask));
+                }
+            }
+        }
+        Ok(RbacBinding::new(
+            plug.consumer,
+            plug.classids.to_vec(),
+            grants,
+            masks,
+        ))
+    }
+}
+
+/// One `ogar-auth` user as the actor source for a plugged [`RbacBinding`].
+///
+/// The user's roles are matched against the roles the binding was resolved
+/// for; a role the plug did not declare is dropped (and reported by
+/// [`unplugged_roles`](IdentityActors::unplugged_roles)), never passed through.
+/// Every membership is bound to the user's tenant, so a decision through
+/// [`authorize_identity`] is tenant-scoped.
+///
+/// Built per request from the authenticated user: it answers for that one
+/// subject and knows no other actor.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct IdentityActors {
+    subject: String,
+    tenant: u64,
+    roles: Vec<RoleId>,
+    unplugged: Vec<String>,
+}
+
+impl IdentityActors {
+    /// The actor source for `identity` under `binding`.
+    #[must_use]
+    pub fn new(identity: &AuthenticatedUser, binding: &RbacBinding) -> Self {
+        let mut roles = Vec::new();
+        let mut unplugged = Vec::new();
+        for held in &identity.user.roles {
+            match binding
+                .declared_grants()
+                .iter()
+                .find(|(declared, _)| *declared == held.as_str())
+            {
+                Some((declared, _)) if !roles.contains(declared) => roles.push(*declared),
+                Some(_) => {}
+                None => unplugged.push(held.clone()),
+            }
+        }
+        Self {
+            subject: identity.user.subject.clone(),
+            tenant: identity.user.tenant,
+            roles,
+            unplugged,
+        }
+    }
+
+    /// The user's roles the plug did not declare — dropped, so they grant
+    /// nothing here. For audit and diagnostics.
+    #[must_use]
+    pub fn unplugged_roles(&self) -> &[String] {
+        &self.unplugged
+    }
+}
+
+impl ActorSource for IdentityActors {
+    fn roles_of(&self, actor: ActorId<'_>) -> &[RoleId] {
+        if actor == self.subject {
+            &self.roles
+        } else {
+            &[]
+        }
+    }
+
+    fn memberships_of(&self, actor: ActorId<'_>, _class: ClassId) -> Vec<Membership> {
+        let scope = ScopeSpec {
+            tenant: Some(self.tenant),
+            ..ScopeSpec::default()
+        };
+        self.roles_of(actor)
+            .iter()
+            .map(|&role| Membership {
+                role,
+                scope: Some(scope),
+            })
+            .collect()
+    }
+}
+
+/// Authorize an `ogar-auth` user through a plugged binding: the binding
+/// supplies the grants, the user supplies roles and tenant, and the decision
+/// is the membership kernel's ([`authorize_memberships`]).
+#[must_use]
+pub fn authorize_identity(
+    binding: &RbacBinding,
+    identity: &AuthenticatedUser,
+    class: ClassId,
+    op: Operation<'_>,
+) -> MembershipDecision {
+    let actors = IdentityActors::new(identity, binding);
+    authorize_memberships(
+        &binding.with_actors(actors),
+        identity.user.subject.as_str(),
+        class,
+        op,
+    )
 }
 
 #[cfg(test)]
@@ -433,5 +586,149 @@ mod tests {
 
         let global = authorize_scoped(&authority(), "dr-house", patient_class(), read());
         assert_eq!(global.scope, None, "a source without scopes stays global");
+    }
+
+    // ── RbacAuthority ─────────────────────────────────────────────────────
+
+    const PLUG: RbacPlug = RbacPlug {
+        consumer: "demo",
+        classids: &[PATIENT],
+        roles: &["physician", "cashier"],
+    };
+
+    #[test]
+    fn the_authority_binds_a_plug_to_its_grants() {
+        let b = authority().bind(&PLUG).expect("green bind");
+        assert_eq!(b.consumer(), "demo");
+        let act = Operation::Act { action: "approve" };
+        assert_eq!(b.permits("physician", patient_class(), &act), Ok(true));
+        assert_eq!(b.permits("cashier", patient_class(), &act), Ok(false));
+    }
+
+    #[test]
+    fn the_authority_refuses_unminted_classids_and_undefined_roles() {
+        assert_eq!(
+            authority().bind(&RbacPlug {
+                classids: &[0xFFFE],
+                ..PLUG
+            }),
+            Err(RbacDrift::UnknownClassid(0xFFFE))
+        );
+        assert_eq!(
+            authority().bind(&RbacPlug {
+                roles: &["janitor"],
+                ..PLUG
+            }),
+            Err(RbacDrift::UnknownRole("janitor".into()))
+        );
+    }
+
+    /// A source with a column projection for cashiers.
+    struct Masked(Fixture);
+    impl GrantSource for Masked {
+        fn roles_of(&self, actor: ActorId<'_>) -> &[RoleId] {
+            self.0.roles_of(actor)
+        }
+        fn grants_of(&self, role: RoleId) -> &[ClassGrant] {
+            self.0.grants_of(role)
+        }
+        fn field_mask_of(&self, role: RoleId, concept: u16) -> Option<WideFieldMask> {
+            (role == "cashier" && concept == PATIENT)
+                .then(|| WideFieldMask::from_positions(&[0, 2]))
+        }
+    }
+
+    #[test]
+    fn the_binding_carries_the_sources_field_masks() {
+        let b = OgarRbac::new(Masked(authority().source))
+            .bind(&PLUG)
+            .expect("green bind");
+        assert_eq!(
+            b.field_mask_for("cashier", patient_class()),
+            Ok(Some(&WideFieldMask::from_positions(&[0, 2])))
+        );
+        assert_eq!(b.field_mask_for("physician", patient_class()), Ok(None));
+    }
+
+    // ── IdentityActors / authorize_identity ──────────────────────────────
+
+    fn identity(roles: &[&str], tenant: u64) -> AuthenticatedUser {
+        AuthenticatedUser {
+            user: User {
+                id: UserId(7),
+                subject: "dr-house".to_string(),
+                tenant,
+                roles: roles.iter().map(|r| (*r).to_string()).collect(),
+                memberships: vec![],
+                bindings: vec![],
+                key_refs: vec![],
+            },
+            auth: AuthContext::federated(ZITADEL, AuthStrength::MultiFactor),
+        }
+    }
+
+    fn read() -> Operation<'static> {
+        Operation::Read {
+            depth: PrefetchDepth::Identity,
+        }
+    }
+
+    #[test]
+    fn an_identity_is_authorized_tenant_scoped_through_the_binding() {
+        let binding = authority().bind(&PLUG).expect("green bind");
+        let d = authorize_identity(
+            &binding,
+            &identity(&["cashier"], 7),
+            patient_class(),
+            read(),
+        );
+        assert_eq!(d.decision, AccessDecision::Allow);
+        let scope = d.scope.expect("tenant-scoped, never unrestricted");
+        assert_eq!(scope.members().len(), 1);
+        assert_eq!(scope.members()[0].tenant, Some(7));
+    }
+
+    // A role the user holds but the plug did not declare grants nothing.
+    #[test]
+    fn roles_outside_the_plug_are_dropped_and_reported() {
+        let narrow = RbacPlug {
+            roles: &["cashier"],
+            ..PLUG
+        };
+        let binding = authority().bind(&narrow).expect("green bind");
+        let user = identity(&["physician", "cashier", "ghost"], 7);
+        let actors = IdentityActors::new(&user, &binding);
+        assert_eq!(actors.roles_of("dr-house"), &["cashier"]);
+        assert_eq!(
+            actors.unplugged_roles(),
+            &["physician".to_string(), "ghost".to_string()]
+        );
+        let act = Operation::Act { action: "approve" };
+        // physician could act on the full binding; through this plug it cannot.
+        assert!(matches!(
+            authorize_identity(&binding, &user, patient_class(), act).decision,
+            AccessDecision::Deny { .. }
+        ));
+    }
+
+    #[test]
+    fn the_actor_source_answers_only_for_its_own_subject() {
+        let binding = authority().bind(&PLUG).expect("green bind");
+        let actors = IdentityActors::new(&identity(&["physician"], 7), &binding);
+        assert_eq!(actors.roles_of("dr-house"), &["physician"]);
+        assert!(actors.roles_of("someone-else").is_empty());
+        assert!(
+            actors
+                .memberships_of("someone-else", patient_class())
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn a_user_with_no_plugged_role_is_denied() {
+        let binding = authority().bind(&PLUG).expect("green bind");
+        let d = authorize_identity(&binding, &identity(&["ghost"], 7), patient_class(), read());
+        assert!(matches!(d.decision, AccessDecision::Deny { .. }));
+        assert_eq!(d.scope, None);
     }
 }
