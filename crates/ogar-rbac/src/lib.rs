@@ -55,8 +55,12 @@
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
 
+use lance_graph_contract::class_view::WideFieldMask;
 use lance_graph_contract::rbac::{
     ActorId, ClassGrant, ClassId, ClassRbac, Operation, RoleId, ScopeSpec, grants_permit,
+};
+use lance_graph_contract::rbac_plug::{
+    RbacAuthority, RbacBinding, RbacDrift, RbacPlug, verify_concepts_against_mirror,
 };
 use lance_graph_rbac::authorize::{ScopedDecision, authorize_scoped};
 use ogar_auth::user::AuthenticatedUser;
@@ -80,6 +84,19 @@ pub trait GrantSource {
     /// are bound to a level of a hierarchy (a namespace, a database, an org).
     /// `None` (the default) is global: every existing source is unchanged.
     fn scope_of(&self, _role: RoleId, _class: ClassId) -> Option<ScopeSpec> {
+        None
+    }
+
+    /// Whether this source defines `role` at all — what an RBAC plug's role
+    /// list is checked against. Defaults to "has at least one grant"; a source
+    /// that knows grant-less roles overrides it.
+    fn defines_role(&self, role: RoleId) -> bool {
+        !self.grants_of(role).is_empty()
+    }
+
+    /// The column projection `role` is limited to on `concept`, if any. `None`
+    /// (the default) leaves the class unrestricted by column for that role.
+    fn field_mask_of(&self, _role: RoleId, _concept: u16) -> Option<WideFieldMask> {
         None
     }
 }
@@ -145,6 +162,46 @@ impl<S: GrantSource> ClassRbac for OgarRbac<S> {
     // Axes 2/4 (`roles_reaching` / `field_mask`) inherit the contract defaults
     // until the Core carries the data for them — a follow-up seam. `field_mask`'s default is now WideFieldMask, so a
     // grant on a position >= 64 survives once a source supplies one.
+}
+
+/// OGAR as the RBAC authority: binds a consumer's [`RbacPlug`] to this
+/// source's grants, the authorization twin of `OgarAuthority` for
+/// capabilities.
+///
+/// Every plugged classid must be minted in `ogar-vocab` and agree with the
+/// contract's wire mirror; every plugged role must be one the source defines.
+/// The binding then carries exactly the plugged roles' grants and field masks
+/// on the plugged classids.
+impl<S: GrantSource> RbacAuthority for OgarRbac<S> {
+    fn bind(&self, plug: &RbacPlug) -> Result<RbacBinding, RbacDrift> {
+        let mut concepts = Vec::with_capacity(plug.classids.len());
+        for &id in plug.classids {
+            let name =
+                ogar_vocab::canonical_concept_name(id).ok_or(RbacDrift::UnknownClassid(id))?;
+            concepts.push((name.to_string(), id));
+        }
+        verify_concepts_against_mirror(&concepts)?;
+
+        let mut grants = Vec::with_capacity(plug.roles.len());
+        let mut masks = Vec::new();
+        for &role in plug.roles {
+            if !self.source.defines_role(role) {
+                return Err(RbacDrift::UnknownRole(role.to_string()));
+            }
+            grants.push((role, self.source.grants_of(role).to_vec()));
+            for &id in plug.classids {
+                if let Some(mask) = self.source.field_mask_of(role, id) {
+                    masks.push((role, id, mask));
+                }
+            }
+        }
+        Ok(RbacBinding::new(
+            plug.consumer,
+            plug.classids.to_vec(),
+            grants,
+            masks,
+        ))
+    }
 }
 
 #[cfg(test)]
@@ -433,5 +490,67 @@ mod tests {
 
         let global = authorize_scoped(&authority(), "dr-house", patient_class(), read());
         assert_eq!(global.scope, None, "a source without scopes stays global");
+    }
+
+    // ── RbacAuthority ─────────────────────────────────────────────────────
+
+    const PLUG: RbacPlug = RbacPlug {
+        consumer: "demo",
+        classids: &[PATIENT],
+        roles: &["physician", "cashier"],
+    };
+
+    #[test]
+    fn the_authority_binds_a_plug_to_its_grants() {
+        let b = authority().bind(&PLUG).expect("green bind");
+        assert_eq!(b.consumer(), "demo");
+        let act = Operation::Act { action: "approve" };
+        assert_eq!(b.permits("physician", patient_class(), &act), Ok(true));
+        assert_eq!(b.permits("cashier", patient_class(), &act), Ok(false));
+    }
+
+    #[test]
+    fn the_authority_refuses_unminted_classids_and_undefined_roles() {
+        assert_eq!(
+            authority().bind(&RbacPlug {
+                classids: &[0xFFFE],
+                ..PLUG
+            }),
+            Err(RbacDrift::UnknownClassid(0xFFFE))
+        );
+        assert_eq!(
+            authority().bind(&RbacPlug {
+                roles: &["janitor"],
+                ..PLUG
+            }),
+            Err(RbacDrift::UnknownRole("janitor".into()))
+        );
+    }
+
+    /// A source with a column projection for cashiers.
+    struct Masked(Fixture);
+    impl GrantSource for Masked {
+        fn roles_of(&self, actor: ActorId<'_>) -> &[RoleId] {
+            self.0.roles_of(actor)
+        }
+        fn grants_of(&self, role: RoleId) -> &[ClassGrant] {
+            self.0.grants_of(role)
+        }
+        fn field_mask_of(&self, role: RoleId, concept: u16) -> Option<WideFieldMask> {
+            (role == "cashier" && concept == PATIENT)
+                .then(|| WideFieldMask::from_positions(&[0, 2]))
+        }
+    }
+
+    #[test]
+    fn the_binding_carries_the_sources_field_masks() {
+        let b = OgarRbac::new(Masked(authority().source))
+            .bind(&PLUG)
+            .expect("green bind");
+        assert_eq!(
+            b.field_mask_for("cashier", patient_class()),
+            Ok(Some(&WideFieldMask::from_positions(&[0, 2])))
+        );
+        assert_eq!(b.field_mask_for("physician", patient_class()), Ok(None));
     }
 }
