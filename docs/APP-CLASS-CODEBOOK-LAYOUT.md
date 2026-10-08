@@ -181,6 +181,7 @@ materialised until the app mints its first private class).
 | `0x0007` | Redmine | `0x01` project-mgmt | **no** — same concepts as OpenProject, own templates |
 | `0x0008` | OpenStreetMap (openstreetmap-website-rs) | `0x0F` geo | **no** — maps entirely onto core |
 | `0x0009` | WeatherNext / weathernext-rs | `0x04` weather / atmosphere | **no** — maps onto core |
+| `0x000A` | Spear (mail hub) | `0x0B` IAM (`email` `0x0B05`) + `0x08` (`document`) | **no** — maps onto core |
 | `0x00A0` | (reserved) future app block | — | — |
 
 > **OpenProject (`0x0001`) and Redmine (`0x0007`) are the showcase:**

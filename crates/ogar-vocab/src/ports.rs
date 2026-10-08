@@ -639,10 +639,45 @@ pub const WEATHERNEXT_ALIASES: &[(&str, u16)] = &[
     ("WeatherStaticCell", class_ids::WEATHER_STATIC_CELL),
 ];
 
+// ── Spear (the mail hub) port ────────────────────────────────────────
+
+/// Spear's `PortSpec`: its public names onto canon concepts — mail onto
+/// `email` (`0x0B05`, OGIT `ogit:Email`), documents and drive items onto the
+/// existing `document` (`0x080B`). `0x000A` is Spear's render skin.
+pub struct SpearPort;
+
+impl PortSpec for SpearPort {
+    const NAMESPACE: &'static str = "Spear";
+    const BRIDGE_ID: &'static str = "spear";
+    const APP_PREFIX: u16 = 0x000A;
+    fn aliases() -> &'static [(&'static str, u16)] {
+        SPEAR_ALIASES
+    }
+}
+
+/// Spear's names for the shared mail concepts.
+pub const SPEAR_ALIASES: &[(&str, u16)] = &[
+    ("Email", class_ids::EMAIL),
+    ("Message", class_ids::EMAIL),
+    ("Document", class_ids::DOCUMENT),
+    ("DriveItem", class_ids::DOCUMENT),
+];
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::app::{app_of, concept_of, render_classid};
+
+    #[test]
+    fn spear_classview_composes_canon_high_custom_low() {
+        assert_eq!(SpearPort::class_id("Email"), Some(0x0B05));
+        assert_eq!(SpearPort::class_id("Message"), Some(0x0B05));
+        assert_eq!(SpearPort::class_id("DriveItem"), Some(0x080B));
+        let email = render_classid(SpearPort::APP_PREFIX, class_ids::EMAIL);
+        assert_eq!(email, 0x0B05_000A);
+        assert_eq!(concept_of(email), 0x0B05);
+        assert_eq!(app_of(email), 0x000A);
+    }
 
     #[test]
     fn weathernext_classview_composes_canon_high_custom_low() {
