@@ -87,6 +87,7 @@ use ogar_vocab::{
     currency_policy,
     diagnosis,
     document,
+    email,
     examination,
     external_practice,
     hr_department,
@@ -98,8 +99,6 @@ use ogar_vocab::{
     knowledge_item,
     lab_value,
     machine_memory_map,
-    mail_message,
-    mailbox,
     mars_application,
     mars_machine,
     mars_node_template,
@@ -234,8 +233,7 @@ fn all_canonical_classes() -> Vec<(&'static str, Class)> {
         // manifest, not promoted into the shared OGAR schema.
         ("weather_cell", weather_cell()),
         ("weather_static_cell", weather_static_cell()),
-        ("mailbox", mailbox()),
-        ("mail_message", mail_message()),
+        ("email", email()),
         // ── 0x08XX — OCR (container kinds; content stays in content stores) ──
         ("unicharset", unicharset()),
         ("recoder", recoder()),

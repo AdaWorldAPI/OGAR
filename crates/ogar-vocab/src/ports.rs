@@ -641,8 +641,9 @@ pub const WEATHERNEXT_ALIASES: &[(&str, u16)] = &[
 
 // ── Spear (the mail hub) port ────────────────────────────────────────
 
-/// Spear's `PortSpec` over the shared Mail (`0x05XX`) concepts. `0x000A` is
-/// Spear's render skin; the mailbox and message meanings stay in the high u16.
+/// Spear's `PortSpec`: its public names onto canon concepts — mail onto
+/// `email` (`0x0501`, OGIT `ogit:Email`), documents and drive items onto the
+/// existing `document` (`0x080B`). `0x000A` is Spear's render skin.
 pub struct SpearPort;
 
 impl PortSpec for SpearPort {
@@ -656,8 +657,10 @@ impl PortSpec for SpearPort {
 
 /// Spear's names for the shared mail concepts.
 pub const SPEAR_ALIASES: &[(&str, u16)] = &[
-    ("Mailbox", class_ids::MAILBOX),
-    ("Message", class_ids::MAIL_MESSAGE),
+    ("Email", class_ids::EMAIL),
+    ("Message", class_ids::EMAIL),
+    ("Document", class_ids::DOCUMENT),
+    ("DriveItem", class_ids::DOCUMENT),
 ];
 
 #[cfg(test)]
@@ -667,12 +670,13 @@ mod tests {
 
     #[test]
     fn spear_classview_composes_canon_high_custom_low() {
-        assert_eq!(SpearPort::class_id("Mailbox"), Some(0x0501));
-        assert_eq!(SpearPort::class_id("Message"), Some(0x0502));
-        let mailbox = render_classid(SpearPort::APP_PREFIX, class_ids::MAILBOX);
-        assert_eq!(mailbox, 0x0501_000A);
-        assert_eq!(concept_of(mailbox), 0x0501);
-        assert_eq!(app_of(mailbox), 0x000A);
+        assert_eq!(SpearPort::class_id("Email"), Some(0x0501));
+        assert_eq!(SpearPort::class_id("Message"), Some(0x0501));
+        assert_eq!(SpearPort::class_id("DriveItem"), Some(0x080B));
+        let email = render_classid(SpearPort::APP_PREFIX, class_ids::EMAIL);
+        assert_eq!(email, 0x0501_000A);
+        assert_eq!(concept_of(email), 0x0501);
+        assert_eq!(app_of(email), 0x000A);
     }
 
     #[test]
