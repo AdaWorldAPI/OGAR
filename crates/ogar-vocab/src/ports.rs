@@ -639,10 +639,41 @@ pub const WEATHERNEXT_ALIASES: &[(&str, u16)] = &[
     ("WeatherStaticCell", class_ids::WEATHER_STATIC_CELL),
 ];
 
+// ── Spear (the mail hub) port ────────────────────────────────────────
+
+/// Spear's `PortSpec` over the shared Mail (`0x05XX`) concepts. `0x000A` is
+/// Spear's render skin; the mailbox and message meanings stay in the high u16.
+pub struct SpearPort;
+
+impl PortSpec for SpearPort {
+    const NAMESPACE: &'static str = "Spear";
+    const BRIDGE_ID: &'static str = "spear";
+    const APP_PREFIX: u16 = 0x000A;
+    fn aliases() -> &'static [(&'static str, u16)] {
+        SPEAR_ALIASES
+    }
+}
+
+/// Spear's names for the shared mail concepts.
+pub const SPEAR_ALIASES: &[(&str, u16)] = &[
+    ("Mailbox", class_ids::MAILBOX),
+    ("Message", class_ids::MAIL_MESSAGE),
+];
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::app::{app_of, concept_of, render_classid};
+
+    #[test]
+    fn spear_classview_composes_canon_high_custom_low() {
+        assert_eq!(SpearPort::class_id("Mailbox"), Some(0x0501));
+        assert_eq!(SpearPort::class_id("Message"), Some(0x0502));
+        let mailbox = render_classid(SpearPort::APP_PREFIX, class_ids::MAILBOX);
+        assert_eq!(mailbox, 0x0501_000A);
+        assert_eq!(concept_of(mailbox), 0x0501);
+        assert_eq!(app_of(mailbox), 0x000A);
+    }
 
     #[test]
     fn weathernext_classview_composes_canon_high_custom_low() {

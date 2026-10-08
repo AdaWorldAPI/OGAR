@@ -1106,7 +1106,7 @@ impl Class {
 ///   0x02XX  commerce / ERP    (OSB ↔ Odoo cross-curator)
 ///   0x03XX  Ontology          (OBO biomedical reference: MONDO/HPO/Uberon/PATO/RO — zero rows here; concepts in ogar-obo)
 ///   0x04XX  Weather / Atmosphere (forecast + atmospheric reference cells)
-///   0x05XX  unassigned
+///   0x05XX  Mail              (mailbox + message; consumed by spear / stalwart)
 ///   0x06XX  unassigned
 ///   0x07XX  reserved: OSINT
 ///   0x08XX  OCR               (container kinds: unicharset/recoder/charset)
@@ -1240,6 +1240,12 @@ const CODEBOOK: &[(&str, u16)] = &[
     // ClassView selection remains in the low u16 of the full classid.
     ("weather_cell", 0x0401),
     ("weather_static_cell", 0x0402),
+    // ── 0x05XX — Mail domain ──
+    // The two things a mail store authorizes: the mailbox (whose access follows
+    // its owner in the directory) and the message inside it. Folders, flags and
+    // threads are rows and columns of these, not concepts of their own.
+    ("mailbox", 0x0501),
+    ("mail_message", 0x0502),
     // ── 0x07XX — OSINT domain: ZERO vocabulary rows BY DESIGN (operator
     // ruling 2026-07-02, corrects PR #145's two hallucinated concept mints
     // `osint_system@0x0700` / `osint_person@0x0701`). Within the OSINT domain
@@ -1479,6 +1485,10 @@ pub enum ConceptDomain {
     /// `0x04XX` — Weather / Atmosphere. Shared atmospheric and forecast-grid
     /// concepts; public environmental reference data, not an OSM extension.
     Weather,
+    /// `0x05XX` — Mail. The mailbox and the message, as one mail store
+    /// authorizes them; consumed by spear (the mail hub) and the stalwart
+    /// dir-sim directory.
+    Mail,
     /// `0x07XX` — OSINT (open-source intelligence).
     Osint,
     /// `0x08XX` — OCR (optical character recognition / document
@@ -1754,7 +1764,7 @@ pub enum ConceptDomain {
     /// reads the compartment off the key (`classid >> 24`) instead of looking
     /// it up.
     Form,
-    /// Any high-byte slot not yet assigned a domain (`0x05XX`–`0x06XX`,
+    /// Any high-byte slot not yet assigned a domain (`0x06XX`,
     /// `0x10XX`–`0x16XX`, `0x18XX`–`0xBFXX`, `0xC2XX`–`0xC3XX`,
     /// `0xC5XX`, `0xC7XX`+).
     Unassigned,
@@ -1770,6 +1780,7 @@ pub fn canonical_concept_domain(id: u16) -> ConceptDomain {
         0x02 => ConceptDomain::Commerce,
         0x03 => ConceptDomain::Ontology,
         0x04 => ConceptDomain::Weather,
+        0x05 => ConceptDomain::Mail,
         0x07 => ConceptDomain::Osint,
         0x08 => ConceptDomain::Ocr,
         0x09 => ConceptDomain::Health,
@@ -2050,6 +2061,14 @@ pub mod class_ids {
     /// `weather_static_cell` (`0x0402`) — static support cell for terrain /
     /// geography-derived weather context, distinct from dynamic fields.
     pub const WEATHER_STATIC_CELL: u16 = 0x0402;
+
+    // ── 0x05XX — Mail domain ──
+
+    /// `mailbox` (`0x0501`) — one mailbox. Access follows the directory object
+    /// that owns it.
+    pub const MAILBOX: u16 = 0x0501;
+    /// `mail_message` (`0x0502`) — one message in a mailbox.
+    pub const MAIL_MESSAGE: u16 = 0x0502;
 
     // ── 0x08XX — OCR domain (document extraction; the Tesseract-rs arc) ──
     // Class-level container KINDS only: the concept slots name the container
@@ -2369,6 +2388,9 @@ pub mod class_ids {
         // 0x04XX — Weather / Atmosphere
         ("weather_cell", WEATHER_CELL),
         ("weather_static_cell", WEATHER_STATIC_CELL),
+        // 0x05XX — Mail
+        ("mailbox", MAILBOX),
+        ("mail_message", MAIL_MESSAGE),
         // 0x07XX — OSINT: ZERO vocabulary rows BY DESIGN (operator ruling
         // 2026-07-02; see the CODEBOOK 0x07XX section note). No entries
         // follow — OGAR vocabulary carries no OSINT concept names.
@@ -2504,7 +2526,7 @@ pub mod class_ids {
             // Pin the number here so a bump is never silent.
             assert_eq!(
                 ALL.len(),
-                98,
+                100,
                 "class_ids::ALL count changed — update this pin AND land the \
                  corresponding row in lance-graph's \
                  crates/lance-graph-contract/src/ogar_codebook.rs::CODEBOOK \
@@ -3331,6 +3353,8 @@ pub fn all_promoted_classes() -> Vec<Class> {
         // 0x08XX — OCR arm (9 container kinds), in class_ids::ALL order.
         weather_cell(),
         weather_static_cell(),
+        mailbox(),
+        mail_message(),
         unicharset(),
         recoder(),
         charset(),
@@ -5035,6 +5059,29 @@ pub fn weather_static_cell() -> Class {
 }
 
 // ─────────────────────────────────────────────────────────────────────
+// 0x05XX — Mail canonical builders. Identity only; the message columns live
+// in the consumer's ClassView (spear's `messages` Lance schema).
+// ─────────────────────────────────────────────────────────────────────
+
+/// `mailbox` (`0x0501`) — one mailbox.
+#[must_use]
+pub fn mailbox() -> Class {
+    let mut c = Class::new("Mailbox");
+    c.language = Language::Unknown;
+    c.canonical_concept = Some("mailbox".to_string());
+    c
+}
+
+/// `mail_message` (`0x0502`) — one message in a mailbox.
+#[must_use]
+pub fn mail_message() -> Class {
+    let mut c = Class::new("MailMessage");
+    c.language = Language::Unknown;
+    c.canonical_concept = Some("mail_message".to_string());
+    c
+}
+
+// ─────────────────────────────────────────────────────────────────────
 // 0xC6XX — MMIO hardware-platform builders (C64 = founding tenant).
 // Kind-level containers only: registers/opcodes are content rows.
 // ─────────────────────────────────────────────────────────────────────
@@ -6050,10 +6097,11 @@ mod tests {
         // lives in ogar-obo; plug-and-play, never pulls into ERP consumers).
         assert_eq!(canonical_concept_domain(0x0300), ConceptDomain::Ontology);
         assert_eq!(canonical_concept_domain(0x03AB), ConceptDomain::Ontology);
-        // Weather / Atmosphere block (0x04), then still-unassigned 0x05-0x06.
+        // Weather / Atmosphere block (0x04), Mail (0x05), then still-unassigned 0x06.
         assert_eq!(canonical_concept_domain(0x0400), ConceptDomain::Weather);
         assert_eq!(canonical_concept_domain(0x0401), ConceptDomain::Weather);
-        assert_eq!(canonical_concept_domain(0x0500), ConceptDomain::Unassigned);
+        assert_eq!(canonical_concept_domain(0x0500), ConceptDomain::Mail);
+        assert_eq!(canonical_concept_domain(0x05FF), ConceptDomain::Mail);
         assert_eq!(canonical_concept_domain(0x0600), ConceptDomain::Unassigned);
         // HR block (0x0D).
         assert_eq!(canonical_concept_domain(0x0D00), ConceptDomain::HR);
@@ -7225,5 +7273,23 @@ mod weather_classid_mint_tests {
             weather_static_cell().canonical_id(),
             Some(class_ids::WEATHER_STATIC_CELL)
         );
+    }
+}
+
+#[cfg(test)]
+mod mail_classid_mint_tests {
+    use super::*;
+
+    #[test]
+    fn mail_domain_and_codebook_resolve() {
+        for id in [class_ids::MAILBOX, class_ids::MAIL_MESSAGE] {
+            assert_eq!(canonical_concept_domain(id), ConceptDomain::Mail);
+        }
+        assert_eq!(canonical_concept_id("mailbox"), Some(0x0501));
+        assert_eq!(canonical_concept_id("mail_message"), Some(0x0502));
+        assert_eq!(mailbox().canonical_id(), Some(class_ids::MAILBOX));
+        assert_eq!(mail_message().canonical_id(), Some(class_ids::MAIL_MESSAGE));
+        // 0x06 stays unassigned.
+        assert_eq!(canonical_concept_domain(0x0600), ConceptDomain::Unassigned);
     }
 }
