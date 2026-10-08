@@ -83,7 +83,7 @@ table drops for brevity.
 | `0x08` | Ocr | Optical character recognition / document extraction. |
 | `0x09` | Health | Clinical/patient/care (PHI). |
 | `0x0A` | Anatomy | FMA reference ontology — public structure, distinct from `Health` (a finding *about* the structure is PHI, the structure itself is not). |
-| `0x0B` | Auth | IAM, provider-agnostic — AuthStore class family (`auth_store` + per-IdP profiles: Zitadel, Zanzibar, Ory Keto, SurrealDB `0x0B05`). See `docs/CLASSID-RBAC-KEYSTONE-SPEC.md` §7 and `docs/SURREALDB-IAM-HARVEST.md`. |
+| `0x0B` | Auth | IAM, provider-agnostic — AuthStore class family (`auth_store` + per-IdP profiles). See `docs/CLASSID-RBAC-KEYSTONE-SPEC.md` §7. |
 | `0x0C` | Automation | HIRO IT-automation — MARS CMDB + Automation actuators (THINK+DO meet here). |
 | `0x0D` | HR | Employment/org/contracts, public master-data. |
 | `0x0E` | Genetics | CPIC pharmacogenomics, consumed by q2. Zero shared-vocab rows (reserved posture); V3 marker form `0x0E01_1000`. |

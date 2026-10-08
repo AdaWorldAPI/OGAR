@@ -73,7 +73,6 @@ use ogar_vocab::{
     anatomical_structure,
     auth_ory_keto,
     auth_store,
-    auth_surrealdb,
     auth_zanzibar,
     auth_zitadel,
     automation_trigger,
@@ -268,7 +267,6 @@ fn all_canonical_classes() -> Vec<(&'static str, Class)> {
         ("auth_zitadel", auth_zitadel()),
         ("auth_zanzibar", auth_zanzibar()),
         ("auth_ory_keto", auth_ory_keto()),
-        ("auth_surrealdb", auth_surrealdb()),
         // ── 0x0DXX — HR cluster (closes the final 4-of-11 odoo-rs #14 gap) ──
         ("hr_employee", hr_employee()),
         ("hr_department", hr_department()),
