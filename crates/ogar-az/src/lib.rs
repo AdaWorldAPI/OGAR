@@ -514,6 +514,12 @@ pub fn attr_multi<'p>(rec: &DirRecord, pool: &'p ValuePool, name: &str) -> Optio
 /// `SynchronizesTo` edges for AZ records whose `onPremisesImmutableId`
 /// base64-decodes to the `objectGUID` of an **observed** AD object.
 ///
+/// This is the `objectGUID` anchor profile only. A deployment whose source
+/// anchor is `mS-DS-ConsistencyGuid` (which may differ from `objectGUID`)
+/// gets no edge here; use `ogar_dir_core::correspond` with
+/// `identity::CONSISTENCY_GUID_TO_IMMUTABLE_ID`, which also reads the
+/// backsync and Exchange Online witnesses.
+///
 /// This is evidence, not a decision: anchors that are not a 16-byte GUID
 /// (e.g. custom source anchors) yield no edge, and an immutable id matching no
 /// observed AD object yields no dangling edge. The two nodes stay distinct.
