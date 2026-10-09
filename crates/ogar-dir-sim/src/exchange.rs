@@ -104,8 +104,9 @@ pub enum MailboxState {
     Provisioned,
     /// Moved from on-premises to Exchange Online.
     Migrated,
-    /// Removed (`Disable-RemoteMailbox`); the object is no longer a mail
-    /// recipient, the flags tell the sync to remove the cloud mailbox.
+    /// `Disable-RemoteMailbox`: the deprovision bit is set and nothing else
+    /// changes. The object is no longer a mail recipient; the bit tells the
+    /// sync to remove the cloud mailbox.
     Deprovisioned,
 }
 
@@ -169,9 +170,11 @@ fn archive_bits(a: ArchiveState) -> u32 {
 }
 
 impl RemoteMailbox {
-    /// A remote mailbox, if the lifecycle can produce it. A provisioned or
-    /// migrated mailbox carries its routing address; a deprovisioned one
-    /// has none (the attributes are removed with it).
+    /// A remote mailbox, if the lifecycle can produce it. Every state
+    /// carries its routing address: `Enable-RemoteMailbox` and a completed
+    /// move write it, and `Disable-RemoteMailbox` only sets the deprovision
+    /// bits, leaving it (and the type codes, `mail`, `mailNickname` and
+    /// `proxyAddresses`) in place.
     pub fn new(
         kind: RemoteKind,
         mailbox: MailboxState,
@@ -184,8 +187,7 @@ impl RemoteMailbox {
             archive,
             routing,
         };
-        let routed = mailbox != MailboxState::Deprovisioned;
-        (REMOTE_RECIPIENT_TYPES.contains(&m.code()) && routing.is_some() == routed).then_some(m)
+        (REMOTE_RECIPIENT_TYPES.contains(&m.code()) && routing.is_some()).then_some(m)
     }
     /// Kind.
     pub fn kind(&self) -> RemoteKind {
@@ -218,12 +220,9 @@ impl RemoteMailbox {
         };
         mailbox | archive_bits(self.archive) | kind
     }
-    /// `(display type, type details)` while the mailbox exists; none once it
-    /// is deprovisioned.
+    /// `(display type, type details)` of the kind. Deprovisioning does not
+    /// change them.
     fn types(&self) -> Option<(i32, u64)> {
-        if self.mailbox == MailboxState::Deprovisioned {
-            return None;
-        }
         Some(match self.kind {
             RemoteKind::User => (
                 display_type::REMOTE_USER_MAILBOX,
@@ -427,7 +426,7 @@ impl RemoteMailboxOp {
                 remote(kind, m.mailbox, m.archive, m.routing)
             }
             (Self::Disable, Recipient::RemoteMailbox(m)) if live(m) => {
-                remote(m.kind, MailboxState::Deprovisioned, m.archive, None)
+                remote(m.kind, MailboxState::Deprovisioned, m.archive, m.routing)
             }
             _ => Err(NotApplicable),
         }
@@ -639,8 +638,7 @@ mod tests {
                         ArchiveState::Provisioned,
                         ArchiveState::Deprovisioned,
                     ] {
-                        let routing = (mailbox != MailboxState::Deprovisioned).then_some(R);
-                        if let Some(m) = RemoteMailbox::new(kind, mailbox, archive, routing)
+                        if let Some(m) = RemoteMailbox::new(kind, mailbox, archive, Some(R))
                             && m.code() == code
                         {
                             let r = Recipient::RemoteMailbox(m);
@@ -729,9 +727,16 @@ mod tests {
         .apply(&Recipient::NotMailEnabled)
         .unwrap();
         let gone = RemoteMailboxOp::Disable.apply(&user).unwrap();
+        // Disable sets the deprovision bit and nothing else: the type codes
+        // and the routing address stay.
         assert_eq!(code(&gone), Some(8));
-        assert_eq!(gone.attributes().type_details, None);
-        assert_eq!(gone.attributes().target_address, None);
+        assert_eq!(
+            gone.attributes(),
+            RecipientAttributes {
+                remote_recipient_type: Some(8),
+                ..user.attributes()
+            }
+        );
         assert!(!gone.is_recipient());
     }
 
