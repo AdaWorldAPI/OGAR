@@ -210,20 +210,22 @@ impl AuthContext {
         }
     }
 
-    /// This login with a delegation recorded: the session acts with the
-    /// user's authority on behalf of `acting` (the outermost RFC 8693 `act`);
-    /// `prior` are the nested actors, most recent first. Roles and every
+    /// This login with a delegation recorded: `acting` (the outermost RFC
+    /// 8693 `act`) performs the session's requests on the user's behalf, with
+    /// the user's authority; `prior` are the nested actors, most recent first. Roles and every
     /// authorization decision stay the user's.
     ///
     /// # Errors
     ///
-    /// [`NotDelegable::Unauthenticated`] for a kiosk context.
+    /// [`NotDelegable::Unauthenticated`] for an unauthenticated or kiosk
+    /// context. Both are checked: `authenticated` is a public field, so a
+    /// kiosk-channel context is refused even if it was set to `true`.
     pub fn delegated(
         mut self,
         acting: AuthBinding,
         prior: impl IntoIterator<Item = AuthBinding>,
     ) -> Result<Self, NotDelegable> {
-        if !self.authenticated {
+        if !self.authenticated || self.channel == AuthChannel::Kiosk {
             return Err(NotDelegable::Unauthenticated);
         }
         self.acting = Some(acting);
@@ -443,6 +445,15 @@ mod tests {
         assert_eq!(
             AuthContext::kiosk().delegated(AuthBinding::new(ZITADEL, "bob"), []),
             Err(NotDelegable::Unauthenticated)
+        );
+        let forced = AuthContext {
+            authenticated: true,
+            ..AuthContext::kiosk()
+        };
+        assert_eq!(
+            forced.delegated(AuthBinding::new(ZITADEL, "bob"), []),
+            Err(NotDelegable::Unauthenticated),
+            "a kiosk channel is refused whatever the flag says"
         );
     }
 
