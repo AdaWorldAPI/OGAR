@@ -65,7 +65,7 @@ use lance_graph_contract::rbac_plug::{
 };
 use lance_graph_rbac::authorize::{MembershipDecision, authorize_memberships};
 use lance_graph_rbac::authorize::{ScopedDecision, authorize_scoped};
-use ogar_auth::user::AuthenticatedUser;
+use ogar_auth::user::{AuthBinding, AuthenticatedUser};
 
 /// Where this authority reads its grant data.
 ///
@@ -216,9 +216,17 @@ impl<S: GrantSource> RbacAuthority for OgarRbac<S> {
 ///
 /// Built per request from the authenticated user: it answers for that one
 /// subject and knows no other actor.
+///
+/// # Delegation
+///
+/// A delegated login (RFC 8693 `act`) authorizes as the user whose authority
+/// the token carries, never as the party acting with it: the acting party is
+/// recorded ([`acting_party`](IdentityActors::acting_party)) and holds no
+/// role here, under any name.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct IdentityActors {
     subject: String,
+    acting: Option<AuthBinding>,
     tenant: u64,
     roles: Vec<RoleId>,
     unplugged: Vec<String>,
@@ -243,10 +251,18 @@ impl IdentityActors {
         }
         Self {
             subject: identity.user.subject.clone(),
+            acting: identity.acting_party().cloned(),
             tenant: identity.user.tenant,
             roles,
             unplugged,
         }
+    }
+
+    /// The party acting on the user's behalf, when the login is delegated.
+    /// For audit: it never contributes a role.
+    #[must_use]
+    pub fn acting_party(&self) -> Option<&AuthBinding> {
+        self.acting.as_ref()
     }
 
     /// The user's roles the plug did not declare — dropped, so they grant
@@ -722,6 +738,27 @@ mod tests {
                 .memberships_of("someone-else", patient_class())
                 .is_empty()
         );
+    }
+
+    // A delegated login (RFC 8693 `act`): bob acts with dr-house's authority.
+    // The decision is dr-house's; bob is recorded and holds nothing himself.
+    #[test]
+    fn a_delegated_identity_is_authorized_as_the_user_not_the_actor() {
+        let binding = authority().bind(&PLUG).expect("green bind");
+        let mut user = identity(&["cashier"], 7);
+        user.auth = user
+            .auth
+            .delegated(AuthBinding::new(ZITADEL, "bob"), [])
+            .expect("authenticated");
+        let d = authorize_identity(&binding, &user, patient_class(), read());
+        assert_eq!(d.decision, AccessDecision::Allow);
+        let actors = IdentityActors::new(&user, &binding);
+        assert_eq!(
+            actors.acting_party(),
+            Some(&AuthBinding::new(ZITADEL, "bob"))
+        );
+        assert!(actors.roles_of("bob").is_empty());
+        assert_eq!(actors.roles_of("dr-house"), &["cashier"]);
     }
 
     #[test]
