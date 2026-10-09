@@ -166,6 +166,21 @@ pub struct AuthContext {
     pub provider: ProviderId,
     /// How strong the assertion was.
     pub strength: AuthStrength,
+    /// The party acting on the user's behalf in this session, when the
+    /// login is delegated: the outermost RFC 8693 `act` claim, as the
+    /// provider asserted it. `None` for an undelegated login.
+    pub acting: Option<AuthBinding>,
+    /// Earlier actors from nested `act` claims, most recent first.
+    /// Informational only: never part of an access decision (RFC 8693 §4.1).
+    pub prior_actors: Vec<AuthBinding>,
+}
+
+/// Why a login cannot carry a delegation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NotDelegable {
+    /// No credential verified (kiosk): there is no exchanged token whose
+    /// `act` claim could name an actor.
+    Unauthenticated,
 }
 
 impl AuthContext {
@@ -177,6 +192,8 @@ impl AuthContext {
             channel: AuthChannel::Kiosk,
             provider: ProviderId::KIOSK,
             strength: AuthStrength::None,
+            acting: None,
+            prior_actors: Vec::new(),
         }
     }
 
@@ -188,7 +205,32 @@ impl AuthContext {
             channel: AuthChannel::Local,
             provider: ProviderId::LOCAL,
             strength,
+            acting: None,
+            prior_actors: Vec::new(),
         }
+    }
+
+    /// This login with a delegation recorded: `acting` (the outermost RFC
+    /// 8693 `act`) performs the session's requests on the user's behalf, with
+    /// the user's authority; `prior` are the nested actors, most recent first. Roles and every
+    /// authorization decision stay the user's.
+    ///
+    /// # Errors
+    ///
+    /// [`NotDelegable::Unauthenticated`] for an unauthenticated or kiosk
+    /// context. Both are checked: `authenticated` is a public field, so a
+    /// kiosk-channel context is refused even if it was set to `true`.
+    pub fn delegated(
+        mut self,
+        acting: AuthBinding,
+        prior: impl IntoIterator<Item = AuthBinding>,
+    ) -> Result<Self, NotDelegable> {
+        if !self.authenticated || self.channel == AuthChannel::Kiosk {
+            return Err(NotDelegable::Unauthenticated);
+        }
+        self.acting = Some(acting);
+        self.prior_actors = prior.into_iter().collect();
+        Ok(self)
     }
 
     /// A verified federated login, asserted by `provider`.
@@ -199,6 +241,8 @@ impl AuthContext {
             channel: AuthChannel::Web,
             provider,
             strength,
+            acting: None,
+            prior_actors: Vec::new(),
         }
     }
 }
@@ -250,6 +294,13 @@ impl AuthenticatedUser {
             self.user.tenant,
             self.user.roles.clone(),
         )
+    }
+
+    /// The party performing this session's requests: the delegated actor
+    /// when the login is delegated, `None` when the user acts as itself.
+    #[must_use]
+    pub fn acting_party(&self) -> Option<&AuthBinding> {
+        self.auth.acting.as_ref()
     }
 }
 
@@ -356,6 +407,53 @@ mod tests {
             a.actor_context(),
             b.actor_context(),
             "provider must not survive into the identity envelope"
+        );
+    }
+
+    /// RFC 8693 delegation: bob's session acts with user 42's authority. The
+    /// envelope handed to authorization is user 42's, unchanged; bob is
+    /// recorded as the acting party, and the earlier actor only rides along.
+    #[test]
+    fn a_delegated_login_keeps_the_users_authority() {
+        let s = store();
+        let u = s.user(UserId(42)).expect("user exists").clone();
+        let plain = AuthenticatedUser {
+            user: u.clone(),
+            auth: AuthContext::federated(ZITADEL, AuthStrength::MultiFactor),
+        };
+        let delegated = AuthenticatedUser {
+            user: u,
+            auth: AuthContext::federated(ZITADEL, AuthStrength::MultiFactor)
+                .delegated(
+                    AuthBinding::new(ZITADEL, "bob"),
+                    [AuthBinding::new(ZITADEL, "svc")],
+                )
+                .expect("an authenticated login can be delegated"),
+        };
+        assert_eq!(plain.acting_party(), None);
+        assert_eq!(
+            delegated.acting_party(),
+            Some(&AuthBinding::new(ZITADEL, "bob"))
+        );
+        assert_eq!(delegated.auth.prior_actors.len(), 1);
+        assert_eq!(delegated.actor_context(), plain.actor_context());
+    }
+
+    /// A kiosk session has no exchanged token, so nothing can act through it.
+    #[test]
+    fn a_kiosk_login_cannot_be_delegated() {
+        assert_eq!(
+            AuthContext::kiosk().delegated(AuthBinding::new(ZITADEL, "bob"), []),
+            Err(NotDelegable::Unauthenticated)
+        );
+        let forced = AuthContext {
+            authenticated: true,
+            ..AuthContext::kiosk()
+        };
+        assert_eq!(
+            forced.delegated(AuthBinding::new(ZITADEL, "bob"), []),
+            Err(NotDelegable::Unauthenticated),
+            "a kiosk channel is refused whatever the flag says"
         );
     }
 
