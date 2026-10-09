@@ -24,6 +24,8 @@ pub enum SchemaFamily {
     AdDs = 1,
     /// Microsoft Graph / Entra ID.
     MsGraph = 2,
+    /// Exchange Online (a recipient as `Get-Recipient` reports it).
+    ExchangeOnline = 3,
 }
 
 impl SchemaFamily {
@@ -32,6 +34,7 @@ impl SchemaFamily {
         match v {
             1 => Some(Self::AdDs),
             2 => Some(Self::MsGraph),
+            3 => Some(Self::ExchangeOnline),
             _ => None,
         }
     }

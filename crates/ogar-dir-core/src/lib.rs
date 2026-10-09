@@ -27,11 +27,13 @@
 //! workspace for the conflict note.
 
 pub mod base64;
+pub mod correspond;
 pub mod dn;
 pub mod dn128;
 pub mod edge;
 pub mod guid;
 pub mod hhtl;
+pub mod identity;
 pub mod label;
 pub mod pool;
 pub mod record;
@@ -43,6 +45,7 @@ pub use dn128::{DN_CHILDREN, DN_LEVELS, DirectoryScope, Dn128, Dn128Error};
 pub use edge::{DirEdge, EdgeEvidence, EdgeKind};
 pub use guid::{Guid128, GuidParseError};
 pub use hhtl::{HhtlError, OU_LEVELS, OuDictionary, OuHhtl};
+pub use identity::{CompiledRule, Encoding, Field, IdFault, IdValue, IdentityRule, Selector, Slot};
 pub use label::{CloudLabel, LabelPattern};
 pub use pool::{PoolError, StrRef, ValuePool};
 pub use record::{ABI_MAJOR, ABI_MINOR, DirRecord, GUID_SLOTS, RECORD_BYTES, RecordError};

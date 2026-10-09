@@ -24,7 +24,7 @@
 //! Decoding is strict, like [`crate::exchange`]: a value that does not
 //! re-render to exactly what was observed is not decoded.
 
-use ogar_dir_core::{Guid128, base64, label};
+use ogar_dir_core::{Encoding, Guid128, base64, label};
 
 pub use ogar_dir_core::label::CloudLabel;
 
@@ -69,8 +69,10 @@ impl SourceAnchor {
     /// From a cloud `ImmutableId`. Only the padded form this crate renders
     /// is accepted, so the decode is exact.
     pub fn from_immutable_id(s: &str) -> Option<Self> {
-        let a = Self::from_consistency_guid(&base64::decode(s)?)?;
-        (a.immutable_id() == s).then_some(a)
+        Encoding::Base64MsGuidBytes16
+            .decode(s.as_bytes())
+            .ok()
+            .map(Self)
     }
 
     /// The raw attribute value.

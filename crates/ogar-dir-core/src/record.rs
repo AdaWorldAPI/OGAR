@@ -11,7 +11,7 @@
 //! 0x020..0x024  magic            [4]   b"OGDR"
 //! 0x024..0x026  abi_major        u16   ABI_MAJOR (exact match required)
 //! 0x026..0x028  abi_minor        u16   ABI_MINOR (additive; readers ignore newer)
-//! 0x028..0x02A  schema_family    u16   SchemaFamily (1 = AD_DS, 2 = MS_GRAPH)
+//! 0x028..0x02A  schema_family    u16   SchemaFamily (1 = AD_DS, 2 = MS_GRAPH, 3 = EXO)
 //! 0x02A..0x02C  schema_version   u16   encoder's schema version
 //! 0x02C..0x02E  object_kind      u16   family-scoped kind code
 //! 0x02E..0x030  flags            u16   FLAG_* below

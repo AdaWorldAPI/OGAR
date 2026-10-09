@@ -30,9 +30,15 @@ impl LabelPattern {
     /// around a non-nil id in its canonical spelling (lower-case hex, no
     /// braces), so that rendering it gives `s` back.
     pub fn strip(self, s: &str) -> Option<Guid128> {
+        self.strip_any(s).filter(|id| !id.is_nil())
+    }
+
+    /// [`Self::strip`] without the nil check, so a caller can tell a nil
+    /// id in the canonical spelling from a malformed value.
+    pub(crate) fn strip_any(self, s: &str) -> Option<Guid128> {
         let (pre, post) = self.parts()?;
         let id = Guid128::parse(s.strip_prefix(pre)?.strip_suffix(post)?).ok()?;
-        (!id.is_nil() && self.render(id) == s).then_some(id)
+        (self.render(id) == s).then_some(id)
     }
 
     /// Add the label: the template with `{0}` replaced by the id.
