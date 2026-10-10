@@ -11,8 +11,8 @@
 |---|---|
 | Upstream | `AdaWorldAPI/OGIT` (fork of `arago/OGIT`) |
 | Path | `NTO/MARS/` |
-| Commit SHA | `d0f489fff94640fef1e6abe7eacba90a1a144579` |
-| Commit date | `2026-05-30 08:22:13 +0200` |
+| Commit SHA | `18f8177ec63dc2c26cb635556fedc7f54186b7b4` |
+| Commit date | `2026-07-06 22:53:14 +0200` |
 | License | MIT (Almato AI GmbH, 2013–2024) — see `OGIT/LICENSE.md` upstream |
 
 ## What's mirrored

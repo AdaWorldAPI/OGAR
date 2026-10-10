@@ -93,8 +93,8 @@ arago/almato coordination."
 | `Accounting` | 9 | 20 | 7 | Lift-tested | Mixed-authorship: `Viktor Voss` / `Gibson Xavier` / `Moritz Vannahme` (25 files, original arago/almato) + a prior session's extension (`Claude (AdaWorldAPI/lance-graph 3-hop optim)`, 11 files **promoted to the OGIT fork** via commit `c5dc1b8`). The 11 are a completed promotion (fork → mirrored here), the worked example of the staging-tier model (`vocab/exports/PROVENANCE.md`), NOT stranded content. Covered conceptually via `0x02XX` commerce/ERP via Odoo lift. Structural changes to the upstream files need arago coordination; the 11 OGAR-promoted ones are ours. |
 | `Advertising` | 16 | 0 | 0 | Imported | |
 | `Audit` | 3 | 0 | 0 | Lift-tested | `Marek Meyer` (sole author) — pure upstream. Audit-as-Lance-version (ADR-013) covers the semantics. |
-| `Auth` | 13 | 24 | 6 | Imported | Cross-walk to `0x0BXX` auth domain (Zitadel/Zanzibar) queued |
-| `Automation` | 22 | 105 | 0 | Imported | OLD `marsNodeType` superseded by `NTO/MARS/` |
+| `Auth` | 14 | 31 | 7 | Imported | Cross-walk to `0x0BXX` auth domain (Zitadel/Zanzibar) queued. +1 entity, +7 attributes, +1 verb at the 2026-10-10 re-vendor |
+| `Automation` | 22 | 107 | 0 | Imported | OLD `marsNodeType` superseded by `NTO/MARS/`. +2 attributes at the 2026-10-10 re-vendor (`manualProcessingTimeSeconds`, `savedTimeSeconds`) |
 | `Botany` | 2 | 0 | 0 | Imported | |
 | `ClassificationStandard` | 2 | 5 | 2 | Imported | |
 | `Compliance` | 1 | 4 | 4 | Lift-tested | `chris.boos@almato.com` (sole author) — pure upstream |
@@ -112,10 +112,11 @@ arago/almato coordination."
 | `FinancialMarket` | 20 | 24 | 7 | Imported | |
 | `Forms` | 3 | 0 | 0 | Imported | |
 | `Forum` | 22 | 1 | 4 | Imported | Covered by `class_ids::PROJECT_FORUM` etc. |
+| `GFS` | 5 | 16 | 2 | Imported | Bardioc Graph File System namespace (upstream almatoai, 2026-05-28). Added at the 2026-10-10 re-vendor |
 | `GeoProfile` | 1 | 11 | 0 | Imported | `Codes/` subdir — country/region codes |
 | `HR` | 10 | 0 | 4 | Imported | `Recruiting/` subdir |
 | `Health` | 7 | 22 | 0 | Imported | `Diagnostics/` subdir; HIPAA domain covered by `0x09XX` |
-| `Healthcare` | 7 | 0 | 0 | Imported | `entities/` + `enumerations/` — namespace for `0x09XX` |
+| `Healthcare` | 8 | 0 | 0 | Imported | `entities/` + `enumerations/` — namespace for `0x09XX`. +1 entity (`Assessment` sub-tree) at the 2026-10-10 re-vendor |
 | `Knowledge` | 4 | 1 | 0 | Imported | |
 | `Legal` | 2 | 3 | 1 | Imported | |
 | `Location` | 4 | 7 | 0 | Imported | |
@@ -124,7 +125,7 @@ arago/almato coordination."
 | `MRO` | 11 | 0 | 11 | Imported | `Aviation/` subdir |
 | `MRP` | 10 | 17 | 5 | Imported | |
 | `MaterialManagement` | 1 | 0 | 0 | Imported | |
-| `Medical` | 0 | 0 | 0 | Imported | `namespaces/`, `sql_mirror/` — special form (non-TTL) |
+| `Medical` | 0 | 0 | 0 | Imported | `namespaces/` — special form (non-TTL). `sql_mirror/` (25 files) was removed upstream at `18f8177e` as a private schema that belongs in the MedCare family only |
 | `Meteorology` | 8 | 2 | 0 | Imported | |
 | `Mobile` | 7 | 40 | 0 | Imported | |
 | `Network` | 27 | 0 | 0 | Imported | NetworkInterface = MARS Machine `contains` target |
@@ -160,21 +161,22 @@ arago/almato coordination."
 | `Survey` | 3 | 0 | 0 | Imported | |
 | `Transport` | 5 | 14 | 8 | Lift-tested | `chris.boos@almato.com` (sole author, 27 files) — pure upstream-arago |
 | `UserMeta` | 4 | 0 | 4 | Imported | |
+| `Utilities` | 270 | 924 | 100 | Imported | Electricity and Emissions vocabulary (1295 files); an AdaWorldAPI fork addition, not in upstream almatoai. Added at the 2026-10-10 re-vendor |
 | `Version` | 0 | 3 | 0 | Imported | Used by MARS Machine for OS version |
 | **`WorkOrder`** | 27 | 0 | 0 | **Lift-tested** | **Our extension** (`dcterms:creator` = `bus-compiler` + `family-codec-smith` — internal agent authors, zero external). Authored for `woa-rs`. All 27 TTLs declared as `rdfs:Class`, including the 12 in `verbs/`. **The `rdfs:Class`-as-verb convention is deliberate, not a quirk** — it makes each verb a typed template (slots, inheritance, policy metadata) that `ogar-render-askama` can compile-time-validate against a binding, the same way askama validates HTML templates against a Rust struct. See `docs/VERB-AS-CLASS-TEMPLATE.md`. Previous catalogue row split 15 entities + 12 verbs by directory; the content-driven count is 27 first-class typed declarations (entities + verb-as-class templates), which is what `ogar-from-schema` sees and what the action-render path consumes. |
-| **TOTALS** | **549** | **599** | **241** | — | + 42 other (Medical sql_mirror, etc.) |
+| **TOTALS** | **826** | **1548** | **344** | — | + 17 other. Rows changed at the 2026-10-10 re-vendor were updated by their file delta (added minus deleted, counted by the nearest `entities` / `attributes` / `verbs` directory), so the earlier per-row rule is kept |
 
 ## Adjacent imports (not NTO)
 
 | Path | Files | Purpose |
 |---|--:|---|
-| `vocab/imports/ogit/SGO/` | 508 TTLs | Upper ontology — `core/`, `ogit/`, `sgo/`. **`SGO/sgo/verbs/` is the 176-verb canonical AST predicate vocabulary** lifted by `ogar-from-schema::sgo` |
+| `vocab/imports/ogit/SGO/` | 509 TTLs | Upper ontology — `core/`, `ogit/`, `sgo/`. **`SGO/sgo/verbs/` is the 176-verb canonical AST predicate vocabulary** lifted by `ogar-from-schema::sgo` |
 | `vocab/imports/ogit/SDF/` | 7 JSON | Standard Data Format config samples (MARS/Automation) — instance configs, not schema |
 | `vocab/imports/ogit/ogit.ttl` | 1 TTL | Root ontology declaring `ogit:Entity`, `ogit:Verb`, `ogit:Attribute` |
 
 ## Provenance
 
-All imports at OGIT SHA `d0f489fff94640fef1e6abe7eacba90a1a144579`
-(2026-05-30). See `vocab/imports/ogit/PROVENANCE.md` for the re-vendor
+All imports at OGIT SHA `18f8177ec63dc2c26cb635556fedc7f54186b7b4`
+(2026-07-06), re-vendored 2026-10-10 from `d0f489f`. See `vocab/imports/ogit/PROVENANCE.md` for the re-vendor
 recipe and `vocab/imports/ogit/NTO/MARS/PROVENANCE.md` for the
 MARS-specific XSD-oracle provenance.

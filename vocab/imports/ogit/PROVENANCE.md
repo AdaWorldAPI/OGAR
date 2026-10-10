@@ -1,7 +1,7 @@
 # PROVENANCE — `vocab/imports/ogit/`
 
 > Literal byte-mirror of the **full OGIT** at the SHA below — NTO + SGO + SDF
-> + root `ogit.ttl`. **1940 TTL files, 9.3 MB.** Every file in this tree is
+> + root `ogit.ttl`. **3245 TTL files, 3.3 MB of content.** Every file in this tree is
 > `diff -q`-equal to its origin. Re-vendor by re-running the copy and bumping
 > the SHA below; never hand-edit.
 
@@ -11,8 +11,8 @@
 |---|---|
 | Upstream | `AdaWorldAPI/OGIT` (fork of `arago/OGIT`) |
 | Paths | `NTO/`, `SGO/`, `SDF/`, top-level `ogit.ttl` (every subdirectory mirrored 1:1) |
-| Commit SHA | `d0f489fff94640fef1e6abe7eacba90a1a144579` |
-| Commit date | `2026-05-30 08:22:13 +0200` |
+| Commit SHA | `18f8177ec63dc2c26cb635556fedc7f54186b7b4` |
+| Commit date | `2026-07-06 22:53:14 +0200` |
 | License | MIT (Almato AI GmbH, 2013–2024) — see `OGIT/LICENSE.md` upstream |
 
 ## Layout
@@ -20,11 +20,11 @@
 ```
 vocab/imports/ogit/
 ├── ogit.ttl       — root ontology declaring `ogit:Entity` etc
-├── NTO/           — domain ontologies (72 domains, 1431 TTLs)
+├── NTO/           — domain ontologies (74 domains, 2735 TTLs)
 │   ├── MARS/      — the Application/Resource/Software/Machine taxonomy
 │   │              + _oracle/ XSD validator (see MARS/PROVENANCE.md)
-│   ├── Accounting/ Auth/ Automation/ … (71 other domains)
-├── SGO/           — upper ontology (508 TTLs)
+│   ├── Accounting/ Auth/ Automation/ … (73 other domains)
+├── SGO/           — upper ontology (509 TTLs)
 │   ├── core/      — root Entity/Node declarations
 │   ├── ogit/      — base attribute extensions
 │   └── sgo/       — canonical verb vocabulary (176 verbs)
@@ -51,10 +51,13 @@ The operator gave a one-shot green-light to import **all** OGIT to
 
 ## What's in here
 
-- **`NTO/` — 72 domain ontologies, 1431 TTLs.** Per-domain counts in
-  `docs/OGIT-DOMAIN-LIFT-CATALOGUE.md`. Totals: **549 entities + 599
-  attributes + 241 verbs + 42 other**.
-- **`SGO/` — 508 upper-ontology TTLs.** Notable: `SGO/sgo/verbs/`
+- **`NTO/` — 74 domain ontologies, 2735 TTLs.** Per-domain counts in
+  `docs/OGIT-DOMAIN-LIFT-CATALOGUE.md`. Totals, counting each TTL by the
+  nearest `entities` / `attributes` / `verbs` directory on its path:
+  **814 entities + 1548 attributes + 335 verbs + 38 other**. (The same rule
+  gives 537 + 599 + 232 + 63 at `d0f489f`, so the 549 + 599 + 241 + 42 stated
+  before used a different rule.)
+- **`SGO/` — 509 upper-ontology TTLs.** Notable: `SGO/sgo/verbs/`
   contains **176 verb declarations** that are the canonical AST
   predicate vocabulary (parsed by `ogar-from-schema::sgo`, with
   round-trip enforced by `sgo::tests::all_sgo_verbs_roundtrip`).
@@ -75,6 +78,19 @@ cp /home/user/OGIT/ogit.ttl vocab/imports/ogit/ogit.ttl
 # Update the SHA + date in this file and in MARS/PROVENANCE.md (which
 # carries an extra _oracle/ from arago/MARS-Schema).
 ```
+
+`cp -r` only adds and overwrites; it never removes a file the new commit
+deleted, so on its own it breaks the byte-mirror claim above. Apply
+`git diff --name-status <old>..<new> -- NTO SGO SDF ogit.ttl` instead: copy
+every `A`/`M` path, delete every `D` path. The three upstream `NTO/` docs
+(`README.md`, `PURL_ID_Registration.md`, `PURL_ID_Registration.md-e`) live at
+this directory's root, not under `NTO/`.
+
+## Re-vendor log
+
+| Date | From | To | Delta in the mirrored set |
+|---|---|---|---|
+| 2026-10-10 | `d0f489f` | `18f8177e` | 1332 added (1295 `NTO/Utilities`, 24 `NTO/GFS` and others), 9 modified, 25 deleted (`NTO/Medical/sql_mirror`, which upstream moved out as a private schema). Mirror verified: 3294 mirrored files, 0 differ from `18f8177e`, 0 extra, 0 missing. `NTO/MARS` is unchanged. |
 
 ## Per-domain provenance
 
