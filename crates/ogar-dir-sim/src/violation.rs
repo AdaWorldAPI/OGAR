@@ -25,7 +25,12 @@ pub enum AddressRole {
     PrimarySmtp,
     /// A secondary SMTP proxy (`smtp:`).
     SecondarySmtp,
-    /// The `mail` attribute.
+    /// The `mail` attribute: a label, never a claim. Exchange does not
+    /// reserve it, so it never makes an object a holder in
+    /// [`Violation::AddressConflict`]. A label is a hydration trigger: it is
+    /// resolved to the object that does hold the address it names, and that
+    /// object's [`ExchangeIdentity`](crate::exchange::ExchangeIdentity) is
+    /// read by GUID ([`MailLabel`](crate::exchange::MailLabel)).
     Mail,
     /// A remote mailbox's routing address (`targetAddress`).
     Routing,
@@ -49,10 +54,10 @@ pub enum Violation {
         owners: Vec<Guid128>,
     },
     /// Two or more objects hold the same normalized address under different
-    /// attributes: a UPN or SMTP address that is another object's SMTP,
-    /// `mail` or routing address, or a `mail` held by another object (an
-    /// admin account whose `mail` points at someone's mailbox as a
-    /// password-reset target, for example). Same-attribute collisions are
+    /// attributes: a UPN or SMTP address that is another object's SMTP or
+    /// routing address. A `mail` value is not a claim (an admin account
+    /// whose `mail` points at someone's mailbox as a password-reset target
+    /// holds nothing), so it never appears here. Same-attribute collisions are
     /// [`Violation::DuplicateSmtp`] / [`Violation::DuplicateUpn`]; one object
     /// holding an address under several attributes is not a conflict.
     AddressConflict {
