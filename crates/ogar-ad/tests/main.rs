@@ -382,3 +382,37 @@ fn extension_attributes_are_one_bag() {
     assert_eq!(odd.record.str_ref(slot("extensionAttribute")), None);
     assert_eq!(odd.ignored, vec!["extensionAttribute01"]);
 }
+
+// msExchMailboxGuid is the mailbox's own GUID: stored as a 128-bit id in a
+// guid slot (never pooled text) and given back as AD's 16 mixed-endian
+// bytes. A value that is not 16 bytes is refused, never stored as text.
+#[test]
+fn the_exchange_guid_is_an_id_not_a_string() {
+    const BOX: &str = "Ab5xLqKmTkiZ8gH0cDeFqw==";
+    let text = format!(
+        "dn: CN=X,OU=Staff,DC=example,DC=test\nobjectGUID:: 4AQlP4lP0xGaDAMF6CwzAQ==\nobjectClass: user\nmsExchMailboxGuid:: {BOX}\n"
+    );
+    let e = &ldif::parse(&text).unwrap()[0];
+    let (mut dict, mut pool) = (OuDictionary::new(), ValuePool::new());
+    let enc = encode(e, domain(), &mut dict, &mut pool, 1).unwrap();
+    assert!(enc.ignored.is_empty(), "{:?}", enc.ignored);
+    let r = enc.record;
+    let raw = ogar_dir_core::base64::decode(BOX).unwrap();
+    assert_eq!(
+        r.guid(slot("msExchMailboxGuid")),
+        Some(Guid128::from_ms_bytes(&raw).unwrap())
+    );
+    assert_ne!(r.guid(slot("msExchMailboxGuid")), Some(r.node_guid()));
+    for s in 0..32 {
+        if let Some(sr) = r.str_ref(s) {
+            let v = pool.get(sr).unwrap();
+            assert!(!v.windows(raw.len()).any(|w| w == raw.as_slice()));
+        }
+    }
+    assert_eq!(ogar_ad::exchange_guid(&r).map(|b| b.to_vec()), Some(raw));
+
+    let bad = "dn: CN=X,OU=Staff,DC=example,DC=test\nobjectGUID:: 4AQlP4lP0xGaDAMF6CwzAQ==\nobjectClass: user\nmsExchMailboxGuid:: AAEC\n";
+    let e = &ldif::parse(bad).unwrap()[0];
+    let (mut dict, mut pool) = (OuDictionary::new(), ValuePool::new());
+    assert!(encode(e, domain(), &mut dict, &mut pool, 1).is_err());
+}

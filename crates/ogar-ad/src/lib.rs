@@ -25,7 +25,7 @@ use ogar_dir_core::{
 };
 
 /// Encoder schema version understood by this crate.
-pub const SCHEMA_VERSION: u16 = 5;
+pub const SCHEMA_VERSION: u16 = 6;
 /// This crate's schema id.
 pub const SCHEMA: SchemaId = SchemaId {
     family: SchemaFamily::AdDs,
@@ -64,6 +64,12 @@ pub const SCHEMA: SchemaId = SchemaId {
 /// v5 adds `extensionAttribute1`..`15` as one positional bag
 /// ([`AttrKind::Bag`]), the shape Graph returns them in
 /// (`onPremisesExtensionAttributes`).
+///
+/// v6 adds `msExchMailboxGuid`, the mailbox's own GUID (16 mixed-endian
+/// bytes, like `objectGUID`), in an inline guid slot. Exchange Online keeps
+/// it as the mailbox's `ExchangeGuid` across a move, so it is the mailbox
+/// half of an object's Exchange identity (`ogar-dir-sim::ExchangeIdentity`)
+/// and, like the source anchor, never text.
 pub const SCHEMA_V1: &[AttrDef] = &[
     AttrDef {
         name: "distinguishedName",
@@ -197,6 +203,12 @@ pub const SCHEMA_V1: &[AttrDef] = &[
         kind: AttrKind::Bag,
         since: 5,
     },
+    AttrDef {
+        name: "msExchMailboxGuid",
+        slot: 2,
+        kind: AttrKind::Guid,
+        since: 6,
+    },
 ];
 
 /// AD object kinds (family-scoped codes in `object_kind`).
@@ -319,7 +331,7 @@ pub fn cloud_label(kind: AdKind) -> Option<CloudLabel> {
 /// Inbound: a 128-bit id attribute's source spelling → the id.
 fn decode_id(name: &str, raw: &[u8], kind: u16) -> Option<Guid128> {
     let g = match name {
-        "mS-DS-ConsistencyGuid" => Guid128::from_ms_bytes(raw).ok()?,
+        "mS-DS-ConsistencyGuid" | "msExchMailboxGuid" => Guid128::from_ms_bytes(raw).ok()?,
         "msDS-ExternalDirectoryObjectId" => {
             // The kind's own template: a User_ id on a group does not match.
             let label = cloud_label(AdKind::from_code(kind)?)?;
@@ -349,6 +361,11 @@ pub fn external_directory_object_id(rec: &DirRecord) -> Option<String> {
 /// Outbound: `mS-DS-ConsistencyGuid` as AD stores it (16 mixed-endian bytes).
 pub fn consistency_guid(rec: &DirRecord) -> Option<[u8; 16]> {
     Some(rec.guid(guid_slot("mS-DS-ConsistencyGuid"))?.to_ms_bytes())
+}
+
+/// Outbound: `msExchMailboxGuid` as AD stores it (16 mixed-endian bytes).
+pub fn exchange_guid(rec: &DirRecord) -> Option<[u8; 16]> {
+    Some(rec.guid(guid_slot("msExchMailboxGuid"))?.to_ms_bytes())
 }
 
 /// `base` is a member of a bag attribute (`extensionAttribute7`).

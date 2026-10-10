@@ -25,15 +25,12 @@ pub enum AddressRole {
     PrimarySmtp,
     /// A secondary SMTP proxy (`smtp:`).
     SecondarySmtp,
-    /// The `mail` attribute.
-    ///
-    /// No validator emits this role. `mail` is a display label that
-    /// Exchange does not reserve: two objects may carry the same `mail`
-    /// value, and only `proxyAddresses`, the UPN and a remote mailbox's
-    /// routing address make an address belong to an object. The variant
-    /// stays so existing matches keep compiling; new code must not
-    /// produce it.
-    #[deprecated(note = "`mail` is a label, not an address claim; no validator emits it")]
+    /// The `mail` attribute: a label, never a claim. Exchange does not
+    /// reserve it, so it never makes an object a holder in
+    /// [`Violation::AddressConflict`]. A label is a hydration trigger: it is
+    /// resolved to the object that does hold the address it names, and that
+    /// object's [`ExchangeIdentity`](crate::exchange::ExchangeIdentity) is
+    /// read by GUID ([`MailLabel`](crate::exchange::MailLabel)).
     Mail,
     /// A remote mailbox's routing address (`targetAddress`).
     Routing,
