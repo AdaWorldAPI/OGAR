@@ -663,10 +663,101 @@ pub const SPEAR_ALIASES: &[(&str, u16)] = &[
     ("DriveItem", class_ids::DOCUMENT),
 ];
 
+// ── HubSpot (hubspo-rs, the CRM) port ────────────────────────────────
+
+/// hubspo-rs's `PortSpec`: HubSpot's object names onto the `0x05XX` CRM
+/// concepts, and the HubSpot objects that converge on existing concepts
+/// (emails, products, commercial documents, payments, tax rates, users and
+/// teams) onto those. `0x000B` is hubspo-rs's render skin. Names are
+/// port-scoped: nothing here feeds the global alias normalizer.
+pub struct HubSpoPort;
+
+impl PortSpec for HubSpoPort {
+    const NAMESPACE: &'static str = "HubSpo";
+    const BRIDGE_ID: &'static str = "hubspo";
+    const APP_PREFIX: u16 = 0x000B;
+    fn aliases() -> &'static [(&'static str, u16)] {
+        HUBSPO_ALIASES
+    }
+}
+
+/// hubspo-rs's names for its CRM concepts and the shared concepts it uses.
+pub const HUBSPO_ALIASES: &[(&str, u16)] = &[
+    // ── CRM concepts (0x05XX) ──
+    ("Contact", class_ids::CRM_CONTACT),
+    ("Company", class_ids::CRM_COMPANY),
+    ("Deal", class_ids::CRM_DEAL),
+    ("Ticket", class_ids::CRM_TICKET),
+    ("Lead", class_ids::CRM_LEAD),
+    ("Pipeline", class_ids::CRM_PIPELINE),
+    ("PipelineStage", class_ids::CRM_PIPELINE_STAGE),
+    ("Call", class_ids::CRM_CALL),
+    ("Meeting", class_ids::CRM_MEETING),
+    ("Task", class_ids::CRM_TASK),
+    ("Note", class_ids::CRM_NOTE),
+    ("List", class_ids::CRM_LIST),
+    ("Campaign", class_ids::CRM_CAMPAIGN),
+    ("Sequence", class_ids::CRM_SEQUENCE),
+    ("CustomObject", class_ids::CRM_CUSTOM_RECORD),
+    // ── Shared concepts in other domains ──
+    ("Email", class_ids::EMAIL),
+    ("Product", class_ids::PRODUCT),
+    ("LineItem", class_ids::COMMERCIAL_LINE_ITEM),
+    ("Quote", class_ids::COMMERCIAL_DOCUMENT),
+    ("Invoice", class_ids::COMMERCIAL_DOCUMENT),
+    ("Order", class_ids::COMMERCIAL_DOCUMENT),
+    ("CommercePayment", class_ids::PAYMENT_RECORD),
+    ("TaxRate", class_ids::TAX_POLICY),
+    ("User", class_ids::PROJECT_ACTOR),
+    ("Team", class_ids::PROJECT_ACTOR),
+];
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::app::{app_of, concept_of, render_classid};
+
+    #[test]
+    fn hubspo_classview_composes_canon_high_custom_low() {
+        assert_eq!(HubSpoPort::NAMESPACE, "HubSpo");
+        assert_eq!(HubSpoPort::BRIDGE_ID, "hubspo");
+        assert_eq!(HubSpoPort::classview(), 0x000B);
+        assert_eq!(HubSpoPort::class_id("Contact"), Some(0x0501));
+        assert_eq!(HubSpoPort::class_id("CustomObject"), Some(0x050F));
+        let contact = render_classid(HubSpoPort::APP_PREFIX, class_ids::CRM_CONTACT);
+        assert_eq!(contact, 0x0501_000B);
+        assert_eq!(concept_of(contact), 0x0501);
+        assert_eq!(app_of(contact), 0x000B);
+        // Unknown names do not resolve.
+        assert_eq!(HubSpoPort::class_id("contacts"), None);
+    }
+
+    /// Every CRM concept is reachable through the port, and every alias that
+    /// is not a CRM concept converges on an existing concept in its own
+    /// domain — the port never re-homes a shared concept into CRM.
+    #[test]
+    fn hubspo_covers_every_crm_concept_and_converges_the_rest() {
+        use crate::{ConceptDomain, canonical_concept_domain, concepts_in_domain};
+        for (concept, id) in concepts_in_domain(ConceptDomain::Crm) {
+            assert!(
+                HUBSPO_ALIASES.iter().any(|(_, a)| *a == id),
+                "{concept} (0x{id:04X}) has no HubSpo name",
+            );
+        }
+        let shared: Vec<(&str, u16)> = HUBSPO_ALIASES
+            .iter()
+            .copied()
+            .filter(|(_, id)| canonical_concept_domain(*id) != ConceptDomain::Crm)
+            .collect();
+        assert_eq!(shared.len(), 10);
+        assert_eq!(HubSpoPort::class_id("Email"), SpearPort::class_id("Email"));
+        assert_eq!(
+            HubSpoPort::class_id("Invoice"),
+            Some(class_ids::COMMERCIAL_DOCUMENT)
+        );
+        assert_eq!(HubSpoPort::class_id("User"), Some(class_ids::PROJECT_ACTOR));
+        assert_eq!(HubSpoPort::class_id("Team"), Some(class_ids::PROJECT_ACTOR));
+    }
 
     #[test]
     fn spear_classview_composes_canon_high_custom_low() {
@@ -1295,6 +1386,10 @@ mod tests {
             SmbPort::APP_PREFIX,
             HealthcarePort::APP_PREFIX,
             RedminePort::APP_PREFIX,
+            OsmPort::APP_PREFIX,
+            WeatherNextPort::APP_PREFIX,
+            SpearPort::APP_PREFIX,
+            HubSpoPort::APP_PREFIX,
         ] {
             assert_ne!(
                 prefix, 0x1000,
@@ -1378,6 +1473,9 @@ mod tests {
             SmbPort::APP_PREFIX,
             OdooPort::APP_PREFIX,
             OsmPort::APP_PREFIX,
+            WeatherNextPort::APP_PREFIX,
+            SpearPort::APP_PREFIX,
+            HubSpoPort::APP_PREFIX,
         ];
         let mut sorted = prefixes;
         sorted.sort_unstable();

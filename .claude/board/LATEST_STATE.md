@@ -78,7 +78,10 @@ table drops for brevity.
 | `0x01` | ProjectMgmt | OP ↔ Redmine. |
 | `0x02` | Commerce | Billing/ERP, OSB ↔ Odoo. |
 | `0x03` | Ontology | OBO biomedical reference (MONDO/HPO/Uberon/PATO/RO). Carries zero shared-vocab rows — concept ids live in `ogar-obo` itself, not the shared codebook. See `TECH_DEBT.md` for the collision history inside this domain. |
-| `0x04`–`0x06` | **Unassigned** | `0x05` = Scope-kind, `0x06` = Concern-kind — RESERVED but mint-on-emit only (EPIPHANIES 2026-07-05 E-RECIPE-FAMILIES-MINT-ON-EMIT); no variant, no concept, no codebook row until the emit seam exists. |
+| `0x04` | Weather | Forecast + atmospheric reference cells (consumer weathernext-rs). |
+| `0x05` | Crm | Customer relationship management, 15 concepts `0x0501`–`0x050F` (consumer hubspo-rs, port `0x000B`). |
+| `0x06` | **Unassigned** | — |
+| _recipe space_ | — | `RecipeConceptId` is a separate, typed address space: its family bytes `0x05` (Scope) / `0x06` (Concern) stay RESERVED mint-on-emit (E-RECIPE-FAMILIES-MINT-ON-EMIT) and do not collide with class domains `0x05`/`0x06`. This table previously mixed the two. |
 | `0x07` | Osint | Open-source intelligence. Zero shared-vocab rows (reserved posture). |
 | `0x08` | Ocr | Optical character recognition / document extraction. |
 | `0x09` | Health | Clinical/patient/care (PHI). |

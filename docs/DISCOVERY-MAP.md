@@ -262,6 +262,12 @@ two halves of a cell. ADR‑026 names the cascade that ties them.
 | D‑GENOM‑LINEAGE | ancestry ≠ storage version: two‑parent descent needs interval‑labelled edges (tree sequence / ARG); `LanceVersion` and `ScenarioBranch` are single‑parent — H7 falsified | H | EPIPHANY | capstone §11 | — |
 | D‑GENOM‑FITCH | Fitch parsimony state sets ARE V4 `BaseSet`s (∩ else ∪); candidate missing‑link reconstruction as lane‑parallel nibble algebra | H | IDEA | capstone §12 | D‑GENOM‑DNA2 |
 
+### 2.12 CRM domain (2026‑10‑10) — consumer hubspo-rs, port `0x000B`
+
+| ID | Shape | Grade | Status | Home | Deps |
+|---|---|:--:|:--:|---|---|
+| D‑CRM‑DOMAIN | class domain byte `0x05` = **CRM**: 15 concepts `crm_contact 0x0501` … `crm_custom_record 0x050F` (contact, company, deal, ticket, lead, pipeline, pipeline stage, call, meeting, task, note, list, campaign, sequence, custom record). Each passed METHOD ∧ STORAGE ∧ STRUCTURE (STRUCTURE = rendered as a distinct item type on some screen; [H] until the consumer's screen‑graph oracle runs). Ten HubSpot objects **converge** onto existing core concepts instead of minting (email, product, line item, quote/invoice/order → commercial document, payment, tax, user/team → project actor). Custom objects and custom properties are tenant data: they share the one `crm_custom_record` concept and are never minted. **Not the recipe byte:** `RecipeConceptId` family `0x05` (Scope) is a separate typed address space and stays reserved mint‑on‑emit (E‑RECIPE‑FAMILIES‑MINT‑ON‑EMIT). `crm_actions` is **deferred**: no capability rows are declared until the consumer implements them (the `geo_actions` rule — declared surface nobody implements is fiction). | G (codebook + port + tests) / H (STRUCTURE axis) | CODED | `crates/ogar-vocab` (`CODEBOOK`, `ConceptDomain::Crm`, `class_ids::CRM_*`, `ports::HubSpoPort`); mirror in lance‑graph `ogar_codebook.rs` | APP‑CLASS‑CODEBOOK‑LAYOUT §2; HOTPLUG‑MIGRATION‑GUIDE |
+
 ---
 
 ## 3. The materialization pipeline — what's ready, what's blocked

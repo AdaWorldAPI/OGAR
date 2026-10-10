@@ -1106,7 +1106,7 @@ impl Class {
 ///   0x02XX  commerce / ERP    (OSB ↔ Odoo cross-curator)
 ///   0x03XX  Ontology          (OBO biomedical reference: MONDO/HPO/Uberon/PATO/RO — zero rows here; concepts in ogar-obo)
 ///   0x04XX  Weather / Atmosphere (forecast + atmospheric reference cells)
-///   0x05XX  unassigned
+///   0x05XX  CRM               (customer relationship management; consumer hubspo-rs)
 ///   0x06XX  unassigned
 ///   0x07XX  reserved: OSINT
 ///   0x08XX  OCR               (container kinds: unicharset/recoder/charset)
@@ -1240,6 +1240,26 @@ const CODEBOOK: &[(&str, u16)] = &[
     // ClassView selection remains in the low u16 of the full classid.
     ("weather_cell", 0x0401),
     ("weather_static_cell", 0x0402),
+    // ── 0x05XX — CRM domain (customer relationship management) ──
+    // Shared CRM meanings, first consumed by hubspo-rs (port `0x000B`).
+    // `0x0500` is the domain root, never a concept. Inside the business
+    // band 0x00-0x0F per the altitude ruling (2026-08-18). The recipe-family
+    // bytes 0x05/0x06 in `recipe.rs` are a different numbering.
+    ("crm_contact", 0x0501),
+    ("crm_company", 0x0502),
+    ("crm_deal", 0x0503),
+    ("crm_ticket", 0x0504),
+    ("crm_lead", 0x0505),
+    ("crm_pipeline", 0x0506),
+    ("crm_pipeline_stage", 0x0507),
+    ("crm_call", 0x0508),
+    ("crm_meeting", 0x0509),
+    ("crm_task", 0x050A),
+    ("crm_note", 0x050B),
+    ("crm_list", 0x050C),
+    ("crm_campaign", 0x050D),
+    ("crm_sequence", 0x050E),
+    ("crm_custom_record", 0x050F),
     // ── 0x07XX — OSINT domain: ZERO vocabulary rows BY DESIGN (operator
     // ruling 2026-07-02, corrects PR #145's two hallucinated concept mints
     // `osint_system@0x0700` / `osint_person@0x0701`). Within the OSINT domain
@@ -1485,6 +1505,15 @@ pub enum ConceptDomain {
     /// `0x04XX` — Weather / Atmosphere. Shared atmospheric and forecast-grid
     /// concepts; public environmental reference data, not an OSM extension.
     Weather,
+    /// `0x05XX` — CRM (customer relationship management): contacts,
+    /// companies, deals, tickets, leads, pipelines, engagements, lists,
+    /// campaigns, sequences and tenant custom records. Business ontology,
+    /// so it sits inside the `0x00`–`0x0F` band (altitude ruling,
+    /// 2026-08-18). First consumer: hubspo-rs (`HubSpoPort`, `0x000B`).
+    /// Aliased HubSpot objects (emails, products, line items, commercial
+    /// documents, payments, tax rates, users, teams) stay on their existing
+    /// concepts in other domains.
+    Crm,
     /// `0x07XX` — OSINT (open-source intelligence).
     Osint,
     /// `0x08XX` — OCR (optical character recognition / document
@@ -1760,7 +1789,7 @@ pub enum ConceptDomain {
     /// reads the compartment off the key (`classid >> 24`) instead of looking
     /// it up.
     Form,
-    /// Any high-byte slot not yet assigned a domain (`0x05XX`–`0x06XX`,
+    /// Any high-byte slot not yet assigned a domain (`0x06XX`,
     /// `0x10XX`–`0x16XX`, `0x18XX`–`0xBFXX`, `0xC2XX`–`0xC3XX`,
     /// `0xC5XX`, `0xC7XX`+).
     Unassigned,
@@ -1776,6 +1805,7 @@ pub fn canonical_concept_domain(id: u16) -> ConceptDomain {
         0x02 => ConceptDomain::Commerce,
         0x03 => ConceptDomain::Ontology,
         0x04 => ConceptDomain::Weather,
+        0x05 => ConceptDomain::Crm,
         0x07 => ConceptDomain::Osint,
         0x08 => ConceptDomain::Ocr,
         0x09 => ConceptDomain::Health,
@@ -1846,6 +1876,7 @@ pub fn source_domain_concept(source_domain: &str) -> Option<ConceptDomain> {
     match source_domain {
         "project" => Some(ConceptDomain::ProjectMgmt),
         "erp" | "german-erp" => Some(ConceptDomain::Commerce),
+        "crm" => Some(ConceptDomain::Crm),
         _ => None,
     }
 }
@@ -2056,6 +2087,39 @@ pub mod class_ids {
     /// `weather_static_cell` (`0x0402`) — static support cell for terrain /
     /// geography-derived weather context, distinct from dynamic fields.
     pub const WEATHER_STATIC_CELL: u16 = 0x0402;
+
+    // ── 0x05XX — CRM domain (customer relationship management) ──
+
+    /// `crm_contact` (`0x0501`) — a person the organization has a relationship with (HubSpot `contacts`, type `0-1`).
+    pub const CRM_CONTACT: u16 = 0x0501;
+    /// `crm_company` (`0x0502`) — an organization the CRM tracks (HubSpot `companies`, type `0-2`). Kept apart from `crm_contact`: person and organization are two record types joined by a labelled association.
+    pub const CRM_COMPANY: u16 = 0x0502;
+    /// `crm_deal` (`0x0503`) — a revenue opportunity moving through a pipeline (HubSpot deals, type `0-3`).
+    pub const CRM_DEAL: u16 = 0x0503;
+    /// `crm_ticket` (`0x0504`) — a customer service request moving through a pipeline (HubSpot `tickets`, type `0-5`; OGIT `CustomerSupport/Ticket`). No project semantics, unlike `project_work_item`.
+    pub const CRM_TICKET: u16 = 0x0504;
+    /// `crm_lead` (`0x0505`) — a qualification record associated to a contact and/or company (HubSpot `leads`, type `0-136`).
+    pub const CRM_LEAD: u16 = 0x0505;
+    /// `crm_pipeline` (`0x0506`) — an ordered set of stages bound to one object type.
+    pub const CRM_PIPELINE: u16 = 0x0506;
+    /// `crm_pipeline_stage` (`0x0507`) — one stage of exactly one pipeline; authorized per stage. Stage values are rows, never attributes of this class.
+    pub const CRM_PIPELINE_STAGE: u16 = 0x0507;
+    /// `crm_call` (`0x0508`) — a logged call engagement (HubSpot `calls`, type `0-48`).
+    pub const CRM_CALL: u16 = 0x0508;
+    /// `crm_meeting` (`0x0509`) — a meeting engagement (HubSpot `meetings`, type `0-47`). A calendar event backs it; it is not the calendar event.
+    pub const CRM_MEETING: u16 = 0x0509;
+    /// `crm_task` (`0x050A`) — a to-do assigned to a user (HubSpot `tasks`, type `0-27`). No project semantics, unlike `project_work_item`.
+    pub const CRM_TASK: u16 = 0x050A;
+    /// `crm_note` (`0x050B`) — an owned note associated to one or more records and shown on their timelines (HubSpot `notes`, type `0-46`). Not `project_comment`.
+    pub const CRM_NOTE: u16 = 0x050B;
+    /// `crm_list` (`0x050C`) — a list definition (owner, filter, static or active). Membership is a mask, never one row per member.
+    pub const CRM_LIST: u16 = 0x050C;
+    /// `crm_campaign` (`0x050D`) — a marketing campaign, the attribution root for marketing assets.
+    pub const CRM_CAMPAIGN: u16 = 0x050D;
+    /// `crm_sequence` (`0x050E`) — a shared, permissioned sequence of outreach steps. The steps are `ActionDef`s and data, never attributes of this class.
+    pub const CRM_SEQUENCE: u16 = 0x050E;
+    /// `crm_custom_record` (`0x050F`) — a record of a tenant-defined custom object. One concept for every tenant schema; schemas are data and ClassViews. Default deny: access is row scope plus field mask, never a class grant alone.
+    pub const CRM_CUSTOM_RECORD: u16 = 0x050F;
 
     // ── 0x08XX — OCR domain (document extraction; the Tesseract-rs arc) ──
     // Class-level container KINDS only: the concept slots name the container
@@ -2378,6 +2442,22 @@ pub mod class_ids {
         // 0x04XX — Weather / Atmosphere
         ("weather_cell", WEATHER_CELL),
         ("weather_static_cell", WEATHER_STATIC_CELL),
+        // 0x05XX — CRM
+        ("crm_contact", CRM_CONTACT),
+        ("crm_company", CRM_COMPANY),
+        ("crm_deal", CRM_DEAL),
+        ("crm_ticket", CRM_TICKET),
+        ("crm_lead", CRM_LEAD),
+        ("crm_pipeline", CRM_PIPELINE),
+        ("crm_pipeline_stage", CRM_PIPELINE_STAGE),
+        ("crm_call", CRM_CALL),
+        ("crm_meeting", CRM_MEETING),
+        ("crm_task", CRM_TASK),
+        ("crm_note", CRM_NOTE),
+        ("crm_list", CRM_LIST),
+        ("crm_campaign", CRM_CAMPAIGN),
+        ("crm_sequence", CRM_SEQUENCE),
+        ("crm_custom_record", CRM_CUSTOM_RECORD),
         // 0x07XX — OSINT: ZERO vocabulary rows BY DESIGN (operator ruling
         // 2026-07-02; see the CODEBOOK 0x07XX section note). No entries
         // follow — OGAR vocabulary carries no OSINT concept names.
@@ -3315,6 +3395,22 @@ pub fn all_promoted_classes() -> Vec<Class> {
         // 0x08XX — OCR arm (9 container kinds), in class_ids::ALL order.
         weather_cell(),
         weather_static_cell(),
+        // 0x05XX — CRM arm (15 concepts), in class_ids::ALL order.
+        crm_contact(),
+        crm_company(),
+        crm_deal(),
+        crm_ticket(),
+        crm_lead(),
+        crm_pipeline(),
+        crm_pipeline_stage(),
+        crm_call(),
+        crm_meeting(),
+        crm_task(),
+        crm_note(),
+        crm_list(),
+        crm_campaign(),
+        crm_sequence(),
+        crm_custom_record(),
         unicharset(),
         recoder(),
         charset(),
@@ -5020,6 +5116,147 @@ pub fn weather_static_cell() -> Class {
 }
 
 // ─────────────────────────────────────────────────────────────────────
+// 0x05XX — CRM canonical builders. Identity only: properties, stages,
+// sequence steps and list filters are tenant data and ClassView positions,
+// and behaviour is ActionDefs — the address carries none of it.
+// ─────────────────────────────────────────────────────────────────────
+
+/// `crm_contact` (`0x0501`) — a person the organization has a relationship with (HubSpot `contacts`, type `0-1`).
+#[must_use]
+pub fn crm_contact() -> Class {
+    let mut c = Class::new("CrmContact");
+    c.language = Language::Unknown;
+    c.canonical_concept = Some("crm_contact".to_string());
+    c
+}
+
+/// `crm_company` (`0x0502`) — an organization the CRM tracks (HubSpot `companies`, type `0-2`). Kept apart from `crm_contact`: person and organization are two record types joined by a labelled association.
+#[must_use]
+pub fn crm_company() -> Class {
+    let mut c = Class::new("CrmCompany");
+    c.language = Language::Unknown;
+    c.canonical_concept = Some("crm_company".to_string());
+    c
+}
+
+/// `crm_deal` (`0x0503`) — a revenue opportunity moving through a pipeline (HubSpot deals, type `0-3`).
+#[must_use]
+pub fn crm_deal() -> Class {
+    let mut c = Class::new("CrmDeal");
+    c.language = Language::Unknown;
+    c.canonical_concept = Some("crm_deal".to_string());
+    c
+}
+
+/// `crm_ticket` (`0x0504`) — a customer service request moving through a pipeline (HubSpot `tickets`, type `0-5`; OGIT `CustomerSupport/Ticket`). No project semantics, unlike `project_work_item`.
+#[must_use]
+pub fn crm_ticket() -> Class {
+    let mut c = Class::new("CrmTicket");
+    c.language = Language::Unknown;
+    c.canonical_concept = Some("crm_ticket".to_string());
+    c
+}
+
+/// `crm_lead` (`0x0505`) — a qualification record associated to a contact and/or company (HubSpot `leads`, type `0-136`).
+#[must_use]
+pub fn crm_lead() -> Class {
+    let mut c = Class::new("CrmLead");
+    c.language = Language::Unknown;
+    c.canonical_concept = Some("crm_lead".to_string());
+    c
+}
+
+/// `crm_pipeline` (`0x0506`) — an ordered set of stages bound to one object type.
+#[must_use]
+pub fn crm_pipeline() -> Class {
+    let mut c = Class::new("CrmPipeline");
+    c.language = Language::Unknown;
+    c.canonical_concept = Some("crm_pipeline".to_string());
+    c
+}
+
+/// `crm_pipeline_stage` (`0x0507`) — one stage of exactly one pipeline; authorized per stage. Stage values are rows, never attributes of this class.
+#[must_use]
+pub fn crm_pipeline_stage() -> Class {
+    let mut c = Class::new("CrmPipelineStage");
+    c.language = Language::Unknown;
+    c.canonical_concept = Some("crm_pipeline_stage".to_string());
+    c
+}
+
+/// `crm_call` (`0x0508`) — a logged call engagement (HubSpot `calls`, type `0-48`).
+#[must_use]
+pub fn crm_call() -> Class {
+    let mut c = Class::new("CrmCall");
+    c.language = Language::Unknown;
+    c.canonical_concept = Some("crm_call".to_string());
+    c
+}
+
+/// `crm_meeting` (`0x0509`) — a meeting engagement (HubSpot `meetings`, type `0-47`). A calendar event backs it; it is not the calendar event.
+#[must_use]
+pub fn crm_meeting() -> Class {
+    let mut c = Class::new("CrmMeeting");
+    c.language = Language::Unknown;
+    c.canonical_concept = Some("crm_meeting".to_string());
+    c
+}
+
+/// `crm_task` (`0x050A`) — a to-do assigned to a user (HubSpot `tasks`, type `0-27`). No project semantics, unlike `project_work_item`.
+#[must_use]
+pub fn crm_task() -> Class {
+    let mut c = Class::new("CrmTask");
+    c.language = Language::Unknown;
+    c.canonical_concept = Some("crm_task".to_string());
+    c
+}
+
+/// `crm_note` (`0x050B`) — an owned note associated to one or more records and shown on their timelines (HubSpot `notes`, type `0-46`). Not `project_comment`.
+#[must_use]
+pub fn crm_note() -> Class {
+    let mut c = Class::new("CrmNote");
+    c.language = Language::Unknown;
+    c.canonical_concept = Some("crm_note".to_string());
+    c
+}
+
+/// `crm_list` (`0x050C`) — a list definition (owner, filter, static or active). Membership is a mask, never one row per member.
+#[must_use]
+pub fn crm_list() -> Class {
+    let mut c = Class::new("CrmList");
+    c.language = Language::Unknown;
+    c.canonical_concept = Some("crm_list".to_string());
+    c
+}
+
+/// `crm_campaign` (`0x050D`) — a marketing campaign, the attribution root for marketing assets.
+#[must_use]
+pub fn crm_campaign() -> Class {
+    let mut c = Class::new("CrmCampaign");
+    c.language = Language::Unknown;
+    c.canonical_concept = Some("crm_campaign".to_string());
+    c
+}
+
+/// `crm_sequence` (`0x050E`) — a shared, permissioned sequence of outreach steps. The steps are `ActionDef`s and data, never attributes of this class.
+#[must_use]
+pub fn crm_sequence() -> Class {
+    let mut c = Class::new("CrmSequence");
+    c.language = Language::Unknown;
+    c.canonical_concept = Some("crm_sequence".to_string());
+    c
+}
+
+/// `crm_custom_record` (`0x050F`) — a record of a tenant-defined custom object. One concept for every tenant schema; schemas are data and ClassViews. Default deny: access is row scope plus field mask, never a class grant alone.
+#[must_use]
+pub fn crm_custom_record() -> Class {
+    let mut c = Class::new("CrmCustomRecord");
+    c.language = Language::Unknown;
+    c.canonical_concept = Some("crm_custom_record".to_string());
+    c
+}
+
+// ─────────────────────────────────────────────────────────────────────
 // `email` (`0x0B05`, IAM domain). Identity only; the columns live in the
 // consumer's ClassView (spear's `messages` Lance schema).
 // ─────────────────────────────────────────────────────────────────────
@@ -6049,10 +6286,11 @@ mod tests {
         // lives in ogar-obo; plug-and-play, never pulls into ERP consumers).
         assert_eq!(canonical_concept_domain(0x0300), ConceptDomain::Ontology);
         assert_eq!(canonical_concept_domain(0x03AB), ConceptDomain::Ontology);
-        // Weather / Atmosphere block (0x04), then still-unassigned 0x05-0x06.
+        // Weather / Atmosphere block (0x04), CRM (0x05), then still-unassigned 0x06.
         assert_eq!(canonical_concept_domain(0x0400), ConceptDomain::Weather);
         assert_eq!(canonical_concept_domain(0x0401), ConceptDomain::Weather);
-        assert_eq!(canonical_concept_domain(0x0500), ConceptDomain::Unassigned);
+        assert_eq!(canonical_concept_domain(0x0500), ConceptDomain::Crm);
+        assert_eq!(canonical_concept_domain(0x05FF), ConceptDomain::Crm);
         assert_eq!(canonical_concept_domain(0x0600), ConceptDomain::Unassigned);
         // HR block (0x0D).
         assert_eq!(canonical_concept_domain(0x0D00), ConceptDomain::HR);
@@ -6279,6 +6517,7 @@ mod tests {
             "OCR domain set drift — re-sync the consumer coverage gate",
         );
         assert_eq!(concepts_in_domain(ConceptDomain::HR).count(), 4);
+        assert_eq!(concepts_in_domain(ConceptDomain::Crm).count(), 15);
         assert_eq!(concepts_in_domain(ConceptDomain::Commerce).count(), 11);
         assert_eq!(concepts_in_domain(ConceptDomain::ProjectMgmt).count(), 26);
         assert_eq!(concepts_in_domain(ConceptDomain::Anatomy).count(), 4);
@@ -6613,6 +6852,7 @@ mod tests {
             Some(ConceptDomain::ProjectMgmt)
         );
         assert_eq!(source_domain_concept("erp"), Some(ConceptDomain::Commerce));
+        assert_eq!(source_domain_concept("crm"), Some(ConceptDomain::Crm));
         assert_eq!(
             source_domain_concept("german-erp"),
             Some(ConceptDomain::Commerce)
@@ -7241,7 +7481,96 @@ mod mail_classid_mint_tests {
         const { assert!(class_ids::EMAIL > class_ids::AUTH_ORY_KETO) };
         assert_eq!(canonical_concept_id("email"), Some(0x0B05));
         assert_eq!(email().canonical_id(), Some(class_ids::EMAIL));
-        // No Mail domain was opened for it.
-        assert_eq!(canonical_concept_domain(0x0501), ConceptDomain::Unassigned);
+        // No Mail domain was opened for it: 0x05 went to CRM, and email
+        // stays in Auth.
+        assert_eq!(canonical_concept_domain(0x0501), ConceptDomain::Crm);
+        assert_ne!(
+            canonical_concept_domain(class_ids::EMAIL),
+            ConceptDomain::Crm
+        );
+    }
+}
+
+#[cfg(test)]
+mod crm_classid_mint_tests {
+    use super::*;
+
+    #[test]
+    fn crm_concepts_fill_0x0501_to_0x050f_in_order() {
+        let crm: Vec<(&str, u16)> = concepts_in_domain(ConceptDomain::Crm).collect();
+        let names: Vec<&str> = crm.iter().map(|(n, _)| *n).collect();
+        assert_eq!(
+            names,
+            [
+                "crm_contact",
+                "crm_company",
+                "crm_deal",
+                "crm_ticket",
+                "crm_lead",
+                "crm_pipeline",
+                "crm_pipeline_stage",
+                "crm_call",
+                "crm_meeting",
+                "crm_task",
+                "crm_note",
+                "crm_list",
+                "crm_campaign",
+                "crm_sequence",
+                "crm_custom_record",
+            ],
+            "CRM domain set drift — re-sync the hubspo-rs coverage gate",
+        );
+        for (i, (_, id)) in crm.iter().enumerate() {
+            assert_eq!(*id, 0x0501 + i as u16);
+        }
+        // The domain root is never a concept.
+        assert!(crm.iter().all(|(_, id)| *id != 0x0500));
+    }
+
+    #[test]
+    fn crm_sits_in_the_business_band_and_clear_of_the_v3_marker() {
+        assert_eq!(
+            canonical_concept_domain(class_ids::CRM_CONTACT),
+            ConceptDomain::Crm
+        );
+        assert_eq!(class_ids::CRM_CONTACT >> 12, 0, "CRM is business ontology");
+        // 0x1000 (the V3 marker slot) stays outside every domain.
+        assert_eq!(canonical_concept_domain(0x1000), ConceptDomain::Unassigned);
+    }
+
+    /// The address carries no behaviour: every CRM class is identity only.
+    /// Stage values, sequence steps, list filters and properties are data.
+    #[test]
+    fn crm_classes_are_identity_only() {
+        for c in [
+            crm_contact(),
+            crm_company(),
+            crm_deal(),
+            crm_ticket(),
+            crm_lead(),
+            crm_pipeline(),
+            crm_pipeline_stage(),
+            crm_call(),
+            crm_meeting(),
+            crm_task(),
+            crm_note(),
+            crm_list(),
+            crm_campaign(),
+            crm_sequence(),
+            crm_custom_record(),
+        ] {
+            let name = c.canonical_concept.clone().expect("canonical concept");
+            assert_eq!(
+                canonical_concept_domain(c.canonical_id().expect(&name)),
+                ConceptDomain::Crm
+            );
+            // Identical to a bare class with only name, language and concept
+            // set: no attributes, enums, associations, scopes, callbacks or
+            // validations — the whole struct, not a hand-picked field list.
+            let mut bare = Class::new(c.name.clone());
+            bare.language = Language::Unknown;
+            bare.canonical_concept = Some(name.clone());
+            assert_eq!(c, bare, "{name} carries more than identity");
+        }
     }
 }
