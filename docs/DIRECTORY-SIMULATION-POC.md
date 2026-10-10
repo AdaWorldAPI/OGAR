@@ -513,10 +513,14 @@ no-population-intermediate rule.
   dir-sim or Stalwart decides who may read or change a document (HubSPO-rs
   `comms-api-surface.md` §2). SharePoint and OneDrive grant a role (read,
   write, owner) to a principal on a site, library, folder or item. An item
-  inherits its parent's grants until inheritance is broken, and sharing
-  links grant to whoever holds the link (anyone, the organization, or named
-  people); Graph reports these as a drive item's `permissions` with
-  `roles`, `grantedToV2`, `link` and `inheritedFrom`.
+  inherits its parent's grants until inheritance is broken. A sharing link
+  has a scope: `anonymous` admits whoever holds it, `organization` admits a
+  user signed in to the same tenant who holds it, and `users` admits only
+  the people it was granted to. Graph reports a drive item's `permissions`
+  with `roles`, `grantedToV2`, `grantedToIdentitiesV2` and `link`
+  (`link.scope`). It does not return `inheritedFrom` for SharePoint and
+  OneDrive for Business, so the permission list cannot say which ancestor
+  supplied a grant or where inheritance breaks.
 
   Two regimes, kept apart:
   - **Files attached to a record** (a ticket's or a deal's attachments in
@@ -527,10 +531,24 @@ no-population-intermediate rule.
   Proposal for the second regime, not yet decided:
   - A grant is a relation `(resource, principal, role)`, as in V17. The
     resource is a document, folder or drive node with a parent.
+  - Inheritance comes from the tree, not from `inheritedFrom`. The folder
+    tree is read by walking each item's `parentReference`, and where
+    inheritance breaks is read from SharePoint's own flag on each
+    securable object (`HasUniqueRoleAssignments` in the SharePoint REST
+    API), with its role assignments read at that object. An item without
+    unique assignments takes its grants from the nearest ancestor that has
+    them. Until that flag is read, the grants on an item are its
+    effective permissions as Graph returns them, with no inheritance
+    inferred.
   - A principal's effective role is the highest role granted to it, or to
     a group it belongs to, on the item or on an ancestor up to the nearest
     broken inheritance.
-  - A sharing link is a principal of its own kind.
+  - A sharing link is a grant that keeps its scope. Holding the link is
+    never enough on its own: `anonymous` admits any holder, `organization`
+    admits a holder signed in to the tenant (an external or guest identity
+    from another tenant is refused), and `users` admits only the identities
+    in `grantedToIdentitiesV2`, which are evaluated as ordinary principals.
+    A link is never folded into one shared link principal.
   - Spear evaluates it with an RBAC plug over the document classid, the
     way `RBAC_PLUG` covers mail.
 
