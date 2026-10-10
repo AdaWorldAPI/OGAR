@@ -54,8 +54,8 @@ classid : u32  =  [ hi u16 : in-codebook class ]  [ lo u16 : APP / codebook name
 - **`hi u16` (0xDDCC) — in-codebook class id.** Domain byte `DD` +
   concept byte `CC`, exactly as the codebook encodes today. Within the
   core codebook (`lo = 0x0000`) the domain bytes are the canonical map
-  (`0x01` project, `0x02` commerce, `0x07` osint, `0x08` ocr, `0x09`
-  health, `0x0A` anatomy, `0x0B` auth, `0x0C` automation). Within an
+  (`0x01` project, `0x02` commerce, `0x04` weather, `0x05` crm, `0x07` osint,
+  `0x08` ocr, `0x09` health, `0x0A` anatomy, `0x0B` auth, `0x0C` automation). Within an
   app-private codebook the app owns its own `DD|CC` layout.
 
   **The domain byte carries ALTITUDE** (operator, 2026-08-18 — *"Java is an
@@ -171,7 +171,7 @@ materialised until the app mints its first private class).
 
 | `lo u16` | App / namespace | Core domain(s) it consumes | Private codebook today? |
 |---|---|---|---|
-| `0x0000` | **Shared canonical core** | all (`0x01/02/04/07/08/09` + `0x0A` anatomy + `0x0B` auth + `0x0C` automation) | n/a (this *is* core) |
+| `0x0000` | **Shared canonical core** | all (`0x01/02/04/05/07/08/09` + `0x0A` anatomy + `0x0B` auth + `0x0C` automation; `0x05` = CRM) | n/a (this *is* core) |
 | `0x0001` | OpenProject (openproject-nexgen-rs) | `0x01` project-mgmt | **no** — maps onto core |
 | `0x0002` | Odoo | `0x02` commerce | **no** — maps onto core (converge `od-ontology`) |
 | `0x0003` | WoA / woa-rs | `0x02` commerce (work orders) | **no** — maps onto core |
@@ -182,6 +182,7 @@ materialised until the app mints its first private class).
 | `0x0008` | OpenStreetMap (openstreetmap-website-rs) | `0x0F` geo | **no** — maps entirely onto core |
 | `0x0009` | WeatherNext / weathernext-rs | `0x04` weather / atmosphere | **no** — maps onto core |
 | `0x000A` | Spear (mail hub) | `0x0B` IAM (`email` `0x0B05`) + `0x08` (`document`) | **no** — maps onto core |
+| `0x000B` | HubSPO / hubspo-rs (CRM) | `0x05` crm (15 concepts) + aliases onto `0x0B05` email, `0x0207` product, `0x0201` line item, `0x0202` commercial document, `0x0205` payment record, `0x0203` tax policy, `0x0104` project actor | **no** — maps onto core |
 | `0x00A0` | (reserved) future app block | — | — |
 
 > **OpenProject (`0x0001`) and Redmine (`0x0007`) are the showcase:**
