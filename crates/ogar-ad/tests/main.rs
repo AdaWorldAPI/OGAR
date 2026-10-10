@@ -416,3 +416,40 @@ fn the_exchange_guid_is_an_id_not_a_string() {
     let (mut dict, mut pool) = (OuDictionary::new(), ValuePool::new());
     assert!(encode(e, domain(), &mut dict, &mut pool, 1).is_err());
 }
+
+// groupType is read raw and bit-cast; its high bit, not the mail attributes,
+// says whether a group is security-enabled. Unread stays unread.
+#[test]
+fn group_type_is_read_and_says_security() {
+    let group = |gt: Option<&str>| {
+        let mut text = String::from(
+            "dn: CN=G,OU=Groups,DC=example,DC=test\nobjectGUID:: 4AQlP4lP0xGaDAMF6CwzAQ==\nobjectClass: group\n",
+        );
+        if let Some(gt) = gt {
+            text.push_str(&format!("groupType: {gt}\n"));
+        }
+        let e = ldif::parse(&text).unwrap().remove(0);
+        let (mut dict, mut pool) = (OuDictionary::new(), ValuePool::new());
+        let enc = encode(&e, domain(), &mut dict, &mut pool, 1).unwrap();
+        assert!(enc.ignored.is_empty(), "{:?}", enc.ignored);
+        assert_eq!(enc.record.object_kind(), AdKind::Group as u16);
+        enc.record.num(slot("groupType"))
+    };
+    // Global security group: ADS_GROUP_TYPE_GLOBAL | SECURITY_ENABLED.
+    let security = group(Some("-2147483646")).unwrap();
+    assert_eq!(security, 0x8000_0002);
+    assert!(ogar_ad::is_security_enabled(security));
+    // Universal distribution group.
+    let distribution = group(Some("8")).unwrap();
+    assert!(!ogar_ad::is_security_enabled(distribution));
+    // Universal security group.
+    assert!(ogar_ad::is_security_enabled(
+        group(Some("-2147483640")).unwrap()
+    ));
+    assert_eq!(group(None), None);
+    // Out of 32-bit range is refused, not wrapped.
+    let text = "dn: CN=G,OU=Groups,DC=example,DC=test\nobjectGUID:: 4AQlP4lP0xGaDAMF6CwzAQ==\nobjectClass: group\ngroupType: 4294967296\n";
+    let e = &ldif::parse(text).unwrap()[0];
+    let (mut dict, mut pool) = (OuDictionary::new(), ValuePool::new());
+    assert!(encode(e, domain(), &mut dict, &mut pool, 1).is_err());
+}

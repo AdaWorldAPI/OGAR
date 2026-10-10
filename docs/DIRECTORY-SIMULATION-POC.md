@@ -564,8 +564,9 @@ no-population-intermediate rule.
   - **Security-enabled**: the group can hold permissions. AD sets bit
     `0x80000000` of `groupType`; Graph reports `securityEnabled`.
   - **Mail-enabled**: the group has addresses and receives mail. Graph
-    reports `mailEnabled`; on-premises it is the group's Exchange
-    recipient attributes, decoded like a user's.
+    reports `mailEnabled`; dir-sim reads it as the group having a primary
+    SMTP address (lance-graph `View::is_mail_recipient`), the same rule it
+    already applied to distribution lists.
 
   That gives three kinds in practice: a security group (not mail-enabled),
   a mail-enabled security group, and a distribution group (mail-enabled,
@@ -588,10 +589,10 @@ no-population-intermediate rule.
       token (`tokenGroups`) holds only security groups. Permission checks
       (V17, V18, RBAC roles from group membership) use this closure.
   - **Unknown is excluded from the security closure.** A group whose
-    security flag was not read is not walked for permissions, and a
-    permission that depends on it is reported, so it fails closed. The
-    delivery closure walks a group whose mail flag was not read, as
-    today's snapshots do.
+    security flag was not read is not walked for permissions, so a
+    permission that depends on it fails closed. A group created in a
+    simulated version has no flag either (a `Change` carries none) until
+    `NodeState` grows one.
   - **Cycles are walked once**; both closures are in user-ordinal order.
   - **Validation.** A permission grant to a group that is not
     security-enabled is a violation (V17). A security group whose
