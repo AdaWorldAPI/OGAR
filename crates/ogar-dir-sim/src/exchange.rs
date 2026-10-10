@@ -10,7 +10,8 @@
 //! * `msExchRecipientTypeDetails` — a 64-bit type code.
 //!
 //! plus `targetAddress`, which for a remote mailbox is its routing address
-//! (`alias@tenant.mail.onmicrosoft.com`).
+//! (`alias@tenant.mail.onmicrosoft.com`, the external EOP target; not the
+//! Entra user's internal `alias@tenant.onmicrosoft.com`).
 //!
 //! The decode accepts exactly the combinations the hybrid lifecycle
 //! produces (the 26 `msExchRemoteRecipientType` values of
@@ -23,7 +24,7 @@
 //! **The enabled flag is not part of this.** A shared, room or equipment
 //! mailbox is a disabled account by design and is still a recipient.
 
-use crate::change::{KeyId, ValueId};
+use crate::change::ValueId;
 use ogar_dir_core::Guid128;
 
 /// `msExchRemoteRecipientType` flag bits.
@@ -341,8 +342,17 @@ impl Recipient {
 /// `ExchangeGuid` across a move) and the address it receives at
 /// (`PrimarySmtpAddress`).
 ///
-/// The identity is `node` and, for a mailbox, `exchange_guid`; the address is
-/// a value of the identity, never the key it is found by.
+/// Identities are GUIDs: `node` is the on-premises object, and a
+/// provisioned mailbox is identified by its `exchange_guid`. The user is the
+/// Entra object (Azure AD, formerly the MsolUser), which carries
+/// `{alias}@{tenant}.onmicrosoft.com`, Microsoft's internal cloud address.
+/// Every mail recipient links its mailbox to that user through
+/// `ExternalDirectoryObjectId` — "external" because it points into the
+/// directory outside Exchange. None of these is the routing address
+/// `{alias}@{tenant}.mail.onmicrosoft.com` ([`ROUTING`]), the external
+/// target EOP delivers to. An address is a value of an identity,
+/// never the key it is found by, and `mail` in particular is a label that
+/// hydrates no identity.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ExchangeIdentity {
     /// The object (`objectGUID`).
@@ -353,39 +363,6 @@ pub struct ExchangeIdentity {
     pub exchange_guid: Option<Guid128>,
     /// `PrimarySmtpAddress`.
     pub primary_smtp: Option<ValueId>,
-}
-
-/// What an object's `mail` label resolves to. The label is the trigger: its
-/// address is looked up once, among the addresses objects actually hold
-/// (UPN, `proxyAddresses`, routing address), and the holder's
-/// [`ExchangeIdentity`] is hydrated by GUID. The label itself never reserves
-/// the address and never decides delivery or access.
-#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum MailLabel {
-    /// The label is an address the labelled object holds itself.
-    Own(ExchangeIdentity),
-    /// The label names an address another object holds: an admin account
-    /// whose `mail` is a user's mailbox (a password-reset target), say. The
-    /// identity is the holder's.
-    Elsewhere {
-        /// The label's comparison key.
-        key: KeyId,
-        /// The object that holds the address.
-        holder: ExchangeIdentity,
-    },
-    /// Several objects hold the address: none is hydrated, the holders are
-    /// listed (sorted).
-    Contested {
-        /// The label's comparison key.
-        key: KeyId,
-        /// Every holder.
-        holders: Vec<Guid128>,
-    },
-    /// No object holds the address: a stale label.
-    Unheld {
-        /// The label's comparison key.
-        key: KeyId,
-    },
 }
 
 /// One step of the hybrid remote-mailbox lifecycle (semantic; the actuator
@@ -589,7 +566,10 @@ impl AddressTemplate {
 
 /// A remote mailbox's routing address: `{alias}@{tenant}.mail.onmicrosoft.com`,
 /// where the alias is the object's `mailNickname` (the Exchange Online
-/// `Alias`). In AD it is `targetAddress` with the `SMTP:` prefix and also one
+/// `Alias`). It is the external target Exchange Online Protection delivers
+/// to, distinct from `{alias}@{tenant}.onmicrosoft.com`, the internal cloud
+/// address of the Entra user the mailbox links to through
+/// `ExternalDirectoryObjectId`. In AD it is `targetAddress` with the `SMTP:` prefix and also one
 /// of the `proxyAddresses` (`smtp:`); Exchange Online lists it among
 /// `EmailAddresses`. Matched against the normalized (lower-case) address.
 pub const ROUTING: AddressTemplate = AddressTemplate("{0}@{1}.mail.onmicrosoft.com");

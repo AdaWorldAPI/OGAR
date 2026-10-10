@@ -25,12 +25,14 @@ pub enum AddressRole {
     PrimarySmtp,
     /// A secondary SMTP proxy (`smtp:`).
     SecondarySmtp,
-    /// The `mail` attribute: a label, never a claim. Exchange does not
-    /// reserve it, so it never makes an object a holder in
-    /// [`Violation::AddressConflict`]. A label is a hydration trigger: it is
-    /// resolved to the object that does hold the address it names, and that
-    /// object's [`ExchangeIdentity`](crate::exchange::ExchangeIdentity) is
-    /// read by GUID ([`MailLabel`](crate::exchange::MailLabel)).
+    /// The `mail` attribute: the licence plate. It is shown in the address
+    /// book and used inside messages, and it matters, but it is a label:
+    /// not the identity of the mailbox or the user (identity is read by
+    /// GUID, [`ExchangeIdentity`](crate::exchange::ExchangeIdentity)), not an
+    /// address anything is received at, and not provisioned. Exchange does
+    /// not reserve it, so it never makes an object a holder in
+    /// [`Violation::AddressConflict`]. This holds as long as AD Connect does
+    /// not use `mail` as the sync anchor.
     Mail,
     /// A remote mailbox's routing address (`targetAddress`).
     Routing,

@@ -26,9 +26,8 @@ pub use change::{
     Attribute, Change, KeyId, NodeKind, NodeState, Refusal, ValueId, effective_active, normalize,
 };
 pub use exchange::{
-    AddressTemplate, ArchiveState, ExchangeIdentity, LifecycleRefusal, MailLabel, MailboxState,
-    ROUTING, Recipient, RecipientAttributes, RemoteKind, RemoteMailbox, RemoteMailboxOp,
-    routing_parts,
+    AddressTemplate, ArchiveState, ExchangeIdentity, LifecycleRefusal, MailboxState, ROUTING,
+    Recipient, RecipientAttributes, RemoteKind, RemoteMailbox, RemoteMailboxOp, routing_parts,
 };
 pub use identity::{CloudLabel, ExternalObjectId, SourceAnchor};
 pub use plan::{ExecutionPlan, Operation, PlanError, PlannedOp, Precondition};
