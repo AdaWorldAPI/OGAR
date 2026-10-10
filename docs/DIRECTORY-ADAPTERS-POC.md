@@ -189,6 +189,12 @@ permission Microsoft documents:
 | `ExchangeSettings` | `/users/{id}/settings/exchange` | `User.Read.All` |
 | `MailboxFolders` | `/admin/exchange/mailboxes/{mailboxId}/folders` | `MailboxFolder.Read.All` |
 | `MailboxItems` | `/admin/exchange/mailboxes/{mailboxId}/folders/{folderId}/items` | `MailboxItem.Read.All` |
+| `UserDrive` | `/users/{id}/drive` | `Files.Read.All` (delegated) |
+
+The mailbox reads take an application permission; Microsoft lists reading
+a user's drive as delegated only (`Pull::grant`). `user_drive` accepts a
+drive only when its `owner.user.id` is the user, and returns its id, which
+Spear's drive scope uses to address uploads.
 
 There is no `Mailbox.ReadWrite.All`; the mailbox-content permissions are
 `MailboxFolder.*` and `MailboxItem.*`, and the read variants suffice for
