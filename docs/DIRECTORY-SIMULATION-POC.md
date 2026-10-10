@@ -451,5 +451,65 @@ no-population-intermediate rule.
   a synthetic DN for the cloud-only user that a real LDAP client can bind
   as; whether the emulated domain name is the on-premises one or the
   tenant's initial domain when there is no hybrid.
+- **V17 — Mailbox delegation (design, 2026-10-10).** Exchange grants three
+  rights on a recipient to another principal (the trustee). They answer
+  different questions and none implies another:
+  - **FullAccess**: the trustee opens and reads the mailbox as its owner.
+    A mailbox permission (`Add-MailboxPermission`); on-premises in the
+    mailbox security descriptor. `msExchDelegateListLink` on the mailbox
+    lists only the FullAccess trustees that are automapped, so it is a
+    witness of some grants, not of all.
+  - **SendAs**: the trustee sends with the recipient's address as From and
+    leaves no trace of itself. An Active Directory extended right on the
+    recipient object (`Send-As`, rights GUID
+    `ab721a54-1e2f-11d0-9819-00aa0040529b`; `Add-RecipientPermission` in
+    Exchange Online).
+  - **SendOnBehalf**: From is the recipient and Sender is the trustee.
+    `publicDelegates` on the recipient (`GrantSendOnBehalfTo`).
+
+  Decisions:
+  - **A grant is a relation, not a property.** `(object, trustee, right)`
+    is its own record, like a membership, and changes by add and remove;
+    no node carries a list of trustees.
+  - **The trustee is a user or a group.** A user holds a right on an
+    object when it is granted to the user or to any group the user belongs
+    to, transitively.
+  - **Each grant carries the witness that asserted it.** LDIF supplies
+    `publicDelegates` and `msExchDelegateListLink`; Graph supplies none of
+    the three; the Exchange permission output (`Get-MailboxPermission`,
+    `Get-RecipientPermission`, `GrantSendOnBehalfTo`) supplies all of them
+    and is read through the same read-only encoder as V12. Witnesses that
+    disagree both stay; an absent witness is not a refusal.
+  - **Consumers.** Spear's mailbox IAM lets a FullAccess trustee read the
+    mailbox's rows. SendAs and SendOnBehalf gate sending: a consumer that
+    submits through Stalwart picks the identity, and with SendOnBehalf sets
+    `Sender` to the trustee.
+
+  Not modelled: folder-level permissions (`Add-MailboxFolderPermission`),
+  calendar delegates, and deny entries, which Exchange allows on
+  FullAccess.
+- **V18 — Document access (design, open, 2026-10-10).** Nothing in Spear,
+  dir-sim or Stalwart decides who may read or change a document (HubSPO-rs
+  `comms-api-surface.md` §2). SharePoint and OneDrive grant a role (read,
+  write, owner) to a principal on a site, library, folder or item. An item
+  inherits its parent's grants until inheritance is broken, and sharing
+  links grant to whoever holds the link (anyone, the organization, or named
+  people); Graph reports these as a drive item's `permissions` with
+  `roles`, `grantedToV2`, `link` and `inheritedFrom`.
+
+  Proposal, not yet decided:
+  - A grant is a relation `(resource, principal, role)`, as in V17. The
+    resource is a document, folder or drive node with a parent.
+  - A principal's effective role is the highest role granted to it, or to
+    a group it belongs to, on the item or on an ancestor up to the nearest
+    broken inheritance.
+  - A sharing link is a principal of its own kind.
+  - Spear evaluates it with an RBAC plug over the document classid, the
+    way `RBAC_PLUG` covers mail.
+
+  Open: whether SharePoint groups are dir-sim groups; "limited access",
+  SharePoint's implicit role on an ancestor of a shared item; where the
+  folder tree lives (Spear's `DriveScope` names a drive and an item, not a
+  path).
 - **V5 — CI.** CI builds `lance-graph-dir-sim` against the OGAR checkout, so
   it needs this OGAR PR merged first.
