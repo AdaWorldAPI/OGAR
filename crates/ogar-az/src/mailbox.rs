@@ -2,8 +2,8 @@
 //!
 //! Graph does not report a mailbox as a property of the `user`: it takes
 //! separate reads, each with its own permission. This module names those
-//! reads ([`Pull`]), the least-privileged application permission each one
-//! needs ([`Permission`]), and encodes what they return into one
+//! reads ([`Pull`]), the least-privileged permission each one needs
+//! ([`Permission`], granted as [`Grant`]), and encodes what they return into one
 //! [`DirRecord`] per user (object kind [`AzKind::Mailbox`]):
 //!
 //! * WHO   = the Graph user `id` (the Entra object id, which Exchange Online
@@ -16,6 +16,11 @@
 //! Every pull is a `GET`. Nothing here writes to Graph, and nothing here
 //! performs HTTP: the caller fetches with its own token and hands the
 //! response bodies in.
+//!
+//! One more read rides along: [`Pull::UserDrive`] resolves a user's
+//! OneDrive ([`user_drive`]), so a consumer that uploads documents (Spear's
+//! drive scope) can address the drive from the directory's user id. The
+//! upload itself is the consumer's write, not this module's.
 //!
 //! ## `primaryMailboxId`
 //!
@@ -77,6 +82,17 @@ pub enum Permission {
     MailboxFolderReadAll,
     /// `MailboxItem.Read.All`.
     MailboxItemReadAll,
+    /// `Files.Read.All`.
+    FilesReadAll,
+}
+
+/// How a permission is granted.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum Grant {
+    /// To the application itself (no signed-in user).
+    Application,
+    /// On behalf of a signed-in user.
+    Delegated,
 }
 
 impl Permission {
@@ -87,6 +103,7 @@ impl Permission {
             Self::MailboxSettingsRead => "MailboxSettings.Read",
             Self::MailboxFolderReadAll => "MailboxFolder.Read.All",
             Self::MailboxItemReadAll => "MailboxItem.Read.All",
+            Self::FilesReadAll => "Files.Read.All",
         }
     }
 }
@@ -116,6 +133,12 @@ pub enum Pull<'a> {
         /// The folder id as read.
         folder: &'a str,
     },
+    /// `GET /users/{id}/drive`: the user's OneDrive, whose id addresses
+    /// uploads to it.
+    UserDrive {
+        /// The user.
+        user: Guid128,
+    },
 }
 
 impl Pull<'_> {
@@ -131,6 +154,7 @@ impl Pull<'_> {
                     encode(mailbox)
                 )
             }
+            Self::UserDrive { user } => format!("{BASE}/users/{user}/drive"),
             Self::MailboxItems { mailbox, folder } => format!(
                 "{BASE}/admin/exchange/mailboxes/{}/folders/{}/items",
                 encode(mailbox),
@@ -139,15 +163,58 @@ impl Pull<'_> {
         }
     }
 
-    /// The least-privileged application permission the pull needs.
+    /// The least-privileged permission the pull needs, under
+    /// [`Pull::grant`].
     pub fn permission(&self) -> Permission {
         match self {
+            Self::UserDrive { .. } => Permission::FilesReadAll,
             Self::MailboxSettings { .. } => Permission::MailboxSettingsRead,
             Self::ExchangeSettings { .. } => Permission::UserReadAll,
             Self::MailboxFolders { .. } => Permission::MailboxFolderReadAll,
             Self::MailboxItems { .. } => Permission::MailboxItemReadAll,
         }
     }
+
+    /// How [`Pull::permission`] is granted. Microsoft lists reading a
+    /// user's drive as delegated only; the mailbox reads take an
+    /// application permission.
+    pub fn grant(&self) -> Grant {
+        match self {
+            Self::UserDrive { .. } => Grant::Delegated,
+            _ => Grant::Application,
+        }
+    }
+}
+
+/// A user's OneDrive, as `GET /users/{id}/drive` returns it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct UserDrive {
+    /// The drive id, which addresses the drive (`/drives/{id}`).
+    pub id: String,
+    /// `driveType`: `business` for OneDrive for Business.
+    pub drive_type: String,
+}
+
+/// Read a `GET /users/{id}/drive` body. The drive is `user`'s only when its
+/// `owner.user.id` is `user`; a drive owned by anyone else, or a body
+/// without an id, is `None`.
+pub fn user_drive(body: &str, user: Guid128) -> Result<Option<UserDrive>, AzError> {
+    let v: Value = serde_json::from_str(body).map_err(|_| AzError::NotAPage)?;
+    let o = v.as_object().ok_or(AzError::NotAPage)?;
+    let owner = o
+        .get("owner")
+        .and_then(|w| w.get("user"))
+        .and_then(|u| u.get("id"))
+        .and_then(Value::as_str)
+        .and_then(|s| Guid128::parse(s).ok());
+    if owner != Some(user) {
+        return Ok(None);
+    }
+    let field = |name| o.get(name).and_then(Value::as_str).map(str::to_string);
+    Ok(field("id").map(|id| UserDrive {
+        id,
+        drive_type: field("driveType").unwrap_or_default(),
+    }))
 }
 
 /// Percent-encode everything outside RFC 3986's unreserved set.

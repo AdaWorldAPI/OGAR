@@ -203,3 +203,35 @@ fn accessors_ignore_user_records() {
     assert_eq!(primary_mailbox_id(user, &pool), None);
     assert_eq!(mailbox_guid(user), None);
 }
+
+// A user's OneDrive: a delegated read, and the drive counts only when the
+// user owns it.
+#[test]
+fn the_user_drive_is_a_delegated_read_owned_by_the_user() {
+    use ogar_az::mailbox::{Grant, UserDrive, user_drive};
+    let user = g(USER);
+    let pull = Pull::UserDrive { user };
+    assert_eq!(
+        pull.url(),
+        format!("https://graph.microsoft.com/v1.0/users/{USER}/drive")
+    );
+    assert_eq!(pull.permission().name(), "Files.Read.All");
+    assert_eq!(pull.grant(), Grant::Delegated);
+    assert_eq!(Pull::MailboxSettings { user }.grant(), Grant::Application);
+
+    let body = |owner: &str| {
+        format!(
+            r#"{{"id":"b!t18F8ybsHUq1","driveType":"business","owner":{{"user":{{"id":"{owner}","displayName":"x"}}}}}}"#
+        )
+    };
+    assert_eq!(
+        user_drive(&body(USER), user).unwrap(),
+        Some(UserDrive {
+            id: "b!t18F8ybsHUq1".into(),
+            drive_type: "business".into()
+        })
+    );
+    assert_eq!(user_drive(&body(TENANT), user).unwrap(), None);
+    assert_eq!(user_drive(r#"{"id":"b!x"}"#, user).unwrap(), None);
+    assert_eq!(user_drive("[]", user), Err(AzError::NotAPage));
+}

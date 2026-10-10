@@ -26,7 +26,9 @@ pub mod violation;
 pub use change::{
     Attribute, Change, KeyId, NodeKind, NodeState, Refusal, ValueId, effective_active, normalize,
 };
-pub use deployment::{ExchangeDeployment, MailboxPurpose};
+pub use deployment::{
+    Deployment, MailboxHost, MailboxLocation, MailboxLocationType, MailboxPurpose,
+};
 pub use exchange::{
     AddressTemplate, ArchiveState, ExchangeIdentity, LifecycleRefusal, MailboxState, ROUTING,
     Recipient, RecipientAttributes, RemoteKind, RemoteMailbox, RemoteMailboxOp, routing_parts,
