@@ -487,8 +487,9 @@ no-population-intermediate rule.
       nothing.
     - **SendOnBehalf**: a user or a mail-enabled group, distribution
       groups included, because `GrantSendOnBehalfTo` names recipients. A
-      user holds it when it is in the group, directly or through nesting
-      (V19). A grant to a group that is not mail-enabled is a violation.
+      user holds it when the group reaches it by chained addressing, through
+      nested mail-enabled groups only (V19). A grant to a group that is not
+      mail-enabled is a violation.
 
     Until V19's expansion lands, a grant to a group reaches only the
     group's direct members.
@@ -619,14 +620,20 @@ no-population-intermediate rule.
     follows every nested group, whatever its kind, in both directions:
     the users in a group (`View::members_transitive`) and the groups a
     user is in (`View::groups_transitive`), which are inverses. Cycles are
-    walked once. A group's kind is never a rule for the walk.
-  - **The properties are filters, applied to the result.** lance-graph's
+    walked once. This answers membership only: who is in a group.
+  - **Mail and permissions are chains through a property.** lance-graph's
     `groups_where` is a SQL-ish `WHERE` over the two properties (`Is`,
     `Not`, `And`, `Or`), lowered to one Quack program over the group
-    population. A consumer composes the two:
-    - *Mail*: a list addressed by its mail-enabled group reaches every
-      user in it through nesting, a nested group without an address
-      included. Spear's `mailbox_members` uses this.
+    population. The same nesting walk, restricted to the groups that pass
+    it (`members_transitive_through`, `groups_transitive_through`), gives
+    each chain:
+    - *Mail is chained addressing, never inherited.* Mail to a list
+      reaches its members; a nested group receives it through its own
+      address and passes it on to its members. A nested group without an
+      address cannot be addressed and ends the chain
+      (`members_transitive_through` / `groups_transitive_through` with the
+      mail-enabled filter). Spear's `mailbox_members` and Stalwart's account
+      lists use this.
     - *Permissions*: only a security group has a SID, so a group without
       one can neither hold nor pass on a permission. Inheritance walks the
       same nesting through security groups only
