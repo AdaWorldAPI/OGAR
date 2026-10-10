@@ -27,6 +27,8 @@ use ogar_dir_core::{
 use serde_json::Value;
 use std::collections::HashSet;
 
+pub mod mailbox;
+
 /// Encoder schema version understood by this crate.
 pub const SCHEMA_VERSION: u16 = 2;
 /// This crate's schema id.
@@ -288,12 +290,15 @@ pub fn cloud_of(ad: &str) -> Option<&'static SyncedAttribute> {
         })
 }
 
-/// AZ object kinds (family-scoped codes). Only users are ingested in v1.
+/// AZ object kinds (family-scoped codes).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(u16)]
 pub enum AzKind {
     /// A Graph `user`.
     User = 1,
+    /// A user's Exchange Online mailbox as Graph reports it
+    /// ([`mailbox::MAILBOX_SCHEMA_V1`]).
+    Mailbox = 2,
 }
 
 /// `$select` value for schema `version`: `id` plus every attribute defined at
