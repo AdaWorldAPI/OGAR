@@ -77,3 +77,16 @@ permission).
   That is enough for reading a shared inbox (HubSPO-rs D-MAIL-5).
 - **Send-as / on behalf:** not offered until W-1 exists. HubSPO-rs will not
   keep a second copy of AD's delegation lists.
+
+## Correction (2026-10-10, after OGAR #344 V17)
+
+- **W-1's violation list was too broad.** It named "a group as owner (a
+  group has no mailbox of its own)" as a violation for every right. That
+  holds for **FullAccess only**. Exchange grants SendAs and SendOnBehalf on
+  distribution groups, so a group is a valid object for those two rights.
+  V17 (`docs/DIRECTORY-SIMULATION-POC.md`) has it right.
+- **Deny entries.** Exchange allows deny entries on FullAccess. A model that
+  reads grants only must not apply a grant a witness also denies: drop it,
+  or hold it as a violation (review on #344).
+- **Transitive group trustees** depend on nested-group expansion, which is
+  lance-graph handover W-4.
