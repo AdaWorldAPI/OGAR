@@ -632,8 +632,7 @@ no-population-intermediate rule.
       address and passes it on to its members. A nested group without an
       address cannot be addressed and ends the chain
       (`members_transitive_through` / `groups_transitive_through` with the
-      mail-enabled filter). Spear's `mailbox_members` and Stalwart's account
-      lists use this.
+      mail-enabled filter). Spear's `mailbox_members` uses this.
     - *Permissions*: only a security group has a SID, so a group without
       one can neither hold nor pass on a permission. Inheritance walks the
       same nesting through security groups only
@@ -645,6 +644,12 @@ no-population-intermediate rule.
       membership use this.
     - *Both*: a mail-enabled security group carries a permission and
       receives mail.
+    - *A consumer whose group serves both*: Stalwart's member groups give
+      an account the group's addresses and the group's ACL grants, so its
+      account list is the union of the two chains, restricted to addressed
+      groups because Stalwart names a group by its address. A security
+      group without an address passes on the addressed security group it
+      is nested in; a group with neither an address nor a SID ends both.
   - **Unknown is not security-enabled.** A group whose security flag was
     not read is never in the security-enabled filter, so a permission
     granted to it is not inherited and fails closed. A group created in a
