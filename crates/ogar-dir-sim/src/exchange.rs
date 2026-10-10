@@ -342,9 +342,10 @@ impl Recipient {
 /// `ExchangeGuid` across a move) and the address it receives at
 /// (`PrimarySmtpAddress`).
 ///
-/// The recipient is identified by its `PrimarySmtpAddress` (`primary_smtp`);
-/// `node` is the on-premises object, and a provisioned mailbox is
-/// identified by its `exchange_guid`. The user is the
+/// A provisioned mailbox's immutable identity is its `exchange_guid`;
+/// `PrimarySmtpAddress` (`primary_smtp`) identifies the recipient
+/// implicitly, as a string, and can change; `node` is the on-premises
+/// object. The user is the
 /// Entra object (Azure AD, formerly the MsolUser), which carries
 /// `{alias}@{tenant}.onmicrosoft.com`, Microsoft's internal cloud address.
 /// Every mail recipient links its mailbox to that user through
@@ -361,7 +362,8 @@ pub struct ExchangeIdentity {
     pub recipient: Option<Recipient>,
     /// `msExchMailboxGuid`; `None` = no mailbox, or not read.
     pub exchange_guid: Option<Guid128>,
-    /// `PrimarySmtpAddress`: the recipient's identity.
+    /// `PrimarySmtpAddress`: identifies the recipient implicitly, as a
+    /// string; mutable, unlike `exchange_guid`.
     pub primary_smtp: Option<ValueId>,
 }
 
