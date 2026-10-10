@@ -471,9 +471,22 @@ no-population-intermediate rule.
   - **A grant is a relation, not a property.** `(object, trustee, right)`
     is its own record, like a membership, and changes by add and remove;
     no node carries a list of trustees.
+  - **The object.** FullAccess needs a mailbox; a grant of it on anything
+    else is a violation. SendAs and SendOnBehalf also apply to a
+    distribution group, which has no mailbox of its own.
   - **The trustee is a user or a group.** A user holds a right on an
     object when it is granted to the user or to any group the user belongs
-    to, transitively.
+    to, transitively. This depends on nested-group expansion, which dir-sim
+    does not have yet: a nested group is held by identity and never
+    expanded (lance-graph `lance-graph-dir-sim/src/snapshot.rs`, W-4 of
+    lance-graph's HubSPO-rs handover). Until it lands, a grant to a group
+    reaches only the group's direct members.
+  - **Deny wins.** Exchange allows deny entries on FullAccess, and Active
+    Directory allows them on SendAs. A deny for `(object, trustee, right)`
+    from any witness, for the user or for any group the user belongs to,
+    removes the right whatever grants exist. A deny that cancels a grant
+    is reported, so it is visible rather than silent. Reading grants
+    without denies would fail open.
   - **Each grant carries the witness that asserted it.** LDIF supplies
     `publicDelegates` and `msExchDelegateListLink`; Graph supplies none of
     the three; the Exchange permission output (`Get-MailboxPermission`,
@@ -481,13 +494,21 @@ no-population-intermediate rule.
     and is read through the same read-only encoder as V12. Witnesses that
     disagree both stay; an absent witness is not a refusal.
   - **Consumers.** Spear's mailbox IAM lets a FullAccess trustee read the
-    mailbox's rows. SendAs and SendOnBehalf gate sending: a consumer that
-    submits through Stalwart picks the identity, and with SendOnBehalf sets
-    `Sender` to the trustee.
+    mailbox's rows. SendAs and SendOnBehalf gate sending, and the consumer
+    checks the right before every submission; Stalwart does not know about
+    V17. Stalwart's JMAP submission compares the envelope `mailFrom` with
+    the identity's address (`crates/jmap/src/submission/set.rs`,
+    `forbiddenFrom`), and an identity may only carry one of its own
+    account's addresses (`crates/jmap/src/identity/set.rs`). So:
+    - **SendOnBehalf** is sent from the trustee's own account and
+      identity, with `From` set to the object and `Sender` to the trustee.
+    - **SendAs** cannot be sent from the trustee's account, which has no
+      identity with the object's address. It is submitted to the object's
+      own account through master-user impersonation (`object%master`,
+      `Impersonate` permission), after the V17 check.
 
-  Not modelled: folder-level permissions (`Add-MailboxFolderPermission`),
-  calendar delegates, and deny entries, which Exchange allows on
-  FullAccess.
+  Not modelled: folder-level permissions (`Add-MailboxFolderPermission`)
+  and calendar delegates.
 - **V18 — Document access (design, open, 2026-10-10).** Nothing in Spear,
   dir-sim or Stalwart decides who may read or change a document (HubSPO-rs
   `comms-api-surface.md` §2). SharePoint and OneDrive grant a role (read,
@@ -497,7 +518,13 @@ no-population-intermediate rule.
   people); Graph reports these as a drive item's `permissions` with
   `roles`, `grantedToV2`, `link` and `inheritedFrom`.
 
-  Proposal, not yet decided:
+  Two regimes, kept apart:
+  - **Files attached to a record** (a ticket's or a deal's attachments in
+    HubSPO-rs) take their access from the record they belong to. They are
+    not SharePoint items and get no grants of their own.
+  - **Files in a library or a OneDrive** follow the SharePoint model below.
+
+  Proposal for the second regime, not yet decided:
   - A grant is a relation `(resource, principal, role)`, as in V17. The
     resource is a document, folder or drive node with a parent.
   - A principal's effective role is the highest role granted to it, or to
