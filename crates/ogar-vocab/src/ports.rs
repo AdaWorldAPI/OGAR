@@ -739,9 +739,15 @@ pub const HIRO_ALIASES: &[(&str, u16)] = &[
     ("ogit/MARS/Software", class_ids::MARS_SOFTWARE),
     ("ogit/MARS/Machine", class_ids::MARS_MACHINE),
     ("ogit/Automation/KnowledgeItem", class_ids::KNOWLEDGE_ITEM),
-    ("ogit/Automation/MARSNodeTemplate", class_ids::MARS_NODE_TEMPLATE),
+    (
+        "ogit/Automation/MARSNodeTemplate",
+        class_ids::MARS_NODE_TEMPLATE,
+    ),
     ("ogit/Automation/ActionHandler", class_ids::ACTION_HANDLER),
-    ("ogit/Automation/ActionApplicability", class_ids::ACTION_APPLICABILITY),
+    (
+        "ogit/Automation/ActionApplicability",
+        class_ids::ACTION_APPLICABILITY,
+    ),
     ("ogit/Automation/Trigger", class_ids::AUTOMATION_TRIGGER),
 ];
 
