@@ -213,14 +213,9 @@ mod tests {
     use crate::TtlDeclaration;
     use crate::ttl::parse_file;
 
-    const MACHINE_TTL: &str =
-        include_str!("../../../vocab/imports/ogit/NTO/MARS/entities/Machine.ttl");
-    const APPLICATION_TTL: &str =
-        include_str!("../../../vocab/imports/ogit/NTO/MARS/entities/Application.ttl");
-    const APP_CLASS_TTL: &str =
-        include_str!("../../../vocab/imports/ogit/NTO/MARS/Application/attributes/class.ttl");
-    const APP_SUBCLASS_TTL: &str =
-        include_str!("../../../vocab/imports/ogit/NTO/MARS/Application/attributes/subClass.ttl");
+    fn mars(path: &str) -> String {
+        crate::ogit_checkout::read(&format!("NTO/MARS/{path}"))
+    }
 
     /// The semantic-bijection contract: `parse(emit(parse(src)))` is
     /// equal to `parse(src)`. Whitespace, comment positions, and prefix
@@ -252,32 +247,32 @@ mod tests {
 
     #[test]
     fn machine_entity_roundtrip() {
-        assert_entity_roundtrip(MACHINE_TTL);
+        assert_entity_roundtrip(&mars("entities/Machine.ttl"));
     }
 
     #[test]
     fn application_entity_roundtrip() {
-        assert_entity_roundtrip(APPLICATION_TTL);
+        assert_entity_roundtrip(&mars("entities/Application.ttl"));
     }
 
     #[test]
     fn application_class_attribute_roundtrip() {
-        assert_attribute_roundtrip(APP_CLASS_TTL);
+        assert_attribute_roundtrip(&mars("Application/attributes/class.ttl"));
     }
 
     #[test]
     fn application_subclass_attribute_roundtrip() {
-        assert_attribute_roundtrip(APP_SUBCLASS_TTL);
+        assert_attribute_roundtrip(&mars("Application/attributes/subClass.ttl"));
     }
 
-    /// Stress: round-trip every MARS TTL file in `vocab/imports/`.
+    /// Stress: round-trip every MARS TTL file in the OGIT checkout.
     /// If a future PR drops a predicate from `EntityDecl` /
     /// `AttributeDecl`, this fails on the first file that uses that
     /// predicate.
     #[test]
     fn all_mars_ttl_files_roundtrip() {
         let stats = assert_domain_roundtrip("MARS");
-        // 29 .ttl files in NTO/MARS at the SHA pinned by PROVENANCE.md.
+        // NTO/MARS held 29 .ttl files when this floor was set.
         assert!(
             stats.total >= 29,
             "expected ≥ 29 TTL files in MARS, got {}",
@@ -285,16 +280,14 @@ mod tests {
         );
     }
 
-    /// Generic helper that walks `vocab/imports/ogit/NTO/<domain>/`,
+    /// Generic helper that walks the OGIT checkout's `NTO/<domain>/`,
     /// dispatches each TTL to the right parser (`parse_file` for entities
     /// and datatype attributes, `crate::sgo::parse_verb` for in-domain
     /// `owl:ObjectProperty` verbs), and asserts semantic round-trip.
     /// Returns per-shape counts so callers can sanity-check the lift
     /// surface they're claiming.
     fn assert_domain_roundtrip(domain: &str) -> DomainStats {
-        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../../vocab/imports/ogit/NTO")
-            .join(domain);
+        let dir = crate::ogit_checkout::root().join("NTO").join(domain);
         let mut stats = DomainStats::default();
         for entry in walk_ttl(&dir) {
             let src = std::fs::read_to_string(&entry).expect("read");
@@ -348,12 +341,13 @@ mod tests {
     /// these fails, the producer can't land on that domain without
     /// extending `EntityDecl` / `AttributeDecl` / `VerbDecl` first.
     ///
-    /// Counts are also a sanity check on the inventory — they prove
-    /// the catalogue's per-domain numbers match what's actually in
-    /// `vocab/imports/`.
+    /// The counts are floors, the file counts when the inventory was
+    /// taken. OGIT floats on its `master`, so a domain may grow; every
+    /// file it grows by must still round-trip. A domain that shrinks
+    /// below its floor, or vanishes, fails.
     #[test]
     fn nine_domains_lift_surface_round_trip() {
-        for (domain, expected_total) in [
+        for (domain, floor) in [
             ("Transport", 27),
             ("Accounting", 36),
             ("SalesDistribution", 23),
@@ -365,10 +359,10 @@ mod tests {
             ("Audit", 3),
         ] {
             let stats = assert_domain_roundtrip(domain);
-            assert_eq!(
-                stats.total, expected_total,
-                "{domain}: TTL count drifted from inventory \
-                 (expected {expected_total}, got {})",
+            assert!(
+                stats.total >= floor,
+                "{domain}: fewer TTL files than the inventory floor \
+                 (floor {floor}, got {})",
                 stats.total
             );
         }

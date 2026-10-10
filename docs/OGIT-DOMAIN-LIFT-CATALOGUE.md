@@ -1,23 +1,26 @@
 # OGIT domain lift catalogue
 
-> **Coverage register for the 72 NTO domains** mirrored at
-> `vocab/imports/ogit/NTO/`. One row per domain. Update on every lift
-> promotion. The point: future sessions never re-fetch what's already
-> here.
+> **Coverage register for the NTO domains** of AdaWorldAPI/OGIT. OGAR keeps
+> no copy of OGIT: it reads a checkout at OGIT's moving `master`, named by
+> `OGIT_FORK_PATH` or found as `OGIT` next to OGAR. One row per domain.
+> Update on every lift promotion.
 >
-> Status: **CATALOGUE v0** (2026-06-22).
+> Status: **CATALOGUE v0** (2026-06-22). Every count in this file was
+> measured on the last vendored snapshot, `d0f489f` (2026-05-30), which had
+> 72 domains. `master` at `2315167d` (2026-10-10) has 77: `Academy`, `GFS`,
+> `Integration`, `PublicAdministration` and `Utilities` have no row yet.
 
 ## Coverage legend
 
 | Status | Meaning |
 |---|---|
-| **Imported** | TTL files mirrored in `vocab/imports/ogit/NTO/<Domain>/` (every row here) |
+| **Imported** | TTL files present in OGIT's `NTO/<Domain>/`, read from the checkout (every row here) |
 | **Lift-tested** | `ogar-from-schema::ttl` round-trip verified on this domain's entities/attributes |
 | **Cross-walked** | `Class.name` mapped to an OGAR canonical concept (`class_ids` in `ogar-vocab`) |
 | **Production** | A consumer deployment exercises the lifted form (see `DOMAIN-INSTANCES.md`) |
 
 A domain advances Imported → Lift-tested → Cross-walked → Production
-left-to-right. All 72 are Imported today (just landed). The following
+left-to-right. All 72 rows are Imported. The following
 **10 domains are Lift-tested** (round-trip mechanically enforced by
 `ttl_emit::tests::nine_domains_lift_surface_round_trip` +
 `all_mars_ttl_files_roundtrip`): MARS, Transport, Accounting,
@@ -36,8 +39,9 @@ python3 - <<'PY'
 import os, re
 from collections import Counter
 creator_re = re.compile(r'dcterms:creator\s+"([^"]+)"')
-for d in sorted(os.listdir('vocab/imports/ogit/NTO')):
-    root = f'vocab/imports/ogit/NTO/{d}'
+nto = os.path.join(os.environ.get('OGIT_FORK_PATH', '../OGIT'), 'NTO')
+for d in sorted(os.listdir(nto)):
+    root = os.path.join(nto, d)
     authors = Counter()
     for r,_,fs in os.walk(root):
         for f in fs:
@@ -59,12 +63,11 @@ arago/almato coordination."
 
 ## How to add a new domain to the lift
 
-1. **Verify import** — `ls vocab/imports/ogit/NTO/<Domain>/`. If
-   missing (only happens for SHA bumps), `cp -r /home/user/OGIT/NTO/<Domain>/.
-   vocab/imports/ogit/NTO/<Domain>/` and bump
-   `vocab/imports/ogit/PROVENANCE.md`.
-2. **Round-trip the domain** — add a test that walks
-   `vocab/imports/ogit/NTO/<Domain>/` and asserts every TTL passes
+1. **Verify the domain is in OGIT** — `ls ../OGIT/NTO/<Domain>/` (or
+   under `OGIT_FORK_PATH`). If it is missing, it lands in AdaWorldAPI/OGIT
+   first; OGAR keeps no copy to add it to.
+2. **Round-trip the domain** — add a test that walks the checkout's
+   `NTO/<Domain>/` and asserts every TTL passes
    `parse(emit(parse(src))) == parse(src)`. Mirror the
    `all_mars_ttl_files_roundtrip` pattern in
    `crates/ogar-from-schema/src/ttl_emit.rs`.
@@ -119,7 +122,7 @@ arago/almato coordination."
 | `Knowledge` | 4 | 1 | 0 | Imported | |
 | `Legal` | 2 | 3 | 1 | Imported | |
 | `Location` | 4 | 7 | 0 | Imported | |
-| **`MARS`** | **4** | **25** | **0** | **Lift-tested** | **XSD oracle in `_oracle/`; 15/15 tests green; round-trip enforced; see `MARS-TRANSCODING.md`** |
+| **`MARS`** | **4** | **25** | **0** | **Lift-tested** | **XSD oracle in `vocab/oracles/mars/`; 15/15 tests green; round-trip enforced; see `MARS-TRANSCODING.md`** |
 | `ML` | 4 | 18 | 1 | Imported | |
 | `MRO` | 11 | 0 | 11 | Imported | `Aviation/` subdir |
 | `MRP` | 10 | 17 | 5 | Imported | |
@@ -164,17 +167,20 @@ arago/almato coordination."
 | **`WorkOrder`** | 27 | 0 | 0 | **Lift-tested** | **Our extension** (`dcterms:creator` = `bus-compiler` + `family-codec-smith` — internal agent authors, zero external). Authored for `woa-rs`. All 27 TTLs declared as `rdfs:Class`, including the 12 in `verbs/`. **The `rdfs:Class`-as-verb convention is deliberate, not a quirk** — it makes each verb a typed template (slots, inheritance, policy metadata) that `ogar-render-askama` can compile-time-validate against a binding, the same way askama validates HTML templates against a Rust struct. See `docs/VERB-AS-CLASS-TEMPLATE.md`. Previous catalogue row split 15 entities + 12 verbs by directory; the content-driven count is 27 first-class typed declarations (entities + verb-as-class templates), which is what `ogar-from-schema` sees and what the action-render path consumes. |
 | **TOTALS** | **549** | **599** | **241** | — | + 42 other (Medical sql_mirror, etc.) |
 
-## Adjacent imports (not NTO)
+## Adjacent OGIT trees (not NTO)
 
-| Path | Files | Purpose |
+| Path in OGIT | Files | Purpose |
 |---|--:|---|
-| `vocab/imports/ogit/SGO/` | 508 TTLs | Upper ontology — `core/`, `ogit/`, `sgo/`. **`SGO/sgo/verbs/` is the 176-verb canonical AST predicate vocabulary** lifted by `ogar-from-schema::sgo` |
-| `vocab/imports/ogit/SDF/` | 7 JSON | Standard Data Format config samples (MARS/Automation) — instance configs, not schema |
-| `vocab/imports/ogit/ogit.ttl` | 1 TTL | Root ontology declaring `ogit:Entity`, `ogit:Verb`, `ogit:Attribute` |
+| `SGO/` | 508 TTLs | Upper ontology — `core/`, `ogit/`, `sgo/`. **`SGO/sgo/verbs/` is the 176-verb canonical AST predicate vocabulary** lifted by `ogar-from-schema::sgo` |
+| `SDF/` | 7 JSON | Standard Data Format config samples (MARS/Automation) — instance configs, not schema |
+| `ogit.ttl` | 1 TTL | Root ontology declaring `ogit:Entity`, `ogit:Verb`, `ogit:Attribute` |
 
 ## Provenance
 
-All imports at OGIT SHA `d0f489fff94640fef1e6abe7eacba90a1a144579`
-(2026-05-30). See `vocab/imports/ogit/PROVENANCE.md` for the re-vendor
-recipe and `vocab/imports/ogit/NTO/MARS/PROVENANCE.md` for the
-MARS-specific XSD-oracle provenance.
+The counts are the last vendored snapshot, OGIT SHA
+`d0f489fff94640fef1e6abe7eacba90a1a144579` (2026-05-30). Since 2026-10-10
+OGAR vendors nothing: tests read AdaWorldAPI/OGIT at its moving `master`
+through `crates/ogar-from-schema/src/ogit_checkout.rs`, and CI checks it
+out the same way. The MARS XSD oracle that sat in the mirror's
+`NTO/MARS/_oracle/` was OGAR's own, not OGIT's, and lives at
+`vocab/oracles/mars/`.

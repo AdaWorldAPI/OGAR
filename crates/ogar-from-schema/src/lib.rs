@@ -36,7 +36,7 @@
 //! # v0 scope
 //!
 //! - `ttl` front-end: reads the line-oriented OGIT TTL dialect into
-//!   [`Class`]. Demo target: `vocab/imports/ogit/MARS/`.
+//!   [`Class`]. Demo target: OGIT's `NTO/MARS/`.
 //! - Cross-check: the **fixed-enum agreement test** asserts the TTL
 //!   `ogit:validation-parameter` set matches the XSD oracle's extracted
 //!   classifications (the chess-grade bijection, applied at the schema
@@ -59,6 +59,8 @@ use ogar_vocab::{Attribute, Class, EnumDecl, EnumSource, Language};
 
 pub mod action_ws;
 pub mod do_arm;
+#[cfg(test)]
+mod ogit_checkout;
 pub mod registration;
 pub mod sgo;
 pub mod ttl;

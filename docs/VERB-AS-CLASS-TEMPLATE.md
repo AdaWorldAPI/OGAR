@@ -39,7 +39,7 @@ SGO's 176) or a typed action template (use `rdfs:Class`, like WorkOrder's 12).
 ```
 askama / jinja                 │  ontology (verb-as-class)
 ─────────────────────────────  │  ─────────────────────────────────────────
-template.html.j2               │  vocab/imports/ogit/NTO/<Domain>/verbs/<Verb>.ttl
+template.html.j2               │  OGIT NTO/<Domain>/verbs/<Verb>.ttl
                                │      a rdfs:Class
 struct Context { name: String  │  ogit:mandatory-attributes (
                                   │      ogit:subject
@@ -155,5 +155,5 @@ Three small implications:
   that verb-as-class sharpens
 - `docs/OGAR-CONSUMER-BEST-PRACTICES.md` — the per-app `ClassView`
   pattern that views-side rendering already follows
-- `vocab/imports/ogit/NTO/WorkOrder/verbs/*.ttl` — the 12 verb-as-class
+- `NTO/WorkOrder/verbs/*.ttl` in AdaWorldAPI/OGIT — the 12 verb-as-class
   templates this framing describes

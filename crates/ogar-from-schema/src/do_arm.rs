@@ -412,28 +412,26 @@ pub fn assemble_action_handler(entities: &[EntityDecl]) -> Option<ActionHandlerS
 // ───────────────────────────────────────────────────────────── tests ──
 //
 // The schema-level half of PROBE-OGAR-DO-ARM-LIFT: prove the §4 field mapping
-// lifts from the real vendored Automation TTL (no fixtures — the bytes are the
-// frozen OGIT source, same calibration discipline as the MARS structural arm).
+// lifts from the real Automation TTL in the OGIT checkout (no fixtures, same
+// calibration discipline as the MARS structural arm).
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::{TtlDeclaration, ttl::parse_file};
 
-    const KNOWLEDGE_ITEM_TTL: &str =
-        include_str!("../../../vocab/imports/ogit/NTO/Automation/entities/KnowledgeItem.ttl");
-    const ACTION_HANDLER_TTL: &str =
-        include_str!("../../../vocab/imports/ogit/NTO/Automation/entities/ActionHandler.ttl");
-    const ACTION_APPLICABILITY_TTL: &str =
-        include_str!("../../../vocab/imports/ogit/NTO/Automation/entities/ActionApplicability.ttl");
-    const TRIGGER_TTL: &str =
-        include_str!("../../../vocab/imports/ogit/NTO/Automation/entities/Trigger.ttl");
-
     fn entity(src: &str) -> EntityDecl {
         match parse_file(src).expect("parses") {
             TtlDeclaration::Entity(e) => e,
             other => panic!("expected entity, got {other:?}"),
         }
+    }
+
+    /// An `NTO/Automation` entity, read from the OGIT checkout.
+    fn automation(name: &str) -> EntityDecl {
+        entity(&crate::ogit_checkout::read(&format!(
+            "NTO/Automation/entities/{name}.ttl"
+        )))
     }
 
     #[test]
@@ -462,7 +460,7 @@ mod tests {
     /// asserted against the real OGIT TTL bytes.
     #[test]
     fn knowledge_item_lifts_to_action_def() {
-        let ki = entity(KNOWLEDGE_ITEM_TTL);
+        let ki = automation("KnowledgeItem");
         assert!(
             is_actionable(&ki),
             "KnowledgeItem must be an action carrier"
@@ -509,7 +507,7 @@ mod tests {
     /// recorded by name; `body_source` stays `None` at the schema level.
     #[test]
     fn knowledge_item_payload_is_pointed_to_never_inlined() {
-        let ki = entity(KNOWLEDGE_ITEM_TTL);
+        let ki = automation("KnowledgeItem");
         assert_eq!(
             payload_attribute(&ki).as_deref(),
             Some("knowledge_item_formal_representation"),
@@ -527,7 +525,7 @@ mod tests {
     /// (its `environmentFilter`), not to a standalone `ActionDef`.
     #[test]
     fn action_applicability_maps_to_state_guard_not_a_def() {
-        let app = entity(ACTION_APPLICABILITY_TTL);
+        let app = automation("ActionApplicability");
         assert!(
             into_action_def(&app).is_none(),
             "applicability is not a def"
@@ -544,7 +542,7 @@ mod tests {
     /// `ActionHandler` is the adapter/membrane (§4) — never a standalone def.
     #[test]
     fn action_handler_is_not_a_standalone_def() {
-        let handler = entity(ACTION_HANDLER_TTL);
+        let handler = automation("ActionHandler");
         assert!(!is_actionable(&handler));
         assert!(into_action_def(&handler).is_none());
     }
@@ -552,7 +550,7 @@ mod tests {
     /// `Trigger` is the kausal source, not an action carrier itself.
     #[test]
     fn trigger_is_not_a_standalone_def() {
-        let trigger = entity(TRIGGER_TTL);
+        let trigger = automation("Trigger");
         assert!(!is_actionable(&trigger));
         assert!(into_action_def(&trigger).is_none());
     }
@@ -561,10 +559,10 @@ mod tests {
     #[test]
     fn lift_action_defs_keeps_only_carriers() {
         let entities = [
-            entity(KNOWLEDGE_ITEM_TTL),
-            entity(ACTION_HANDLER_TTL),
-            entity(ACTION_APPLICABILITY_TTL),
-            entity(TRIGGER_TTL),
+            automation("KnowledgeItem"),
+            automation("ActionHandler"),
+            automation("ActionApplicability"),
+            automation("Trigger"),
         ];
         let defs = lift_action_defs(&entities);
         assert_eq!(
@@ -577,17 +575,14 @@ mod tests {
 
     // ── arago ActionHandler contract parity (the `provides` graph) ──
 
-    const ACTION_CAPABILITY_TTL: &str =
-        include_str!("../../../vocab/imports/ogit/NTO/Automation/entities/ActionCapability.ttl");
-
-    /// The full arago ActionHandler contract assembles from the vendored OGIT
-    /// `provides` graph: ActionHandler → ActionApplicability → ActionCapability.
+    /// The full arago ActionHandler contract assembles from OGIT's `provides`
+    /// graph: ActionHandler → ActionApplicability → ActionCapability.
     #[test]
     fn assembles_the_full_action_handler_contract() {
         let entities = [
-            entity(ACTION_HANDLER_TTL),
-            entity(ACTION_APPLICABILITY_TTL),
-            entity(ACTION_CAPABILITY_TTL),
+            automation("ActionHandler"),
+            automation("ActionApplicability"),
+            automation("ActionCapability"),
         ];
         let spec = assemble_action_handler(&entities).expect("ActionHandler present");
 
@@ -620,7 +615,7 @@ mod tests {
     /// No ActionHandler in the set ⇒ no contract to assemble.
     #[test]
     fn assemble_returns_none_without_a_handler() {
-        let entities = [entity(KNOWLEDGE_ITEM_TTL), entity(TRIGGER_TTL)];
+        let entities = [automation("KnowledgeItem"), automation("Trigger")];
         assert!(assemble_action_handler(&entities).is_none());
     }
 

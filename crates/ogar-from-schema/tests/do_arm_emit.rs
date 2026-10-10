@@ -19,8 +19,12 @@ use ogar_from_schema::TtlDeclaration;
 use ogar_from_schema::do_arm::into_action_def;
 use ogar_from_schema::ttl::parse_file;
 
-const KNOWLEDGE_ITEM_TTL: &str =
-    include_str!("../../../vocab/imports/ogit/NTO/Automation/entities/KnowledgeItem.ttl");
+#[path = "../src/ogit_checkout.rs"]
+mod ogit_checkout;
+
+fn knowledge_item_ttl() -> String {
+    ogit_checkout::read("NTO/Automation/entities/KnowledgeItem.ttl")
+}
 
 fn obj(triples: &[ogar_emitter::Triple], subject: &str, predicate: &str) -> Option<String> {
     triples
@@ -32,7 +36,7 @@ fn obj(triples: &[ogar_emitter::Triple], subject: &str, predicate: &str) -> Opti
 #[test]
 fn knowledge_item_lifts_and_emits_as_action_def_triples() {
     // Lift.
-    let TtlDeclaration::Entity(ki) = parse_file(KNOWLEDGE_ITEM_TTL).expect("parses") else {
+    let TtlDeclaration::Entity(ki) = parse_file(&knowledge_item_ttl()).expect("parses") else {
         panic!("expected entity");
     };
     let def = into_action_def(&ki).expect("KnowledgeItem → ActionDef");
@@ -83,7 +87,7 @@ fn lossless_do_survives_the_emit_path() {
     // since `body_source` is None (the body is pointed-to, never inlined),
     // the emitter must NOT produce an `ogar:actionBody` triple. A body triple
     // here would mean some bytes leaked into the IR.
-    let TtlDeclaration::Entity(ki) = parse_file(KNOWLEDGE_ITEM_TTL).expect("parses") else {
+    let TtlDeclaration::Entity(ki) = parse_file(&knowledge_item_ttl()).expect("parses") else {
         panic!("expected entity");
     };
     let def = into_action_def(&ki).expect("ActionDef");

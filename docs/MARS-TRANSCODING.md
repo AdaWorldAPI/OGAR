@@ -26,20 +26,20 @@ agree byte-for-enum.
                                           │  extract_classes.py
                                           │  (Python 2, runs unchanged
                                           │   on Py3 via 2to3 — see
-                                          │   PROVENANCE.md table)
+                                          │   vocab/oracles/mars/
+                                          │   PROVENANCE.md)
                                           ▼
                           classifications.adoc / .html
                                           │
                                           │  (cached at
-                                          │   vocab/imports/ogit/NTO/MARS/
-                                          │   _oracle/)
+                                          │   vocab/oracles/mars/)
                                           ▼
                                   XSD-oracle reference set
                                           │
                                           │  unit test
                                           ▼
-  vocab/imports/ogit/NTO/MARS/*.ttl  ──►  ogar-from-schema::ttl  ──►  EntityDecl + AttributeDecl
-       (literal byte-mirror of                                                 │
+  OGIT NTO/MARS/*.ttl                ──►  ogar-from-schema::ttl  ──►  EntityDecl + AttributeDecl
+       (read from a checkout of                                                │
         AdaWorldAPI/OGIT)                                                     │  into_class()
                                                                               ▼
                                                               ogar_vocab::Class (structural arm only;
@@ -93,8 +93,9 @@ RESERVED — minted when a lift or consumer references them.
 ## §2. The chess-grade bijection oracle
 
 `extract_classes.py` (the upstream `arago/MARS-Schema/tools/` script,
-Py2-as-shipped, vendored at `_oracle/extract_classes.py` and Py3-converted at
-`_oracle/extract_classes_py3.py`) is a **complete bijective oracle** for the
+Py2-as-shipped, kept at `vocab/oracles/mars/extract_classes.py` and
+Py3-converted at `vocab/oracles/mars/extract_classes_py3.py`) is a
+**complete bijective oracle** for the
 classification taxonomy:
 
 | Direction | Oracle role |
@@ -114,7 +115,7 @@ the lighter witness that runs without the `xsd` feature.
 **The Python dependency is gone.** Because `ogar-from-schema::xsd` is a
 byte-faithful Rust transcode, the calibration no longer needs a
 `python3` interpreter — `cargo test --features xsd` is the whole proof.
-The Python `extract_classes.py` stays vendored in `_oracle/` as the
+The Python `extract_classes.py` stays in `vocab/oracles/mars/` as the
 provenance witness (the thing the transcode was proven against), not as
 a runtime dependency.
 
@@ -150,10 +151,10 @@ checklist. Quick audit:
 Every NTO domain that joins this lift inherits the same calibration
 machinery for free:
 
-1. Drop the upstream TTL into `vocab/imports/ogit/NTO/<Domain>/` (already
-   done for all 72 domains).
+1. The upstream TTL is already in AdaWorldAPI/OGIT's `NTO/<Domain>/`,
+   which the tests read from a checkout; OGAR copies nothing.
 2. If the domain has an XSD oracle (`arago/<Domain>-Schema`), drop it in
-   `_oracle/` and add an agreement test.
+   `vocab/oracles/<domain>/` and add an agreement test.
 3. Run `ogar-from-schema::ttl::parse_file` over each entity/attribute —
    no per-domain producer code needed.
 4. Add a `DOMAIN-INSTANCES.md` row.
@@ -165,9 +166,10 @@ domains are paperwork.
 
 ## §5. Cross-references
 
-- `vocab/imports/ogit/NTO/MARS/` — the literal 1:1 mirror
-- `vocab/imports/ogit/NTO/MARS/PROVENANCE.md` — SHA + license + re-vendor recipe
-- `vocab/imports/ogit/NTO/MARS/_oracle/` — the XSD + `extract_classes.py` oracle
+- `NTO/MARS/` in AdaWorldAPI/OGIT — read from a checkout at its moving `master`
+  (`crates/ogar-from-schema/src/ogit_checkout.rs`)
+- `vocab/oracles/mars/` — the XSD + `extract_classes.py` oracle
+- `vocab/oracles/mars/PROVENANCE.md` — where each oracle file comes from
 - `crates/ogar-from-schema/` — the producer (TTL + reverse-emit + SGO verbs)
 - `crates/ogar-from-schema/src/do_arm.rs` — the **DO-arm** sibling: lifts the
   OGIT Automation entities (`KnowledgeItem`→`ActionDef`) the structural MARS
@@ -178,5 +180,5 @@ domains are paperwork.
 - `docs/ELIXIR-HIRO-PREFETCH.md` — the behavioural-arm prefetch (sibling)
 - `docs/OGAR-AS-IR.md` — the compiler framing (six IR-shape tests)
 - `docs/DOMAIN-INSTANCES.md` — MARS row in the universality matrix
-- `docs/OGIT-DOMAIN-LIFT-CATALOGUE.md` — coverage status for all 72 NTO domains
+- `docs/OGIT-DOMAIN-LIFT-CATALOGUE.md` — coverage status for the NTO domains
 - `docs/CHESS-TRANSCODING.md` — the calibration template MARS follows

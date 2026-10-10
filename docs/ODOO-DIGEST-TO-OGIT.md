@@ -38,6 +38,11 @@ or workflow action by rendering against the TTL via
 > rationale. (The same draft also wrongly claimed 11 existing
 > Accounting files were "at re-vendor risk"; they are committed to the
 > OGIT fork and correctly mirrored — see §2.)
+>
+> **No mirror (2026-10-10):** `vocab/imports/` is gone. Promoted content
+> lives in the AdaWorldAPI/OGIT fork, and consumers read the fork from a
+> checkout at its moving `master`; there is no re-vendor step. The note
+> above describes the model before that date.
 
 ---
 
@@ -68,10 +73,9 @@ or workflow action by rendering against the TTL via
    — dcterms:creator = bus-compiler  (digester provenance)
    — review here (round-trip + bijection tests, drift check)
             │
-            │  PROMOTE: commit to the AdaWorldAPI/OGIT fork, then
-            │           re-vendor (cp -r /OGIT/NTO/. vocab/imports/ogit/NTO/)
+            │  PROMOTE: commit to the AdaWorldAPI/OGIT fork
             ▼
-   vocab/imports/ogit/NTO/<Domain>/  (faithful mirror of the enriched fork)
+   AdaWorldAPI/OGIT NTO/<Domain>/  (the enriched fork, read from a checkout)
             │
             │  ogar-render-askama  (entity render → views; verb render → actions)
             ▼
@@ -85,24 +89,22 @@ or workflow action by rendering against the TTL via
 The Python runtime is **only** touched at digest time. Consumers
 (`woa-rs`, `smb-office-rs`, `medcare-rs`, `q2`, any future renderer)
 never depend on Odoo Python, only on TTL + the askama renderer — and
-they read `imports/`, never the `exports/` staging tier.
+they read the OGIT fork, never the `exports/` staging tier.
 
-## §2. The staging-tier model — `exports/` → OGIT fork → `imports/`
+## §2. The staging-tier model — `exports/` → OGIT fork
 
-(Operator-decided 2026-06-22.) `exports/` is a **staging area** for
-produced-but-not-yet-promoted content; the AdaWorldAPI/OGIT fork is
-the **enriched canonical store**; `imports/` faithfully mirrors the
-fork; consumers read only `imports/`. See `vocab/exports/PROVENANCE.md`
-for the full model.
+(Operator-decided 2026-06-22; mirror removed 2026-10-10.) `exports/` is
+a **staging area** for produced-but-not-yet-promoted content; the
+AdaWorldAPI/OGIT fork is the **enriched canonical store**, and
+consumers read it from a checkout at its moving `master`. See
+`vocab/exports/PROVENANCE.md` for the full model.
 
 ```
 producer ──► vocab/exports/ogit/NTO/<Domain>/   (review/iterate, CI runs here)
                   │  promote (commit to OGIT fork on a branch, PR there)
                   ▼
-             AdaWorldAPI/OGIT fork  (enriched: upstream + OGAR-promoted)
-                  │  re-vendor
-                  ▼
-             vocab/imports/ogit/   (SHA-pinned mirror — consumers read this)
+             AdaWorldAPI/OGIT fork  (enriched: upstream + OGAR-promoted;
+                                     consumers read this, from a checkout)
 ```
 
 Why a staging tier and not "commit straight to the fork": a digest run
@@ -118,8 +120,8 @@ draft (commit `7d68042`) claimed 11 OGAR-produced TTLs in
 "belong in `exports/`." **That was wrong.** Those files are committed
 to the **AdaWorldAPI/OGIT fork** (commit `c5dc1b8` "shrink 3-hop Odoo
 lookups…", on `master`, pushed) — i.e. they are a *completed*
-promotion. `imports/` correctly mirrors them; re-vendor preserves
-them. They are the worked example of the staging-tier model run to
+promotion, and consumers read them straight from the fork. They are
+the worked example of the staging-tier model run to
 completion, not stranded content. `exports/` is for content that has
 **not yet** made that trip.
 list.
@@ -199,9 +201,9 @@ license fee.
 
 | Piece | Status |
 |---|---|
-| Read-only upstream mirror (`vocab/imports/ogit/`) | exists; 72 NTO + SGO + ogit.ttl + SDF imported, MARS oracle proven |
+| Upstream OGIT | read from a checkout of the AdaWorldAPI/OGIT fork at its moving `master` (no mirror since 2026-10-10); MARS oracle proven, kept at `vocab/oracles/mars/` |
 | OGAR-produced export tree (`vocab/exports/ogit/`) | **skeleton exists** (this commit); content populates as digests run |
-| TTL emitter for the structural arm | exists (`ttl_emit::emit_entity`); semantic bijection proven on 29 MARS + 176 SGO TTLs |
+| TTL emitter for the structural arm | exists (`ttl_emit::emit_entity`); semantic bijection proven on every MARS TTL and every SGO verb in the checkout |
 | Verb-as-class template surface | exists (WorkOrder convention; `docs/VERB-AS-CLASS-TEMPLATE.md`) |
 | Author-provenance discriminator | exists (`dcterms:creator` scan in `OGIT-DOMAIN-LIFT-CATALOGUE.md`); now a secondary check behind the directory split |
 | `ogar-from-ruff` (mechanical projector from `ruff_spo_triplet::Model` → `Class`) | exists for Ruby AR; same projector handles Python and Elixir once their `ruff_*_spo` frontends ship |
@@ -209,7 +211,7 @@ license fee.
 | `ruff_rust_spo` (Rust AST frontend, for digesting medcare-rs / woa-rs / etc.) | **does not exist** — needs `syn` walker; symmetric with the other ruff frontends |
 | `ogar-render-askama::actions` (verb-as-class render path) | **does not exist** — ~200 LOC mirroring the existing `views/` path |
 | Concept mints for non-Accounting Odoo models | needs the 5+3 codebook pass per `APP-CLASS-CODEBOOK-LAYOUT.md` |
-| The 11 Accounting files in `imports/` | **not a migration target** — already promoted to the OGIT fork (`c5dc1b8`); correctly mirrored. See §2. |
+| The 11 Accounting files OGAR promoted | **not a migration target** — in the OGIT fork (`c5dc1b8`), which consumers read. See §2. |
 
 `ruff_python_spo` and `ogar-render-askama::actions` are independent
 and can ship in parallel PRs. Concept mints are the slow path

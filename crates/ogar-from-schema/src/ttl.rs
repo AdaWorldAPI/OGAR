@@ -248,18 +248,14 @@ fn extract_allowed_block(src: &str) -> Vec<(String, String)> {
 mod tests {
     use super::*;
 
-    const MACHINE_TTL: &str =
-        include_str!("../../../vocab/imports/ogit/NTO/MARS/entities/Machine.ttl");
-    const APPLICATION_TTL: &str =
-        include_str!("../../../vocab/imports/ogit/NTO/MARS/entities/Application.ttl");
-    const APP_CLASS_TTL: &str =
-        include_str!("../../../vocab/imports/ogit/NTO/MARS/Application/attributes/class.ttl");
-    const APP_SUBCLASS_TTL: &str =
-        include_str!("../../../vocab/imports/ogit/NTO/MARS/Application/attributes/subClass.ttl");
+    fn mars(path: &str) -> String {
+        crate::ogit_checkout::read(&format!("NTO/MARS/{path}"))
+    }
 
     #[test]
     fn parses_machine_entity() {
-        let TtlDeclaration::Entity(e) = parse_file(MACHINE_TTL).expect("parses") else {
+        let TtlDeclaration::Entity(e) = parse_file(&mars("entities/Machine.ttl")).expect("parses")
+        else {
             panic!("expected entity");
         };
         assert_eq!(e.curie, "ogit.MARS:Machine");
@@ -285,7 +281,9 @@ mod tests {
 
     #[test]
     fn parses_application_entity_with_dependson_chain() {
-        let TtlDeclaration::Entity(e) = parse_file(APPLICATION_TTL).expect("parses") else {
+        let TtlDeclaration::Entity(e) =
+            parse_file(&mars("entities/Application.ttl")).expect("parses")
+        else {
             panic!("expected entity");
         };
         assert_eq!(e.name, "Application");
@@ -301,7 +299,8 @@ mod tests {
 
     #[test]
     fn parses_fixed_enum_attribute() {
-        let TtlDeclaration::DatatypeAttribute(a) = parse_file(APP_CLASS_TTL).expect("parses")
+        let TtlDeclaration::DatatypeAttribute(a) =
+            parse_file(&mars("Application/attributes/class.ttl")).expect("parses")
         else {
             panic!("expected datatype attribute");
         };
@@ -325,14 +324,14 @@ mod tests {
             .map(str::to_owned)
             .collect::<Vec<_>>()
         );
-        // Matches the XSD oracle's ApplicationClass count (7) per
-        // PROVENANCE.md.
+        // Matches the XSD oracle's ApplicationClass count (7).
         assert_eq!(values.len(), 7);
     }
 
     #[test]
     fn parses_fixed_enum_subclass_attribute() {
-        let TtlDeclaration::DatatypeAttribute(a) = parse_file(APP_SUBCLASS_TTL).expect("parses")
+        let TtlDeclaration::DatatypeAttribute(a) =
+            parse_file(&mars("Application/attributes/subClass.ttl")).expect("parses")
         else {
             panic!("expected datatype attribute");
         };
@@ -340,7 +339,7 @@ mod tests {
         // From the XSD oracle ApplicationSubClass extraction: 50
         // distinct (Class, SubClass) PAIRS, but the SubClass *set*
         // is 50 values too (verified by the run cached in
-        // `vocab/imports/ogit/MARS/_oracle/classifications.adoc`).
+        // `vocab/oracles/mars/classifications.adoc`).
         assert_eq!(
             values.len(),
             50,
@@ -350,19 +349,20 @@ mod tests {
 
     /// The bijective oracle test: every Application classification
     /// in the OGIT TTL is also present in the XSD-extracted set
-    /// (cached at `_oracle/classifications.adoc`). This is the
+    /// (cached at `vocab/oracles/mars/classifications.adoc`). This is the
     /// chess-grade calibration applied to a frozen schema — same
     /// shape as `shakmaty::Position::play` round-tripping for chess.
     ///
     /// We assert membership here; the full bijection (TTL set ==
     /// XSD set, no missing, no extra) lives in the calibration
     /// doc under `docs/calibration/mars/README.md` so consumers
-    /// can re-run it manually with `python3 _oracle/extract_classes_py3.py`.
+    /// can re-run it manually with
+    /// `python3 vocab/oracles/mars/extract_classes_py3.py`.
     #[test]
     fn application_class_values_appear_in_xsd_oracle() {
-        const ORACLE: &str =
-            include_str!("../../../vocab/imports/ogit/NTO/MARS/_oracle/classifications.adoc");
-        let TtlDeclaration::DatatypeAttribute(a) = parse_file(APP_CLASS_TTL).expect("parses")
+        const ORACLE: &str = include_str!("../../../vocab/oracles/mars/classifications.adoc");
+        let TtlDeclaration::DatatypeAttribute(a) =
+            parse_file(&mars("Application/attributes/class.ttl")).expect("parses")
         else {
             panic!("expected datatype attribute");
         };
@@ -377,13 +377,14 @@ mod tests {
     #[test]
     fn into_class_carries_attribute_set_and_enums() {
         use super::super::into_class;
-        let TtlDeclaration::Entity(machine) = parse_file(MACHINE_TTL).expect("parses") else {
+        let TtlDeclaration::Entity(machine) =
+            parse_file(&mars("entities/Machine.ttl")).expect("parses")
+        else {
             panic!("expected entity");
         };
-        let TtlDeclaration::DatatypeAttribute(class_attr) = parse_file(include_str!(
-            "../../../vocab/imports/ogit/NTO/MARS/Machine/attributes/class.ttl"
-        ))
-        .expect("parses") else {
+        let TtlDeclaration::DatatypeAttribute(class_attr) =
+            parse_file(&mars("Machine/attributes/class.ttl")).expect("parses")
+        else {
             panic!("expected datatype attribute");
         };
         let attrs = vec![("class", &class_attr)];

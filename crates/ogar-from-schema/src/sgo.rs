@@ -3,8 +3,8 @@
 //! SGO is OGIT's upper ontology — the layer above NTO that declares
 //! the canonical entities (`ogit:Entity`, `ogit:Node`) and **the
 //! canonical verb vocabulary** (`ogit:dependsOn`, `ogit:contains`,
-//! `ogit:generates`, `ogit:relates`, `ogit:causes`, …). 176 verb TTLs
-//! at `vocab/imports/ogit/SGO/sgo/verbs/`.
+//! `ogit:generates`, `ogit:relates`, `ogit:causes`, …), one verb TTL each
+//! under OGIT's `SGO/sgo/verbs/`.
 //!
 //! **Why this matters for OGAR's AST.** Every NTO entity's
 //! `ogit:allowed ([ verb target ])` block references SGO verbs by
@@ -116,14 +116,13 @@ pub fn emit_verb(verb: &VerbDecl) -> String {
 mod tests {
     use super::*;
 
-    const DEPENDSON_TTL: &str =
-        include_str!("../../../vocab/imports/ogit/SGO/sgo/verbs/dependsOn.ttl");
-    const CONTAINS_TTL: &str =
-        include_str!("../../../vocab/imports/ogit/SGO/sgo/verbs/contains.ttl");
+    fn verb_ttl(name: &str) -> String {
+        crate::ogit_checkout::read(&format!("SGO/sgo/verbs/{name}.ttl"))
+    }
 
     #[test]
     fn parses_dependson() {
-        let v = parse_verb(DEPENDSON_TTL).expect("parses");
+        let v = parse_verb(&verb_ttl("dependsOn")).expect("parses");
         assert_eq!(v.curie, "ogit:dependsOn");
         assert_eq!(v.name, "dependsOn");
         assert_eq!(v.label, "dependsOn");
@@ -134,7 +133,7 @@ mod tests {
 
     #[test]
     fn parses_contains() {
-        let v = parse_verb(CONTAINS_TTL).expect("parses");
+        let v = parse_verb(&verb_ttl("contains")).expect("parses");
         assert_eq!(v.name, "contains");
         // Description uses the triple-quoted form because it contains
         // an embedded literal quote (`see also "includes"`).
@@ -143,7 +142,7 @@ mod tests {
 
     #[test]
     fn dependson_roundtrip() {
-        let once = parse_verb(DEPENDSON_TTL).expect("parses");
+        let once = parse_verb(&verb_ttl("dependsOn")).expect("parses");
         let emitted = emit_verb(&once);
         let twice = parse_verb(&emitted).expect("re-parses");
         assert_eq!(once, twice, "verb round-trip lost a predicate");
@@ -151,12 +150,11 @@ mod tests {
 
     /// Walk every verb TTL under `SGO/sgo/verbs/` and assert round-trip.
     /// One of OGIT's strengths is that the verb vocabulary is small and
-    /// stable; this test catches drift on any of the 176 verbs the
+    /// stable; this test catches drift on any verb in the checkout the
     /// moment a predicate slips out of `VerbDecl`.
     #[test]
     fn all_sgo_verbs_roundtrip() {
-        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../../vocab/imports/ogit/SGO/sgo/verbs");
+        let dir = crate::ogit_checkout::root().join("SGO/sgo/verbs");
         let mut checked = 0usize;
         for entry in std::fs::read_dir(&dir).expect("read sgo/verbs/") {
             let entry = entry.expect("entry");
@@ -178,7 +176,7 @@ mod tests {
         }
         assert!(
             checked >= 170,
-            "expected ≥ 170 SGO verbs at this SHA, got {checked}"
+            "expected ≥ 170 SGO verbs in the OGIT checkout, got {checked}"
         );
     }
 }

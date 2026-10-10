@@ -4,10 +4,10 @@ Produced-but-not-yet-promoted content, in the upstream OGIT layout
 (`NTO/<Domain>/{entities,attributes,verbs}/`, `SGO/sgo/verbs/`). A
 producer stages a digest here; once reviewed (round-trip + bijection
 tests, drift check, human read), it is **promoted** to the
-AdaWorldAPI/OGIT fork and re-vendored into `vocab/imports/`.
+AdaWorldAPI/OGIT fork.
 
-**Consumers read `imports/`, never `exports/`.** This tree is the
-pre-promotion workbench.
+**Consumers read the fork, from a checkout at its moving `master`,
+never `exports/`.** This tree is the pre-promotion workbench.
 
 See `vocab/exports/PROVENANCE.md` for the full staging-tier model, why
 the fork is the enriched canonical store, and the correction on the 11

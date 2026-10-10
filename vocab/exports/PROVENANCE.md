@@ -4,13 +4,13 @@
 > Content here is AUTHORED in OGAR (digested from source by a producer
 > — `ruff_*_spo + ogar-from-ruff`, `ogar-from-schema` — or
 > hand-authored) and is **NOT YET PROMOTED** to the AdaWorldAPI/OGIT
-> fork. Once reviewed, content is committed to the OGIT fork and
-> re-vendored into `vocab/imports/` like any other upstream content.
+> fork. Once reviewed, content is committed to the OGIT fork, which
+> consumers read from a checkout like any other upstream content.
 >
 > Status: **STAGING TIER v1** (2026-06-22). Empty until a producer
 > stages content; transient by design.
 
-## The model (operator-decided 2026-06-22)
+## The model (operator-decided 2026-06-22; mirror removed 2026-10-10)
 
 ```
    OGAR producer  ──►  vocab/exports/ogit/NTO/<Domain>/   (review / iterate)
@@ -19,12 +19,9 @@
     ogar-from-schema)       ▼
                        AdaWorldAPI/OGIT fork  (the enriched canonical OGIT store —
                             │                  upstream arago/almato + OGAR-promoted)
-                            │  re-vendor (cp -r /OGIT/NTO/. vocab/imports/ogit/NTO/)
+                            │  checkout at its moving master
                             ▼
-                       vocab/imports/ogit/   (faithful SHA-pinned mirror of the fork)
-                            │
-                            ▼
-                       consumers read ONLY imports/
+                       consumers read the fork, never exports/
 ```
 
 - **`exports/` is the staging area** — produced-but-not-yet-promoted
@@ -34,11 +31,11 @@
   additions (e.g. commit `c5dc1b8` "shrink 3-hop Odoo lookups —
   promoted attrs + shortcut verbs + FiscalJurisdiction codebook"
   added 11 Accounting TTLs to the fork deliberately).
-- **`imports/` faithfully mirrors the enriched fork** — including any
-  OGAR-promoted content. Re-vendor is **safe**: it copies *from* the
-  fork, which has everything.
-- **Consumers read only `imports/`.** `exports/` never ships to a
-  consumer; it is the pre-promotion workbench.
+- **Consumers read the enriched fork itself**, from a checkout at its
+  moving `master`, including any OGAR-promoted content. OGAR keeps no
+  mirror of it (removed 2026-10-10).
+- **Consumers never read `exports/`.** It never ships to a consumer;
+  it is the pre-promotion workbench.
 
 ## Why a staging tier (not "just commit to the fork directly")
 
@@ -53,7 +50,7 @@
    the shared OGIT store.
 
 3. **The producer↔consumer split stays clean.** Producers write
-   `exports/`; consumers read `imports/`. Nothing reads the half-baked
+   `exports/`; consumers read the fork. Nothing reads the half-baked
    tree. The promote step is the single, auditable gate between them.
 
 ## Layout
@@ -73,7 +70,7 @@ vocab/exports/
     └── PROVENANCE.md (this file)
 ```
 
-The layout mirrors `imports/ogit/` 1:1 so a promote step is a plain
+The layout mirrors the fork's own 1:1 so a promote step is a plain
 `cp`/`git mv` into the fork at the same relative path.
 
 ## What lives here today
@@ -106,6 +103,9 @@ digests run:
 > `imports/`. Under the staging-tier model they belong exactly where
 > they are. `exports/` is for content that has **not yet** made that
 > trip.
+>
+> Since 2026-10-10 there is no `imports/` mirror; consumers read these
+> files straight from the fork.
 
 ## License + promotion
 

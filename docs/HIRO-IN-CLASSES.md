@@ -22,7 +22,7 @@ dispatch, no migration debt at the structural boundary.
 ```
                        BEFORE                                        AFTER
                        ──────                                        ─────
-  schema:        MARS-Schema 2015 (XSD)             ←──equal──→   vocab/imports/ogit/NTO/MARS/*.ttl
+  schema:        MARS-Schema 2015 (XSD)             ←──equal──→   OGIT NTO/MARS/*.ttl (checkout)
                  + OGIT NTO/MARS (TTL)                              + classid (u16, deterministic)
                                                                     + EnumSource::Static (compile-time)
 
@@ -178,7 +178,7 @@ The `ogit:allowed` block on every MARS entity carries the dependency
 edges directly:
 
 ```turtle
-# vocab/imports/ogit/NTO/MARS/entities/Application.ttl
+# OGIT: NTO/MARS/entities/Application.ttl
 ogit.MARS:Application
     ogit:allowed (
         [ ogit:dependsOn  ogit.MARS:Resource ]
@@ -246,7 +246,7 @@ preserves every byte bardioc currently speaks:
 |---|---|
 | OGIT-TTL ingest | `ogar-from-schema` parses the same TTL files; bijection enforced |
 | `gen_statem` lifecycles | `ogar-from-elixir` (sibling crate) lifts them into `ActionDef`s; same state names, same transitions (`docs/ELIXIR-HIRO-PREFETCH.md §2.2`) |
-| XSD validation | Still available as `extract_classes.py` (cached in `vocab/imports/ogit/NTO/MARS/_oracle/`); the OGAR enum-lift is byte-equal to the XSD-extracted set, mechanically verified (`crates/ogar-from-schema/src/ttl.rs::application_class_values_appear_in_xsd_oracle`) |
+| XSD validation | Still available as `extract_classes.py` (cached in `vocab/oracles/mars/`); the OGAR enum-lift is byte-equal to the XSD-extracted set, mechanically verified (`crates/ogar-from-schema/src/ttl.rs::application_class_values_appear_in_xsd_oracle`) |
 | Phoenix REST API | Stays — `lance-graph-callcenter`'s `ExternalMembrane` (the firewall outer boundary) is exactly the surface to re-expose |
 | HIRO operator UI | Same — reads from the same SPO triples, just stored in `lance-graph blasgraph` instead of the JVM graph core |
 | Audit trail | Lance versions are the audit log (ADR-013); existing HIPAA-grade audit pattern (`DOMAIN-INSTANCES.md §2.5`) applies |
@@ -261,27 +261,25 @@ into `ActionDef`s on the same `Class`es.
 
 ## 5. The literal-imports proof — and the bijection guarantee
 
-The OGIT NTO/MARS taxonomy is now in this repo at byte-equality with
-upstream. So is the SGO upper ontology (the AST verb vocabulary —
-`dependsOn`, `contains`, `runsOn`, …). The producer reads both, and
-the bijection is mechanically checkable at three levels:
+The producer reads the OGIT NTO/MARS taxonomy and the SGO upper ontology
+(the AST verb vocabulary — `dependsOn`, `contains`, `runsOn`, …) from a
+checkout of AdaWorldAPI/OGIT at its moving `master` (`OGIT_FORK_PATH`,
+or `OGIT` next to OGAR). OGAR keeps no copy, so byte equality with
+upstream holds by construction, and the bijection is mechanically
+checkable at two further levels:
 
 ```bash
-# Level 1 — byte equality vs upstream (any output line is drift)
-diff -qr vocab/imports/ogit/NTO/MARS/ /home/user/OGIT/NTO/MARS/ \
-    | grep -v '^Only in vocab.*: \(PROVENANCE\|_oracle\)$'
-
 # Level 2 — XSD-oracle agreement (the TTL enum set equals the
 #   XSD-extracted classification set, chess-grade calibration)
 cargo test -p ogar-from-schema ttl::tests::application_class_values_appear_in_xsd_oracle
 
 # Level 3 — semantic round-trip (parse → emit → re-parse → equal)
-#   over every MARS TTL and every one of 176 SGO verbs
+#   over every MARS TTL and every SGO verb
 cargo test -p ogar-from-schema ttl_emit::tests::all_mars_ttl_files_roundtrip
 cargo test -p ogar-from-schema sgo::tests::all_sgo_verbs_roundtrip
 
 # Regenerate the XSD oracle from scratch
-cd vocab/imports/ogit/NTO/MARS/_oracle
+cd vocab/oracles/mars
 python3 extract_classes_py3.py -s MARSSchema2015.xsd -F asciidoc > classifications.adoc
 ```
 
@@ -298,7 +296,7 @@ use ogar_from_schema::ttl::parse_file;
 use ogar_from_schema::ttl_emit::emit_entity;
 use ogar_from_schema::TtlDeclaration;
 
-let src = std::fs::read_to_string("vocab/imports/ogit/NTO/MARS/entities/Machine.ttl")?;
+let src = std::fs::read_to_string("../OGIT/NTO/MARS/entities/Machine.ttl")?;
 let TtlDeclaration::Entity(once) = parse_file(&src).unwrap() else { unreachable!() };
 let emitted = emit_entity(&once);
 let TtlDeclaration::Entity(twice) = parse_file(&emitted).unwrap() else { unreachable!() };
@@ -318,8 +316,8 @@ is symmetric so the round-trip never gets stuck.**
 
 ## 6. Cross-references
 
-- `vocab/imports/ogit/NTO/MARS/` — the 1:1 mirror with PROVENANCE
-- `vocab/imports/ogit/NTO/MARS/_oracle/` — the XSD + extract_classes.py oracle
+- `NTO/MARS/` in AdaWorldAPI/OGIT — read from a checkout at its moving `master`
+- `vocab/oracles/mars/` — the XSD + extract_classes.py oracle, with its PROVENANCE
 - `crates/ogar-from-schema/` — the producer (TTL front-end, XSD queued)
 - `docs/MARS-TRANSCODING.md` — calibration spec (chess-grade bijection)
 - `docs/FOUNDRY-ODOO-MARS-LENS.md` — the cross-domain lens
