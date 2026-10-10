@@ -451,5 +451,110 @@ no-population-intermediate rule.
   a synthetic DN for the cloud-only user that a real LDAP client can bind
   as; whether the emulated domain name is the on-premises one or the
   tenant's initial domain when there is no hybrid.
+- **V17 — Mailbox delegation (design, 2026-10-10).** Exchange grants three
+  rights on a recipient to another principal (the trustee). They answer
+  different questions and none implies another:
+  - **FullAccess**: the trustee opens and reads the mailbox as its owner.
+    A mailbox permission (`Add-MailboxPermission`); on-premises in the
+    mailbox security descriptor. `msExchDelegateListLink` on the mailbox
+    lists only the FullAccess trustees that are automapped, so it is a
+    witness of some grants, not of all.
+  - **SendAs**: the trustee sends with the recipient's address as From and
+    leaves no trace of itself. An Active Directory extended right on the
+    recipient object (`Send-As`, rights GUID
+    `ab721a54-1e2f-11d0-9819-00aa0040529b`; `Add-RecipientPermission` in
+    Exchange Online).
+  - **SendOnBehalf**: From is the recipient and Sender is the trustee.
+    `publicDelegates` on the recipient (`GrantSendOnBehalfTo`).
+
+  Decisions:
+  - **A grant is a relation, not a property.** `(object, trustee, right)`
+    is its own record, like a membership, and changes by add and remove;
+    no node carries a list of trustees.
+  - **The object.** FullAccess needs a mailbox; a grant of it on anything
+    else is a violation. SendAs and SendOnBehalf also apply to a
+    distribution group, which has no mailbox of its own.
+  - **The trustee is a user or a group.** A user holds a right on an
+    object when it is granted to the user or to any group the user belongs
+    to, transitively. This depends on nested-group expansion, which dir-sim
+    does not have yet: a nested group is held by identity and never
+    expanded (lance-graph `lance-graph-dir-sim/src/snapshot.rs`, W-4 of
+    lance-graph's HubSPO-rs handover). Until it lands, a grant to a group
+    reaches only the group's direct members.
+  - **Deny wins.** Exchange allows deny entries on FullAccess, and Active
+    Directory allows them on SendAs. A deny for `(object, trustee, right)`
+    from any witness, for the user or for any group the user belongs to,
+    removes the right whatever grants exist. A deny that cancels a grant
+    is reported, so it is visible rather than silent. Reading grants
+    without denies would fail open.
+  - **Each grant carries the witness that asserted it.** LDIF supplies
+    `publicDelegates` and `msExchDelegateListLink`; Graph supplies none of
+    the three; the Exchange permission output (`Get-MailboxPermission`,
+    `Get-RecipientPermission`, `GrantSendOnBehalfTo`) supplies all of them
+    and is read through the same read-only encoder as V12. Witnesses that
+    disagree both stay; an absent witness is not a refusal.
+  - **Consumers.** Spear's mailbox IAM lets a FullAccess trustee read the
+    mailbox's rows. SendAs and SendOnBehalf gate sending, and the consumer
+    checks the right before every submission; Stalwart does not know about
+    V17. Stalwart's JMAP submission compares the envelope `mailFrom` with
+    the identity's address (`crates/jmap/src/submission/set.rs`,
+    `forbiddenFrom`), and an identity may only carry one of its own
+    account's addresses (`crates/jmap/src/identity/set.rs`). So:
+    - **SendOnBehalf** is sent from the trustee's own account and
+      identity, with `From` set to the object and `Sender` to the trustee.
+    - **SendAs** cannot be sent from the trustee's account, which has no
+      identity with the object's address. It is submitted to the object's
+      own account through master-user impersonation (`object%master`,
+      `Impersonate` permission), after the V17 check.
+
+  Not modelled: folder-level permissions (`Add-MailboxFolderPermission`)
+  and calendar delegates.
+- **V18 — Document access (design, open, 2026-10-10).** Nothing in Spear,
+  dir-sim or Stalwart decides who may read or change a document (HubSPO-rs
+  `comms-api-surface.md` §2). SharePoint and OneDrive grant a role (read,
+  write, owner) to a principal on a site, library, folder or item. An item
+  inherits its parent's grants until inheritance is broken. A sharing link
+  has a scope: `anonymous` admits whoever holds it, `organization` admits a
+  user signed in to the same tenant who holds it, and `users` admits only
+  the people it was granted to. Graph reports a drive item's `permissions`
+  with `roles`, `grantedToV2`, `grantedToIdentitiesV2` and `link`
+  (`link.scope`). It does not return `inheritedFrom` for SharePoint and
+  OneDrive for Business, so the permission list cannot say which ancestor
+  supplied a grant or where inheritance breaks.
+
+  Two regimes, kept apart:
+  - **Files attached to a record** (a ticket's or a deal's attachments in
+    HubSPO-rs) take their access from the record they belong to. They are
+    not SharePoint items and get no grants of their own.
+  - **Files in a library or a OneDrive** follow the SharePoint model below.
+
+  Proposal for the second regime, not yet decided:
+  - A grant is a relation `(resource, principal, role)`, as in V17. The
+    resource is a document, folder or drive node with a parent.
+  - Inheritance comes from the tree, not from `inheritedFrom`. The folder
+    tree is read by walking each item's `parentReference`, and where
+    inheritance breaks is read from SharePoint's own flag on each
+    securable object (`HasUniqueRoleAssignments` in the SharePoint REST
+    API), with its role assignments read at that object. An item without
+    unique assignments takes its grants from the nearest ancestor that has
+    them. Until that flag is read, the grants on an item are its
+    effective permissions as Graph returns them, with no inheritance
+    inferred.
+  - A principal's effective role is the highest role granted to it, or to
+    a group it belongs to, on the item or on an ancestor up to the nearest
+    broken inheritance.
+  - A sharing link is a grant that keeps its scope. Holding the link is
+    never enough on its own: `anonymous` admits any holder, `organization`
+    admits a holder signed in to the tenant (an external or guest identity
+    from another tenant is refused), and `users` admits only the identities
+    in `grantedToIdentitiesV2`, which are evaluated as ordinary principals.
+    A link is never folded into one shared link principal.
+  - Spear evaluates it with an RBAC plug over the document classid, the
+    way `RBAC_PLUG` covers mail.
+
+  Open: whether SharePoint groups are dir-sim groups; "limited access",
+  SharePoint's implicit role on an ancestor of a shared item; where the
+  folder tree lives (Spear's `DriveScope` names a drive and an item, not a
+  path).
 - **V5 — CI.** CI builds `lance-graph-dir-sim` against the OGAR checkout, so
   it needs this OGAR PR merged first.
