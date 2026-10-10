@@ -474,13 +474,16 @@ no-population-intermediate rule.
   - **The object.** FullAccess needs a mailbox; a grant of it on anything
     else is a violation. SendAs and SendOnBehalf also apply to a
     distribution group, which has no mailbox of its own.
-  - **The trustee is a user or a group.** A user holds a right on an
-    object when it is granted to the user or to any group the user belongs
-    to, transitively. This depends on nested-group expansion, which dir-sim
-    does not have yet: a nested group is held by identity and never
-    expanded (lance-graph `lance-graph-dir-sim/src/snapshot.rs`, W-4 of
-    lance-graph's HubSPO-rs handover). Until it lands, a grant to a group
-    reaches only the group's direct members.
+  - **The trustee is a user or a security-enabled group** (V19). A user
+    holds a right on an object when it is granted to the user or to a
+    security-enabled group the user belongs to, directly or through other
+    security-enabled groups: V19's security closure, not its delivery
+    closure. A grant to a group that is not security-enabled (a
+    distribution group) is a violation and confers nothing. Exchange
+    Online resolves trustees among recipients, so there a group trustee
+    must also be mail-enabled; on-premises a security group that is not
+    mail-enabled is a valid trustee. Until V19's expansion lands, a grant
+    to a group reaches only the group's direct members.
   - **Deny wins.** Exchange allows deny entries on FullAccess, and Active
     Directory allows them on SendAs. A deny for `(object, trustee, right)`
     from any witness, for the user or for any group the user belongs to,
@@ -556,5 +559,47 @@ no-population-intermediate rule.
   SharePoint's implicit role on an ancestor of a shared item; where the
   folder tree lives (Spear's `DriveScope` names a drive and an item, not a
   path).
+- **V19 — Group kinds and nested groups (design, 2026-10-10).** A group
+  has two independent properties, and dir-sim records both:
+  - **Security-enabled**: the group can hold permissions. AD sets bit
+    `0x80000000` of `groupType`; Graph reports `securityEnabled`.
+  - **Mail-enabled**: the group has addresses and receives mail. Graph
+    reports `mailEnabled`; on-premises it is the group's Exchange
+    recipient attributes, decoded like a user's.
+
+  That gives three kinds in practice: a security group (not mail-enabled),
+  a mail-enabled security group, and a distribution group (mail-enabled,
+  not security-enabled). A Microsoft 365 group (`groupTypes` contains
+  `Unified`) is mail-enabled and may be security-enabled; it has no
+  on-premises equivalent unless written back. An unread flag stays
+  unknown, never false: a group read from a source that did not report
+  `groupType` or `securityEnabled` is not treated as a distribution group.
+
+  Decisions:
+  - **Nesting is expanded in lance-graph** (W-4 of lance-graph's HubSPO-rs
+    handover), once, not by each consumer. Spear's `mailbox_members` and
+    HubSPO-rs's routing are its first two users.
+  - **Two closures, because the two questions differ.**
+    - *Delivery*: every user reached through nested mail-enabled groups,
+      which is how a distribution list is expanded.
+    - *Security*: every user reached through nested security-enabled
+      groups only. A security group nested in a distribution group gives
+      the distribution group's members no permission, as in AD, where a
+      token (`tokenGroups`) holds only security groups. Permission checks
+      (V17, V18, RBAC roles from group membership) use this closure.
+  - **Unknown is excluded from the security closure.** A group whose
+    security flag was not read is not walked for permissions, and a
+    permission that depends on it is reported, so it fails closed. The
+    delivery closure walks a group whose mail flag was not read, as
+    today's snapshots do.
+  - **Cycles are walked once**; both closures are in user-ordinal order.
+  - **Validation.** A permission grant to a group that is not
+    security-enabled is a violation (V17). A security group whose
+    security flag was read as cleared by a later observation loses every
+    grant made to it, which the diff reports.
+
+  Not modelled: group scope (global, domain local, universal) and the
+  nesting rules between scopes; dynamic membership rules
+  (`DynamicMembership`), whose members are read as observed.
 - **V5 — CI.** CI builds `lance-graph-dir-sim` against the OGAR checkout, so
   it needs this OGAR PR merged first.
