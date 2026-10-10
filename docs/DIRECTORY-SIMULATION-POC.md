@@ -357,20 +357,48 @@ no-population-intermediate rule.
   uniqueness across all objects, Exchange only across mail-enabled ones;
   whether the dir-sim owner gate should follow the wider Entra scope is
   undecided.
-- **V15 — Which Exchange is simulated (2026-10-10).** `ExchangeDeployment`
-  names three shapes and what each reads as authoritative:
-  - `OnPremises`: the AD recipient attributes decide; there is no cloud
-    mailbox, so a remote mailbox delivers nowhere.
-  - `Online`: Exchange Online decides; a user is mail-enabled when it has
-    a cloud mailbox, its type is `MailboxPurpose` (Graph's
-    `mailboxSettings.userPurpose`), and its `ExchangeGuid` exists only in
-    the cloud. `msExch*` is not read, even for synchronized users.
-  - `Hybrid`: AD carries the recipient type, the cloud confirms the mailbox
-    and carries the `ExchangeGuid` compared under V12.
-  `MailboxPurpose` maps user / shared / room / equipment onto `RemoteKind`;
-  linked and `others` have no remote kind, and an unknown value stays raw.
-  The cloud side is read through Graph (`DIRECTORY-ADAPTERS-POC.md` §10).
-  **Open:** the lance-graph side does not consume the deployment yet; the
-  simulator still behaves as `Hybrid`.
+- **V15 — Where mailboxes live (2026-10-10).** `Deployment` names the
+  on-premises host (`MailboxHost::ExchangeServer` or `Stalwart`, or none)
+  and whether Exchange Online is present; the constants are
+  `EXCHANGE_SERVER`, `ONLINE`, `EXCHANGE_HYBRID`, `STALWART` and
+  `STALWART_WITH_ONLINE`. What each reads as authoritative:
+  - an on-premises host: the AD recipient attributes decide;
+  - Exchange Online: the cloud mailbox decides delivery to a cloud-hosted
+    recipient; without an on-premises host a user is mail-enabled when it
+    has a cloud mailbox, typed by `MailboxPurpose` (Graph's
+    `mailboxSettings.userPurpose`), and `msExch*` is not read;
+  - the `ExchangeGuid` is compared (V12) only for Exchange Server with
+    Exchange Online: Stalwart has no `ExchangeGuid`.
+  `Deployment::host_of` says where a recipient's mailbox is: an
+  on-premises mailbox on the on-premises host, a remote mailbox that is not
+  deprovisioned in Exchange Online, and nothing for anything else or for a
+  host the deployment lacks. That is the question a mail server answers
+  before it accepts a message as local or relays it.
+  These are provided and documented as an API only; the routing is used
+  later by HubSPO-rs and by SAP on Quack (`lance-graph-sap`), which bind
+  to it in their own repos.
+  `MailboxLocation { host, kind, mailbox_guid }` carries what
+  `Get-MailboxLocation` reports; `MailboxLocationType` is its seven values.
+  Exchange names a location `TenantGUID\MailboxGUID`, the pair Graph
+  spells `MBX:{MailboxGUID}@{TenantGUID}` (`DIRECTORY-ADAPTERS-POC.md`
+  §10). `MailboxPurpose` maps user / shared / room / equipment onto
+  `RemoteKind`; linked and `others` have no remote kind.
+  **Open:**
+  - lance-graph does not consume the deployment yet; the simulator still
+    behaves as `EXCHANGE_HYBRID`.
+  - Stalwart's DirSim backend answers `Account` for every recipient that
+    receives, including a remote mailbox whose mailbox is in Exchange
+    Online. With `STALWART_WITH_ONLINE` it should answer `Account` only
+    where `host_of` is `Stalwart`, and route the rest to Exchange Online.
+  - OneDrive as a delivery location for ERP and ticket tools (invoices,
+    reports), executed by Spear. Unattended delivery addresses the drive by
+    the directory user's Entra id (`/users/{id}/drive/items/{parent}:/{file}:/content`),
+    app-only with `Files.ReadWrite.All` up to 250 MB; larger files take an
+    upload session, app-only with `Sites.ReadWrite.All`. The default
+    conflict behaviour is `fail`, so an invoice is never silently replaced.
+    `ogar_az::mailbox::user_drive` (`GET /users/{id}/drive`, delegated
+    only) is for an interactive caller that wants the drive id. The
+    directory's part is the Entra id of the recipient, from the
+    correspondence fold.
 - **V5 — CI.** CI builds `lance-graph-dir-sim` against the OGAR checkout, so
   it needs this OGAR PR merged first.

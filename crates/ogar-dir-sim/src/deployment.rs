@@ -1,49 +1,158 @@
-//! Which Exchange the simulated directory has, and what each source decides.
+//! Where mailboxes live, and what each source decides.
 //!
-//! The same object reads differently depending on where its mailbox can
-//! live. [`ExchangeDeployment`] names the three shapes and says which
-//! observation is authoritative for what; [`MailboxPurpose`] is the mailbox
-//! type as Microsoft Graph reports it (`mailboxSettings.userPurpose`), which
-//! is the cloud side's counterpart of the on-premises recipient type.
+//! The same directory object reads differently depending on which mail
+//! system hosts its mailbox. Three hosts are modelled ([`MailboxHost`]):
+//! Exchange Server and Stalwart on-premises, Exchange Online in the cloud.
+//! A [`Deployment`] names the on-premises host (if any) and whether
+//! Exchange Online is present, and says which observation is authoritative
+//! for what. [`Deployment::host_of`] answers, per recipient, where its
+//! mailbox is — the question a mail server must answer before it accepts a
+//! message as local or relays it.
+//!
+//! A mailbox's location is its [`MailboxLocation`]: the host, the location
+//! type Exchange reports (`Get-MailboxLocation`, [`MailboxLocationType`]),
+//! and the mailbox GUID. Exchange identifies a location as
+//! `TenantGUID\MailboxGUID`; Microsoft Graph spells the same pair
+//! `MBX:{MailboxGUID}@{TenantGUID}` (`primaryMailboxId`).
 
-use crate::exchange::RemoteKind;
+use crate::exchange::{MailboxState, Recipient, RemoteKind};
+use ogar_dir_core::Guid128;
 
-/// Where mailboxes live.
+/// The mail system that hosts a mailbox.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum ExchangeDeployment {
-    /// Exchange Server only. AD carries every recipient type; there is no
-    /// cloud mailbox, so a remote mailbox has nowhere to deliver.
-    OnPremises,
-    /// Exchange Online only. A user is mail-enabled when Exchange Online has
-    /// a mailbox for it; the mailbox type is its [`MailboxPurpose`], and its
-    /// `ExchangeGuid` exists only in the cloud. The `msExch*` attributes are
-    /// not read, even when users are synchronized from AD.
-    Online,
-    /// Both, joined by Entra Connect. AD carries the recipient type (a remote
-    /// mailbox for a cloud-hosted one); Exchange Online confirms the mailbox
-    /// exists and carries its cloud `ExchangeGuid`, which must match the
-    /// on-premises `msExchMailboxGuid` for the mailbox to be migratable.
-    Hybrid,
+pub enum MailboxHost {
+    /// Exchange Server, on-premises.
+    ExchangeServer,
+    /// Stalwart, on-premises, serving recipients from the directory.
+    Stalwart,
+    /// Exchange Online.
+    ExchangeOnline,
 }
 
-impl ExchangeDeployment {
-    /// Whether the AD recipient attributes (`msExchRemoteRecipientType`,
-    /// `msExchRecipientDisplayType`, `msExchRecipientTypeDetails`,
-    /// `targetAddress`, `msExchMailboxGuid`) are authoritative.
+/// Which mail systems are present.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Deployment {
+    /// The on-premises host, if any: [`MailboxHost::ExchangeServer`] or
+    /// [`MailboxHost::Stalwart`].
+    pub on_premises: Option<MailboxHost>,
+    /// Exchange Online is present.
+    pub online: bool,
+}
+
+impl Deployment {
+    /// Exchange Server only.
+    pub const EXCHANGE_SERVER: Self = Self {
+        on_premises: Some(MailboxHost::ExchangeServer),
+        online: false,
+    };
+    /// Exchange Online only.
+    pub const ONLINE: Self = Self {
+        on_premises: None,
+        online: true,
+    };
+    /// Exchange Server and Exchange Online, joined by Entra Connect.
+    pub const EXCHANGE_HYBRID: Self = Self {
+        on_premises: Some(MailboxHost::ExchangeServer),
+        online: true,
+    };
+    /// Stalwart only.
+    pub const STALWART: Self = Self {
+        on_premises: Some(MailboxHost::Stalwart),
+        online: false,
+    };
+    /// Stalwart on-premises next to Exchange Online.
+    pub const STALWART_WITH_ONLINE: Self = Self {
+        on_premises: Some(MailboxHost::Stalwart),
+        online: true,
+    };
+
+    /// Whether the on-premises recipient attributes
+    /// (`msExchRemoteRecipientType`, `msExchRecipientDisplayType`,
+    /// `msExchRecipientTypeDetails`, `targetAddress`, `msExchMailboxGuid`)
+    /// are authoritative. Without an on-premises host they are not read,
+    /// even for users synchronized from AD.
     pub fn reads_on_premises_recipient(self) -> bool {
-        matches!(self, Self::OnPremises | Self::Hybrid)
+        self.on_premises.is_some()
     }
 
     /// Whether the Exchange Online mailbox is observed and decides delivery
     /// to a cloud-hosted recipient.
     pub fn reads_cloud_mailbox(self) -> bool {
-        matches!(self, Self::Online | Self::Hybrid)
+        self.online
     }
 
-    /// Whether both sides carry an `ExchangeGuid` to compare.
+    /// Whether both sides carry an `ExchangeGuid` to compare: Exchange
+    /// Server writes `msExchMailboxGuid`; Stalwart has no `ExchangeGuid`.
     pub fn compares_exchange_guid(self) -> bool {
-        self == Self::Hybrid
+        self.on_premises == Some(MailboxHost::ExchangeServer) && self.online
     }
+
+    /// Where `recipient`'s mailbox is hosted, by its on-premises recipient
+    /// type. An on-premises mailbox is on the on-premises host; a remote
+    /// mailbox that is not deprovisioned is in Exchange Online. Anything
+    /// else (not mail-enabled, deprovisioned, a type this vocabulary keeps
+    /// raw) has no hosted mailbox, and neither has a mailbox whose host the
+    /// deployment does not include.
+    ///
+    /// This reads the recipient type only; whether Exchange Online actually
+    /// holds the mailbox is the cloud observation's question.
+    pub fn host_of(self, recipient: &Recipient) -> Option<MailboxHost> {
+        match recipient {
+            Recipient::OnPremisesMailbox { .. } => self.on_premises,
+            Recipient::RemoteMailbox(m) if m.mailbox() != MailboxState::Deprovisioned => {
+                self.online.then_some(MailboxHost::ExchangeOnline)
+            }
+            _ => None,
+        }
+    }
+}
+
+/// `MailboxLocationType`, as `Get-MailboxLocation` reports it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum MailboxLocationType {
+    /// The primary mailbox.
+    Primary,
+    /// The main archive.
+    MainArchive,
+    /// An auxiliary archive.
+    AuxArchive,
+    /// An auxiliary primary mailbox.
+    AuxPrimary,
+    /// A component-shared mailbox.
+    ComponentShared,
+    /// An aggregated mailbox.
+    Aggregated,
+    /// The previous primary mailbox (Exchange Online only).
+    PreviousPrimary,
+}
+
+impl MailboxLocationType {
+    /// Decode Exchange's spelling, exactly. Anything else is `None`.
+    pub fn from_exchange(s: &str) -> Option<Self> {
+        Some(match s {
+            "Primary" => Self::Primary,
+            "MainArchive" => Self::MainArchive,
+            "AuxArchive" => Self::AuxArchive,
+            "AuxPrimary" => Self::AuxPrimary,
+            "ComponentShared" => Self::ComponentShared,
+            "Aggregated" => Self::Aggregated,
+            "PreviousPrimary" => Self::PreviousPrimary,
+            _ => return None,
+        })
+    }
+}
+
+/// Where one mailbox is.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct MailboxLocation {
+    /// The host.
+    pub host: MailboxHost,
+    /// Which of the owner's mailboxes this is.
+    pub kind: MailboxLocationType,
+    /// The mailbox GUID, when the host has one (an Exchange mailbox's
+    /// `ExchangeGuid` for its primary location). `None` = not observed, or
+    /// a host without one.
+    pub mailbox_guid: Option<Guid128>,
 }
 
 /// `mailboxSettings.userPurpose`: what a cloud mailbox is.
@@ -96,19 +205,91 @@ impl MailboxPurpose {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ValueId;
+    use crate::exchange::{ArchiveState, RemoteMailbox};
 
     #[test]
     fn each_deployment_reads_its_own_sources() {
-        use ExchangeDeployment::*;
         let table = [
-            (OnPremises, true, false, false),
-            (Online, false, true, false),
-            (Hybrid, true, true, true),
+            (Deployment::EXCHANGE_SERVER, true, false, false),
+            (Deployment::ONLINE, false, true, false),
+            (Deployment::EXCHANGE_HYBRID, true, true, true),
+            (Deployment::STALWART, true, false, false),
+            // Stalwart has no ExchangeGuid to compare.
+            (Deployment::STALWART_WITH_ONLINE, true, true, false),
         ];
         for (d, onprem, cloud, compare) in table {
             assert_eq!(d.reads_on_premises_recipient(), onprem, "{d:?}");
             assert_eq!(d.reads_cloud_mailbox(), cloud, "{d:?}");
             assert_eq!(d.compares_exchange_guid(), compare, "{d:?}");
+        }
+    }
+
+    // The same recipient lands on different hosts per deployment: an
+    // on-premises mailbox on Exchange Server or Stalwart, a remote mailbox in
+    // Exchange Online only where Exchange Online is present.
+    #[test]
+    fn host_of_follows_the_recipient_type_and_the_deployment() {
+        use MailboxHost::*;
+        let onprem = Recipient::OnPremisesMailbox {
+            archive: ArchiveState::None,
+        };
+        let remote = Recipient::RemoteMailbox(
+            RemoteMailbox::new(
+                RemoteKind::User,
+                MailboxState::Provisioned,
+                ArchiveState::None,
+                Some(ValueId(1)),
+            )
+            .unwrap(),
+        );
+        let gone = Recipient::RemoteMailbox(
+            RemoteMailbox::new(
+                RemoteKind::User,
+                MailboxState::Deprovisioned,
+                ArchiveState::None,
+                None,
+            )
+            .unwrap(),
+        );
+        let table = [
+            (Deployment::EXCHANGE_SERVER, Some(ExchangeServer), None),
+            (Deployment::STALWART, Some(Stalwart), None),
+            (Deployment::ONLINE, None, Some(ExchangeOnline)),
+            (
+                Deployment::EXCHANGE_HYBRID,
+                Some(ExchangeServer),
+                Some(ExchangeOnline),
+            ),
+            (
+                Deployment::STALWART_WITH_ONLINE,
+                Some(Stalwart),
+                Some(ExchangeOnline),
+            ),
+        ];
+        for (d, on, rem) in table {
+            assert_eq!(d.host_of(&onprem), on, "{d:?}");
+            assert_eq!(d.host_of(&remote), rem, "{d:?}");
+            assert_eq!(d.host_of(&gone), None, "{d:?}");
+            assert_eq!(d.host_of(&Recipient::NotMailEnabled), None, "{d:?}");
+        }
+    }
+
+    #[test]
+    fn location_types_decode_exactly() {
+        for (s, t) in [
+            ("Primary", MailboxLocationType::Primary),
+            ("MainArchive", MailboxLocationType::MainArchive),
+            ("AuxArchive", MailboxLocationType::AuxArchive),
+            ("AuxPrimary", MailboxLocationType::AuxPrimary),
+            ("ComponentShared", MailboxLocationType::ComponentShared),
+            ("Aggregated", MailboxLocationType::Aggregated),
+            ("PreviousPrimary", MailboxLocationType::PreviousPrimary),
+        ] {
+            assert_eq!(MailboxLocationType::from_exchange(s), Some(t), "{s}");
+        }
+        for s in ["primary", "Archive", ""] {
+            assert_eq!(MailboxLocationType::from_exchange(s), None, "{s}");
         }
     }
 
