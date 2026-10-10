@@ -1823,6 +1823,27 @@ isolation. The map's job is to keep them visible.
   The Ghidra seam is *verified* and the vocabulary *measured*; the binding
   is unbuilt.
 
+- **[D-R2IL-SPACE-AXIS] the `0xC4` mint's varnode space axis: fixed spaces
+  0–3 in the classid, custom spaces outside it** — `[G]` (DECIDED + MEASURED,
+  2026-10-10) — home: lance-graph `r2il-machine-semantic-contract-v1.md` W2
+  and entry `E-W2-SPACE-AXIS-CUSTOM-SPACE-LEAVES-THE-CLASSID-1`; r2sleigh #16
+  — depends: lance-graph W0
+  (`E-W0-THE-SPACE-ORDINAL-IS-A-RANK-RELATIVE-TO-A-TABLE-THE-CLASSID-NEVER-NAMES-1`),
+  which left the choice with OGAR as the mint authority. **DECISION
+  (2026-10-10):** option 3 of the three W0 named. A custom address space moves
+  out of the classid into the payload or edge, keyed by the architecture's
+  identity and version; the classid's space discriminant carries only the
+  architecture-invariant fixed spaces 0–3. BASIS: the measured population of
+  custom spaces is 0 in W0's 94,536 x86 rows and 1 on the 6502 (`OTHER`) once
+  r2sleigh #16 stops the case-sensitive alias map from minting the 6502's
+  `RAM` as `Custom(1)`; naming the architecture in every address would spend
+  classid bits on every row for that one case, and a raw SLEIGH space id is a
+  per-architecture counter that still collides across architectures. SCOPE:
+  the space axis only; container concepts were never blocked. REVISIT WHEN: a
+  corpus shows custom spaces on a hot path, or an architecture needs to route
+  by custom space at prefix level. Not built: the carving itself, which ruff
+  `ruff_r2il` `facet.rs` assigns to its PR 3.
+
 - **[D-BLOCKS-DOMAIN] `0x17XX` reserved as ConceptDomain::Blocks — the shared
   visual block-programming opcode vocabulary, ONE canon domain under two app
   prefixes** — `[G]` (CODED, reserved-empty, 2026-08-04, operator-chosen slot)
