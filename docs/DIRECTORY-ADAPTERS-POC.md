@@ -175,3 +175,38 @@ The crate performs no HTTP and no writes; follow `next_link` for more pages.
 **Not yet run against a real tenant** (no credentials in the build
 environment); verified against a synthetic Graph page fixture only. AD side:
 `ldapsearch -LLL … objectGUID …` / `ldifde` output through `ogar_ad::ldif::parse`.
+
+## 10. Exchange Online mailboxes through Graph (2026-10-10)
+
+Graph has no mailbox property on `user`; a mailbox takes its own reads,
+each with its own permission. `ogar_az::mailbox` names them as `Pull`s,
+all `GET` against v1.0, each with the least-privileged application
+permission Microsoft documents:
+
+| pull | path | permission |
+|---|---|---|
+| `MailboxSettings` | `/users/{id}/mailboxSettings` | `MailboxSettings.Read` |
+| `ExchangeSettings` | `/users/{id}/settings/exchange` | `User.Read.All` |
+| `MailboxFolders` | `/admin/exchange/mailboxes/{mailboxId}/folders` | `MailboxFolder.Read.All` |
+| `MailboxItems` | `/admin/exchange/mailboxes/{mailboxId}/folders/{folderId}/items` | `MailboxItem.Read.All` |
+
+There is no `Mailbox.ReadWrite.All`; the mailbox-content permissions are
+`MailboxFolder.*` and `MailboxItem.*`, and the read variants suffice for
+everything here. A granted write scope is not used: no pull writes.
+
+`encode_mailbox` turns one user's settings reads into a `DirRecord` of kind
+`AzKind::Mailbox` (family `MsGraph`, `MAILBOX_SCHEMA_V1`): WHO = the Graph
+user id, which Exchange Online reports as the mailbox's
+`ExternalDirectoryObjectId`; WHERE = the tenant; WHAT = `userPurpose` and
+`primaryMailboxId` raw, plus `mailboxGuid` in a guid slot.
+
+`primaryMailboxId` is documented only as an opaque identifier. The spelling
+observed in tenants is `MBX:{mailbox GUID}@{tenant id}`, and for a primary
+mailbox that GUID is its `ExchangeGuid`; Microsoft's own example
+(`MBX:e0643f21@a7809c93`) is shortened. `mailbox_guid_of` therefore decodes
+only two complete GUIDs whose tenant part equals the record's tenant; any
+other spelling is kept raw with no GUID. **Not yet run against a real
+tenant**; the reading that the GUID is the `ExchangeGuid` must be confirmed
+against `Get-EXOMailbox -Properties ExchangeGuid` before anything compares
+it. `examples/mailbox_ingest.rs` prints the pulls and encodes saved bodies.
+

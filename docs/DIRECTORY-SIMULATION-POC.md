@@ -357,5 +357,20 @@ no-population-intermediate rule.
   uniqueness across all objects, Exchange only across mail-enabled ones;
   whether the dir-sim owner gate should follow the wider Entra scope is
   undecided.
+- **V15 — Which Exchange is simulated (2026-10-10).** `ExchangeDeployment`
+  names three shapes and what each reads as authoritative:
+  - `OnPremises`: the AD recipient attributes decide; there is no cloud
+    mailbox, so a remote mailbox delivers nowhere.
+  - `Online`: Exchange Online decides; a user is mail-enabled when it has
+    a cloud mailbox, its type is `MailboxPurpose` (Graph's
+    `mailboxSettings.userPurpose`), and its `ExchangeGuid` exists only in
+    the cloud. `msExch*` is not read, even for synchronized users.
+  - `Hybrid`: AD carries the recipient type, the cloud confirms the mailbox
+    and carries the `ExchangeGuid` compared under V12.
+  `MailboxPurpose` maps user / shared / room / equipment onto `RemoteKind`;
+  linked and `others` have no remote kind, and an unknown value stays raw.
+  The cloud side is read through Graph (`DIRECTORY-ADAPTERS-POC.md` §10).
+  **Open:** the lance-graph side does not consume the deployment yet; the
+  simulator still behaves as `Hybrid`.
 - **V5 — CI.** CI builds `lance-graph-dir-sim` against the OGAR checkout, so
   it needs this OGAR PR merged first.
