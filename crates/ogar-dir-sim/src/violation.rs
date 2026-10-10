@@ -26,6 +26,14 @@ pub enum AddressRole {
     /// A secondary SMTP proxy (`smtp:`).
     SecondarySmtp,
     /// The `mail` attribute.
+    ///
+    /// No validator emits this role. `mail` is a display label that
+    /// Exchange does not reserve: two objects may carry the same `mail`
+    /// value, and only `proxyAddresses`, the UPN and a remote mailbox's
+    /// routing address make an address belong to an object. The variant
+    /// stays so existing matches keep compiling; new code must not
+    /// produce it.
+    #[deprecated(note = "`mail` is a label, not an address claim; no validator emits it")]
     Mail,
     /// A remote mailbox's routing address (`targetAddress`).
     Routing,
@@ -49,10 +57,10 @@ pub enum Violation {
         owners: Vec<Guid128>,
     },
     /// Two or more objects hold the same normalized address under different
-    /// attributes: a UPN or SMTP address that is another object's SMTP,
-    /// `mail` or routing address, or a `mail` held by another object (an
-    /// admin account whose `mail` points at someone's mailbox as a
-    /// password-reset target, for example). Same-attribute collisions are
+    /// attributes: a UPN or SMTP address that is another object's SMTP or
+    /// routing address. A `mail` value is not a claim (an admin account
+    /// whose `mail` points at someone's mailbox as a password-reset target
+    /// holds nothing), so it never appears here. Same-attribute collisions are
     /// [`Violation::DuplicateSmtp`] / [`Violation::DuplicateUpn`]; one object
     /// holding an address under several attributes is not a conflict.
     AddressConflict {
