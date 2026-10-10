@@ -18,9 +18,12 @@
 //! response bodies in.
 //!
 //! One more read rides along: [`Pull::UserDrive`] resolves a user's
-//! OneDrive ([`user_drive`]), so a consumer that uploads documents (Spear's
-//! drive scope) can address the drive from the directory's user id. The
-//! upload itself is the consumer's write, not this module's.
+//! OneDrive ([`user_drive`]) for an interactive (delegated) caller. Unattended
+//! delivery into a user's OneDrive (an ERP posting an invoice, a ticket tool
+//! filing a report) does not need it: Graph addresses the drive by the user's
+//! id (`/users/{id}/drive/items/...`), and uploading there app-only takes
+//! `Files.ReadWrite.All`. The upload is the consumer's write, not this
+//! module's.
 //!
 //! ## `primaryMailboxId`
 //!

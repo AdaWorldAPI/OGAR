@@ -387,8 +387,15 @@ no-population-intermediate rule.
     receives, including a remote mailbox whose mailbox is in Exchange
     Online. With `STALWART_WITH_ONLINE` it should answer `Account` only
     where `host_of` is `Stalwart`, and route the rest to Exchange Online.
-  - Spear's OneDrive upload: Graph's `GET /users/{id}/drive` resolves the
-    drive from the directory user (`ogar_az::mailbox::user_drive`); the
-    upload itself is Spear's write, under a delegated grant.
+  - OneDrive as a delivery location for ERP and ticket tools (invoices,
+    reports), executed by Spear. Unattended delivery addresses the drive by
+    the directory user's Entra id (`/users/{id}/drive/items/{parent}:/{file}:/content`),
+    app-only with `Files.ReadWrite.All` up to 250 MB; larger files take an
+    upload session, app-only with `Sites.ReadWrite.All`. The default
+    conflict behaviour is `fail`, so an invoice is never silently replaced.
+    `ogar_az::mailbox::user_drive` (`GET /users/{id}/drive`, delegated
+    only) is for an interactive caller that wants the drive id. The
+    directory's part is the Entra id of the recipient, from the
+    correspondence fold.
 - **V5 — CI.** CI builds `lance-graph-dir-sim` against the OGAR checkout, so
   it needs this OGAR PR merged first.

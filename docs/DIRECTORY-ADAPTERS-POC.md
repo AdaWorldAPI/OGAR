@@ -193,8 +193,11 @@ permission Microsoft documents:
 
 The mailbox reads take an application permission; Microsoft lists reading
 a user's drive as delegated only (`Pull::grant`). `user_drive` accepts a
-drive only when its `owner.user.id` is the user, and returns its id, which
-Spear's drive scope uses to address uploads.
+drive only when its `owner.user.id` is the user, and returns its id for an
+interactive caller. Unattended uploads (an ERP or ticket tool delivering an
+invoice or a report) need no drive id: Graph addresses the drive by the
+user's id, app-only with `Files.ReadWrite.All` (`Sites.ReadWrite.All` for an
+upload session).
 
 There is no `Mailbox.ReadWrite.All`; the mailbox-content permissions are
 `MailboxFolder.*` and `MailboxItem.*`, and the read variants suffice for
