@@ -34,9 +34,15 @@
 //! let result = reaction.result.unwrap();
 //! assert!(result.result.contains("\"output\":\"hi\""));
 //! ```
+//!
+//! [`ogit`] holds the OGIT tables HIRO validates against, read once from an
+//! OGIT tree, and, behind the `ontology-cache` feature, the Ontology cache
+//! loader.
 
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
+
+pub mod ogit;
 
 use std::process::Command;
 

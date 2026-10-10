@@ -6,10 +6,15 @@ license.workspace = true
 repository.workspace = true
 authors.workspace = true
 rust-version.workspace = true
-description = "OGAR-native HIRO ActionHandler runtime — CapabilityExecutor impls (the B1 executor seam) over the action-ws protocol core in ogar-from-schema. The reference NativeCommandExecutor runs a capability's command via a local process; SSH/REST targets follow the same trait. rs-graph-llm's graph-flow-action provides the production executors."
+description = "OGAR-native HIRO ActionHandler runtime — CapabilityExecutor impls (the B1 executor seam) over the action-ws protocol core in ogar-from-schema. The reference NativeCommandExecutor runs a capability's command via a local process; SSH/REST targets follow the same trait. rs-graph-llm's graph-flow-action provides the production executors. Also holds the OGIT tables HIRO validates against and, behind `ontology-cache`, the Ontology cache loader."
 
 [features]
 default = []
+# The Ontology cache: lance-graph-ontology's OntologyRegistry, loaded from an
+# OGIT tree (`ogit::load_registry`). Off by default, because it brings
+# lance-graph by git, which path-based consumers such as rs-graph-llm's
+# graph-flow-action-ogar do not need.
+ontology-cache = ["dep:lance-graph-ontology"]
 
 [dependencies]
 ogar-from-schema = { path = "../ogar-from-schema", features = ["serde"] }
@@ -19,6 +24,7 @@ ogar-vocab = { path = "../ogar-vocab" }
 # (`ogar-from-schema`) stays parser-free — it defines the `Deserialize` DTOs +
 # the pure lift; this crate does the `from_str`. (B2-lift.)
 serde_json = "1.0"
+lance-graph-ontology = { git = "https://github.com/AdaWorldAPI/lance-graph", branch = "main", optional = true }
 
 [dev-dependencies]
 # Execution probe only: drives the executor from a *lifted* ActionDef
