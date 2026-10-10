@@ -1328,6 +1328,19 @@ isolation. The map's job is to keep them visible.
   (semantics unruled). This is an offline BAKE (BOOTSTRAP-OK, envelope
   owner 0), not an online write. Cross-ref D-EXEC-ONE-ACTION,
   D-KAUSAL-CONSUME-PIN-ODOO, OGAR-TRANSPILE-SUBSTRATE (pull-back contract).
+  - **2026-10-10 — `[H1]` CLOSED, key moved to the facet (VERIFIED-IN-CODE,
+    TEST-PINNED).** The freeze above is lifted: lance-graph settled the
+    reconciliation (a V3 mint never degrades to a V1 tail, #1213; `NodeGuid` ↔
+    `FacetCascade` is a byte-identical conversion, canonical_node.rs). The row
+    key is now `NodeGuid::from(compiled_class_to_facet(cc))` — the minted
+    facet, rails included — instead of `NodeGuid::new(classid, 0,0,0,0,
+    identity)`, which dropped the rails and minted a V1 `family:identity`
+    tail. `compiled_class_to_noderow` loses its `identity` parameter (the facet
+    is the row's identity); new `compiled_classes_to_noderows` refuses a batch
+    whose classes mint the same facet (`DuplicateFacetKey`). T-D is inverted
+    (key == facet byte for byte, with an anti-vacuity guard that the fixture's
+    rails are non-zero); T-H pins can-fire + can-stay-silent. Disable run:
+    restoring the V1 key turns T-D, T-E and T-H red. `[H2]`/`[H3]` unchanged.
 
 - **D-OGAR-DOC-LAYER** (2026-07-12; **[G] — W4 mints + ActionDefs council-ratified
   and shipped 2026-08-25**, executor body still open — see the Status paragraph

@@ -8,8 +8,8 @@
 //!
 //! - `lance_graph_contract::network` (harvest → `FacetCascade`, content-blind,
 //!   one concept mint, deferred row embedding) — the *shape* borrowed here.
-//! - `symbiont::bridge` (`NodeRow` + `NodeRowPacket::as_le_bytes` zero-copy Lance
-//!   byte path) — the *embedding idiom* borrowed here.
+//! - `NodeRow` + `NodeRowPacket::as_le_bytes`, the zero-copy Lance byte path
+//!   (the embedding idiom first used by the since-deprecated `symbiont` crate).
 //!
 //! # What this does (and deliberately does NOT)
 //!
@@ -18,10 +18,19 @@
 //! (`facet_classid(4) | 6×(is_a:lo, part_of:hi)`, the L1 **rails** plane,
 //! `CascadeShape::G6D2`). So [`compiled_class_to_facet`] is a reinterpret no-op.
 //! [`compiled_class_to_noderow`] embeds one class as ONE 512-byte CANON
-//! [`NodeRow`] — the render classid in the key `[0..4)`, a **bootstrap** tail
-//! (family=0, HHTL=0, identity=caller-supplied), `ValueSchema::Bootstrap`
-//! (all-zero value slab). [`compiled_classes_to_le_bytes`] packs a slice onto the
-//! zero-copy storage boundary.
+//! [`NodeRow`] whose **key IS the minted facet**: the same 16 bytes, carried
+//! through lance-graph-contract's byte-identical `FacetCascade → NodeGuid`
+//! conversion — render classid in `[0..4)`, the `part_of:is_a` rails in
+//! `[4..16)`. `ValueSchema::Bootstrap` (all-zero value slab). The facet is the
+//! row's identity, so [`compiled_classes_to_noderows`] refuses a batch in which
+//! two classes mint the same facet. [`compiled_classes_to_le_bytes`] packs a
+//! slice onto the zero-copy storage boundary.
+//!
+//! The key used to be built with `NodeGuid::new(classid, 0, 0, 0, 0, identity)`
+//! — a V1 `family:identity` tail that dropped the rails. That was deliberate
+//! while the rail-chain vs key-tail reconciliation was open; lance-graph has
+//! since settled it (a V3 mint never degrades to a V1 tail; `NodeGuid` and
+//! `FacetCascade` are the same 16 bytes and convert without reinterpretation).
 //!
 //! Out of scope (named, not hidden), per the W2 plan:
 //! - The actual Lance `Dataset::write` I/O — stops at `as_le_bytes()`, exactly
@@ -30,11 +39,6 @@
 //! - The 12-byte rail payload → a NodeRow **value tenant** (`[H2]`: needs a new
 //!   append-only `ValueTenant`, `v3-envelope-auditor`-gated) — mirror network,
 //!   which added no lane. The rails ride the `FacetCascade` surface only.
-//! - The key **tail from the rail tiers** (`[H1]`: le-contract §3 open item —
-//!   the `6×(8:8)` rail chain vs the key's contiguous `u24++u24` tail are
-//!   structurally different bit-groupings, "do not unify silently in code").
-//!   The tail is bootstrapped; [`compiled_class_to_noderow`] never derives it
-//!   from the rails (test-enforced).
 //! - `CompiledClass.actions` (behavior) — out-of-line, not in this byte payload
 //!   ("neither half carries behavior").
 //! - Ownership: this is an OFFLINE **bake** (source → artifact, single-writer) =
@@ -59,27 +63,72 @@ pub fn compiled_class_to_facet(cc: &CompiledClass) -> FacetCascade {
     FacetCascade::from_bytes(&cc.facet.to_bytes())
 }
 
-/// Embed one [`CompiledClass`] as ONE 512-byte CANON [`NodeRow`]: the render
-/// classid in the key `[0..4)`, a **bootstrap** tail (`family = 0`, HHTL = 0,
-/// `identity` = caller-supplied), `ValueSchema::Bootstrap` (all-zero 480-byte
-/// value slab), empty edge block. Mirrors `symbiont::bridge::board`.
+/// Embed one [`CompiledClass`] as ONE 512-byte CANON [`NodeRow`]: the key is
+/// the minted facet itself (render classid + `part_of:is_a` rails, byte for
+/// byte), `ValueSchema::Bootstrap` (all-zero 480-byte value slab), empty edge
+/// block.
 ///
-/// The key tail is bootstrapped, NOT derived from the rail tiers (`[H1]`
-/// freeze — the rail chain vs the key `u24++u24` tail reconciliation is an open
-/// operator/envelope ruling). `identity` must fit in 24 bits (`NodeGuid::new`
-/// asserts this).
+/// No V1 `family:identity` tail is minted: the key comes from
+/// `NodeGuid::from(FacetCascade)`, never `NodeGuid::new`.
+///
+/// # Example
+///
+/// ```ignore
+/// let row = compiled_class_to_noderow(&cc);
+/// assert_eq!(row.key.as_bytes(), &cc.facet.to_bytes());
+/// ```
 #[must_use]
-pub fn compiled_class_to_noderow(cc: &CompiledClass, identity: u32) -> NodeRow {
+pub fn compiled_class_to_noderow(cc: &CompiledClass) -> NodeRow {
     NodeRow {
-        // classid verbatim from the mint; family/HHTL bootstrap-zero, identity
-        // caller-supplied → the zero-fallback ladder's bootstrap address while
-        // the class is unbasined.
-        key: NodeGuid::new(cc.facet.facet_classid(), 0, 0, 0, 0, identity),
+        key: NodeGuid::from(compiled_class_to_facet(cc)),
         edges: EdgeBlock::default(),
         // ValueSchema::Bootstrap == FieldMask::EMPTY == all-zero slab; asserted
         // by the constant below so a reader never mistakes it for a live schema.
         value: [0u8; 480],
     }
+}
+
+/// Two classes in one batch minted byte-identical facets, so they would share
+/// a row key. Indices are positions in the input slice.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DuplicateFacetKey {
+    /// The earlier class with this key.
+    pub first: usize,
+    /// The later class that collides with it.
+    pub second: usize,
+}
+
+impl core::fmt::Display for DuplicateFacetKey {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(
+            f,
+            "classes {} and {} mint the same 16-byte facet, so they would share a row key",
+            self.first, self.second
+        )
+    }
+}
+
+impl std::error::Error for DuplicateFacetKey {}
+
+/// Embed a batch of classes, one [`NodeRow`] each, in input order.
+///
+/// # Errors
+///
+/// [`DuplicateFacetKey`] if two classes mint the same facet: the facet is the
+/// row key, so a duplicate would make two classes indistinguishable.
+pub fn compiled_classes_to_noderows(
+    ccs: &[CompiledClass],
+) -> Result<Vec<NodeRow>, DuplicateFacetKey> {
+    let rows: Vec<NodeRow> = ccs.iter().map(compiled_class_to_noderow).collect();
+    let mut seen: std::collections::HashMap<[u8; 16], usize> =
+        std::collections::HashMap::with_capacity(rows.len());
+    for (i, row) in rows.iter().enumerate() {
+        if let Some(&first) = seen.get(row.key.as_bytes()) {
+            return Err(DuplicateFacetKey { first, second: i });
+        }
+        seen.insert(*row.key.as_bytes(), i);
+    }
+    Ok(rows)
 }
 
 /// `ValueSchema` this sink stamps into every row it builds — the all-zero
@@ -175,11 +224,22 @@ mod tests {
         assert_eq!(CascadeShape::G6D2.groups(), 6);
     }
 
+    /// A second, unrelated Odoo model, so two DISTINCT classes can be sunk
+    /// (one class now yields exactly one key).
+    fn res_partner_compiled() -> CompiledClass {
+        let mut g = ModelGraph::new("odoo");
+        g.models.push(Model::new("res_partner"));
+        crate::mint::compile_graph_python::<OdooPort>(&g)
+            .into_iter()
+            .find(|c| c.class.name == "res_partner")
+            .expect("res_partner compiles")
+    }
+
     // ── T-C: the render classid lands in the key ──
     #[test]
     fn classid_lands_in_key() {
         let cc = account_move_compiled();
-        let row = compiled_class_to_noderow(&cc, 7);
+        let row = compiled_class_to_noderow(&cc);
         assert_eq!(
             row.key.classid(),
             cc.facet.facet_classid(),
@@ -187,42 +247,46 @@ mod tests {
         );
     }
 
-    // ── T-D: bootstrap tail / [H1] guard — rails did NOT leak into the key tail ──
+    // ── T-D: the key IS the minted facet — rails included, no V1 tail ──
     #[test]
-    fn key_tail_is_bootstrap_not_derived_from_rails() {
+    fn key_is_the_minted_facet_rails_included() {
         let cc = account_move_compiled();
-        let row = compiled_class_to_noderow(&cc, 7);
-        assert_eq!(row.key.family(), 0, "family bootstrap-zero (unbasined)");
+        // Anti-vacuity: with all-zero rails a bootstrap V1 key and the facet
+        // key would be indistinguishable in [4..16), and this test would pass
+        // for the old code too.
+        assert_ne!(
+            cc.facet.to_bytes()[4..],
+            [0u8; 12],
+            "fixture must carry non-zero rails"
+        );
+        let row = compiled_class_to_noderow(&cc);
+        assert_eq!(row.key.as_bytes(), &cc.facet.to_bytes(), "byte for byte");
+        let back = row.key.facet();
         assert_eq!(
-            row.key.identity(),
-            7,
-            "identity is the caller value, not a rail byte"
+            back.hi_chain(),
+            cc.facet.part_of_chain(),
+            "part_of in the key"
         );
-        assert!(
-            row.key.is_unbasined(),
-            "family==0 → unbasined; the rail tiers must not populate the tail ([H1])"
-        );
+        assert_eq!(back.lo_chain(), cc.facet.is_a_chain(), "is_a in the key");
     }
 
     // ── T-E: round-trip through the storage byte boundary ──
     #[test]
-    fn le_bytes_round_trip_preserves_classid() {
-        let cc = account_move_compiled();
-        let rows = vec![
-            compiled_class_to_noderow(&cc, 1),
-            compiled_class_to_noderow(&cc, 2),
-        ];
+    fn le_bytes_round_trip_preserves_keys() {
+        let ccs = [account_move_compiled(), res_partner_compiled()];
+        let rows = compiled_classes_to_noderows(&ccs)
+            .unwrap_or_else(|e| panic!("distinct classes refused: {e}"));
 
         // The true zero-copy decode reads the packet's OWN bytes (a borrow of the
-        // 64-aligned `&[NodeRow]`, per canonical_node's align(64) contract) —
-        // mirrors symbiont::bridge's round-trip.
+        // 64-aligned `&[NodeRow]`, per canonical_node's align(64) contract).
         let packet = NodeRowPacket::new(&rows, 0);
         let aligned = packet.as_le_bytes();
         assert_eq!(aligned.len(), 2 * 512, "two 512-byte CANON rows");
         let decoded = node_rows_from_le_bytes(aligned).expect("aligned zero-copy decode");
         assert_eq!(decoded.len(), 2);
-        assert_eq!(decoded[0].key.classid(), cc.facet.facet_classid());
-        assert_eq!(decoded[1].key.identity(), 2);
+        for (cc, row) in ccs.iter().zip(decoded) {
+            assert_eq!(row.key.as_bytes(), &cc.facet.to_bytes());
+        }
 
         // The owned-`Vec` helper carries the identical bytes (a copy off the
         // storage boundary — Lance owns re-alignment on read-back).
@@ -231,24 +295,37 @@ mod tests {
 
     // ── T-F: field isolation (I-LEGACY-API-FEATURE-GATED matrix) ──
     #[test]
-    fn field_isolation_classid_and_identity_are_independent() {
-        let cc = account_move_compiled();
-        // Same class, two identities → classid identical, identity distinct,
-        // value slab + edges untouched (all zero) in both.
-        let a = compiled_class_to_noderow(&cc, 10);
-        let b = compiled_class_to_noderow(&cc, 20);
-        assert_eq!(
-            a.key.classid(),
-            b.key.classid(),
-            "identity write left classid unchanged"
-        );
-        assert_ne!(a.key.identity(), b.key.identity());
+    fn field_isolation_key_value_and_edges_are_independent() {
+        let a = compiled_class_to_noderow(&account_move_compiled());
+        let b = compiled_class_to_noderow(&res_partner_compiled());
+        assert_ne!(a.key, b.key, "distinct classes, distinct keys");
         assert_eq!(
             a.value, [0u8; 480],
             "no value lane written (bootstrap schema)"
         );
         assert_eq!(b.value, [0u8; 480]);
         assert_eq!(a.edges, EdgeBlock::default(), "edge block reserved-zero");
+        assert_eq!(b.edges, EdgeBlock::default());
+    }
+
+    // ── T-H: the batch refuses a duplicate key, and only a duplicate ──
+    #[test]
+    fn batch_refuses_duplicate_facets_and_only_those() {
+        let am = account_move_compiled();
+        let rp = res_partner_compiled();
+        // can it fire: the same class twice is the same key
+        assert_eq!(
+            compiled_classes_to_noderows(&[am.clone(), rp.clone(), am.clone()]).err(),
+            Some(DuplicateFacetKey {
+                first: 0,
+                second: 2
+            })
+        );
+        // can it stay silent: distinct classes pass, in input order
+        let rows = compiled_classes_to_noderows(&[rp.clone(), am.clone()])
+            .unwrap_or_else(|e| panic!("distinct classes refused: {e}"));
+        assert_eq!(rows[0].key.as_bytes(), &rp.facet.to_bytes());
+        assert_eq!(rows[1].key.as_bytes(), &am.facet.to_bytes());
     }
 
     // ── T-G: this sink moves ZERO bytes at rest — no layout-version bump ──
