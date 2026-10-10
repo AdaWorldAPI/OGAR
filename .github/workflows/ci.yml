@@ -18,8 +18,18 @@ jobs:
     name: cargo check + test
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    env:
+      # Tests read OGIT from a checkout of AdaWorldAPI/OGIT, never from a
+      # copy in this repo (`crates/ogar-from-schema/src/ogit_checkout.rs`).
+      OGIT_FORK_PATH: ${{ github.workspace }}/ogit
     steps:
       - uses: actions/checkout@v4
+      - name: Check out AdaWorldAPI/OGIT at its moving master
+        uses: actions/checkout@v4
+        with:
+          repository: AdaWorldAPI/OGIT
+          ref: master
+          path: ogit
       - name: Install Rust toolchain (per rust-toolchain.toml)
         uses: dtolnay/rust-toolchain@master
         with:

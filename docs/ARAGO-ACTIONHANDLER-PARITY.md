@@ -1,7 +1,7 @@
 # Arago ActionHandler ⟷ OGAR — parity scorecard + the Python→OGAR switch path
 
 > **Status:** FINDING (contract parity `[G]`, grounded in shipped code + the
-> vendored OGIT ontology + arago's published sources) + the runtime executor as
+> OGIT ontology + arago's published sources) + the runtime executor as
 > a specced, NOT-yet-built brick (`[H]`, gated on `PROBE-OGAR-ACTIONHANDLER-RUN`).
 >
 > **Goal (operator):** reach parity with arago's HIRO ActionHandler such that one
@@ -12,7 +12,7 @@
 > config format), `arago/python-hiro-stonebranch-actionhandler` (a concrete
 > daemon), and the HIRO 7 **Action API** tutorial + machine-readable specs (the
 > `action-ws` protocol, served by the HIRO 7 dev portal).
-> The OGIT `NTO/Automation` ontology (vendored at `vocab/imports/ogit/NTO/Automation/`)
+> The OGIT `NTO/Automation` ontology (in AdaWorldAPI/OGIT, read from a checkout)
 > is the contract's schema.
 
 ---
@@ -47,7 +47,7 @@ below take them in turn.
 
 The arago handler config (the SSH/Stonebranch YAML) and the OGIT ontology are
 two encodings of one contract. OGAR lifts that contract via
-`ogar-from-schema::do_arm` (`assemble_action_handler`), grounded in the vendored
+`ogar-from-schema::do_arm` (`assemble_action_handler`), grounded in the
 OGIT `provides` graph — **proven by `assembles_the_full_action_handler_contract`**.
 
 | arago config field | OGIT ontology | OGAR type (`do_arm`) | status |
@@ -256,7 +256,7 @@ transport over them.
 
 | Layer | Parity | Evidence / remaining |
 |---|---|---|
-| **Config + ontology contract** | ✅ `[G]` | `assemble_action_handler` over the vendored OGIT graph; `ActionHandlerSpec` / `CapabilitySlot` / `ApplicabilitySlot` / `ActionParam` |
+| **Config + ontology contract** | ✅ `[G]` | `assemble_action_handler` over the OGIT graph; `ActionHandlerSpec` / `CapabilitySlot` / `ApplicabilitySlot` / `ActionParam` |
 | **ModelFilter → guard** | ✅ `[G]` | `environmentFilter` → `KausalSpec::StateGuard` (test) |
 | **Action lifecycle (protocol)** | ✅ `[G]` (type-level) | `action-ws` ⟷ `ActionInvocation` Pending→Committed; `commit_via` is the gate |
 | **RBAC at execute** | ✅ `[G]` | `commit_via<ClassRbac>` (verb-gate ∧ guard ∧ MUL) — shipped in `lance-graph-contract` |

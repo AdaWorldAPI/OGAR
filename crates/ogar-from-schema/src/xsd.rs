@@ -12,7 +12,7 @@
 //! This module reproduces that walk and both output formats **byte for
 //! byte** — the transcode proof is `tests::asciidoc_matches_python_oracle`,
 //! which asserts the Rust output equals the cached Python output at
-//! `_oracle/classifications.adoc`.
+//! `vocab/oracles/mars/classifications.adoc`.
 //!
 //! # Why transcode it
 //!
@@ -371,10 +371,8 @@ fn group_2col(
 mod tests {
     use super::*;
 
-    const XSD: &str =
-        include_str!("../../../vocab/imports/ogit/NTO/MARS/_oracle/MARSSchema2015.xsd");
-    const ORACLE_ADOC: &str =
-        include_str!("../../../vocab/imports/ogit/NTO/MARS/_oracle/classifications.adoc");
+    const XSD: &str = include_str!("../../../vocab/oracles/mars/MARSSchema2015.xsd");
+    const ORACLE_ADOC: &str = include_str!("../../../vocab/oracles/mars/classifications.adoc");
 
     #[test]
     fn parses_version() {
@@ -385,7 +383,7 @@ mod tests {
     #[test]
     fn extracts_expected_counts() {
         let c = classifications(XSD).expect("parse");
-        // From PROVENANCE.md / the Python oracle:
+        // From the Python oracle:
         //   Application 7 classes × 50 subclass pairs
         //   Resource    19 classes
         //   Software    40 classes × 336 subclass pairs
@@ -445,14 +443,13 @@ mod tests {
         let xsd_values: std::collections::BTreeSet<String> =
             c.value_set("Application").into_iter().collect();
 
-        const CLASS_TTL: &str =
-            include_str!("../../../vocab/imports/ogit/NTO/MARS/Application/attributes/class.ttl");
-        const SUBCLASS_TTL: &str = include_str!(
-            "../../../vocab/imports/ogit/NTO/MARS/Application/attributes/subClass.ttl"
-        );
         let mut ttl_values = std::collections::BTreeSet::new();
-        for ttl in [CLASS_TTL, SUBCLASS_TTL] {
-            let TtlDeclaration::DatatypeAttribute(a) = parse_file(ttl).expect("parse ttl") else {
+        for path in [
+            "NTO/MARS/Application/attributes/class.ttl",
+            "NTO/MARS/Application/attributes/subClass.ttl",
+        ] {
+            let ttl = crate::ogit_checkout::read(path);
+            let TtlDeclaration::DatatypeAttribute(a) = parse_file(&ttl).expect("parse ttl") else {
                 panic!("expected datatype attribute");
             };
             for v in a.fixed_enum_values().expect("fixed enum") {

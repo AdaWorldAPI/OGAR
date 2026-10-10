@@ -21,25 +21,30 @@
 //! which the walker's `detect_kind` does not recognise (only `a rdfs:Class`
 //! / `a owl:DatatypeProperty`). This probe uses the real OGIT NTO entity
 //! fixture family (`rdfs:Class` dialect) instead:
-//! `vocab/imports/ogit/NTO/Documents/entities/DocumentInfoRecord.ttl`.
+//! `NTO/Documents/entities/DocumentInfoRecord.ttl` in the OGIT checkout.
 
 use ogar_from_schema::lift_ogit_entity;
 
-const ENTITY: &str =
-    include_str!("../../../vocab/imports/ogit/NTO/Documents/entities/DocumentInfoRecord.ttl");
-const A_NUMBER: &str =
-    include_str!("../../../vocab/imports/ogit/NTO/Documents/attributes/documentNumber.ttl");
-const A_TYPE: &str =
-    include_str!("../../../vocab/imports/ogit/NTO/Documents/attributes/documentType.ttl");
-const A_PARTID: &str =
-    include_str!("../../../vocab/imports/ogit/NTO/Documents/attributes/documentPartId.ttl");
-const A_VERSION: &str =
-    include_str!("../../../vocab/imports/ogit/NTO/Documents/attributes/documentVersion.ttl");
+#[path = "../src/ogit_checkout.rs"]
+mod ogit_checkout;
+
+fn documents(path: &str) -> String {
+    ogit_checkout::read(&format!("NTO/Documents/{path}"))
+}
 
 #[test]
 fn document_info_record_lowers_to_controller_dto_with_expected_wire_names() {
-    let class = lift_ogit_entity(ENTITY, &[A_NUMBER, A_TYPE, A_PARTID, A_VERSION])
-        .expect("DocumentInfoRecord entity must lower");
+    let entity = documents("entities/DocumentInfoRecord.ttl");
+    let attributes = [
+        "documentNumber",
+        "documentType",
+        "documentPartId",
+        "documentVersion",
+    ]
+    .map(|name| documents(&format!("attributes/{name}.ttl")));
+    let attributes: Vec<&str> = attributes.iter().map(String::as_str).collect();
+    let class =
+        lift_ogit_entity(&entity, &attributes).expect("DocumentInfoRecord entity must lower");
     // (a) entity → class name.
     assert_eq!(class.name, "DocumentInfoRecord");
     // (b) parent lowered from rdfs:subClassOf (verified against

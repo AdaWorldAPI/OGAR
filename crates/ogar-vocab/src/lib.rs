@@ -5464,8 +5464,8 @@ pub fn osm_street_node() -> Class {
 
 // ── 0x0CXX — Automation domain builders (HIRO IT-automation stack) ──
 // The MARS structural CMDB (A→R→S→M `dependsOn` backbone) + the Automation
-// DO-arm actuators. Shapes grounded in the vendored OGIT TTL attributes
-// (`vocab/imports/ogit/NTO/{MARS,Automation}/`). See `docs/MARS-TRANSCODING.md`
+// DO-arm actuators. Shapes grounded in the OGIT TTL attributes
+// (`NTO/{MARS,Automation}/` in AdaWorldAPI/OGIT). See `docs/MARS-TRANSCODING.md`
 // + `docs/HIRO-DO-ARM-LIFT.md`.
 
 /// The `mars_application` (`0x0C01`) — head of the MARS A→R→S→M `dependsOn`

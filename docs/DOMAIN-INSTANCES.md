@@ -52,7 +52,7 @@
 | **Odoo / ERP** | **production instance** | `docs/ODOO-TRANSCODING.md` + a production ERP deployment | shipping |
 | **HIPAA / healthcare** | **production instance** | a production healthcare (HIPAA) deployment | shipping |
 | **Geospatial / OSM** | calibration (geographic) | `docs/RDF-OWL-ALIGNMENT.md §10` Phase 2c + `lance-graph` PR #473 `cesium-osm-substrate-v1.md` (D-OSM-1..7) | spec'd; runtime addendum shipped; `ogar-from-osm-pbf` queued |
-| **MARS (HIRO/bardioc CMDB)** | calibration (closed-formal, XSD-frozen) | `docs/MARS-TRANSCODING.md` + `vocab/imports/ogit/NTO/MARS/` (1:1 mirror) + `_oracle/MARSSchema2015.xsd` + `crates/ogar-from-schema` | spec'd; lift shipping; bijection mechanically tested (15 tests green) |
+| **MARS (HIRO/bardioc CMDB)** | calibration (closed-formal, XSD-frozen) | `docs/MARS-TRANSCODING.md` + OGIT `NTO/MARS/` (read from a checkout) + `vocab/oracles/mars/MARSSchema2015.xsd` + `crates/ogar-from-schema` | spec'd; lift shipping; bijection mechanically tested (15 tests green) |
 
 The first three are how the substrate is *calibrated* (chess proves the
 Semantik/Syntax/Pragmatik trichotomy separates cleanly; OpenProject
@@ -209,12 +209,12 @@ to the FMA-bones anatomical case (`docs/RDF-OWL-ALIGNMENT.md §6`).
 **The third closed-formal calibration domain** (after chess and OSM).
 The bardioc engine's existing MARS-Schema XSD (frozen since 2015,
 version 5.3.8) becomes the bijective oracle for the four-entity
-A→R→S→M dependency taxonomy. The OGIT NTO/MARS TTL files are mirrored
-1:1 into `vocab/imports/ogit/NTO/MARS/`; the OGAR producer
+A→R→S→M dependency taxonomy. The OGIT NTO/MARS TTL files are read
+from a checkout of AdaWorldAPI/OGIT at its moving `master`; the OGAR producer
 (`ogar-from-schema`) reads them and the lifted classifications agree
 byte-for-enum with the XSD-extracted set. Round-trip is mechanically
 enforced: every MARS TTL parses → emits → re-parses to an **equal**
-lifted form, and every one of 176 SGO verbs (the AST predicate
+lifted form, and every SGO verb (the AST predicate
 vocabulary) does the same. Exercises:
 
 - **Frozen-schema calibration** — the bijection oracle pattern
@@ -231,7 +231,7 @@ vocabulary) does the same. Exercises:
   structures emit back to OGIT-flavoured TTL preserved
   semantically; colleagues can author/edit in Rust and feed back into
   bardioc's existing ingest with no two-way translation table.
-- **AST predicate vocabulary lift** — SGO's 176 verbs (`dependsOn`,
+- **AST predicate vocabulary lift** — SGO's verbs (`dependsOn`,
   `contains`, `runsOn`, `generates`, `relates`, `causes`, …) become
   the canonical OGAR `Association`/`ActionDef` predicate vocabulary
   via `ogar-from-schema::sgo`. Every NTO `ogit:allowed (...)` block's
@@ -266,7 +266,7 @@ from `SUBSTRATE-ENDGAME.md §5.2`):
 | **Palette256 codec adoption** (ADR-024) | — | — | — | — | ✓ (security) | **✓ (tag values + tile-local coords)** | — |
 | **Frozen-schema bijection oracle** (XSD/TTL ↔ Class) | ✓ (`Position::play`) | — | — | — | — | — | **✓ (XSD ↔ TTL ↔ Class, 3-way)** |
 | **Reverse-emit (Class → schema)** | — | — | — | — | — | — | **✓ (semantic bijection)** |
-| **AST predicate vocabulary registry** | — | — | — | — | — | — | **✓ (176 SGO verbs)** |
+| **AST predicate vocabulary registry** | — | — | — | — | — | — | **✓ (every SGO verb)** |
 
 **Coverage observation:** no single domain exercises everything, but the
 six together cover the full surface. The HIPAA instance is the *only*
