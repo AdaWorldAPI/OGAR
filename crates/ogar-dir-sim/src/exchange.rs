@@ -23,7 +23,7 @@
 //! **The enabled flag is not part of this.** A shared, room or equipment
 //! mailbox is a disabled account by design and is still a recipient.
 
-use crate::change::{KeyId, ValueId};
+use crate::change::ValueId;
 use ogar_dir_core::Guid128;
 
 /// `msExchRemoteRecipientType` flag bits.
@@ -341,8 +341,10 @@ impl Recipient {
 /// `ExchangeGuid` across a move) and the address it receives at
 /// (`PrimarySmtpAddress`).
 ///
-/// The identity is `node` and, for a mailbox, `exchange_guid`; the address is
-/// a value of the identity, never the key it is found by.
+/// The identity is `node` and, once a mailbox is provisioned, its
+/// `exchange_guid`; across the hybrid join it is `ExternalDirectoryObjectId`.
+/// An address is a value of the identity, never the key it is found by, and
+/// `mail` in particular is a label that hydrates no identity.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ExchangeIdentity {
     /// The object (`objectGUID`).
@@ -353,39 +355,6 @@ pub struct ExchangeIdentity {
     pub exchange_guid: Option<Guid128>,
     /// `PrimarySmtpAddress`.
     pub primary_smtp: Option<ValueId>,
-}
-
-/// What an object's `mail` label resolves to. The label is the trigger: its
-/// address is looked up once, among the addresses objects actually hold
-/// (UPN, `proxyAddresses`, routing address), and the holder's
-/// [`ExchangeIdentity`] is hydrated by GUID. The label itself never reserves
-/// the address and never decides delivery or access.
-#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum MailLabel {
-    /// The label is an address the labelled object holds itself.
-    Own(ExchangeIdentity),
-    /// The label names an address another object holds: an admin account
-    /// whose `mail` is a user's mailbox (a password-reset target), say. The
-    /// identity is the holder's.
-    Elsewhere {
-        /// The label's comparison key.
-        key: KeyId,
-        /// The object that holds the address.
-        holder: ExchangeIdentity,
-    },
-    /// Several objects hold the address: none is hydrated, the holders are
-    /// listed (sorted).
-    Contested {
-        /// The label's comparison key.
-        key: KeyId,
-        /// Every holder.
-        holders: Vec<Guid128>,
-    },
-    /// No object holds the address: a stale label.
-    Unheld {
-        /// The label's comparison key.
-        key: KeyId,
-    },
 }
 
 /// One step of the hybrid remote-mailbox lifecycle (semantic; the actuator
