@@ -276,6 +276,15 @@ no-population-intermediate rule.
   `effective_active`, `mS-DS-ConsistencyGuid` → `onPremisesImmutableId`);
   `ogar-ad` schema v4 adds `physicalDeliveryOfficeName`. The executor
   (lance-graph `validate::address_rules`) computes the three violations.
+  **Corrected 2026-10-10:** `mail` is not in that key space. It is a
+  property on the user's business card, like the telephone number: shown in
+  the address book and used inside messages, kept as written, and it follows
+  the user rather than the mailbox or the recipient. It is not identity, not
+  an address anything is received at, and not provisioned. A `mail` value
+  therefore never makes an object a holder in `AddressConflict` (the admin
+  with a password-reset `mail` holds nothing), and `AddressRole::Mail` is
+  documented as such. This holds as long as Entra Connect does not use
+  `mail` as the source anchor.
 - **V9 — `onPremisesExtensionAttributes` is a bag.** Graph returns it as
   one object of fifteen `extensionAttributeN` keys; AD stores fifteen
   separate attributes. Both land in one pooled slot of `AttrKind::Bag`:
@@ -293,5 +302,60 @@ no-population-intermediate rule.
   `onPremisesSamAccountName` were already ingested: the DN's OU path
   (leaf CN and DC dropped, root first) is interned into the shared OU
   dictionary, so a synced user's `ou_hhtl` equals its AD object's.
+- **V10 — Holding an address is not receiving at it (2026-10-10).** Two
+  claim planes, one per attribute kind: the UPN is claimed by every node
+  that `is_owner` (present and active, or a recipient type that keeps a
+  disabled account a recipient); SMTP proxies and the routing address are
+  claimed only by a node that `is_mail_recipient`. Provisioning follows the
+  recipient type, never the enabled flag: a shared, room or equipment
+  mailbox receives with its account disabled; a node that is not
+  mail-enabled holds no SMTP address, whatever `proxyAddresses` still
+  carries (leftovers after `Disable-RemoteMailbox` claim nothing; its UPN
+  still does). `validate::address_owner` answers who holds an address;
+  `address_recipient` who receives at it.
+- **V11 — Exchange identity (2026-10-10).** Read by the object's GUID, never
+  by an address (`ExchangeIdentity { node, recipient, exchange_guid,
+  primary_smtp }`):
+  - `ExchangeGuid` is the mailbox's immutable identity. On-premises it is
+    `msExchMailboxGuid`, ingested by `ogar-ad` schema v6 into a `Guid`
+    slot; a record before v6 has not read it.
+  - `PrimarySmtpAddress` identifies the recipient implicitly, as a mutable
+    string.
+  - `ExternalDirectoryObjectId` is the link mailbox ↔ Entra user ("external"
+    = the directory outside Exchange). That Entra user (formerly MsolUser)
+    carries `{alias}@{tenant}.onmicrosoft.com`, distinct from the routing
+    address `{alias}@{tenant}.mail.onmicrosoft.com`, the external EOP
+    target (`exchange::ROUTING`).
+- **V12 — The cloud fold and the `ExchangeGuid` comparison (2026-10-10).**
+  This closes V7's open half on the lance-graph side. `CloudMailboxes`
+  reads `correspond::fold` on GUIDs only (source anchor, backsync, Entra
+  id) and keeps the AD objects with exactly one Exchange Online mailbox;
+  an ambiguous match is no mailbox. `delivers_to` / `address_recipient_in`
+  then decide receipt with the cloud observed: a remote mailbox receives
+  only when its cloud mailbox exists. The mailbox identity is compared on
+  both sides (`mailbox_guid`):
+  - `Enable-RemoteMailbox` leaves `msExchMailboxGuid` **empty**. Entra
+    Connect writes it back only with its *Exchange hybrid deployment*
+    option checked; otherwise it stays empty until set by hand
+    (`Set-RemoteMailbox -ExchangeGuid`). Empty = awaiting backsync:
+    delivered, not migratable.
+  - Equal = migratable. This is the only migratable state.
+  - Different = the on-premises value blocks provisioning the cloud
+    mailbox: not delivered, not migratable.
+  - Cloud value unread, or read with two values for one
+    `ExternalDirectoryObjectId` = no verdict.
+  **Open:** the Exchange hybrid option is not observed, so an empty value
+  reads as awaiting backsync even where nothing will fill it; that needs
+  the option as an input. The cloud `ExchangeGuid` values are supplied by
+  the caller (`with_exchange_guids`); there is no Exchange Online encoder
+  or ingest yet.
+- **V13 — Parked until EOP is modelled.** The edge verdict per accepted
+  domain (Authoritative: a non-existent address is rejected outright;
+  InternalRelay: relayed) and how leftover proxies on non-mail-enabled
+  accounts look at the edge. Without EOP neither changes a decision here.
+- **V14 — Owner gate across Entra (open).** Entra enforces UPN and proxy
+  uniqueness across all objects, Exchange only across mail-enabled ones;
+  whether the dir-sim owner gate should follow the wider Entra scope is
+  undecided.
 - **V5 — CI.** CI builds `lance-graph-dir-sim` against the OGAR checkout, so
   it needs this OGAR PR merged first.
