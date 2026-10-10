@@ -342,17 +342,17 @@ impl Recipient {
 /// `ExchangeGuid` across a move) and the address it receives at
 /// (`PrimarySmtpAddress`).
 ///
-/// Identities are GUIDs: `node` is the on-premises object, and a
-/// provisioned mailbox is identified by its `exchange_guid`. The user is the
+/// The recipient is identified by its `PrimarySmtpAddress` (`primary_smtp`);
+/// `node` is the on-premises object, and a provisioned mailbox is
+/// identified by its `exchange_guid`. The user is the
 /// Entra object (Azure AD, formerly the MsolUser), which carries
 /// `{alias}@{tenant}.onmicrosoft.com`, Microsoft's internal cloud address.
 /// Every mail recipient links its mailbox to that user through
 /// `ExternalDirectoryObjectId` — "external" because it points into the
 /// directory outside Exchange. None of these is the routing address
 /// `{alias}@{tenant}.mail.onmicrosoft.com` ([`ROUTING`]), the external
-/// target EOP delivers to. An address is a value of an identity,
-/// never the key it is found by, and `mail` in particular is a label that
-/// hydrates no identity.
+/// target EOP delivers to. `mail` is a property on the user's business card,
+/// like the telephone number, and hydrates no identity.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ExchangeIdentity {
     /// The object (`objectGUID`).
@@ -361,7 +361,7 @@ pub struct ExchangeIdentity {
     pub recipient: Option<Recipient>,
     /// `msExchMailboxGuid`; `None` = no mailbox, or not read.
     pub exchange_guid: Option<Guid128>,
-    /// `PrimarySmtpAddress`.
+    /// `PrimarySmtpAddress`: the recipient's identity.
     pub primary_smtp: Option<ValueId>,
 }
 
