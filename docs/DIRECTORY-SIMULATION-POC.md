@@ -479,8 +479,8 @@ no-population-intermediate rule.
     recipients"), so the group's kind (V19) is validated per right:
     - **FullAccess and SendAs**: a user or a security-enabled group. A
       user holds the right when it is granted to the user or to a
-      security-enabled group it is in, directly or through nesting (V19:
-      the user's groups, filtered to security-enabled). Exchange Online resolves these trustees among recipients,
+      security-enabled group whose SID it holds, directly or through
+      nested security groups (V19's SID chain). Exchange Online resolves these trustees among recipients,
       so there the group must also be mail-enabled; on-premises a
       security group that is not mail-enabled is a valid trustee. A grant
       of either to a distribution group is a violation and confers
@@ -627,9 +627,14 @@ no-population-intermediate rule.
     - *Mail*: a list addressed by its mail-enabled group reaches every
       user in it through nesting, a nested group without an address
       included. Spear's `mailbox_members` uses this.
-    - *Permissions*: a user's groups filtered to security-enabled are the
-      SIDs the user inherits; a permission granted to such a group reaches
-      its members through nesting. V17, V18 and RBAC roles from group
+    - *Permissions*: only a security group has a SID, so a group without
+      one can neither hold nor pass on a permission. Inheritance walks the
+      same nesting through security groups only
+      (`View::security_identifiers`, `groups_transitive_through`,
+      `members_transitive_through` with the security-enabled filter): a
+      user in a distribution group nested in a security group holds none of
+      its SIDs, and a distribution group that contains a security group
+      inherits nothing from it. V17, V18 and RBAC roles from group
       membership use this.
     - *Both*: a mail-enabled security group carries a permission and
       receives mail.
