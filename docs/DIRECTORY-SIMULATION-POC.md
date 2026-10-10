@@ -374,6 +374,9 @@ no-population-intermediate rule.
   deprovisioned in Exchange Online, and nothing for anything else or for a
   host the deployment lacks. That is the question a mail server answers
   before it accepts a message as local or relays it.
+  These are provided and documented as an API only; the routing is used
+  later by HubSPO-rs and by SAP on Quack (`lance-graph-sap`), which bind
+  to it in their own repos.
   `MailboxLocation { host, kind, mailbox_guid }` carries what
   `Get-MailboxLocation` reports; `MailboxLocationType` is its seven values.
   Exchange names a location `TenantGUID\MailboxGUID`, the pair Graph
