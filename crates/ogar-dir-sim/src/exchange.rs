@@ -342,14 +342,15 @@ impl Recipient {
 /// `ExchangeGuid` across a move) and the address it receives at
 /// (`PrimarySmtpAddress`).
 ///
-/// Three identities, each a GUID: `node` is the on-premises object; once a
-/// mailbox is provisioned it is identified by its `exchange_guid`; and every
-/// mail recipient has an Entra identity (the Azure AD object, formerly the
-/// MsolUser) whose id is `ExternalDirectoryObjectId`. That Entra object also
-/// carries `{alias}@{tenant}.onmicrosoft.com`, Microsoft's internal cloud
-/// address; it is not the routing address
-/// `{alias}@{tenant}.mail.onmicrosoft.com` ([`ROUTING`]), which is the
-/// external target EOP delivers to. An address is a value of an identity,
+/// Identities are GUIDs: `node` is the on-premises object, and a
+/// provisioned mailbox is identified by its `exchange_guid`. The user is the
+/// Entra object (Azure AD, formerly the MsolUser), which carries
+/// `{alias}@{tenant}.onmicrosoft.com`, Microsoft's internal cloud address.
+/// Every mail recipient links its mailbox to that user through
+/// `ExternalDirectoryObjectId` — "external" because it points into the
+/// directory outside Exchange. None of these is the routing address
+/// `{alias}@{tenant}.mail.onmicrosoft.com` ([`ROUTING`]), the external
+/// target EOP delivers to. An address is a value of an identity,
 /// never the key it is found by, and `mail` in particular is a label that
 /// hydrates no identity.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -567,7 +568,8 @@ impl AddressTemplate {
 /// where the alias is the object's `mailNickname` (the Exchange Online
 /// `Alias`). It is the external target Exchange Online Protection delivers
 /// to, distinct from `{alias}@{tenant}.onmicrosoft.com`, the internal cloud
-/// address of the recipient's Entra identity (`ExternalDirectoryObjectId`). In AD it is `targetAddress` with the `SMTP:` prefix and also one
+/// address of the Entra user the mailbox links to through
+/// `ExternalDirectoryObjectId`. In AD it is `targetAddress` with the `SMTP:` prefix and also one
 /// of the `proxyAddresses` (`smtp:`); Exchange Online lists it among
 /// `EmailAddresses`. Matched against the normalized (lower-case) address.
 pub const ROUTING: AddressTemplate = AddressTemplate("{0}@{1}.mail.onmicrosoft.com");
