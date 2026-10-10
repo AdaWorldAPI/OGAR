@@ -474,28 +474,48 @@ no-population-intermediate rule.
   - **The object.** FullAccess needs a mailbox; a grant of it on anything
     else is a violation. SendAs and SendOnBehalf also apply to a
     distribution group, which has no mailbox of its own.
-  - **The trustee is a user or a security-enabled group** (V19). A user
-    holds a right on an object when it is granted to the user or to a
-    security-enabled group the user belongs to, directly or through other
-    security-enabled groups: V19's security closure, not its delivery
-    closure. A grant to a group that is not security-enabled (a
-    distribution group) is a violation and confers nothing. Exchange
-    Online resolves trustees among recipients, so there a group trustee
-    must also be mail-enabled; on-premises a security group that is not
-    mail-enabled is a valid trustee. Until V19's expansion lands, a grant
-    to a group reaches only the group's direct members.
-  - **Deny wins.** Exchange allows deny entries on FullAccess, and Active
-    Directory allows them on SendAs. A deny for `(object, trustee, right)`
-    from any witness, for the user or for any group the user belongs to,
-    removes the right whatever grants exist. A deny that cancels a grant
-    is reported, so it is visible rather than silent. Reading grants
-    without denies would fail open.
+  - **Which trustees each right accepts.** Exchange does not accept the
+    same group kinds for every right (Microsoft, "Manage permissions for
+    recipients"), so the group's kind (V19) is validated per right:
+    - **FullAccess and SendAs**: a user or a security-enabled group. A
+      user holds the right when it is granted to the user or to a
+      security-enabled group it belongs to, through V19's security
+      closure. Exchange Online resolves these trustees among recipients,
+      so there the group must also be mail-enabled; on-premises a
+      security group that is not mail-enabled is a valid trustee. A grant
+      of either to a distribution group is a violation and confers
+      nothing.
+    - **SendOnBehalf**: a user or a mail-enabled group, distribution
+      groups included, because `GrantSendOnBehalfTo` names recipients. A
+      user holds it through V19's delivery closure. A grant to a group
+      that is not mail-enabled is a violation.
+
+    Until V19's expansion lands, a grant to a group reaches only the
+    group's direct members.
+  - **Denies follow ACE precedence.** Exchange allows deny entries on
+    FullAccess, and Active Directory allows them on SendAs. Each entry
+    keeps whether it is inherited (`IsInherited` in
+    `Get-MailboxPermission` / `Get-EXOMailboxPermission`; the ACE's
+    inherited flag on-premises), and entries are evaluated in Windows
+    canonical order: explicit deny, explicit allow, inherited deny,
+    inherited allow. So a deny removes a right unless an entry of a
+    stronger level allows it; an explicit allow outranks an inherited
+    deny. A group entry is at the level of its own ACE, not lower for
+    being reached through a group. A deny whose level was not reported
+    (a witness that carries no inheritance) is treated as explicit, so it
+    fails closed, and a deny that cancels an allow is reported rather
+    than applied silently. Reading allows without denies would fail open.
   - **Each grant carries the witness that asserted it.** LDIF supplies
     `publicDelegates` and `msExchDelegateListLink`; Graph supplies none of
-    the three; the Exchange permission output (`Get-MailboxPermission`,
-    `Get-RecipientPermission`, `GrantSendOnBehalfTo`) supplies all of them
-    and is read through the same read-only encoder as V12. Witnesses that
-    disagree both stay; an absent witness is not a refusal.
+    the three. Exchange supplies all three, each from its own read,
+    through the same read-only encoder as V12: FullAccess from
+    `Get-MailboxPermission`, SendAs from `Get-RecipientPermission` (on-
+    premises `Get-ADPermission` with the `Send-As` extended right), and
+    SendOnBehalf from the `GrantSendOnBehalfTo` property of the
+    recipient, read with `Get-Mailbox`, `Get-DistributionGroup` or
+    `Get-DynamicDistributionGroup`; it is a property, not a cmdlet of its
+    own. Witnesses that disagree both stay; an absent witness is not a
+    refusal.
   - **Consumers.** Spear's mailbox IAM lets a FullAccess trustee read the
     mailbox's rows. SendAs and SendOnBehalf gate sending, and the consumer
     checks the right before every submission; Stalwart does not know about
@@ -505,10 +525,14 @@ no-population-intermediate rule.
     account's addresses (`crates/jmap/src/identity/set.rs`). So:
     - **SendOnBehalf** is sent from the trustee's own account and
       identity, with `From` set to the object and `Sender` to the trustee.
-    - **SendAs** cannot be sent from the trustee's account, which has no
-      identity with the object's address. It is submitted to the object's
-      own account through master-user impersonation (`object%master`,
-      `Impersonate` permission), after the V17 check.
+    - **SendAs on a mailbox** cannot be sent from the trustee's account,
+      which has no identity with the object's address. It is submitted to
+      the object's own account through master-user impersonation
+      (`object%master`, `Impersonate` permission), after the V17 check.
+    - **SendAs on a distribution group** has no such route: the group has
+      no account or mailbox to impersonate. Until a group-sending path is
+      defined (open), the consumer refuses that submission rather than
+      sending it from some other account.
 
   Not modelled: folder-level permissions (`Add-MailboxFolderPermission`)
   and calendar delegates.
@@ -518,8 +542,9 @@ no-population-intermediate rule.
   write, owner) to a principal on a site, library, folder or item. An item
   inherits its parent's grants until inheritance is broken. A sharing link
   has a scope: `anonymous` admits whoever holds it, `organization` admits a
-  user signed in to the same tenant who holds it, and `users` admits only
-  the people it was granted to. Graph reports a drive item's `permissions`
+  user signed in to the same tenant who holds it, `users` admits only the
+  people it was granted to, and `existingAccess` grants nothing (it lets
+  people who already have access find the item). Graph reports a drive item's `permissions`
   with `roles`, `grantedToV2`, `grantedToIdentitiesV2` and `link`
   (`link.scope`). It does not return `inheritedFrom` for SharePoint and
   OneDrive for Business, so the permission list cannot say which ancestor
@@ -543,6 +568,13 @@ no-population-intermediate rule.
     them. Until that flag is read, the grants on an item are its
     effective permissions as Graph returns them, with no inheritance
     inferred.
+  - **The observation must be complete.** Graph returns all of an item's
+    sharing permissions only to its owner or to an application with
+    site-wide permission; a delegated caller who is not an owner gets
+    only the permissions that apply to it. Ingestion therefore reads in
+    an owner or application context. A permission set read in any other
+    context is marked caller-scoped, and never decides access for anyone
+    but that caller.
   - A principal's effective role is the highest role granted to it, or to
     a group it belongs to, on the item or on an ancestor up to the nearest
     broken inheritance.
@@ -551,7 +583,12 @@ no-population-intermediate rule.
     admits a holder signed in to the tenant (an external or guest identity
     from another tenant is refused), and `users` admits only the identities
     in `grantedToIdentitiesV2`, which are evaluated as ordinary principals.
-    A link is never folded into one shared link principal.
+    An `existingAccess` link grants nothing: its holder is evaluated on
+    the grants they already have. A link is never folded into one shared
+    link principal.
+  - A grant keeps its `expirationDateTime`, and an expired grant is
+    refused at authorization time, not only when the next observation
+    drops it.
   - Spear evaluates it with an RBAC plug over the document classid, the
     way `RBAC_PLUG` covers mail.
 
