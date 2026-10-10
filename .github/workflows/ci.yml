@@ -23,7 +23,7 @@ jobs:
       - name: Install Rust toolchain (per rust-toolchain.toml)
         uses: dtolnay/rust-toolchain@master
         with:
-          toolchain: 1.98.1
+          toolchain: 1.99.0
           # rustfmt/clippy are actually exercised in the sibling `lint.yml`
           # workflow, not here — this job only needs the compiler.
           components: rustfmt, clippy
