@@ -10,7 +10,8 @@
 //! * `msExchRecipientTypeDetails` — a 64-bit type code.
 //!
 //! plus `targetAddress`, which for a remote mailbox is its routing address
-//! (`alias@tenant.mail.onmicrosoft.com`).
+//! (`alias@tenant.mail.onmicrosoft.com`, the external EOP target; not the
+//! Entra identity's internal `alias@tenant.onmicrosoft.com`).
 //!
 //! The decode accepts exactly the combinations the hybrid lifecycle
 //! produces (the 26 `msExchRemoteRecipientType` values of
@@ -341,10 +342,16 @@ impl Recipient {
 /// `ExchangeGuid` across a move) and the address it receives at
 /// (`PrimarySmtpAddress`).
 ///
-/// The identity is `node` and, once a mailbox is provisioned, its
-/// `exchange_guid`; across the hybrid join it is `ExternalDirectoryObjectId`.
-/// An address is a value of the identity, never the key it is found by, and
-/// `mail` in particular is a label that hydrates no identity.
+/// Three identities, each a GUID: `node` is the on-premises object; once a
+/// mailbox is provisioned it is identified by its `exchange_guid`; and every
+/// mail recipient has an Entra identity (the Azure AD object, formerly the
+/// MsolUser) whose id is `ExternalDirectoryObjectId`. That Entra object also
+/// carries `{alias}@{tenant}.onmicrosoft.com`, Microsoft's internal cloud
+/// address; it is not the routing address
+/// `{alias}@{tenant}.mail.onmicrosoft.com` ([`ROUTING`]), which is the
+/// external target EOP delivers to. An address is a value of an identity,
+/// never the key it is found by, and `mail` in particular is a label that
+/// hydrates no identity.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ExchangeIdentity {
     /// The object (`objectGUID`).
@@ -558,7 +565,9 @@ impl AddressTemplate {
 
 /// A remote mailbox's routing address: `{alias}@{tenant}.mail.onmicrosoft.com`,
 /// where the alias is the object's `mailNickname` (the Exchange Online
-/// `Alias`). In AD it is `targetAddress` with the `SMTP:` prefix and also one
+/// `Alias`). It is the external target Exchange Online Protection delivers
+/// to, distinct from `{alias}@{tenant}.onmicrosoft.com`, the internal cloud
+/// address of the recipient's Entra identity (`ExternalDirectoryObjectId`). In AD it is `targetAddress` with the `SMTP:` prefix and also one
 /// of the `proxyAddresses` (`smtp:`); Exchange Online lists it among
 /// `EmailAddresses`. Matched against the normalized (lower-case) address.
 pub const ROUTING: AddressTemplate = AddressTemplate("{0}@{1}.mail.onmicrosoft.com");
