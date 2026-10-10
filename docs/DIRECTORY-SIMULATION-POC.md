@@ -400,5 +400,44 @@ no-population-intermediate rule.
     only) is for an interactive caller that wants the drive id. The
     directory's part is the Entra id of the recipient, from the
     correspondence fold.
+- **V16 — Active Directory emulation (2026-10-10).** dir-sim serves two
+  uses with one surface: a mirror of an on-premises AD for emulation, and an
+  AD-shaped view of a tenant read from the cloud, presented as an
+  IAM-managed directory. Decisions:
+  - **Placement.** A user synchronized from AD (Graph reports
+    `onPremisesDistinguishedName`) is mirrored at that DN's OU path,
+    interned into the on-premises domain's dictionary, so it sits exactly
+    where its AD object sits. A cloud-only user has no on-premises location
+    and is placed under one marked container, `Cloud Only (emulated)`, and
+    reported as synthetic. A real OU in or under that container is refused,
+    and so is a reported DN that did not encode: a synchronized user is
+    never demoted to the synthetic container.
+  - **Surfaces.** The in-process API, an LDIF export, and a read-only LDAP
+    server (bind, search, rootDSE). Every result is filtered by the
+    caller's IAM rights, so two actors can see different directories. The
+    LDAP server never writes: a change goes through simulate, validate and
+    plan, and the plan is applied by the operator's own tooling.
+  - **Marking.** Every emitted object says whether it was observed in AD,
+    read from the cloud and mirrored, or placed synthetically.
+
+  Phases:
+  1. **Cloud ingest (lance-graph `observe::from_graph`).** Entra users from
+     `ogar-az` records become an observation in the tenant's scope.
+     `accountEnabled` gives the flag (absent is unknown). Graph reports no
+     Exchange recipient attributes and no `msExchMailboxGuid`, so neither
+     is read here; the cloud mailbox comes from the correspondence fold
+     (V12).
+  2. **Projection and LDIF.** Any version (observed, simulated, cloud-read)
+     projected as AD entries: DN from the OU dictionary, the attributes the
+     observation carries, the marking above. LDIF for export and diff.
+  3. **Read-only LDAP.** Simple bind against the actor source, search over
+     the projection with base, one-level and subtree scope, rootDSE naming
+     the emulated domain. Results pass the RBAC plug before they are
+     encoded; refused objects are absent, not redacted.
+
+  **Open:** groups and memberships from Graph (phase 1 reads users only);
+  a synthetic DN for the cloud-only user that a real LDAP client can bind
+  as; whether the emulated domain name is the on-premises one or the
+  tenant's initial domain when there is no hybrid.
 - **V5 — CI.** CI builds `lance-graph-dir-sim` against the OGAR checkout, so
   it needs this OGAR PR merged first.
