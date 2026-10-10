@@ -479,16 +479,17 @@ no-population-intermediate rule.
     recipients"), so the group's kind (V19) is validated per right:
     - **FullAccess and SendAs**: a user or a security-enabled group. A
       user holds the right when it is granted to the user or to a
-      security-enabled group it belongs to, through V19's security
-      closure. Exchange Online resolves these trustees among recipients,
+      security-enabled group whose SID it holds, directly or through
+      nested security groups (V19's SID chain). Exchange Online resolves these trustees among recipients,
       so there the group must also be mail-enabled; on-premises a
       security group that is not mail-enabled is a valid trustee. A grant
       of either to a distribution group is a violation and confers
       nothing.
     - **SendOnBehalf**: a user or a mail-enabled group, distribution
       groups included, because `GrantSendOnBehalfTo` names recipients. A
-      user holds it through V19's delivery closure. A grant to a group
-      that is not mail-enabled is a violation.
+      user holds it when the group reaches it by chained addressing, through
+      nested mail-enabled groups only (V19). A grant to a group that is not
+      mail-enabled is a violation.
 
     Until V19's expansion lands, a grant to a group reaches only the
     group's direct members.
@@ -614,23 +615,41 @@ no-population-intermediate rule.
   `groupType` or `securityEnabled` is not treated as a distribution group.
 
   Decisions:
-  - **Nesting is expanded in lance-graph** (W-4 of lance-graph's HubSPO-rs
-    handover), once, not by each consumer. Spear's `mailbox_members` and
-    HubSPO-rs's routing are its first two users.
-  - **Two closures, because the two questions differ.**
-    - *Delivery*: every user reached through nested mail-enabled groups,
-      which is how a distribution list is expanded.
-    - *Security*: every user reached through nested security-enabled
-      groups only. A security group nested in a distribution group gives
-      the distribution group's members no permission, as in AD, where a
-      token (`tokenGroups`) holds only security groups. Permission checks
-      (V17, V18, RBAC roles from group membership) use this closure.
-  - **Unknown is excluded from the security closure.** A group whose
-    security flag was not read is not walked for permissions, so a
-    permission that depends on it fails closed. A group created in a
+  - **Nesting is one global pattern, expanded in lance-graph** (W-4 of
+    lance-graph's HubSPO-rs handover), once, not by each consumer. It
+    follows every nested group, whatever its kind, in both directions:
+    the users in a group (`View::members_transitive`) and the groups a
+    user is in (`View::groups_transitive`), which are inverses. Cycles are
+    walked once. This answers membership only: who is in a group.
+  - **Mail and permissions are chains through a property.** lance-graph's
+    `groups_where` is a SQL-ish `WHERE` over the two properties (`Is`,
+    `Not`, `And`, `Or`), lowered to one Quack program over the group
+    population. The same nesting walk, restricted to the groups that pass
+    it (`members_transitive_through`, `groups_transitive_through`), gives
+    each chain:
+    - *Mail is chained addressing, never inherited.* Mail to a list
+      reaches its members; a nested group receives it through its own
+      address and passes it on to its members. A nested group without an
+      address cannot be addressed and ends the chain
+      (`members_transitive_through` / `groups_transitive_through` with the
+      mail-enabled filter). Spear's `mailbox_members` and Stalwart's account
+      lists use this.
+    - *Permissions*: only a security group has a SID, so a group without
+      one can neither hold nor pass on a permission. Inheritance walks the
+      same nesting through security groups only
+      (`View::security_identifiers`, `groups_transitive_through`,
+      `members_transitive_through` with the security-enabled filter): a
+      user in a distribution group nested in a security group holds none of
+      its SIDs, and a distribution group that contains a security group
+      inherits nothing from it. V17, V18 and RBAC roles from group
+      membership use this.
+    - *Both*: a mail-enabled security group carries a permission and
+      receives mail.
+  - **Unknown is not security-enabled.** A group whose security flag was
+    not read is never in the security-enabled filter, so a permission
+    granted to it is not inherited and fails closed. A group created in a
     simulated version has no flag either (a `Change` carries none) until
     `NodeState` grows one.
-  - **Cycles are walked once**; both closures are in user-ordinal order.
   - **Validation.** A permission grant to a group that is not
     security-enabled is a violation (V17). A security group whose
     security flag was read as cleared by a later observation loses every
