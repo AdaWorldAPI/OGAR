@@ -6,7 +6,7 @@
 //!   -> ruff_python_spo::extract_from_source        (AST -> ModelGraph)
 //!   -> ogar_from_ruff::mint::compile_graph_python::<OdooPort>
 //!        -> Vec<CompiledClass { class, facet, actions:+kausal }>   (W1 arm)
-//!   -> ogar_from_ruff::lance_sink::compiled_class_to_noderow       (W2 arm)
+//!   -> ogar_from_ruff::lance_sink::compiled_classes_to_noderows    (W2 arm)
 //!   -> NodeRowPacket::as_le_bytes                                  (storage boundary)
 //!   -> node_rows_from_le_bytes  (zero-copy decode round-trip)
 //! ```
@@ -23,7 +23,7 @@
 
 use lance_graph_contract::canonical_node::{NodeRowPacket, node_rows_from_le_bytes};
 use lance_graph_contract::soa_envelope::SoaEnvelope;
-use ogar_from_ruff::lance_sink::{compiled_class_to_facet, compiled_class_to_noderow};
+use ogar_from_ruff::lance_sink::{compiled_class_to_facet, compiled_classes_to_noderows};
 use ogar_from_ruff::mint::compile_graph_python;
 use ogar_vocab::ports::OdooPort;
 use ruff_python_spo::extract_from_source;
@@ -38,25 +38,20 @@ fn odoo_source_transpiles_to_v3_soa_noderows() {
     let compiled = compile_graph_python::<OdooPort>(&graph);
     assert_eq!(compiled.len(), 2, "two models transpile end to end");
 
-    // ── sink (W2 arm): each CompiledClass → one CANON NodeRow ──
-    let rows: Vec<_> = compiled
-        .iter()
-        .enumerate()
-        .map(|(i, cc)| compiled_class_to_noderow(cc, i as u32))
-        .collect();
+    // ── sink (W2 arm): each CompiledClass → one CANON NodeRow keyed by its facet ──
+    let rows = compiled_classes_to_noderows(&compiled).expect("two models, two distinct facets");
 
-    // Each row's key carries the class's render classid verbatim; the facet
-    // reinterpret preserves the rail (part_of/is_a) chains.
+    // Each row's key IS the minted facet: render classid + part_of/is_a rails.
     for (i, (cc, row)) in compiled.iter().zip(&rows).enumerate() {
         assert_eq!(
             row.key.classid(),
             cc.facet.facet_classid(),
             "row {i}: key classid == mint classid"
         );
-        assert_eq!(row.key.identity(), i as u32, "row {i}: bootstrap identity");
-        assert!(
-            row.key.is_unbasined(),
-            "row {i}: bootstrap tail (no rail leak)"
+        assert_eq!(
+            row.key.as_bytes(),
+            &cc.facet.to_bytes(),
+            "row {i}: the key is the minted facet, byte for byte"
         );
         let fc = compiled_class_to_facet(cc);
         assert_eq!(
