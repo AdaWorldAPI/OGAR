@@ -11,7 +11,7 @@
 //!
 //! plus `targetAddress`, which for a remote mailbox is its routing address
 //! (`alias@tenant.mail.onmicrosoft.com`, the external EOP target; not the
-//! Entra identity's internal `alias@tenant.onmicrosoft.com`).
+//! Entra user's internal `alias@tenant.onmicrosoft.com`).
 //!
 //! The decode accepts exactly the combinations the hybrid lifecycle
 //! produces (the 26 `msExchRemoteRecipientType` values of
