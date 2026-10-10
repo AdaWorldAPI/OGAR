@@ -77,3 +77,10 @@ jobs:
       # "reference backend" promise, now real.
       - name: cargo test -p ogar-knowable-from --features vart-backend
         run: cargo test -p ogar-knowable-from --features vart-backend
+      # Exercise the `ontology-cache` feature on ogar-action-handler — pulls
+      # in lance-graph-ontology by git to load OGIT into the Ontology cache
+      # and compare its names with the OGIT tables. Off by default so
+      # path-based consumers (rs-graph-llm) stay lean; same crate-scoped
+      # pattern as the other feature steps.
+      - name: cargo test -p ogar-action-handler --features ontology-cache
+        run: cargo test -p ogar-action-handler --features ontology-cache
