@@ -183,6 +183,7 @@ materialised until the app mints its first private class).
 | `0x0009` | WeatherNext / weathernext-rs | `0x04` weather / atmosphere | **no** — maps onto core |
 | `0x000A` | Spear (mail hub) | `0x0B` IAM (`email` `0x0B05`) + `0x08` (`document`) | **no** — maps onto core |
 | `0x000B` | HubSPO / hubspo-rs (CRM) | `0x05` crm (15 concepts) + aliases onto `0x0B05` email, `0x0207` product, `0x0201` line item, `0x0202` commercial document, `0x0205` payment record, `0x0203` tax policy, `0x0104` project actor | **no** — maps onto core |
+| `0x000C` | HIRO / Bardioc-rs (IT automation) | `0x0C` automation: HIRO's nine `ogit/_type` wire names (`ogit/MARS/Application` … `ogit/Automation/Trigger`) onto `0x0C01`–`0x0C09`; `ogit/Automation/MAID` unaliased, no concept minted | **no** — maps onto core |
 | `0x00A0` | (reserved) future app block | — | — |
 
 > **OpenProject (`0x0001`) and Redmine (`0x0007`) are the showcase:**

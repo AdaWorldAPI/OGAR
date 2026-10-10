@@ -712,6 +712,45 @@ pub const HUBSPO_ALIASES: &[(&str, u16)] = &[
     ("Team", class_ids::PROJECT_ACTOR),
 ];
 
+// ── HIRO (Bardioc-rs, the IT-automation stack) port ──────────────────
+
+/// HIRO's `PortSpec`: the `ogit/_type` strings HIRO puts on the wire onto the
+/// `0x0CXX` automation concepts, so a HIRO node dispatches on a `u16` instead
+/// of a string match (`docs/HIRO-IN-CLASSES.md` §3.1). `0x000C` is HIRO's
+/// render skin. Names are port-scoped: nothing here feeds the global alias
+/// normalizer. `ogit/Automation/MAID` has no alias on purpose: MAID has no
+/// minted concept, and no workload needs one yet.
+pub struct HiroPort;
+
+impl PortSpec for HiroPort {
+    const NAMESPACE: &'static str = "HIRO";
+    const BRIDGE_ID: &'static str = "hiro";
+    const APP_PREFIX: u16 = 0x000C;
+    fn aliases() -> &'static [(&'static str, u16)] {
+        HIRO_ALIASES
+    }
+}
+
+/// HIRO's wire names, exactly as its `ogit/_type` field spells them, for the
+/// automation concepts.
+pub const HIRO_ALIASES: &[(&str, u16)] = &[
+    ("ogit/MARS/Application", class_ids::MARS_APPLICATION),
+    ("ogit/MARS/Resource", class_ids::MARS_RESOURCE),
+    ("ogit/MARS/Software", class_ids::MARS_SOFTWARE),
+    ("ogit/MARS/Machine", class_ids::MARS_MACHINE),
+    ("ogit/Automation/KnowledgeItem", class_ids::KNOWLEDGE_ITEM),
+    (
+        "ogit/Automation/MARSNodeTemplate",
+        class_ids::MARS_NODE_TEMPLATE,
+    ),
+    ("ogit/Automation/ActionHandler", class_ids::ACTION_HANDLER),
+    (
+        "ogit/Automation/ActionApplicability",
+        class_ids::ACTION_APPLICABILITY,
+    ),
+    ("ogit/Automation/Trigger", class_ids::AUTOMATION_TRIGGER),
+];
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -757,6 +796,49 @@ mod tests {
         );
         assert_eq!(HubSpoPort::class_id("User"), Some(class_ids::PROJECT_ACTOR));
         assert_eq!(HubSpoPort::class_id("Team"), Some(class_ids::PROJECT_ACTOR));
+    }
+
+    #[test]
+    fn hiro_classview_composes_canon_high_custom_low() {
+        assert_eq!(HiroPort::NAMESPACE, "HIRO");
+        assert_eq!(HiroPort::BRIDGE_ID, "hiro");
+        assert_eq!(HiroPort::classview(), 0x000C);
+        assert_eq!(HiroPort::class_id("ogit/MARS/Machine"), Some(0x0C04));
+        assert_eq!(HiroPort::class_id("ogit/Automation/Trigger"), Some(0x0C09));
+        let machine = render_classid(HiroPort::APP_PREFIX, class_ids::MARS_MACHINE);
+        assert_eq!(machine, 0x0C04_000C);
+        assert_eq!(concept_of(machine), 0x0C04);
+        assert_eq!(app_of(machine), 0x000C);
+        // The wire name is exact: no case folding, no OGIT CURIE spelling.
+        assert_eq!(HiroPort::class_id("ogit/mars/machine"), None);
+        assert_eq!(HiroPort::class_id("ogit.MARS:Machine"), None);
+        // MAID stays unminted, so HIRO's MAID type does not resolve.
+        assert_eq!(HiroPort::class_id("ogit/Automation/MAID"), None);
+    }
+
+    /// The port covers exactly the automation domain: every `0x0CXX` concept
+    /// has its HIRO wire name, and no alias leaves the domain. A tenth
+    /// automation concept fails this until it gets a wire name or a reason
+    /// not to have one.
+    #[test]
+    fn hiro_covers_exactly_the_automation_domain() {
+        use crate::{ConceptDomain, canonical_concept_domain, concepts_in_domain};
+        let domain: Vec<(&str, u16)> = concepts_in_domain(ConceptDomain::Automation).collect();
+        assert_eq!(domain.len(), 9);
+        for (concept, id) in &domain {
+            assert!(
+                HIRO_ALIASES.iter().any(|(_, a)| a == id),
+                "{concept} (0x{id:04X}) has no HIRO wire name",
+            );
+        }
+        for (name, id) in HIRO_ALIASES {
+            assert_eq!(
+                canonical_concept_domain(*id),
+                ConceptDomain::Automation,
+                "{name} resolves outside the automation domain",
+            );
+        }
+        assert_eq!(HIRO_ALIASES.len(), domain.len());
     }
 
     #[test]
@@ -1390,6 +1472,7 @@ mod tests {
             WeatherNextPort::APP_PREFIX,
             SpearPort::APP_PREFIX,
             HubSpoPort::APP_PREFIX,
+            HiroPort::APP_PREFIX,
         ] {
             assert_ne!(
                 prefix, 0x1000,
@@ -1476,6 +1559,7 @@ mod tests {
             WeatherNextPort::APP_PREFIX,
             SpearPort::APP_PREFIX,
             HubSpoPort::APP_PREFIX,
+            HiroPort::APP_PREFIX,
         ];
         let mut sorted = prefixes;
         sorted.sort_unstable();
