@@ -82,7 +82,10 @@ fn the_mailbox_guid_is_decoded_strictly() {
     let good = format!("MBX:{MAILBOX}@{TENANT}");
     assert_eq!(mailbox_guid_of(&good, tenant), Some(g(MAILBOX)));
     assert_eq!(
-        mailbox_guid_of(&good.to_uppercase().replace("MBX:", "MBX:"), tenant),
+        mailbox_guid_of(
+            &format!("MBX:{}@{}", MAILBOX.to_uppercase(), TENANT.to_uppercase()),
+            tenant
+        ),
         Some(g(MAILBOX))
     );
     let other_tenant = "c0ffee00-1234-4abc-8def-000000000043";
