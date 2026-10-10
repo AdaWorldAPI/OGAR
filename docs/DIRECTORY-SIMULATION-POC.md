@@ -474,25 +474,48 @@ no-population-intermediate rule.
   - **The object.** FullAccess needs a mailbox; a grant of it on anything
     else is a violation. SendAs and SendOnBehalf also apply to a
     distribution group, which has no mailbox of its own.
-  - **The trustee is a user or a group.** A user holds a right on an
-    object when it is granted to the user or to any group the user belongs
-    to, transitively. This depends on nested-group expansion, which dir-sim
-    does not have yet: a nested group is held by identity and never
-    expanded (lance-graph `lance-graph-dir-sim/src/snapshot.rs`, W-4 of
-    lance-graph's HubSPO-rs handover). Until it lands, a grant to a group
-    reaches only the group's direct members.
-  - **Deny wins.** Exchange allows deny entries on FullAccess, and Active
-    Directory allows them on SendAs. A deny for `(object, trustee, right)`
-    from any witness, for the user or for any group the user belongs to,
-    removes the right whatever grants exist. A deny that cancels a grant
-    is reported, so it is visible rather than silent. Reading grants
-    without denies would fail open.
+  - **Which trustees each right accepts.** Exchange does not accept the
+    same group kinds for every right (Microsoft, "Manage permissions for
+    recipients"), so the group's kind (V19) is validated per right:
+    - **FullAccess and SendAs**: a user or a security-enabled group. A
+      user holds the right when it is granted to the user or to a
+      security-enabled group it belongs to, through V19's security
+      closure. Exchange Online resolves these trustees among recipients,
+      so there the group must also be mail-enabled; on-premises a
+      security group that is not mail-enabled is a valid trustee. A grant
+      of either to a distribution group is a violation and confers
+      nothing.
+    - **SendOnBehalf**: a user or a mail-enabled group, distribution
+      groups included, because `GrantSendOnBehalfTo` names recipients. A
+      user holds it through V19's delivery closure. A grant to a group
+      that is not mail-enabled is a violation.
+
+    Until V19's expansion lands, a grant to a group reaches only the
+    group's direct members.
+  - **Denies follow ACE precedence.** Exchange allows deny entries on
+    FullAccess, and Active Directory allows them on SendAs. Each entry
+    keeps whether it is inherited (`IsInherited` in
+    `Get-MailboxPermission` / `Get-EXOMailboxPermission`; the ACE's
+    inherited flag on-premises), and entries are evaluated in Windows
+    canonical order: explicit deny, explicit allow, inherited deny,
+    inherited allow. So a deny removes a right unless an entry of a
+    stronger level allows it; an explicit allow outranks an inherited
+    deny. A group entry is at the level of its own ACE, not lower for
+    being reached through a group. A deny whose level was not reported
+    (a witness that carries no inheritance) is treated as explicit, so it
+    fails closed, and a deny that cancels an allow is reported rather
+    than applied silently. Reading allows without denies would fail open.
   - **Each grant carries the witness that asserted it.** LDIF supplies
     `publicDelegates` and `msExchDelegateListLink`; Graph supplies none of
-    the three; the Exchange permission output (`Get-MailboxPermission`,
-    `Get-RecipientPermission`, `GrantSendOnBehalfTo`) supplies all of them
-    and is read through the same read-only encoder as V12. Witnesses that
-    disagree both stay; an absent witness is not a refusal.
+    the three. Exchange supplies all three, each from its own read,
+    through the same read-only encoder as V12: FullAccess from
+    `Get-MailboxPermission`, SendAs from `Get-RecipientPermission` (on-
+    premises `Get-ADPermission` with the `Send-As` extended right), and
+    SendOnBehalf from the `GrantSendOnBehalfTo` property of the
+    recipient, read with `Get-Mailbox`, `Get-DistributionGroup` or
+    `Get-DynamicDistributionGroup`; it is a property, not a cmdlet of its
+    own. Witnesses that disagree both stay; an absent witness is not a
+    refusal.
   - **Consumers.** Spear's mailbox IAM lets a FullAccess trustee read the
     mailbox's rows. SendAs and SendOnBehalf gate sending, and the consumer
     checks the right before every submission; Stalwart does not know about
@@ -502,10 +525,14 @@ no-population-intermediate rule.
     account's addresses (`crates/jmap/src/identity/set.rs`). So:
     - **SendOnBehalf** is sent from the trustee's own account and
       identity, with `From` set to the object and `Sender` to the trustee.
-    - **SendAs** cannot be sent from the trustee's account, which has no
-      identity with the object's address. It is submitted to the object's
-      own account through master-user impersonation (`object%master`,
-      `Impersonate` permission), after the V17 check.
+    - **SendAs on a mailbox** cannot be sent from the trustee's account,
+      which has no identity with the object's address. It is submitted to
+      the object's own account through master-user impersonation
+      (`object%master`, `Impersonate` permission), after the V17 check.
+    - **SendAs on a distribution group** has no such route: the group has
+      no account or mailbox to impersonate. Until a group-sending path is
+      defined (open), the consumer refuses that submission rather than
+      sending it from some other account.
 
   Not modelled: folder-level permissions (`Add-MailboxFolderPermission`)
   and calendar delegates.
@@ -515,8 +542,9 @@ no-population-intermediate rule.
   write, owner) to a principal on a site, library, folder or item. An item
   inherits its parent's grants until inheritance is broken. A sharing link
   has a scope: `anonymous` admits whoever holds it, `organization` admits a
-  user signed in to the same tenant who holds it, and `users` admits only
-  the people it was granted to. Graph reports a drive item's `permissions`
+  user signed in to the same tenant who holds it, `users` admits only the
+  people it was granted to, and `existingAccess` grants nothing (it lets
+  people who already have access find the item). Graph reports a drive item's `permissions`
   with `roles`, `grantedToV2`, `grantedToIdentitiesV2` and `link`
   (`link.scope`). It does not return `inheritedFrom` for SharePoint and
   OneDrive for Business, so the permission list cannot say which ancestor
@@ -540,6 +568,13 @@ no-population-intermediate rule.
     them. Until that flag is read, the grants on an item are its
     effective permissions as Graph returns them, with no inheritance
     inferred.
+  - **The observation must be complete.** Graph returns all of an item's
+    sharing permissions only to its owner or to an application with
+    site-wide permission; a delegated caller who is not an owner gets
+    only the permissions that apply to it. Ingestion therefore reads in
+    an owner or application context. A permission set read in any other
+    context is marked caller-scoped, and never decides access for anyone
+    but that caller.
   - A principal's effective role is the highest role granted to it, or to
     a group it belongs to, on the item or on an ancestor up to the nearest
     broken inheritance.
@@ -548,7 +583,12 @@ no-population-intermediate rule.
     admits a holder signed in to the tenant (an external or guest identity
     from another tenant is refused), and `users` admits only the identities
     in `grantedToIdentitiesV2`, which are evaluated as ordinary principals.
-    A link is never folded into one shared link principal.
+    An `existingAccess` link grants nothing: its holder is evaluated on
+    the grants they already have. A link is never folded into one shared
+    link principal.
+  - A grant keeps its `expirationDateTime`, and an expired grant is
+    refused at authorization time, not only when the next observation
+    drops it.
   - Spear evaluates it with an RBAC plug over the document classid, the
     way `RBAC_PLUG` covers mail.
 
@@ -556,5 +596,48 @@ no-population-intermediate rule.
   SharePoint's implicit role on an ancestor of a shared item; where the
   folder tree lives (Spear's `DriveScope` names a drive and an item, not a
   path).
+- **V19 — Group kinds and nested groups (design, 2026-10-10).** A group
+  has two independent properties, and dir-sim records both:
+  - **Security-enabled**: the group can hold permissions. AD sets bit
+    `0x80000000` of `groupType`; Graph reports `securityEnabled`.
+  - **Mail-enabled**: the group has addresses and receives mail. Graph
+    reports `mailEnabled`; dir-sim reads it as the group having a primary
+    SMTP address (lance-graph `View::is_mail_recipient`), the same rule it
+    already applied to distribution lists.
+
+  That gives three kinds in practice: a security group (not mail-enabled),
+  a mail-enabled security group, and a distribution group (mail-enabled,
+  not security-enabled). A Microsoft 365 group (`groupTypes` contains
+  `Unified`) is mail-enabled and may be security-enabled; it has no
+  on-premises equivalent unless written back. An unread flag stays
+  unknown, never false: a group read from a source that did not report
+  `groupType` or `securityEnabled` is not treated as a distribution group.
+
+  Decisions:
+  - **Nesting is expanded in lance-graph** (W-4 of lance-graph's HubSPO-rs
+    handover), once, not by each consumer. Spear's `mailbox_members` and
+    HubSPO-rs's routing are its first two users.
+  - **Two closures, because the two questions differ.**
+    - *Delivery*: every user reached through nested mail-enabled groups,
+      which is how a distribution list is expanded.
+    - *Security*: every user reached through nested security-enabled
+      groups only. A security group nested in a distribution group gives
+      the distribution group's members no permission, as in AD, where a
+      token (`tokenGroups`) holds only security groups. Permission checks
+      (V17, V18, RBAC roles from group membership) use this closure.
+  - **Unknown is excluded from the security closure.** A group whose
+    security flag was not read is not walked for permissions, so a
+    permission that depends on it fails closed. A group created in a
+    simulated version has no flag either (a `Change` carries none) until
+    `NodeState` grows one.
+  - **Cycles are walked once**; both closures are in user-ordinal order.
+  - **Validation.** A permission grant to a group that is not
+    security-enabled is a violation (V17). A security group whose
+    security flag was read as cleared by a later observation loses every
+    grant made to it, which the diff reports.
+
+  Not modelled: group scope (global, domain local, universal) and the
+  nesting rules between scopes; dynamic membership rules
+  (`DynamicMembership`), whose members are read as observed.
 - **V5 — CI.** CI builds `lance-graph-dir-sim` against the OGAR checkout, so
   it needs this OGAR PR merged first.

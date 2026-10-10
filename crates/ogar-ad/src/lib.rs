@@ -25,7 +25,7 @@ use ogar_dir_core::{
 };
 
 /// Encoder schema version understood by this crate.
-pub const SCHEMA_VERSION: u16 = 6;
+pub const SCHEMA_VERSION: u16 = 7;
 /// This crate's schema id.
 pub const SCHEMA: SchemaId = SchemaId {
     family: SchemaFamily::AdDs,
@@ -70,6 +70,12 @@ pub const SCHEMA: SchemaId = SchemaId {
 /// it as the mailbox's `ExchangeGuid` across a move, so it is the mailbox
 /// half of an object's Exchange identity (`ogar-dir-sim::ExchangeIdentity`)
 /// and, like the source anchor, never text.
+///
+/// v7 adds `groupType` in the last numeric slot, bit-cast like every signed
+/// LDAP integer here. Its high bit says whether a group is security-enabled
+/// ([`is_security_enabled`]); whether it is mail-enabled is a separate
+/// question answered by the recipient attributes. A record of an older
+/// schema did not read it, which is not the same as a cleared bit.
 pub const SCHEMA_V1: &[AttrDef] = &[
     AttrDef {
         name: "distinguishedName",
@@ -209,7 +215,23 @@ pub const SCHEMA_V1: &[AttrDef] = &[
         kind: AttrKind::Guid,
         since: 6,
     },
+    AttrDef {
+        name: "groupType",
+        slot: 3,
+        kind: AttrKind::U32,
+        since: 7,
+    },
 ];
+
+/// `groupType` bit set on a security-enabled group
+/// (`ADS_GROUP_TYPE_SECURITY_ENABLED`). A group without it is a
+/// distribution group: it can be mail-enabled but holds no permissions.
+pub const GROUP_TYPE_SECURITY_ENABLED: u32 = 0x8000_0000;
+
+/// Whether a stored `groupType` marks a security-enabled group.
+pub fn is_security_enabled(group_type: u32) -> bool {
+    group_type & GROUP_TYPE_SECURITY_ENABLED != 0
+}
 
 /// AD object kinds (family-scoped codes in `object_kind`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
