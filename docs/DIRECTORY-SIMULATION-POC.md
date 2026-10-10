@@ -435,7 +435,19 @@ no-population-intermediate rule.
      the emulated domain. Results pass the RBAC plug before they are
      encoded; refused objects are absent, not redacted.
 
+  **Status (2026-10-10):** phase 1 is `observe::from_graph` (lance-graph
+  #1450), phase 2 is `ad::project` + `ad::to_ldif` (#1452), phase 3 is
+  `ldap::Server` (#1453). Each entry carries `dirSimOrigin` (`observed`,
+  `mirrored`, `synthetic`, `simulated`); a node's RDN is `CN=<objectGUID>`
+  because no display name is read. The LDAP handler takes bytes and
+  returns bytes, so dir-sim stays free of I/O; access is the host's
+  `Authority` (bind, entry visibility, attribute readability), and a
+  hidden entry answers `noSuchObject` as a search base.
   **Open:** groups and memberships from Graph (phase 1 reads users only);
+  display names (the RDN is the GUID until one is read); the host binary
+  that runs the LDAP listener and plugs `Authority` into the RBAC plug;
+  objects under a non-OU container such as `CN=Users`, which the OU path
+  places at the domain root;
   a synthetic DN for the cloud-only user that a real LDAP client can bind
   as; whether the emulated domain name is the on-premises one or the
   tenant's initial domain when there is no hybrid.
