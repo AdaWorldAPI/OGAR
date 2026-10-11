@@ -491,8 +491,18 @@ no-population-intermediate rule.
       nested mail-enabled groups only (V19). A grant to a group that is not
       mail-enabled is a violation.
 
-    Until V19's expansion lands, a grant to a group reaches only the
-    group's direct members.
+    V19's expansion has shipped (lance-graph #1458, #1463):
+    `View::security_identifiers` gives the SID chain and
+    `groups_transitive_through` the mail chain, so a grant to a group
+    reaches its nested members.
+
+    **Under review (2026-10-11, not yet ruled):** the per-right trustee
+    kinds above conflict with the Microsoft cmdlet reference on three
+    points. These are FullAccess with non-mail security groups
+    on-premises, SendAs in Exchange Online, and `GrantSendOnBehalfTo`
+    needing a mail-enabled principal. The conflict concerns which trustee
+    may be named, not how membership passes a right down. See lance-graph
+    `.claude/board/entries/2026-10-11-coresearch-instance-authz.md` (X14).
   - **Denies follow ACE precedence.** Exchange allows deny entries on
     FullAccess, and Active Directory allows them on SendAs. Each entry
     keeps whether it is inherited (`IsInherited` in
