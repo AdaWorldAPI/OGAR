@@ -155,6 +155,16 @@ no-population-intermediate rule.
 
 ## 7. Conflicts and open points
 
+**Fidelity rule (operator, 2026-10-11).** The simulation follows Microsoft
+behavior where that serves a real simulation need. It overrides Microsoft
+where the override is worth more than the fidelity: nested security groups
+work everywhere, and the Exchange Online limitation is not simulated (V19).
+It also overrides where implementing the behavior would cost more than it
+returns, for example the many Microsoft features nothing here uses yet. Minor
+or historical values that no consumer reads are added only after the
+operator confirms. Priority goes to what is high in value or on a hot path,
+such as delivery and authorization.
+
 - **V1 — Lance persistence.** `VersionedGraph` uses `u32` ids and an
   additions-only diff. Persisting this store needs 128-bit keys and
   removal- and attribute-aware diffs upstream, or a dedicated directory dataset.
@@ -353,10 +363,19 @@ no-population-intermediate rule.
   domain (Authoritative: a non-existent address is rejected outright;
   InternalRelay: relayed) and how leftover proxies on non-mail-enabled
   accounts look at the edge. Without EOP neither changes a decision here.
-- **V14 — Owner gate across Entra (open).** Entra enforces UPN and proxy
-  uniqueness across all objects, Exchange only across mail-enabled ones;
-  whether the dir-sim owner gate should follow the wider Entra scope is
-  undecided.
+- **V14 — Owner gate across Entra (closed by ruling, 2026-10-11).** Two
+  questions, two scopes. *Who holds an address* is checked across all
+  objects, as in Entra (UPN and proxy-address uniqueness is tenant-wide),
+  so a second claim by any object is a conflict. *Who receives mail at it*
+  is limited to mail-enabled recipients, as in Exchange Online
+  (`View::is_mail_recipient`, lance-graph `receives_mail`). dir-sim keeps
+  the two questions apart (V10), but its holding plane is still narrower
+  than the ruling: V10 lets an SMTP proxy claim only on a mail recipient,
+  so a leftover proxy on an object that is no longer mail-enabled claims
+  nothing, where Entra would still reject a second object carrying it.
+  **Open (code):** widen `validate::address_owner`'s SMTP claim to every
+  present object and pin the leftover-proxy collision with a test; the
+  receipt plane stays as it is.
 - **V15 — Where mailboxes live (2026-10-10).** `Deployment` names the
   on-premises host (`MailboxHost::ExchangeServer` or `Stalwart`, or none)
   and whether Exchange Online is present; the constants are
@@ -477,19 +496,25 @@ no-population-intermediate rule.
   - **Which trustees each right accepts.** Exchange does not accept the
     same group kinds for every right (Microsoft, "Manage permissions for
     recipients"), so the group's kind (V19) is validated per right:
-    - **FullAccess and SendAs**: a user or a security-enabled group. A
-      user holds the right when it is granted to the user or to a
-      security-enabled group whose SID it holds, directly or through
-      nested security groups (V19's SID chain). Exchange Online resolves these trustees among recipients,
-      so there the group must also be mail-enabled; on-premises a
-      security group that is not mail-enabled is a valid trustee. A grant
-      of either to a distribution group is a violation and confers
-      nothing.
-    - **SendOnBehalf**: a user or a mail-enabled group, distribution
-      groups included, because `GrantSendOnBehalfTo` names recipients. A
-      user holds it when the group reaches it by chained addressing, through
-      nested mail-enabled groups only (V19). A grant to a group that is not
-      mail-enabled is a violation.
+    - **FullAccess** (`Add-MailboxPermission`): a user or a mail-enabled
+      security group, on-premises and in Exchange Online alike; a security
+      group that is not mail-enabled does not work as a trustee
+      (Microsoft, `Add-MailboxPermission`).
+    - **SendAs** (`Add-ADPermission` on-premises,
+      `Add-RecipientPermission` in Exchange Online): a user or a
+      security-enabled group; being mail-enabled is not required.
+    - **SendOnBehalf** (`GrantSendOnBehalfTo`): a mailbox, a mail user or
+      a mail-enabled security group, a mail-enabled security principal.
+      A distribution group is not accepted.
+
+    How a granted right reaches users is unchanged: FullAccess and SendAs
+    pass down the SID chain (V19, nested security groups); SendOnBehalf
+    passes down the mail chain, through nested mail-enabled groups only.
+    A grant naming a trustee the right does not accept is a violation and
+    confers nothing. The rules are one table keyed by (right, platform),
+    so a correction is a data change. Until that table exists, an
+    inadmissible allow is dropped and reported and an inadmissible deny is
+    kept, so the gap can only narrow access.
 
     V19's expansion has shipped (lance-graph #1458, #1463):
     `View::security_identifiers` gives the security-enabled SID chain and
@@ -497,13 +522,12 @@ no-population-intermediate rule.
     group reaches nested members only through the chain that applies to
     the right.
 
-    **Under review (2026-10-11, not yet ruled):** the per-right trustee
-    kinds above conflict with the Microsoft cmdlet reference on three
-    points. These are FullAccess with non-mail security groups
-    on-premises, SendAs in Exchange Online, and `GrantSendOnBehalfTo`
-    needing a mail-enabled principal. The conflict concerns which trustee
-    may be named, not how membership passes a right down. See lance-graph
-    `.claude/board/entries/2026-10-11-coresearch-instance-authz.md` (X14).
+    **Ruled 2026-10-11 (X14):** the trustee rules above follow the
+    Microsoft cmdlet reference. They replace the earlier text, which
+    accepted non-mail security groups for FullAccess on-premises, required
+    mail-enabled groups for SendAs in Exchange Online, and accepted
+    distribution groups for SendOnBehalf. See lance-graph
+    `.claude/board/entries/2026-10-11-coresearch-instance-authz.md`.
   - **Denies follow ACE precedence.** Exchange allows deny entries on
     FullAccess, and Active Directory allows them on SendAs. Each entry
     keeps whether it is inherited (`IsInherited` in
@@ -661,6 +685,15 @@ no-population-intermediate rule.
       groups because Stalwart names a group by its address. A security
       group without an address passes on the addressed security group it
       is nested in; a group with neither an address nor a SID ends both.
+
+      **Ruled 2026-10-11 (X13):** that union also lets every member of an
+      addressed group send as the group, with no SendAs grant, because
+      Stalwart merges the group's addresses into the member's. A
+      distribution list is therefore not mapped onto a Stalwart group
+      account; it is a recipient that expands to its members (the mail
+      chain), and membership confers neither its address nor its rights.
+      SendAs is an explicit grant (V17), never a consequence of
+      membership.
   - **Unknown is not security-enabled.** A group whose security flag was
     not read is never in the security-enabled filter, so a permission
     granted to it is not inherited and fails closed. A group created in a
@@ -670,6 +703,15 @@ no-population-intermediate rule.
     security-enabled is a violation (V17). A security group whose
     security flag was read as cleared by a later observation loses every
     grant made to it, which the diff reports.
+
+  - **Primary group (ruled 2026-10-11).** AD records a user's primary
+    group (usually Domain Users) only in `primaryGroupID`, never in
+    `member`, so without it a grant to that group reaches nobody. It is
+    read as a membership edge that the SID chain follows and the mail
+    chain does not, because Exchange expands lists from `member` only.
+    Resolving the RID to the group is identity resolution, done at ingest.
+    `sIDHistory` adds alias SIDs for the same principal; it is identity
+    resolution, not membership, and is not modelled.
 
   Not modelled: group scope (global, domain local, universal) and the
   nesting rules between scopes; dynamic membership rules
