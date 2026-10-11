@@ -373,9 +373,18 @@ such as delivery and authorization.
   than the ruling: V10 lets an SMTP proxy claim only on a mail recipient,
   so a leftover proxy on an object that is no longer mail-enabled claims
   nothing, where Entra would still reject a second object carrying it.
-  **Open (code):** widen `validate::address_owner`'s SMTP claim to every
-  present object and pin the leftover-proxy collision with a test; the
-  receipt plane stays as it is.
+  **Decided 2026-10-11:** the holding plane is not widened. Delivery
+  resolution (`address_owner` / `address_recipient`) keeps its owner
+  planes, and the Entra-wide rule is a third, separate plane:
+  `validate::provisioning_conflicts` (lance-graph #1477) reports every key
+  claimed by more than one present object, whatever its enabled or
+  recipient state, so a leftover proxy on an object that is no longer
+  mail-enabled is a provisioning conflict without changing who holds or
+  receives the address. The claimants are listed, not judged: Entra
+  quarantines the duplicate on the object whose sync brought it, and the
+  simulator observes no sync order. **Fidelity limit:** only users and
+  groups are observed; contacts, public folders and other object kinds
+  also claim proxy addresses in a real tenant and are not in the plane.
 - **V15 — Where mailboxes live (2026-10-10).** `Deployment` names the
   on-premises host (`MailboxHost::ExchangeServer` or `Stalwart`, or none)
   and whether Exchange Online is present; the constants are
@@ -694,6 +703,18 @@ such as delivery and authorization.
       chain), and membership confers neither its address nor its rights.
       SendAs is an explicit grant (V17), never a consequence of
       membership.
+
+      The same holds for a mail-enabled *security* group: membership
+      carries its ACL grants (the SID chain), not its address. Stalwart's
+      dir-sim directory answers `members_send_as_group() == false`, and the
+      account's own directory, the one that supplied the membership,
+      decides whether a member gets the group's addresses (Stalwart #14).
+
+      **Fidelity exception (ruled 2026-10-11):** a list whose expansion
+      reaches no mailbox is rejected at RCPT TO with 550, as an unknown
+      recipient. Exchange accepts mail to an empty distribution group and
+      drops it. Rejecting is kept on purpose: the sender learns the mail
+      went nowhere, and nothing is accepted that no mailbox will hold.
   - **Unknown is not security-enabled.** A group whose security flag was
     not read is never in the security-enabled filter, so a permission
     granted to it is not inherited and fails closed. A group created in a

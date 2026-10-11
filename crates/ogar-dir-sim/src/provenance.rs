@@ -12,8 +12,10 @@
 
 use crate::change::Change;
 
-/// Version identifier — the store's monotonic logical clock. Designed to
-/// map 1:1 onto a Lance dataset version once persisted.
+/// Version identifier — the store's monotonic logical clock. It is the
+/// history's own numbering and stays independent of the physical version
+/// of whatever stores it: a Lance dataset version counts commits, and one
+/// commit may carry several logical versions (ruled 2026-10-11).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct VersionId(pub u64);
 
