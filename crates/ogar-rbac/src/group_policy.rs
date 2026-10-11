@@ -72,6 +72,8 @@ pub struct PolicyEntry {
 /// Why a change was refused. Nothing is recorded for a refused change.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum PolicyError {
+    /// The change names the all-zero objectGUID, which means "absent".
+    AbsentGroup,
     /// The group already confers the role.
     AlreadyGranted(Guid128, RoleId),
     /// The group does not confer the role.
@@ -112,7 +114,9 @@ impl GroupRolePolicy {
     ///
     /// # Errors
     ///
-    /// [`PolicyError::AlreadyGranted`] for a grant the group already
+    /// [`PolicyError::AbsentGroup`] for the all-zero objectGUID, which
+    /// means "absent": a group whose GUID was not read never picks up a
+    /// grant. [`PolicyError::AlreadyGranted`] for a grant the group already
     /// confers, [`PolicyError::NotGranted`] for a revocation of a role it
     /// does not: a change that would not change the state is not a change.
     pub fn apply(
@@ -120,6 +124,10 @@ impl GroupRolePolicy {
         change: PolicyChange,
         provenance: GrantProvenance,
     ) -> Result<PolicyVersion, PolicyError> {
+        let (PolicyChange::Grant { group, .. } | PolicyChange::Revoke { group, .. }) = change;
+        if group == Guid128::default() {
+            return Err(PolicyError::AbsentGroup);
+        }
         match change {
             PolicyChange::Grant { group, role } if self.head.confers(group, role) => {
                 return Err(PolicyError::AlreadyGranted(group, role));
@@ -305,6 +313,33 @@ mod tests {
         }
         assert_eq!(p.as_of(p.head()).unwrap(), replay);
         assert_eq!(p.history()[1].provenance.by, "bob");
+    }
+
+    // The all-zero objectGUID means "absent": a group whose GUID was not
+    // read must not pick up a grant, so no change may name it.
+    #[test]
+    fn the_absent_group_is_refused() {
+        let mut p = GroupRolePolicy::new();
+        for change in [
+            PolicyChange::Grant {
+                group: Guid128::default(),
+                role: "accountant",
+            },
+            PolicyChange::Revoke {
+                group: Guid128::default(),
+                role: "accountant",
+            },
+        ] {
+            assert_eq!(
+                p.apply(change, by("a", "x", 1)),
+                Err(PolicyError::AbsentGroup)
+            );
+        }
+        assert_eq!(p.head(), PolicyVersion(0));
+        assert_eq!(
+            p.as_of(p.head()).unwrap().roles_of(Guid128::default()),
+            None
+        );
     }
 
     // A change that would not change the state is refused and not recorded.
