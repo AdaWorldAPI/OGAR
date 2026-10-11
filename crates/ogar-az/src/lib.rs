@@ -27,6 +27,7 @@ use ogar_dir_core::{
 use serde_json::Value;
 use std::collections::HashSet;
 
+pub mod group;
 pub mod mailbox;
 
 /// Encoder schema version understood by this crate.
@@ -299,6 +300,8 @@ pub enum AzKind {
     /// A user's Exchange Online mailbox as Graph reports it
     /// ([`mailbox::MAILBOX_SCHEMA_V1`]).
     Mailbox = 2,
+    /// A Graph `group` ([`group::GROUP_SCHEMA_V1`]).
+    Group = 3,
 }
 
 /// `$select` value for schema `version`: `id` plus every attribute defined at
@@ -495,9 +498,13 @@ pub fn ingest_page(
 }
 
 /// Read a single-valued string slot by attribute name. `None` for absent
-/// values and for attributes that are not [`AttrKind::Str`] (a multi-valued
+/// values, for records that are not users (a group or mailbox record lays
+/// out its slots differently) and for attributes that are not [`AttrKind::Str`] (a multi-valued
 /// slot is a length-prefixed blob, never a string — use [`attr_multi`]).
 pub fn attr_str<'p>(rec: &DirRecord, pool: &'p ValuePool, name: &str) -> Option<&'p str> {
+    if !is_user(rec) {
+        return None;
+    }
     let def = SCHEMA_V1
         .iter()
         .find(|d| d.name == name && d.kind == AttrKind::Str)?;
@@ -505,8 +512,11 @@ pub fn attr_str<'p>(rec: &DirRecord, pool: &'p ValuePool, name: &str) -> Option<
 }
 
 /// Read a multi-valued string slot by attribute name. `None` for absent
-/// values and for attributes that are not [`AttrKind::MultiStr`].
+/// values, for records that are not users and for attributes that are not [`AttrKind::MultiStr`].
 pub fn attr_multi<'p>(rec: &DirRecord, pool: &'p ValuePool, name: &str) -> Option<Vec<&'p str>> {
+    if !is_user(rec) {
+        return None;
+    }
     let def = SCHEMA_V1
         .iter()
         .find(|d| d.name == name && d.kind == AttrKind::MultiStr)?;
@@ -545,4 +555,8 @@ pub fn sync_edges(
             })
         })
         .collect()
+}
+
+fn is_user(rec: &DirRecord) -> bool {
+    rec.schema().family == SchemaFamily::MsGraph && rec.object_kind() == AzKind::User as u16
 }
