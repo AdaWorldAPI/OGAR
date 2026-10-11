@@ -63,7 +63,8 @@ use lance_graph_contract::rbac::{
     ActorId, ClassGrant, ClassId, ClassRbac, Operation, RoleId, ScopeSpec, grants_permit,
 };
 use lance_graph_contract::rbac_plug::{
-    ActorSource, RbacAuthority, RbacBinding, RbacDrift, RbacPlug, verify_concepts_against_mirror,
+    ActorSource, RbacAuthority, RbacBinding, RbacDrift, RbacPlug, SubjectRoles,
+    verify_concepts_against_mirror,
 };
 use lance_graph_rbac::authorize::{MembershipDecision, authorize_memberships};
 use lance_graph_rbac::authorize::{ScopedDecision, authorize_scoped};
@@ -227,10 +228,9 @@ impl<S: GrantSource> RbacAuthority for OgarRbac<S> {
 /// role here, under any name.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct IdentityActors {
-    subject: String,
+    held: SubjectRoles,
     acting: Option<AuthBinding>,
     tenant: u64,
-    roles: Vec<RoleId>,
     unplugged: Vec<String>,
 }
 
@@ -252,10 +252,9 @@ impl IdentityActors {
             }
         }
         Self {
-            subject: identity.user.subject.clone(),
+            held: SubjectRoles::new(identity.user.subject.clone(), roles),
             acting: identity.acting_party().cloned(),
             tenant: identity.user.tenant,
-            roles,
             unplugged,
         }
     }
@@ -277,11 +276,7 @@ impl IdentityActors {
 
 impl ActorSource for IdentityActors {
     fn roles_of(&self, actor: ActorId<'_>) -> &[RoleId] {
-        if actor == self.subject {
-            &self.roles
-        } else {
-            &[]
-        }
+        self.held.of(actor)
     }
 
     fn memberships_of(&self, actor: ActorId<'_>, _class: ClassId) -> Vec<Membership> {
@@ -740,6 +735,18 @@ mod tests {
                 .memberships_of("someone-else", patient_class())
                 .is_empty()
         );
+    }
+
+    // A user whose subject did not resolve holds nothing, so an actor id
+    // that also failed to resolve can never pick up its roles.
+    #[test]
+    fn an_empty_subject_holds_no_role() {
+        let binding = authority().bind(&PLUG).expect("green bind");
+        let mut user = identity(&["physician"], 7);
+        user.user.subject = String::new();
+        let actors = IdentityActors::new(&user, &binding);
+        assert!(actors.roles_of("").is_empty());
+        assert!(actors.memberships_of("", patient_class()).is_empty());
     }
 
     // A delegated login (RFC 8693 `act`): bob acts with dr-house's authority.
