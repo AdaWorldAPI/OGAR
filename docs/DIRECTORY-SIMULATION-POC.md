@@ -492,9 +492,10 @@ no-population-intermediate rule.
       mail-enabled is a violation.
 
     V19's expansion has shipped (lance-graph #1458, #1463):
-    `View::security_identifiers` gives the SID chain and
-    `groups_transitive_through` the mail chain, so a grant to a group
-    reaches its nested members.
+    `View::security_identifiers` gives the security-enabled SID chain and
+    `groups_transitive_through` the mail-enabled chain, so a grant to a
+    group reaches nested members only through the chain that applies to
+    the right.
 
     **Under review (2026-10-11, not yet ruled):** the per-right trustee
     kinds above conflict with the Microsoft cmdlet reference on three
