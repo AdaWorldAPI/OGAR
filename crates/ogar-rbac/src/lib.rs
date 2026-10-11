@@ -55,6 +55,8 @@
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
 
+pub mod group_policy;
+
 use lance_graph_contract::class_view::WideFieldMask;
 use lance_graph_contract::rbac::Membership;
 use lance_graph_contract::rbac::{

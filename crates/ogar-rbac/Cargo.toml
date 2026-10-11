@@ -27,3 +27,7 @@ lance-graph-contract = { git = "https://github.com/AdaWorldAPI/lance-graph", bra
 # Consumed, never cloned: the algorithm is consumer-agnostic and stays where it
 # is. This crate supplies the impl and the grant data, not the mechanics.
 lance-graph-rbac = { git = "https://github.com/AdaWorldAPI/lance-graph", branch = "main" }
+
+# Directory object identity (`Guid128`): a group-to-role grant names the group
+# by its objectGUID, never by a name or address that can be reassigned.
+ogar-dir-core = { path = "../ogar-dir-core" }
