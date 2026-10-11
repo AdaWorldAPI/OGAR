@@ -84,6 +84,9 @@ pub enum PolicyError {
 #[derive(Clone, Debug, Default)]
 pub struct GroupRolePolicy {
     entries: Vec<PolicyEntry>,
+    /// The state at [`Self::head`], kept current by [`Self::apply`] so a
+    /// change is checked without replaying the log.
+    head: GroupRoleState,
 }
 
 impl GroupRolePolicy {
@@ -117,22 +120,23 @@ impl GroupRolePolicy {
         change: PolicyChange,
         provenance: GrantProvenance,
     ) -> Result<PolicyVersion, PolicyError> {
-        let state = self.state_at(self.entries.len());
         match change {
-            PolicyChange::Grant { group, role } if state.confers(group, role) => {
+            PolicyChange::Grant { group, role } if self.head.confers(group, role) => {
                 return Err(PolicyError::AlreadyGranted(group, role));
             }
-            PolicyChange::Revoke { group, role } if !state.confers(group, role) => {
+            PolicyChange::Revoke { group, role } if !self.head.confers(group, role) => {
                 return Err(PolicyError::NotGranted(group, role));
             }
             _ => {}
         }
         let version = PolicyVersion(self.entries.len() as u64 + 1);
-        self.entries.push(PolicyEntry {
+        let entry = PolicyEntry {
             version,
             change,
             provenance,
-        });
+        };
+        self.head.step(&entry);
+        self.entries.push(entry);
         Ok(version)
     }
 
@@ -146,25 +150,14 @@ impl GroupRolePolicy {
             .ok()
             .filter(|&n| n <= self.entries.len())
             .ok_or(PolicyError::UnknownVersion(version))?;
-        Ok(self.state_at(n))
-    }
-
-    fn state_at(&self, n: usize) -> GroupRoleState {
-        let mut groups: BTreeMap<Guid128, BTreeMap<RoleId, GrantProvenance>> = BTreeMap::new();
-        for e in &self.entries[..n] {
-            match e.change {
-                PolicyChange::Grant { group, role } => {
-                    groups
-                        .entry(group)
-                        .or_default()
-                        .insert(role, e.provenance.clone());
-                }
-                PolicyChange::Revoke { group, role } => {
-                    groups.entry(group).or_default().remove(role);
-                }
-            }
+        if n == self.entries.len() {
+            return Ok(self.head.clone());
         }
-        GroupRoleState { groups }
+        let mut state = GroupRoleState::default();
+        for e in &self.entries[..n] {
+            state.step(e);
+        }
+        Ok(state)
     }
 }
 
@@ -178,6 +171,22 @@ pub struct GroupRoleState {
 }
 
 impl GroupRoleState {
+    /// Apply one recorded change. The only place a change alters a state,
+    /// so the cached head and a replay in [`GroupRolePolicy::as_of`] agree.
+    fn step(&mut self, e: &PolicyEntry) {
+        match e.change {
+            PolicyChange::Grant { group, role } => {
+                self.groups
+                    .entry(group)
+                    .or_default()
+                    .insert(role, e.provenance.clone());
+            }
+            PolicyChange::Revoke { group, role } => {
+                self.groups.entry(group).or_default().remove(role);
+            }
+        }
+    }
+
     /// The roles `group` confers: `None` when the policy never named it,
     /// `Some` (possibly empty) when it did.
     #[must_use]
@@ -289,6 +298,12 @@ mod tests {
             Some(&by("carol", "REQ-3", 30))
         );
         assert_eq!(p.history().len(), 3);
+        // The cached head is the replayed state, not a second answer.
+        let mut replay = GroupRoleState::default();
+        for e in p.history() {
+            replay.step(e);
+        }
+        assert_eq!(p.as_of(p.head()).unwrap(), replay);
         assert_eq!(p.history()[1].provenance.by, "bob");
     }
 
