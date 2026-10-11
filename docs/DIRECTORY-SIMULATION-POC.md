@@ -368,8 +368,14 @@ such as delivery and authorization.
   objects, as in Entra (UPN and proxy-address uniqueness is tenant-wide),
   so a second claim by any object is a conflict. *Who receives mail at it*
   is limited to mail-enabled recipients, as in Exchange Online
-  (`View::is_mail_recipient`, lance-graph `receives_mail`). dir-sim
-  already keeps the two apart (V10); a test pins both.
+  (`View::is_mail_recipient`, lance-graph `receives_mail`). dir-sim keeps
+  the two questions apart (V10), but its holding plane is still narrower
+  than the ruling: V10 lets an SMTP proxy claim only on a mail recipient,
+  so a leftover proxy on an object that is no longer mail-enabled claims
+  nothing, where Entra would still reject a second object carrying it.
+  **Open (code):** widen `validate::address_owner`'s SMTP claim to every
+  present object and pin the leftover-proxy collision with a test; the
+  receipt plane stays as it is.
 - **V15 — Where mailboxes live (2026-10-10).** `Deployment` names the
   on-premises host (`MailboxHost::ExchangeServer` or `Stalwart`, or none)
   and whether Exchange Online is present; the constants are
