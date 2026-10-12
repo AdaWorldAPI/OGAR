@@ -85,6 +85,7 @@ Until it ships, keep existing auth — do NOT re-introduce a `*Bridge` as a stop
 
 | Guard | Read before |
 |---|---|
+| [Typed logic compiler RFC](docs/ALGEBRAIC-LOGIC-COMPILER-RFC.md) + [falsification plan](docs/ALGEBRAIC-LOGIC-COMPILER-FALSIFICATION.md) | proposing a typed logic/method/scheme lowering over R2IL and mask-risc; documentation-only, no new runtime or ISA |
 | [OGAR as IR](docs/OGAR-AS-IR.md) | designing any IR addition (a new `Class` field, `ActionDef` variant, `KausalSpec` slot, lowering pass) |
 | [Consumer best practices](docs/OGAR-CONSUMER-BEST-PRACTICES.md) | any consumer call site (classid · `APP_PREFIX` · `ClassView` · `*Bridge`) |
 | [SurrealQL-AST trap pre-flight](docs/SURREAL-AST-TRAP-PREFLIGHT.md) | producer→IR · transcode · codegen · `.surql` authoring |
