@@ -272,7 +272,8 @@ impl<K> Clone for Access<'_, K> {
 impl<K> Copy for Access<'_, K> {}
 
 /// The consumer's graph seen through a row scope: an object outside the scope
-/// has no present fields, and no rail leads to it.
+/// has no present fields. The walk emits nothing for it and, since its rail
+/// positions are not present either, goes no further through it.
 struct ScopedGraph<'a, G: RailGraph> {
     inner: &'a G,
     admits: &'a dyn Fn(G::Key) -> bool,
@@ -291,9 +292,7 @@ impl<G: RailGraph> RailGraph for ScopedGraph<'_, G> {
         }
     }
     fn rail_target(&self, key: G::Key, position: u8) -> Option<G::Key> {
-        self.inner
-            .rail_target(key, position)
-            .filter(|&target| (self.admits)(target))
+        self.inner.rail_target(key, position)
     }
 }
 
@@ -352,8 +351,8 @@ where
 ///
 /// - Rows go through `walk_rails_authorized`: a hidden field is not emitted at
 ///   any depth, and a hidden rail is not followed.
-/// - Row scope applies at every hop: an object [`Access::admits`] rejects has
-///   no fields, and a rail to it is not followed.
+/// - Row scope applies at every hop: an object [`Access::admits`] rejects
+///   contributes no fields, and nothing is reached through it.
 /// - A root the reader may not read (no visible field on its class, or outside
 ///   the scope) resolves like a missing object: its snapshot fallback, else
 ///   `Unresolvable`. It is not reported as `Resolved` with no fields, which
