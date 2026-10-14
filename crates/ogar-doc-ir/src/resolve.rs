@@ -437,6 +437,7 @@ where
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn walk_doc_node<S, V>(
     doc: &DocCompose,
     id: NodeId,
