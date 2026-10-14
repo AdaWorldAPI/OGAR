@@ -35,8 +35,10 @@
 //! time (persisted-query semantics). Slot-local narrowing is future `DocOp`
 //! territory, deliberately not invented here.
 
-use lance_graph_contract::class_view::{ClassId, ClassView};
-use lance_graph_contract::selection::{RailGraph, ViewId, ViewRegistry, walk_rails};
+use lance_graph_contract::class_view::{ClassId, ClassView, WideFieldMask};
+use lance_graph_contract::selection::{
+    RailGraph, ViewId, ViewRegistry, walk_rails, walk_rails_authorized,
+};
 
 use crate::compose::{
     ComposeError, DocCompose, DocNode, NodeId, ObjectRef, ObjectSlot, ResolutionMode,
@@ -245,7 +247,40 @@ where
     doc.validate()?;
     let mut out = ResolvedDoc::default();
     walk_doc_node(
-        doc, doc.root, source, class_view, registry, max_depth, &mut out,
+        doc, doc.root, source, class_view, registry, max_depth, None, &mut out,
+    );
+    Ok(out)
+}
+
+/// [`resolve_doc`] for a reader: every slot resolves through
+/// [`resolve_slot_authorized`] with the same `allowed` mask per class.
+///
+/// # Errors
+///
+/// Propagates [`ComposeError`] from validation, as [`resolve_doc`] does.
+pub fn resolve_doc_authorized<S, V>(
+    doc: &DocCompose,
+    source: &S,
+    class_view: &V,
+    registry: &ViewRegistry,
+    allowed: &dyn Fn(ClassId) -> WideFieldMask,
+    max_depth: usize,
+) -> Result<ResolvedDoc, ComposeError>
+where
+    S: DocObjectSource,
+    V: ClassView,
+{
+    doc.validate()?;
+    let mut out = ResolvedDoc::default();
+    walk_doc_node(
+        doc,
+        doc.root,
+        source,
+        class_view,
+        registry,
+        max_depth,
+        Some(allowed),
+        &mut out,
     );
     Ok(out)
 }
@@ -257,6 +292,48 @@ pub fn resolve_slot<S, V>(
     class_view: &V,
     registry: &ViewRegistry,
     max_depth: usize,
+) -> ResolvedSlot
+where
+    S: DocObjectSource,
+    V: ClassView,
+{
+    resolve_slot_with(slot, source, class_view, registry, max_depth, None)
+}
+
+/// [`resolve_slot`] for a reader whose access decision gives `allowed`, the
+/// field positions they may see per class (lance-graph-rbac's
+/// `visible_fields()`, which is `EMPTY` on a refused decision).
+///
+/// - Rows go through `walk_rails_authorized`: a hidden field is not emitted at
+///   any depth, and a hidden rail is not followed.
+/// - A root the reader may not read at all (`allowed(root_class)` empty)
+///   resolves like a missing object: its snapshot fallback, else
+///   `Unresolvable`. It is not reported as `Resolved` with no fields, which
+///   would say the object exists and is empty.
+/// - A grid view has no field positions to mask. It resolves when the root is
+///   readable and is otherwise refused like any other slot.
+pub fn resolve_slot_authorized<S, V>(
+    slot: &ObjectSlot,
+    source: &S,
+    class_view: &V,
+    registry: &ViewRegistry,
+    allowed: &dyn Fn(ClassId) -> WideFieldMask,
+    max_depth: usize,
+) -> ResolvedSlot
+where
+    S: DocObjectSource,
+    V: ClassView,
+{
+    resolve_slot_with(slot, source, class_view, registry, max_depth, Some(allowed))
+}
+
+fn resolve_slot_with<S, V>(
+    slot: &ObjectSlot,
+    source: &S,
+    class_view: &V,
+    registry: &ViewRegistry,
+    max_depth: usize,
+    allowed: Option<&dyn Fn(ClassId) -> WideFieldMask>,
 ) -> ResolvedSlot
 where
     S: DocObjectSource,
@@ -276,10 +353,12 @@ where
     ) {
         (Some(root), Some(root_view)) => {
             let root_class = source.graph().class_of(root);
-            registry
-                .get(root_view)
-                .is_some_and(|v| v.class == root_class)
-                .then_some((root, root_view, root_class))
+            let readable = allowed.is_none_or(|a| !a(root_class).is_empty());
+            (readable
+                && registry
+                    .get(root_view)
+                    .is_some_and(|v| v.class == root_class))
+            .then_some((root, root_view, root_class))
         }
         _ => None,
     };
@@ -305,38 +384,39 @@ where
         Some((root, root_view, root_class)) => {
             let graph = source.graph();
             let mut fields = Vec::new();
-            walk_rails(
-                graph,
-                class_view,
-                registry,
-                // The slot's named view governs the ROOT; nested hops resolve
-                // per-class via the consumer's binding.
-                |class| {
-                    if class == root_class {
-                        Some(root_view)
-                    } else {
-                        source.view_for_class(class)
-                    }
-                },
-                root,
-                max_depth,
-                &mut |visit| {
-                    // A position with no scalar value (a rail) contributes its
-                    // nested rows instead of a cell of its own.
-                    if let Some(value) = source.value_of(visit.key, visit.position) {
-                        let label = class_view
-                            .field_label(visit.class, visit.position)
-                            .unwrap_or("")
-                            .to_string();
-                        fields.push(ResolvedField {
-                            position: visit.position,
-                            depth: visit.depth,
-                            label,
-                            value,
-                        });
-                    }
-                },
-            );
+            // The slot's named view governs the ROOT; nested hops resolve
+            // per-class via the consumer's binding.
+            let binding = |class| {
+                if class == root_class {
+                    Some(root_view)
+                } else {
+                    source.view_for_class(class)
+                }
+            };
+            let mut visit = |visit: lance_graph_contract::selection::FieldVisit<_>| {
+                // A position with no scalar value (a rail) contributes its
+                // nested rows instead of a cell of its own.
+                if let Some(value) = source.value_of(visit.key, visit.position) {
+                    let label = class_view
+                        .field_label(visit.class, visit.position)
+                        .unwrap_or("")
+                        .to_string();
+                    fields.push(ResolvedField {
+                        position: visit.position,
+                        depth: visit.depth,
+                        label,
+                        value,
+                    });
+                }
+            };
+            match allowed {
+                Some(allowed) => walk_rails_authorized(
+                    graph, class_view, registry, binding, allowed, root, max_depth, &mut visit,
+                ),
+                None => walk_rails(
+                    graph, class_view, registry, binding, root, max_depth, &mut visit,
+                ),
+            }
             SlotOutcome::Resolved {
                 class: root_class,
                 fields,
@@ -364,6 +444,7 @@ fn walk_doc_node<S, V>(
     class_view: &V,
     registry: &ViewRegistry,
     max_depth: usize,
+    allowed: Option<&dyn Fn(ClassId) -> WideFieldMask>,
     out: &mut ResolvedDoc,
 ) where
     S: DocObjectSource,
@@ -375,7 +456,9 @@ fn walk_doc_node<S, V>(
     match node {
         DocNode::Document { children } => {
             for &c in children {
-                walk_doc_node(doc, c, source, class_view, registry, max_depth, out);
+                walk_doc_node(
+                    doc, c, source, class_view, registry, max_depth, allowed, out,
+                );
             }
         }
         DocNode::Section { heading, children } => {
@@ -385,17 +468,21 @@ fn walk_doc_node<S, V>(
                 out.blocks.push(ResolvedBlock::Heading(text.clone()));
             }
             for &c in children {
-                walk_doc_node(doc, c, source, class_view, registry, max_depth, out);
+                walk_doc_node(
+                    doc, c, source, class_view, registry, max_depth, allowed, out,
+                );
             }
         }
         DocNode::Paragraph { children } => {
             for &c in children {
-                walk_doc_node(doc, c, source, class_view, registry, max_depth, out);
+                walk_doc_node(
+                    doc, c, source, class_view, registry, max_depth, allowed, out,
+                );
             }
         }
         DocNode::Text { text } => out.blocks.push(ResolvedBlock::Text(text.clone())),
-        DocNode::ObjectSlot { slot } => out.blocks.push(ResolvedBlock::Slot(resolve_slot(
-            slot, source, class_view, registry, max_depth,
+        DocNode::ObjectSlot { slot } => out.blocks.push(ResolvedBlock::Slot(resolve_slot_with(
+            slot, source, class_view, registry, max_depth, allowed,
         ))),
     }
 }
@@ -670,6 +757,161 @@ mod tests {
         assert_eq!(fields[0].value, "Install fire door");
         assert_eq!((fields[1].label.as_str(), fields[1].depth), ("name", 1));
         assert_eq!(fields[1].value, "Alice");
+    }
+
+    /// A user view that selects BOTH user fields, so an email that does not
+    /// appear in an authorized resolve is hidden by the reader's mask, not
+    /// by the view.
+    fn setup_full_user() -> (Src, ViewRegistry) {
+        let mut registry = ViewRegistry::new();
+        let inline = registry.register(NamedView::new(
+            USER,
+            WideFieldMask::from(0b11),
+            DisplayTemplate::Card,
+        ));
+        let summary = registry.register(NamedView::new(
+            WP,
+            WideFieldMask::from(0b11),
+            DisplayTemplate::Detail,
+        ));
+        let src = Src {
+            registry_names: vec![("user.inline", inline), ("work_package.summary", summary)],
+            graph: G,
+        };
+        (src, registry)
+    }
+
+    fn values(r: &ResolvedSlot) -> Vec<&str> {
+        match &r.outcome {
+            SlotOutcome::Resolved { fields, .. } => {
+                fields.iter().map(|f| f.value.as_str()).collect()
+            }
+            other => panic!("expected Resolved, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn an_authorized_resolve_hides_a_nested_field_the_reader_may_not_see() {
+        let (src, registry) = setup_full_user();
+        let s = slot("wp1", "work_package.summary", None);
+        let open = resolve_slot(&s, &src, &TestView, &registry, 4);
+        assert_eq!(
+            values(&open),
+            ["Install fire door", "Alice", "alice@example.test"],
+            "without a decision the fixture shows the email"
+        );
+        let allowed = |c: ClassId| match c {
+            WP => WideFieldMask::from(0b11),
+            USER => WideFieldMask::from(0b01), // name, not email
+            _ => WideFieldMask::EMPTY,
+        };
+        let r = resolve_slot_authorized(&s, &src, &TestView, &registry, &allowed, 4);
+        assert_eq!(values(&r), ["Install fire door", "Alice"]);
+    }
+
+    #[test]
+    fn an_authorized_resolve_does_not_follow_a_hidden_rail() {
+        let (src, registry) = setup_full_user();
+        let s = slot("wp1", "work_package.summary", None);
+        let allowed = |c: ClassId| match c {
+            WP => WideFieldMask::from(0b01), // subject, not the assignee rail
+            USER => WideFieldMask::from(0b11),
+            _ => WideFieldMask::EMPTY,
+        };
+        let r = resolve_slot_authorized(&s, &src, &TestView, &registry, &allowed, 4);
+        assert_eq!(values(&r), ["Install fire door"]);
+    }
+
+    #[test]
+    fn an_unreadable_root_resolves_like_a_missing_object() {
+        let (src, registry) = setup_full_user();
+        let none = |_: ClassId| WideFieldMask::EMPTY;
+        let r = resolve_slot_authorized(
+            &slot("wp1", "work_package.summary", None),
+            &src,
+            &TestView,
+            &registry,
+            &none,
+            4,
+        );
+        assert_eq!(r.outcome, SlotOutcome::Unresolvable);
+        let r = resolve_slot_authorized(
+            &slot(
+                "wp1",
+                "work_package.summary",
+                Some(SnapshotRef {
+                    content_sha256: [0xCD; 32],
+                }),
+            ),
+            &src,
+            &TestView,
+            &registry,
+            &none,
+            4,
+        );
+        assert_eq!(
+            r.outcome,
+            SlotOutcome::Fallback {
+                content_sha256_hex: "cd".repeat(32)
+            }
+        );
+    }
+
+    #[test]
+    fn a_grid_view_needs_a_readable_root() {
+        let (src, registry) = grid_setup(false);
+        let s = slot("wp1", "wp.grid", None);
+        let readable = |c: ClassId| {
+            if c == WP {
+                WideFieldMask::from(0b01)
+            } else {
+                WideFieldMask::EMPTY
+            }
+        };
+        let r = resolve_slot_authorized(&s, &src, &TestView, &registry, &readable, 4);
+        assert!(matches!(r.outcome, SlotOutcome::Grid { .. }));
+        let none = |_: ClassId| WideFieldMask::EMPTY;
+        let r = resolve_slot_authorized(&s, &src, &TestView, &registry, &none, 4);
+        assert_eq!(r.outcome, SlotOutcome::Unresolvable);
+    }
+
+    #[test]
+    fn resolve_doc_authorized_applies_the_mask_to_every_slot() {
+        let (src, registry) = setup_full_user();
+        let doc = DocCompose {
+            version: crate::compose::DOC_COMPOSE_VERSION.into(),
+            nodes: vec![
+                DocNode::Document {
+                    children: vec![NodeId(1), NodeId(2)],
+                },
+                DocNode::ObjectSlot {
+                    slot: slot("wp1", "work_package.summary", None),
+                },
+                DocNode::ObjectSlot {
+                    slot: slot("alice", "user.inline", None),
+                },
+            ],
+            root: NodeId(0),
+        };
+        let allowed = |c: ClassId| match c {
+            WP => WideFieldMask::from(0b11),
+            USER => WideFieldMask::from(0b01),
+            _ => WideFieldMask::EMPTY,
+        };
+        let out = resolve_doc_authorized(&doc, &src, &TestView, &registry, &allowed, 4).unwrap();
+        let shown: Vec<Vec<&str>> = out
+            .blocks
+            .iter()
+            .map(|b| match b {
+                ResolvedBlock::Slot(s) => values(s),
+                other => panic!("expected a slot, got {other:?}"),
+            })
+            .collect();
+        assert_eq!(
+            shown,
+            vec![vec!["Install fire door", "Alice"], vec!["Alice"]],
+            "the email is hidden in the nested hop and in the user's own slot"
+        );
     }
 
     #[test]
