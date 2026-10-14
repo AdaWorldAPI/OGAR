@@ -57,7 +57,8 @@
 
 pub mod group_policy;
 
-use lance_graph_contract::class_view::WideFieldMask;
+use lance_graph_contract::class_view::{FieldMask, WideFieldMask};
+use lance_graph_contract::ogar_codebook::classid_canon_compat;
 use lance_graph_contract::rbac::Membership;
 use lance_graph_contract::rbac::{
     ActorId, ClassGrant, ClassId, ClassRbac, Operation, RoleId, ScopeSpec, grants_permit,
@@ -102,6 +103,15 @@ pub trait GrantSource {
     /// The column projection `role` is limited to on `concept`, if any. `None`
     /// (the default) leaves the class unrestricted by column for that role.
     fn field_mask_of(&self, _role: RoleId, _concept: u16) -> Option<WideFieldMask> {
+        None
+    }
+
+    /// The column projection a role gets on `concept` when this source has no
+    /// mask for that role there ([`field_mask_of`](GrantSource::field_mask_of)
+    /// is `None`). Fields left out stay hidden unless a role's own mask names
+    /// them: the policy for sensitive properties. `None` (the default) keeps
+    /// the class open to such roles, as before.
+    fn default_field_mask_of(&self, _concept: u16) -> Option<WideFieldMask> {
         None
     }
 }
@@ -164,9 +174,22 @@ impl<S: GrantSource> ClassRbac for OgarRbac<S> {
     fn row_scope(&self, role: RoleId, class: ClassId) -> Option<ScopeSpec> {
         self.source.scope_of(role, class)
     }
-    // Axes 2/4 (`roles_reaching` / `field_mask`) inherit the contract defaults
-    // until the Core carries the data for them — a follow-up seam. `field_mask`'s default is now WideFieldMask, so a
-    // grant on a position >= 64 survives once a source supplies one.
+
+    /// The role's own mask, else the class default, else the contract's open
+    /// default (`WideFieldMask::from(FieldMask::FULL)`, the same value this
+    /// impl inherited before; it covers positions 0..64, and a wide class that
+    /// needs more declares a mask). The same order as
+    /// [`RbacBinding::field_mask_for`], so the direct path and a plugged
+    /// binding agree.
+    fn field_mask(&self, role: RoleId, class: ClassId) -> WideFieldMask {
+        let concept = classid_canon_compat(class);
+        self.source
+            .field_mask_of(role, concept)
+            .or_else(|| self.source.default_field_mask_of(concept))
+            .unwrap_or_else(|| WideFieldMask::from(FieldMask::FULL))
+    }
+    // Axis 2 (`roles_reaching`) inherits the contract default until the Core
+    // carries the data for it.
 }
 
 /// OGAR as the RBAC authority: binds a consumer's [`RbacPlug`] to this
@@ -200,12 +223,15 @@ impl<S: GrantSource> RbacAuthority for OgarRbac<S> {
                 }
             }
         }
-        Ok(RbacBinding::new(
-            plug.consumer,
-            plug.classids.to_vec(),
-            grants,
-            masks,
-        ))
+        let defaults = plug
+            .classids
+            .iter()
+            .filter_map(|&id| self.source.default_field_mask_of(id).map(|m| (id, m)))
+            .collect();
+        Ok(
+            RbacBinding::new(plug.consumer, plug.classids.to_vec(), grants, masks)
+                .with_class_field_defaults(defaults),
+        )
     }
 }
 
@@ -649,6 +675,53 @@ mod tests {
             (role == "cashier" && concept == PATIENT)
                 .then(|| WideFieldMask::from_positions(&[0, 2]))
         }
+    }
+
+    /// `Masked`, plus a class default on patients.
+    struct Defaulted(Masked);
+    impl GrantSource for Defaulted {
+        fn roles_of(&self, actor: ActorId<'_>) -> &[RoleId] {
+            self.0.roles_of(actor)
+        }
+        fn grants_of(&self, role: RoleId) -> &[ClassGrant] {
+            self.0.grants_of(role)
+        }
+        fn field_mask_of(&self, role: RoleId, concept: u16) -> Option<WideFieldMask> {
+            self.0.field_mask_of(role, concept)
+        }
+        fn default_field_mask_of(&self, concept: u16) -> Option<WideFieldMask> {
+            (concept == PATIENT).then(|| WideFieldMask::from_positions(&[0, 1]))
+        }
+    }
+
+    // A role without its own mask gets the class default instead of every
+    // field, in the binding and on the direct path alike; a role's own mask
+    // is left alone.
+    #[test]
+    fn the_class_default_closes_roles_without_a_mask() {
+        let source = || Defaulted(Masked(authority().source));
+        let b = OgarRbac::new(source()).bind(&PLUG).expect("green bind");
+        let default = WideFieldMask::from_positions(&[0, 1]);
+        assert_eq!(
+            b.field_mask_for("physician", patient_class()),
+            Ok(Some(&default))
+        );
+        assert_eq!(
+            b.field_mask_for("cashier", patient_class()),
+            Ok(Some(&WideFieldMask::from_positions(&[0, 2])))
+        );
+
+        let direct = OgarRbac::new(source());
+        assert_eq!(direct.field_mask("physician", patient_class()), default);
+        assert_eq!(
+            direct.field_mask("cashier", patient_class()),
+            WideFieldMask::from_positions(&[0, 2])
+        );
+        // Without any mask data the direct path stays open, as before.
+        assert_eq!(
+            authority().field_mask("physician", patient_class()),
+            WideFieldMask::from(lance_graph_contract::class_view::FieldMask::FULL)
+        );
     }
 
     #[test]
