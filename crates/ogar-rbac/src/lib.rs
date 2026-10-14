@@ -175,9 +175,12 @@ impl<S: GrantSource> ClassRbac for OgarRbac<S> {
         self.source.scope_of(role, class)
     }
 
-    /// The role's own mask, else the class default, else every field: the
-    /// same order as [`RbacBinding::field_mask_for`], so the direct path and a
-    /// plugged binding agree.
+    /// The role's own mask, else the class default, else the contract's open
+    /// default (`WideFieldMask::from(FieldMask::FULL)`, the same value this
+    /// impl inherited before; it covers positions 0..64, and a wide class that
+    /// needs more declares a mask). The same order as
+    /// [`RbacBinding::field_mask_for`], so the direct path and a plugged
+    /// binding agree.
     fn field_mask(&self, role: RoleId, class: ClassId) -> WideFieldMask {
         let concept = classid_canon_compat(class);
         self.source
