@@ -252,8 +252,56 @@ where
     Ok(out)
 }
 
+/// What a reader may see, as the authorized entry points take it. Both parts
+/// come from the reader's access decision and are applied as given; the
+/// resolver decides nothing.
+pub struct Access<'a, K> {
+    /// The field positions the reader may see, per class: lance-graph-rbac's
+    /// `visible_fields()`, which is `EMPTY` on a refused decision.
+    pub fields: &'a dyn Fn(ClassId) -> WideFieldMask,
+    /// Whether the decision's row scope admits this object. The field mask is
+    /// per class; this is what tells two objects of one class apart.
+    pub admits: &'a dyn Fn(K) -> bool,
+}
+
+impl<K> Clone for Access<'_, K> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+impl<K> Copy for Access<'_, K> {}
+
+/// The consumer's graph seen through a row scope: an object outside the scope
+/// has no present fields, and no rail leads to it.
+struct ScopedGraph<'a, G: RailGraph> {
+    inner: &'a G,
+    admits: &'a dyn Fn(G::Key) -> bool,
+}
+
+impl<G: RailGraph> RailGraph for ScopedGraph<'_, G> {
+    type Key = G::Key;
+    fn class_of(&self, key: G::Key) -> ClassId {
+        self.inner.class_of(key)
+    }
+    fn present_mask(&self, key: G::Key) -> WideFieldMask {
+        if (self.admits)(key) {
+            self.inner.present_mask(key)
+        } else {
+            WideFieldMask::EMPTY
+        }
+    }
+    fn rail_target(&self, key: G::Key, position: u8) -> Option<G::Key> {
+        self.inner
+            .rail_target(key, position)
+            .filter(|&target| (self.admits)(target))
+    }
+}
+
+/// The key type of a source's graph.
+type KeyOf<S> = <<S as DocObjectSource>::Graph as RailGraph>::Key;
+
 /// [`resolve_doc`] for a reader: every slot resolves through
-/// [`resolve_slot_authorized`] with the same `allowed` mask per class.
+/// [`resolve_slot_authorized`] with the same [`Access`].
 ///
 /// # Errors
 ///
@@ -263,7 +311,7 @@ pub fn resolve_doc_authorized<S, V>(
     source: &S,
     class_view: &V,
     registry: &ViewRegistry,
-    allowed: &dyn Fn(ClassId) -> WideFieldMask,
+    access: Access<'_, KeyOf<S>>,
     max_depth: usize,
 ) -> Result<ResolvedDoc, ComposeError>
 where
@@ -279,7 +327,7 @@ where
         class_view,
         registry,
         max_depth,
-        Some(allowed),
+        Some(access),
         &mut out,
     );
     Ok(out)
@@ -300,31 +348,32 @@ where
     resolve_slot_with(slot, source, class_view, registry, max_depth, None)
 }
 
-/// [`resolve_slot`] for a reader whose access decision gives `allowed`, the
-/// field positions they may see per class (lance-graph-rbac's
-/// `visible_fields()`, which is `EMPTY` on a refused decision).
+/// [`resolve_slot`] for a reader, under their [`Access`].
 ///
 /// - Rows go through `walk_rails_authorized`: a hidden field is not emitted at
 ///   any depth, and a hidden rail is not followed.
-/// - A root the reader may not read at all (`allowed(root_class)` empty)
-///   resolves like a missing object: its snapshot fallback, else
+/// - Row scope applies at every hop: an object [`Access::admits`] rejects has
+///   no fields, and a rail to it is not followed.
+/// - A root the reader may not read (no visible field on its class, or outside
+///   the scope) resolves like a missing object: its snapshot fallback, else
 ///   `Unresolvable`. It is not reported as `Resolved` with no fields, which
 ///   would say the object exists and is empty.
-/// - A grid view has no field positions to mask. It resolves when the root is
-///   readable and is otherwise refused like any other slot.
+/// - A grid view is refused the same way. Grid cells have no field positions
+///   for a mask to select, so no field grant can say which cells a reader
+///   may see; grids resolve only through [`resolve_slot`].
 pub fn resolve_slot_authorized<S, V>(
     slot: &ObjectSlot,
     source: &S,
     class_view: &V,
     registry: &ViewRegistry,
-    allowed: &dyn Fn(ClassId) -> WideFieldMask,
+    access: Access<'_, KeyOf<S>>,
     max_depth: usize,
 ) -> ResolvedSlot
 where
     S: DocObjectSource,
     V: ClassView,
 {
-    resolve_slot_with(slot, source, class_view, registry, max_depth, Some(allowed))
+    resolve_slot_with(slot, source, class_view, registry, max_depth, Some(access))
 }
 
 fn resolve_slot_with<S, V>(
@@ -333,7 +382,7 @@ fn resolve_slot_with<S, V>(
     class_view: &V,
     registry: &ViewRegistry,
     max_depth: usize,
-    allowed: Option<&dyn Fn(ClassId) -> WideFieldMask>,
+    access: Option<Access<'_, KeyOf<S>>>,
 ) -> ResolvedSlot
 where
     S: DocObjectSource,
@@ -353,7 +402,8 @@ where
     ) {
         (Some(root), Some(root_view)) => {
             let root_class = source.graph().class_of(root);
-            let readable = allowed.is_none_or(|a| !a(root_class).is_empty());
+            let readable =
+                access.is_none_or(|a| (a.admits)(root) && !(a.fields)(root_class).is_empty());
             (readable
                 && registry
                     .get(root_view)
@@ -363,22 +413,26 @@ where
         _ => None,
     };
 
+    let refused = || match &slot.fallback {
+        Some(snap) => SlotOutcome::Fallback {
+            content_sha256_hex: hex32(&snap.content_sha256),
+        },
+        None => SlotOutcome::Unresolvable,
+    };
+
     let outcome = match resolved {
         // A grid-shaped view: the source projects the table itself. A
-        // malformed grid fails closed (never a half-rendered table).
+        // malformed grid fails closed (never a half-rendered table), and so
+        // does any grid under an access decision: its cells carry no field
+        // positions, so a field grant cannot select among them.
         Some((root, root_view, root_class)) if let Some(grid) = source.grid_of(root, root_view) => {
-            if grid.is_well_formed() {
+            if access.is_none() && grid.is_well_formed() {
                 SlotOutcome::Grid {
                     class: root_class,
                     grid,
                 }
             } else {
-                match &slot.fallback {
-                    Some(snap) => SlotOutcome::Fallback {
-                        content_sha256_hex: hex32(&snap.content_sha256),
-                    },
-                    None => SlotOutcome::Unresolvable,
-                }
+                refused()
             }
         }
         Some((root, root_view, root_class)) => {
@@ -409,9 +463,19 @@ where
                     });
                 }
             };
-            match allowed {
-                Some(allowed) => walk_rails_authorized(
-                    graph, class_view, registry, binding, allowed, root, max_depth, &mut visit,
+            match access {
+                Some(access) => walk_rails_authorized(
+                    &ScopedGraph {
+                        inner: graph,
+                        admits: access.admits,
+                    },
+                    class_view,
+                    registry,
+                    binding,
+                    access.fields,
+                    root,
+                    max_depth,
+                    &mut visit,
                 ),
                 None => walk_rails(
                     graph, class_view, registry, binding, root, max_depth, &mut visit,
@@ -422,12 +486,7 @@ where
                 fields,
             }
         }
-        _ => match &slot.fallback {
-            Some(snap) => SlotOutcome::Fallback {
-                content_sha256_hex: hex32(&snap.content_sha256),
-            },
-            None => SlotOutcome::Unresolvable,
-        },
+        _ => refused(),
     };
 
     ResolvedSlot {
@@ -445,7 +504,7 @@ fn walk_doc_node<S, V>(
     class_view: &V,
     registry: &ViewRegistry,
     max_depth: usize,
-    allowed: Option<&dyn Fn(ClassId) -> WideFieldMask>,
+    access: Option<Access<'_, KeyOf<S>>>,
     out: &mut ResolvedDoc,
 ) where
     S: DocObjectSource,
@@ -457,9 +516,7 @@ fn walk_doc_node<S, V>(
     match node {
         DocNode::Document { children } => {
             for &c in children {
-                walk_doc_node(
-                    doc, c, source, class_view, registry, max_depth, allowed, out,
-                );
+                walk_doc_node(doc, c, source, class_view, registry, max_depth, access, out);
             }
         }
         DocNode::Section { heading, children } => {
@@ -469,21 +526,17 @@ fn walk_doc_node<S, V>(
                 out.blocks.push(ResolvedBlock::Heading(text.clone()));
             }
             for &c in children {
-                walk_doc_node(
-                    doc, c, source, class_view, registry, max_depth, allowed, out,
-                );
+                walk_doc_node(doc, c, source, class_view, registry, max_depth, access, out);
             }
         }
         DocNode::Paragraph { children } => {
             for &c in children {
-                walk_doc_node(
-                    doc, c, source, class_view, registry, max_depth, allowed, out,
-                );
+                walk_doc_node(doc, c, source, class_view, registry, max_depth, access, out);
             }
         }
         DocNode::Text { text } => out.blocks.push(ResolvedBlock::Text(text.clone())),
         DocNode::ObjectSlot { slot } => out.blocks.push(ResolvedBlock::Slot(resolve_slot_with(
-            slot, source, class_view, registry, max_depth, allowed,
+            slot, source, class_view, registry, max_depth, access,
         ))),
     }
 }
@@ -806,7 +859,7 @@ mod tests {
             USER => WideFieldMask::from(0b01), // name, not email
             _ => WideFieldMask::EMPTY,
         };
-        let r = resolve_slot_authorized(&s, &src, &TestView, &registry, &allowed, 4);
+        let r = resolve_slot_authorized(&s, &src, &TestView, &registry, access(&allowed), 4);
         assert_eq!(values(&r), ["Install fire door", "Alice"]);
     }
 
@@ -819,7 +872,7 @@ mod tests {
             USER => WideFieldMask::from(0b11),
             _ => WideFieldMask::EMPTY,
         };
-        let r = resolve_slot_authorized(&s, &src, &TestView, &registry, &allowed, 4);
+        let r = resolve_slot_authorized(&s, &src, &TestView, &registry, access(&allowed), 4);
         assert_eq!(values(&r), ["Install fire door"]);
     }
 
@@ -832,7 +885,7 @@ mod tests {
             &src,
             &TestView,
             &registry,
-            &none,
+            access(&none),
             4,
         );
         assert_eq!(r.outcome, SlotOutcome::Unresolvable);
@@ -847,7 +900,7 @@ mod tests {
             &src,
             &TestView,
             &registry,
-            &none,
+            access(&none),
             4,
         );
         assert_eq!(
@@ -858,22 +911,74 @@ mod tests {
         );
     }
 
+    fn admit_all(_: K) -> bool {
+        true
+    }
+
+    fn access(fields: &dyn Fn(ClassId) -> WideFieldMask) -> Access<'_, K> {
+        Access {
+            fields,
+            admits: &admit_all,
+        }
+    }
+
     #[test]
-    fn a_grid_view_needs_a_readable_root() {
+    fn a_grid_view_is_refused_under_an_access_decision() {
         let (src, registry) = grid_setup(false);
         let s = slot("wp1", "wp.grid", None);
-        let readable = |c: ClassId| {
-            if c == WP {
-                WideFieldMask::from(0b01)
-            } else {
-                WideFieldMask::EMPTY
-            }
-        };
-        let r = resolve_slot_authorized(&s, &src, &TestView, &registry, &readable, 4);
-        assert!(matches!(r.outcome, SlotOutcome::Grid { .. }));
-        let none = |_: ClassId| WideFieldMask::EMPTY;
-        let r = resolve_slot_authorized(&s, &src, &TestView, &registry, &none, 4);
+        // The same grid resolves without a decision: the refusal below comes
+        // from the decision, not from the fixture.
+        let open = resolve_slot(&s, &src, &TestView, &registry, 4);
+        assert!(matches!(open.outcome, SlotOutcome::Grid { .. }));
+        // Every field of the class readable still does not open the grid:
+        // its cells have no field positions a grant could select.
+        let all = |_: ClassId| WideFieldMask::from(0b11);
+        let r = resolve_slot_authorized(&s, &src, &TestView, &registry, access(&all), 4);
         assert_eq!(r.outcome, SlotOutcome::Unresolvable);
+    }
+
+    #[test]
+    fn an_object_outside_the_row_scope_resolves_like_a_missing_one() {
+        let (src, registry) = setup_full_user();
+        let all = |_: ClassId| WideFieldMask::from(0b11);
+        let not_wp1 = |k: K| k != K::Wp1;
+        let scoped = Access {
+            fields: &all,
+            admits: &not_wp1,
+        };
+        let r = resolve_slot_authorized(
+            &slot("wp1", "work_package.summary", None),
+            &src,
+            &TestView,
+            &registry,
+            scoped,
+            4,
+        );
+        assert_eq!(r.outcome, SlotOutcome::Unresolvable);
+    }
+
+    #[test]
+    fn a_rail_to_an_object_outside_the_row_scope_is_not_followed() {
+        let (src, registry) = setup_full_user();
+        let all = |_: ClassId| WideFieldMask::from(0b11);
+        let not_alice = |k: K| k != K::Alice;
+        let scoped = Access {
+            fields: &all,
+            admits: &not_alice,
+        };
+        let r = resolve_slot_authorized(
+            &slot("wp1", "work_package.summary", None),
+            &src,
+            &TestView,
+            &registry,
+            scoped,
+            4,
+        );
+        assert_eq!(
+            values(&r),
+            ["Install fire door"],
+            "the work package is in scope, its assignee is not"
+        );
     }
 
     #[test]
@@ -899,7 +1004,8 @@ mod tests {
             USER => WideFieldMask::from(0b01),
             _ => WideFieldMask::EMPTY,
         };
-        let out = resolve_doc_authorized(&doc, &src, &TestView, &registry, &allowed, 4).unwrap();
+        let out =
+            resolve_doc_authorized(&doc, &src, &TestView, &registry, access(&allowed), 4).unwrap();
         let shown: Vec<Vec<&str>> = out
             .blocks
             .iter()
