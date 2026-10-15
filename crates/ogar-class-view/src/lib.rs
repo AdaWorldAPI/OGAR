@@ -171,7 +171,6 @@ use ogar_vocab::{
     recoder,
     rom_image,
     skeleton,
-    specialist_referral,
     tax_policy,
     textline,
     treatment,
@@ -290,7 +289,6 @@ fn all_canonical_classes() -> Vec<(&'static str, Class)> {
         ("examination", examination()),
         ("practitioner", practitioner()),
         ("external_practice", external_practice()),
-        ("specialist_referral", specialist_referral()),
         // ── 0x0AXX — anatomy (FMA reference kinds) ──
         ("anatomical_structure", anatomical_structure()),
         ("skeleton", skeleton()),
@@ -704,7 +702,6 @@ mod tests {
             "examination",
             "practitioner",
             "external_practice",
-            "specialist_referral",
         ] {
             let id = canonical_concept_id(concept).unwrap();
             let view = v
@@ -715,25 +712,21 @@ mod tests {
     }
 
     #[test]
-    fn diagnosis_field_basis_is_ten_attributes_two_edges_then_appended() {
+    fn diagnosis_field_basis_is_ten_attributes_then_two_edges() {
         // The 0x0902 worked example, projected: attributes first (icd_code
-        // leads), then the two family edges, then the attributes minted
-        // after the edges were fixed. Positions 0..=11 predate `recorded_on`
-        // and must not move: a FieldMask pinned against them still selects
-        // the same fields.
+        // leads), then the two family edges, in declaration order.
         let v = OgarClassView::new();
         let id = canonical_concept_id("diagnosis").unwrap();
         let fields = v.fields(id);
-        assert_eq!(fields.len(), 13); // 10 attributes + 2 edges + 1 appended
+        assert_eq!(fields.len(), 12); // 10 attributes + 2 edges
         assert_eq!(fields[0].predicate_iri, "icd_code");
         assert_eq!(fields[10].predicate_iri, "patient");
         assert_eq!(fields[11].predicate_iri, "encounter");
-        assert_eq!(fields[12].predicate_iri, "recorded_on");
     }
 
     /// `Class::field_basis` is the vocabulary-side spelling of the order the
-    /// class view projects. A consumer that pins positions from the vocabulary
-    /// (MedCare's RBAC field list does) gets the class view's positions.
+    /// class view projects, so a consumer that pins positions from the
+    /// vocabulary gets the class view's positions.
     #[test]
     fn field_basis_matches_the_projected_order_for_every_class() {
         let v = OgarClassView::new();
@@ -759,5 +752,25 @@ mod tests {
                 class.canonical_concept
             );
         }
+    }
+
+    /// An attribute flagged `after_edges` is projected after the edges, so it
+    /// never moves a position a consumer has already pinned.
+    #[test]
+    fn an_appended_attribute_lands_after_the_edges() {
+        let mut class = ogar_vocab::diagnosis();
+        class
+            .attributes
+            .push(ogar_vocab::Attribute::appended("extra", "string"));
+        let view = lift_object_view(&class);
+        let names: Vec<&str> = view
+            .fields
+            .iter()
+            .map(|f| f.predicate_iri.as_str())
+            .collect();
+        assert_eq!(names[10], "patient");
+        assert_eq!(names[11], "encounter");
+        assert_eq!(names[12], "extra");
+        assert_eq!(names, class.field_basis());
     }
 }
