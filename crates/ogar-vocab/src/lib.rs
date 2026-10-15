@@ -1374,7 +1374,6 @@ const CODEBOOK: &[(&str, u16)] = &[
     ("examination", 0x090A),
     ("practitioner", 0x090B),
     ("external_practice", 0x090C),
-    ("specialist_referral", 0x090D),
     // ── 0x0AXX — Anatomy domain (FMA reference ontology) ──
     // The public anatomical reference frame consumed by the splat-native
     // ultrasound arc (`docs/SPLAT-NATIVE-CUSTOMER.md` §6 litmus) and the FMA
@@ -1894,7 +1893,7 @@ pub fn canonical_concept_domain(id: u16) -> ConceptDomain {
 ///     .map(|(name, _id)| name)
 ///     .collect();
 /// assert!(health.contains(&"patient"));
-/// assert_eq!(health.len(), 13); // 7 OGIT Healthcare entities + 6 harvest-derived mints
+/// assert_eq!(health.len(), 12); // 7 OGIT Healthcare entities + 5 harvest-derived mints
 /// ```
 pub fn concepts_in_domain(domain: ConceptDomain) -> impl Iterator<Item = (&'static str, u16)> {
     CODEBOOK
@@ -2276,12 +2275,6 @@ pub mod class_ids {
     /// than method-only; no clean OGIT entity — no port alias until one
     /// exists.
     pub const EXTERNAL_PRACTICE: u16 = 0x090C;
-    /// `specialist_referral` (`0x090D`) — a referral of a patient to a
-    /// specialist (German practice software: Facharztüberweisung). Lives in
-    /// the patient file, names the practitioner referred to, and runs from
-    /// a start date until it is closed. No curated OGIT entity — no port
-    /// alias until one exists.
-    pub const SPECIALIST_REFERRAL: u16 = 0x090D;
 
     // ── 0x0AXX — Anatomy domain (FMA reference ontology) ──
 
@@ -2534,7 +2527,6 @@ pub mod class_ids {
         ("examination", EXAMINATION),
         ("practitioner", PRACTITIONER),
         ("external_practice", EXTERNAL_PRACTICE),
-        ("specialist_referral", SPECIALIST_REFERRAL),
         // 0x0AXX — anatomy (FMA reference ontology)
         ("anatomical_structure", ANATOMICAL_STRUCTURE),
         ("skeleton", SKELETON),
@@ -3485,7 +3477,6 @@ pub fn all_promoted_classes() -> Vec<Class> {
         examination(),
         practitioner(),
         external_practice(),
-        specialist_referral(),
         // 0x0AXX — anatomy arm (FMA reference kinds), in class_ids::ALL order.
         anatomical_structure(),
         skeleton(),
@@ -4611,12 +4602,6 @@ pub fn document() -> Class {
         attr("mime", "String"),
         attr("pages", "Vec<DocPage>"),
         attr("fields", "Vec<TypedField>"),
-        // Minted later (append-only basis): the stored-file view of a
-        // document, as a document store lists it.
-        Attribute::appended("name", "string"),
-        Attribute::appended("uploaded_at", "datetime"),
-        Attribute::appended("keywords", "string"),
-        Attribute::appended("note", "text"),
     ];
     c
 }
@@ -4706,9 +4691,6 @@ pub fn diagnosis() -> Class {
         resolved_date,
         is_primary,
         note,
-        // Minted after the edges (append-only basis): the date the finding
-        // was recorded, which `onset_date` is not.
-        Attribute::appended("recorded_on", "date"),
     ];
     c
 }
@@ -4743,10 +4725,6 @@ pub fn lab_value() -> Class {
         reference_range,
         abnormal_flag,
         collected_at,
-        // Minted after the edges (append-only basis). `recorded_at` is when
-        // the result was entered, not when the sample was collected.
-        Attribute::appended("recorded_at", "datetime"),
-        Attribute::appended("order_id", "string"),
     ];
     c
 }
@@ -4796,16 +4774,7 @@ pub fn treatment() -> Class {
     performed_at.type_name = Some("datetime".to_string());
     let mut outcome = Attribute::new("outcome");
     outcome.type_name = Some("string".to_string());
-    c.attributes = vec![
-        code,
-        description,
-        performed_at,
-        outcome,
-        // Minted after the edges (append-only basis): a treatment that runs
-        // over a period, and how many sessions it covers.
-        Attribute::appended("ended_at", "datetime"),
-        Attribute::appended("session_count", "integer"),
-    ];
+    c.attributes = vec![code, description, performed_at, outcome];
     c
 }
 
@@ -4902,33 +4871,6 @@ pub fn investigation() -> Class {
     c
 }
 
-/// SpecialistReferral — a referral of a patient to a specialist
-/// (`0x090D`). The referral runs from a start date until it is closed, is
-/// either open or done, and names the practitioner referred to.
-#[must_use]
-pub fn specialist_referral() -> Class {
-    let mut c = Class::new("SpecialistReferral");
-    c.language = Language::Unknown;
-    c.canonical_concept = Some("specialist_referral".to_string());
-    c.description = Some("A referral of a patient to a specialist".to_string());
-    c.associations = vec![
-        family_edge("patient", "Patient"),
-        family_edge("referred_to", "Practitioner"),
-    ];
-    let typed = |name: &str, ty: &str| {
-        let mut a = Attribute::new(name);
-        a.type_name = Some(ty.to_string());
-        a
-    };
-    c.attributes = vec![
-        typed("start_date", "date"),
-        typed("end_date", "date"),
-        typed("status", "string"),
-        typed("note", "text"),
-    ];
-    c
-}
-
 /// Examination — a performed examination record (`0x090A`), distinct
 /// from [`investigation`] (performed exam vs ordered workup). Parallel
 /// grounding: OGIT `Healthcare:Assessment` (upstream 2026-07-06, not
@@ -4942,12 +4884,7 @@ pub fn examination() -> Class {
     c.associations = vec![family_edge("patient", "Patient")];
     let mut performed_at = Attribute::new("performed_at");
     performed_at.type_name = Some("datetime".to_string());
-    c.attributes = vec![
-        performed_at,
-        // Minted after the edges (append-only basis).
-        Attribute::appended("form_kind", "string"),
-        Attribute::appended("note", "text"),
-    ];
+    c.attributes = vec![performed_at];
     c
 }
 
@@ -6361,7 +6298,6 @@ mod tests {
             "examination",
             "practitioner",
             "external_practice",
-            "specialist_referral",
         ] {
             let id = canonical_concept_id(health_concept)
                 .unwrap_or_else(|| panic!("{health_concept} missing from codebook"));
@@ -6495,7 +6431,6 @@ mod tests {
             (examination, "examination", 0x090A),
             (practitioner, "practitioner", 0x090B),
             (external_practice, "external_practice", 0x090C),
-            (specialist_referral, "specialist_referral", 0x090D),
         ] {
             let c = builder();
             assert_eq!(c.canonical_concept.as_deref(), Some(concept));
@@ -6515,25 +6450,17 @@ mod tests {
         // via the production lift, never by hand. Growing one of these
         // sets is a deliberate act: bring the harvest evidence and update
         // this pin in the same change.
-        //
-        // Grown with evidence (2026-10-15): `examination` gained `form_kind`
-        // and `note`, and `specialist_referral` was minted with four
-        // attributes. Each is a column of a harvested MedCare screen
-        // (FormularMaster: kind label and free text; Facharztüberweisung:
-        // start, stop, done flag, notice), appended after the edges so no
-        // earlier position moves.
-        for (c, expected_attrs, expected_edges) in [
-            (anamnesis(), 1usize, 1usize),
-            (investigation(), 1, 1),
-            (examination(), 3, 1),
-            (practitioner(), 1, 0),
-            (external_practice(), 1, 0),
-            (specialist_referral(), 4, 2),
+        for (c, expected_edges) in [
+            (anamnesis(), 1usize),
+            (investigation(), 1),
+            (examination(), 1),
+            (practitioner(), 0),
+            (external_practice(), 0),
         ] {
             assert_eq!(
                 c.attributes.len(),
-                expected_attrs,
-                "{}: harvest-derived mint grew past its evidenced schema",
+                1,
+                "{}: harvest-derived mint grew past its name-level schema",
                 c.name,
             );
             assert_eq!(
@@ -6591,7 +6518,6 @@ mod tests {
                 "examination",
                 "practitioner",
                 "external_practice",
-                "specialist_referral",
             ],
             "Health domain set drift — re-sync the consumer coverage gate",
         );
@@ -6599,8 +6525,8 @@ mod tests {
         for (_, id) in concepts_in_domain(ConceptDomain::Health) {
             assert_eq!(canonical_concept_domain(id), ConceptDomain::Health);
         }
-        // Counts line up with the codebook blocks (7 OGIT + 6 harvest mints).
-        assert_eq!(concepts_in_domain(ConceptDomain::Health).count(), 13);
+        // Counts line up with the codebook blocks (7 OGIT + 5 harvest mints).
+        assert_eq!(concepts_in_domain(ConceptDomain::Health).count(), 12);
         // 0x08XX OCR: nine container KINDS (unicharset/recoder/charset/
         // network_layer + the PDF→text plan mints textline/blob/page_layout/
         // page_image/ocr_renderer) plus the generic `document` (0x080B — the
