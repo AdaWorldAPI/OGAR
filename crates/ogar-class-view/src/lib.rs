@@ -171,6 +171,7 @@ use ogar_vocab::{
     recoder,
     rom_image,
     skeleton,
+    specialist_referral,
     tax_policy,
     textline,
     treatment,
@@ -289,6 +290,7 @@ fn all_canonical_classes() -> Vec<(&'static str, Class)> {
         ("examination", examination()),
         ("practitioner", practitioner()),
         ("external_practice", external_practice()),
+        ("specialist_referral", specialist_referral()),
         // ── 0x0AXX — anatomy (FMA reference kinds) ──
         ("anatomical_structure", anatomical_structure()),
         ("skeleton", skeleton()),
@@ -341,6 +343,11 @@ fn all_canonical_classes() -> Vec<(&'static str, Class)> {
 /// Field order — **N3 stable, append-only**:
 /// 1. Typed attributes, in declaration order on the class fn.
 /// 2. Family-edge associations, in declaration order on the class fn.
+/// 3. Attributes minted after the edges ([`AttributeOptions::after_edges`]),
+///    in declaration order. This is what keeps the basis append-only: a new
+///    attribute never moves an edge.
+///
+/// [`AttributeOptions::after_edges`]: ogar_vocab::AttributeOptions::after_edges
 ///
 /// `predicate_iri` is the slot's name as written (snake_case); `label`
 /// mirrors it (display localisation happens downstream). The
@@ -350,11 +357,14 @@ fn all_canonical_classes() -> Vec<(&'static str, Class)> {
 fn lift_object_view(class: &Class) -> ObjectView {
     let mut fields: Vec<FieldRef> =
         Vec::with_capacity(class.attributes.len() + class.associations.len());
-    for attr in &class.attributes {
+    for attr in class.attributes.iter().filter(|a| !a.options.after_edges) {
         fields.push(FieldRef::new(attr.name.clone(), attr.name.clone()));
     }
     for assoc in &class.associations {
         fields.push(FieldRef::new(assoc.name.clone(), assoc.name.clone()));
+    }
+    for attr in class.attributes.iter().filter(|a| a.options.after_edges) {
+        fields.push(FieldRef::new(attr.name.clone(), attr.name.clone()));
     }
     let mut view = ObjectView::new(DisplayTemplate::Detail, fields);
     // Convention: primary_label is the first typed attribute named "name"
@@ -694,6 +704,7 @@ mod tests {
             "examination",
             "practitioner",
             "external_practice",
+            "specialist_referral",
         ] {
             let id = canonical_concept_id(concept).unwrap();
             let view = v
@@ -704,15 +715,49 @@ mod tests {
     }
 
     #[test]
-    fn diagnosis_field_basis_is_ten_attributes_then_two_edges() {
+    fn diagnosis_field_basis_is_ten_attributes_two_edges_then_appended() {
         // The 0x0902 worked example, projected: attributes first (icd_code
-        // leads), then the two family edges, in declaration order.
+        // leads), then the two family edges, then the attributes minted
+        // after the edges were fixed. Positions 0..=11 predate `recorded_on`
+        // and must not move: a FieldMask pinned against them still selects
+        // the same fields.
         let v = OgarClassView::new();
         let id = canonical_concept_id("diagnosis").unwrap();
         let fields = v.fields(id);
-        assert_eq!(fields.len(), 12); // 10 attributes + 2 edges
+        assert_eq!(fields.len(), 13); // 10 attributes + 2 edges + 1 appended
         assert_eq!(fields[0].predicate_iri, "icd_code");
         assert_eq!(fields[10].predicate_iri, "patient");
         assert_eq!(fields[11].predicate_iri, "encounter");
+        assert_eq!(fields[12].predicate_iri, "recorded_on");
+    }
+
+    /// `Class::field_basis` is the vocabulary-side spelling of the order the
+    /// class view projects. A consumer that pins positions from the vocabulary
+    /// (MedCare's RBAC field list does) gets the class view's positions.
+    #[test]
+    fn field_basis_matches_the_projected_order_for_every_class() {
+        let v = OgarClassView::new();
+        let classes = ogar_vocab::all_promoted_classes();
+        assert!(classes.len() > 50, "class list unexpectedly small");
+        for class in &classes {
+            let Some(id) = class
+                .canonical_concept
+                .as_deref()
+                .and_then(canonical_concept_id)
+            else {
+                continue;
+            };
+            let projected: Vec<&str> = v
+                .fields(id)
+                .iter()
+                .map(|f| f.predicate_iri.as_str())
+                .collect();
+            assert_eq!(
+                projected,
+                class.field_basis(),
+                "{:?} basis drifted",
+                class.canonical_concept
+            );
+        }
     }
 }
