@@ -20,6 +20,7 @@
 //! | [`hash`] | SHA-384 | merkle / fingerprint hashing |
 //! | [`sign`] | Ed25519 | licence / audit signatures |
 //! | [`envelope`] | seal / open (local) | zero-knowledge envelope, `ADAC` v1 byte layout |
+//! | [`stream`] (local) | XChaCha20-Poly1305 | sealed two-direction session stream: counter nonces, replay/reorder and reflection refused |
 //! | [`seal`], [`open`] | — | root-level aliases for `envelope::seal` / `envelope::open` |
 //! | [`EnvelopeError`], [`KdfParams`] | — | root-level aliases for the envelope's error + parameter types |
 //! | [`RngError`] | — | the platform-CSPRNG-unavailable error |
@@ -58,6 +59,7 @@
 // ── KDF + envelope: implemented here on argon2 0.6 (see crate docs).
 pub mod envelope;
 pub mod kdf;
+pub mod stream;
 
 // ── The rest of the forward suite: re-exported from the ndarray `encryption`
 // crate, unmodified.
