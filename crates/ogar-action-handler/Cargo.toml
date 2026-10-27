@@ -33,3 +33,6 @@ lance-graph-ontology = { git = "https://github.com/AdaWorldAPI/lance-graph", bra
 ogar-from-ruff = { path = "../ogar-from-ruff" }
 # On ruff `main` (O-2 de-pin done 2026-07-06); keep in lockstep with ogar-from-ruff.
 ruff_spo_triplet = { git = "https://github.com/AdaWorldAPI/ruff", branch = "main" }
+# DR64 relation composition (relcomp), for the lab probe
+# `tests/ogit_schema_composition.rs`. Test-only.
+dr-math-binding-probe = { git = "https://github.com/AdaWorldAPI/lance-graph", branch = "main" }
