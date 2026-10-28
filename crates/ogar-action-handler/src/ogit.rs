@@ -640,7 +640,7 @@ mod tests {
             Some(Kind::Entity)
         );
         assert_eq!(
-            kind_of(Path::new("SGO/sgo/verbs/dependsOn.ttl")),
+            kind_of(Path::new("SGO/ogit/verbs/dependsOn.ttl")),
             Some(Kind::Verb)
         );
         assert_eq!(

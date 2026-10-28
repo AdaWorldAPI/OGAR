@@ -171,7 +171,7 @@ arago/almato coordination."
 
 | Path in OGIT | Files | Purpose |
 |---|--:|---|
-| `SGO/` | 508 TTLs | Upper ontology — `core/`, `ogit/`, `sgo/`. **`SGO/sgo/verbs/` is the 176-verb canonical AST predicate vocabulary** lifted by `ogar-from-schema::sgo` |
+| `SGO/` | 508 TTLs | Upper ontology — `core/`, `ogit/`, `sgo/`. **`SGO/ogit/verbs/` (formerly `SGO/sgo/verbs/`) is the 176-verb canonical AST predicate vocabulary** lifted by `ogar-from-schema::sgo` |
 | `SDF/` | 7 JSON | Standard Data Format config samples (MARS/Automation) — instance configs, not schema |
 | `ogit.ttl` | 1 TTL | Root ontology declaring `ogit:Entity`, `ogit:Verb`, `ogit:Attribute` |
 

@@ -12,13 +12,17 @@ use std::path::Path;
 use lance_graph_ontology::namespace::SchemaKind;
 use ogar_action_handler::ogit::{OgitTables, Table, TypeId, entity_curies, load_registry};
 
-/// Entities OGAR's reader returns and the cache misses, measured on
-/// AdaWorldAPI/OGIT `master` at `2315167`.
-const ONLY_IN_THE_TABLES: [&str; 4] = [
-    "ogit.Accounting:FiscalJurisdiction",
-    "ogit.PTF:Dummy",
-    "ogit.PTF:HiroTopology",
-    "ogit.PTF:Test",
+/// Entities OGAR's reader returns and the cache misses. All three are
+/// subclasses of `ogit.Healthcare:Assessment`, not direct subclasses of
+/// `ogit:Entity`; OGAR's reader takes any class under an `entities/`
+/// directory, the cache's `ttl_parse` only a direct `rdfs:subClassOf
+/// ogit:Entity`. Measured on the AdaWorldAPI/OGIT branch that declares the
+/// prefixes FiscalJurisdiction.ttl and the NTO/PTF entities lacked, which
+/// removed the four entries this list used to hold.
+const ONLY_IN_THE_TABLES: [&str; 3] = [
+    "ogit.Healthcare:HistologicAssessment",
+    "ogit.Healthcare:MriAssessment",
+    "ogit.Healthcare:SonographicAssessment",
 ];
 
 #[test]
@@ -41,9 +45,9 @@ fn the_cache_holds_the_hiro_classes_and_skips_the_sgo_core() {
     // the checkout, so their absence is the loader's. If this fails, the cache
     // now holds the SGO core: update the `ogit` module docs.
     for (curie, file) in [
-        ("ogit:Person", "SGO/sgo/entities/Person.ttl"),
-        ("ogit:dependsOn", "SGO/sgo/verbs/dependsOn.ttl"),
-        ("ogit:name", "SGO/sgo/attributes/name.ttl"),
+        ("ogit:Person", "SGO/ogit/entities/Person.ttl"),
+        ("ogit:dependsOn", "SGO/ogit/verbs/dependsOn.ttl"),
+        ("ogit:name", "SGO/ogit/attributes/name.ttl"),
     ] {
         assert!(root.join(file).is_file(), "{file}");
         assert!(cache.row_for_uri(curie).is_none(), "{curie}");

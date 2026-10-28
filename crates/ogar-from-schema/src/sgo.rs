@@ -4,7 +4,7 @@
 //! the canonical entities (`ogit:Entity`, `ogit:Node`) and **the
 //! canonical verb vocabulary** (`ogit:dependsOn`, `ogit:contains`,
 //! `ogit:generates`, `ogit:relates`, `ogit:causes`, …), one verb TTL each
-//! under OGIT's `SGO/sgo/verbs/`.
+//! under OGIT's `SGO/ogit/verbs/`.
 //!
 //! **Why this matters for OGAR's AST.** Every NTO entity's
 //! `ogit:allowed ([ verb target ])` block references SGO verbs by
@@ -23,8 +23,8 @@
 //!
 //! # Out of v0
 //!
-//! - SGO entity TTLs (`SGO/core/entities/Node.ttl`,
-//!   `SGO/sgo/entities/Entity.ttl`) — these are upper-ontology and
+//! - SGO entity TTLs (`SGO/ogit/core/entities/Node.ttl`,
+//!   `SGO/ogit/entities/Entity.ttl`) — these are upper-ontology and
 //!   land in a sibling `sgo_entity` module when wired.
 //! - `rdfs:domain` / `rdfs:range` constraints on verbs (when OGIT
 //!   declares them). Today's SGO verb TTLs are description-only;
@@ -117,7 +117,7 @@ mod tests {
     use super::*;
 
     fn verb_ttl(name: &str) -> String {
-        crate::ogit_checkout::read(&format!("SGO/sgo/verbs/{name}.ttl"))
+        crate::ogit_checkout::read(&format!("SGO/ogit/verbs/{name}.ttl"))
     }
 
     #[test]
@@ -148,13 +148,13 @@ mod tests {
         assert_eq!(once, twice, "verb round-trip lost a predicate");
     }
 
-    /// Walk every verb TTL under `SGO/sgo/verbs/` and assert round-trip.
+    /// Walk every verb TTL under `SGO/ogit/verbs/` and assert round-trip.
     /// One of OGIT's strengths is that the verb vocabulary is small and
     /// stable; this test catches drift on any verb in the checkout the
     /// moment a predicate slips out of `VerbDecl`.
     #[test]
     fn all_sgo_verbs_roundtrip() {
-        let dir = crate::ogit_checkout::root().join("SGO/sgo/verbs");
+        let dir = crate::ogit_checkout::root().join("SGO/ogit/verbs");
         let mut checked = 0usize;
         for entry in std::fs::read_dir(&dir).expect("read sgo/verbs/") {
             let entry = entry.expect("entry");
