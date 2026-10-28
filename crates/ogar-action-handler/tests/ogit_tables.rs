@@ -27,9 +27,9 @@ const KNOWN_REJECTED: [&str; 6] = [
     "NTO/CustomerSupport/",
     "NTO/Mobile/",
     "NTO/WorkOrder/verbs/",
-    "SGO/ogit/attributes/public.ttl",
-    "SGO/ogit/attributes/source.ttl",
-    "SGO/ogit/attributes/timeZone.ttl",
+    "SGO/sgo/attributes/public.ttl",
+    "SGO/sgo/attributes/source.ttl",
+    "SGO/sgo/attributes/timeZone.ttl",
 ];
 
 fn strictly_increasing<T: PartialOrd + Debug>(what: &str, rows: &[T]) {
@@ -149,7 +149,7 @@ fn type_attr_keeps_each_types_lists_in_order() {
         t.lane(Lane::TypeAttrFlag),
     );
     for (curie, file) in [
-        ("ogit:Person", "SGO/ogit/entities/Person.ttl"),
+        ("ogit:Person", "SGO/sgo/entities/Person.ttl"),
         ("ogit.MARS:Machine", "NTO/MARS/entities/Machine.ttl"),
         (
             "ogit.Automation:KnowledgeItem",

@@ -1,7 +1,7 @@
 # `vocab/exports/ogit/` — OGAR's staging tier for OGIT-shaped TTL
 
 Produced-but-not-yet-promoted content, in the upstream OGIT layout
-(`NTO/<Domain>/{entities,attributes,verbs}/`, `SGO/ogit/verbs/`). A
+(`NTO/<Domain>/{entities,attributes,verbs}/`, `SGO/sgo/verbs/`). A
 producer stages a digest here; once reviewed (round-trip + bijection
 tests, drift check, human read), it is **promoted** to the
 AdaWorldAPI/OGIT fork.

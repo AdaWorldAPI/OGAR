@@ -45,9 +45,9 @@ fn the_cache_holds_the_hiro_classes_and_skips_the_sgo_core() {
     // the checkout, so their absence is the loader's. If this fails, the cache
     // now holds the SGO core: update the `ogit` module docs.
     for (curie, file) in [
-        ("ogit:Person", "SGO/ogit/entities/Person.ttl"),
-        ("ogit:dependsOn", "SGO/ogit/verbs/dependsOn.ttl"),
-        ("ogit:name", "SGO/ogit/attributes/name.ttl"),
+        ("ogit:Person", "SGO/sgo/entities/Person.ttl"),
+        ("ogit:dependsOn", "SGO/sgo/verbs/dependsOn.ttl"),
+        ("ogit:name", "SGO/sgo/attributes/name.ttl"),
     ] {
         assert!(root.join(file).is_file(), "{file}");
         assert!(cache.row_for_uri(curie).is_none(), "{curie}");
