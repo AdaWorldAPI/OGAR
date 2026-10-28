@@ -12,13 +12,17 @@ use std::path::Path;
 use lance_graph_ontology::namespace::SchemaKind;
 use ogar_action_handler::ogit::{OgitTables, Table, TypeId, entity_curies, load_registry};
 
-/// Entities OGAR's reader returns and the cache misses, measured on
-/// AdaWorldAPI/OGIT `master` at `2315167`.
-const ONLY_IN_THE_TABLES: [&str; 4] = [
-    "ogit.Accounting:FiscalJurisdiction",
-    "ogit.PTF:Dummy",
-    "ogit.PTF:HiroTopology",
-    "ogit.PTF:Test",
+/// Entities OGAR's reader returns and the cache misses. All three are
+/// subclasses of `ogit.Healthcare:Assessment`, not direct subclasses of
+/// `ogit:Entity`; OGAR's reader takes any class under an `entities/`
+/// directory, the cache's `ttl_parse` only a direct `rdfs:subClassOf
+/// ogit:Entity`. Measured on the AdaWorldAPI/OGIT branch that declares the
+/// prefixes FiscalJurisdiction.ttl and the NTO/PTF entities lacked, which
+/// removed the four entries this list used to hold.
+const ONLY_IN_THE_TABLES: [&str; 3] = [
+    "ogit.Healthcare:HistologicAssessment",
+    "ogit.Healthcare:MriAssessment",
+    "ogit.Healthcare:SonographicAssessment",
 ];
 
 #[test]

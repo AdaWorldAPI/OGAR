@@ -349,7 +349,9 @@ mod tests {
     fn nine_domains_lift_surface_round_trip() {
         for (domain, floor) in [
             ("Transport", 27),
-            ("Accounting", 36),
+            // 33 since AdaWorldAPI/OGIT#11 removed three unreferenced
+            // Accounting files (two verbs, one attribute).
+            ("Accounting", 33),
             ("SalesDistribution", 23),
             ("Credit", 21),
             ("Cost", 5),
