@@ -1173,6 +1173,8 @@ impl Class {
 ///   0x17XX  reserved: Blocks  (visual block-programming vocabulary; consumed
 ///                              by blockly-rs / scratch-rs)
 ///   0x18XX+ unassigned
+///   0xFFXX  reserved: lance-graph hardcoded behaviour (never minted here;
+///           see [`HARDCODED_BEHAVIOUR`])
 /// ```
 ///
 /// **Anatomy vs Health (the firewall split).** `0x0AXX` Anatomy is the
@@ -1835,6 +1837,23 @@ pub enum ConceptDomain {
     /// `0xC5XX`, `0xC7XX`+).
     Unassigned,
 }
+
+/// The concept half of lance-graph's hardcoded behaviour classids,
+/// `0xFFFF :: 0xF###` (lance-graph plan D-DT64-7, decisions O2 and O8).
+///
+/// Those lenses are registered by lance-graph's DT64 store from compiled
+/// tables, which is the authority for them; this codebook never resolves
+/// them. The whole `0xFFXX` block is therefore reserved and stays empty: no
+/// [`CODEBOOK`] row and no [`class_ids::ALL`] row may land in it
+/// (`no_codebook_row_lands_in_the_hardcoded_behaviour_block`).
+///
+/// [`canonical_concept_domain`] keeps answering
+/// [`ConceptDomain::Unassigned`] for the block, so the domain enum and its
+/// lance-graph mirror are unchanged.
+pub const HARDCODED_BEHAVIOUR: u16 = 0xFFFF;
+
+/// The high byte of [`HARDCODED_BEHAVIOUR`]: the reserved block `0xFFXX`.
+pub const HARDCODED_BEHAVIOUR_DOMAIN: u16 = HARDCODED_BEHAVIOUR >> 8;
 
 /// Resolve a canonical id's [`ConceptDomain`] from its high byte. Pure +
 /// deterministic + O(1) — no table lookup needed.
@@ -5991,6 +6010,27 @@ mod tests {
             );
             assert_eq!(canonical_concept_id(name), Some(id));
         }
+    }
+
+    #[test]
+    fn no_codebook_row_lands_in_the_hardcoded_behaviour_block() {
+        // lance-graph DT64 is the authority for 0xFFFF :: 0xF### (D-DT64-7
+        // O2/O8); a row here would make two authorities answer for it.
+        for (name, id) in CODEBOOK.iter().chain(class_ids::ALL.iter()) {
+            assert_ne!(
+                *id >> 8,
+                HARDCODED_BEHAVIOUR_DOMAIN,
+                "{name} ({id:#06x}) landed in the reserved 0xFFXX block"
+            );
+        }
+        assert_eq!(canonical_concept_name(HARDCODED_BEHAVIOUR), None);
+        assert_eq!(canonical_concept_id("hardcoded_behaviour"), None);
+        // No domain variant: the enum and its lance-graph mirror stay as
+        // they are.
+        assert_eq!(
+            canonical_concept_domain(HARDCODED_BEHAVIOUR),
+            ConceptDomain::Unassigned
+        );
     }
 
     #[test]
