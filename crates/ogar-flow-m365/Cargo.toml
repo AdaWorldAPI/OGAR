@@ -1,0 +1,30 @@
+[package]
+name = "ogar-flow-m365"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+description = "PowerShell-shaped command labels (Get-MgUser, Where-Object, Select-Object, Export-Report, …) as an ogar-loco Vocabulary + Dialect: a typed label→operation adjacency table, a lowering of an admitted read-only pipeline subset into ogar-loco calls, and a host seam that runs them over directory observations under a verified OGAR identity and an injected report authority. No PowerShell runtime, no Graph network access, no new opcodes in ogar-loco."
+
+[features]
+default = []
+# Synthetic, deterministic "John Doe 101" directory + a fixture authority.
+# NOT security: the fixture authority is a test double for the production
+# OGAR RBAC binding (see README § Deferred).
+fixture = []
+
+[dependencies]
+ogar-loco = { path = "../ogar-loco" }
+ogar-auth = { path = "../ogar-auth" }
+ogar-dir-core = { path = "../ogar-dir-core" }
+# Same coordinate the eight sibling OGAR crates and ogar-loco itself use.
+lance-graph-contract = { git = "https://github.com/AdaWorldAPI/lance-graph", branch = "main" }
+
+[dev-dependencies]
+ogar-vocab = { path = "../ogar-vocab" }
+
+[[example]]
+name = "john_doe_101"
+required-features = ["fixture"]
