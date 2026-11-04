@@ -107,41 +107,43 @@ start with one source and end in `Export-Report`.
 | Directory observations | **mocked**: `fixture::FixtureDirectory` (synthetic) |
 | Report authority | **mocked**: `fixture::FixtureAuthority`, a test double, not security |
 | Assertion verification | **mocked**: `fixture::FixtureVerifier`, driven through the real `establish` |
-| Production authority via `ogar-rbac` (`OgarRbac::authorize_user`, field masks) | **deferred, gated** (below) |
-| Observation adapter over `ogar-az` / Microsoft Graph | deferred (PR-FLOW-02) |
-| Registering the vocabulary in a `VocabularyRegistry` under a body classid | **deferred, gated** (below) |
+| Production authority via `ogar-rbac` (`OgarRbac::authorize_user`, field masks) | deferred (PR-FLOW-02); the classids it keys on now exist (below) |
+| Observation adapter over `lance-graph-dir-sim` / `ogar-az` | deferred (PR-FLOW-02) |
+| Registering the vocabulary in a `VocabularyRegistry` | implemented: `vocab::plug_into`, body concept `0x1718` |
 | CSV / other export formats, `-like` / `-match`, `ForEach-Object`, sorting | not implemented |
 
-### The two gates
-
-Both are the same missing piece: **no directory-user, license-assignment,
-group-membership or report concept is minted in `ogar-vocab`.** This crate
-mints nothing.
-
-- **RBAC.** `OgarRbac::authorize_user(identity, class, op)` and its field
-  masks are keyed by classid. Without a minted class for a directory user (and
-  for license and membership facts), the production authority has nothing to
-  be asked about. `ReportAuthority` is the seam it will implement.
-- **Registry.** `VocabularyRegistry::plug` selects a vocabulary by the body
-  node's concept id. The flow vocabulary is validated and run directly; it is
-  not plugged into a registry, because that needs a body concept id (the
-  `ogar-ro` `0x0306` and `ogar-dismech` `0x0333` precedent), which is an
-  operator decision.
+### Classids
 
 Every operation records its binding (`adjacency::ConceptBinding`):
-`DirSchema` (the `ogar-dir-core` MS Graph user schema), `Generic`, or
-`Unminted("…")` naming what is missing.
+
+| operations | binding |
+|---|---|
+| `query_user`, `update_user`, `remove_user` | `Minted(0x0B06)` `directory_user` |
+| `read_membership`, `add_group_member` | `Minted(0x0B08)` `group_membership` |
+| `read_license_evidence`, `assign_license` | `Minted(0x0B09)` `license_assignment` |
+| `filter_rows`, `select_fields`, `evaluate_expression` | `Generic` |
+| `export_report` | `Unminted`: report execution belongs to `lance-graph-report` |
+
+`directory_user` (`0x0B06`), `directory_group` (`0x0B07`), `group_membership`
+(`0x0B08`) and `license_assignment` (`0x0B09`) are minted in `ogar-vocab`'s
+IAM domain, above `email`. They are what `OgarRbac` grants and field masks on
+directory data key on, so `ReportAuthority` can be backed by it.
+
+The flow body's concept id, `0x1718`, is a palette slot in `ogar-loco`'s
+`0x17XX` domain, above `blockly-rs` (`0x1717`). Like every palette slot it is
+declared in this crate, not in `ogar-vocab`'s mirrored codebook.
+`vocab::plug_into` registers the vocabulary under it.
 
 ## The litmus test
 
 `Get-MgUser` was added as a friendly label without changing anything in
 `ogar-loco`: no new opcode, no change to the call ABI, the interpreter, the
 conformance rules or `DOMAIN_FLOOR`. The only LOCO primitive missing for
-production is outside LOCO: the concept ids above.
+production was outside LOCO: the concept ids above.
 
 ## Falsifiers
 
-`cargo test -p ogar-flow-m365` runs 29 tests over synthetic data, F1–F10:
+`cargo test -p ogar-flow-m365` runs 31 tests over synthetic data, F1–F10:
 resolution and refusal (F1), alias equivalence (F2), no new concept and
 shared-core comparison reuse (F3), read-only enforcement including
 hand-built bodies (F4), actor isolation: no scope, missing capability,

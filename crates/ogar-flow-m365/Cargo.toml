@@ -18,12 +18,11 @@ fixture = []
 [dependencies]
 ogar-loco = { path = "../ogar-loco" }
 ogar-auth = { path = "../ogar-auth" }
-ogar-dir-core = { path = "../ogar-dir-core" }
+# Zero-dep: the canonical concept ids the operations bind to.
+ogar-vocab = { path = "../ogar-vocab" }
 # Same coordinate the eight sibling OGAR crates and ogar-loco itself use.
 lance-graph-contract = { git = "https://github.com/AdaWorldAPI/lance-graph", branch = "main" }
 
-[dev-dependencies]
-ogar-vocab = { path = "../ogar-vocab" }
 
 [[example]]
 name = "john_doe_101"

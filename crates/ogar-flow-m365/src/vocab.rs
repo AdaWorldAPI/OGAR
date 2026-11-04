@@ -21,10 +21,35 @@
 //! second operator table.
 
 use lance_graph_contract::class_view::FieldMask;
-use ogar_loco::{FnIndex, LaneShape, ValueCodebook, Vocabulary};
+use ogar_loco::{FnIndex, LaneShape, RegistryError, ValueCodebook, Vocabulary, VocabularyRegistry};
 
 /// Every flow body's lane carving.
 pub const FLOW_SHAPE: LaneShape = LaneShape::Quads;
+
+/// `0x1718` — the concept id of a flow body node: the classid a
+/// [`VocabularyRegistry`] routes to [`FlowVocabulary`].
+///
+/// A palette slot in `ogar-loco`'s `0x17XX` domain, seated above
+/// `blockly-rs` (`0x1717`) as `ogar-loco` reserves `0x1717`+ for consumer
+/// palettes. Like `0x1717`, it lives in this crate, not in `ogar-vocab`'s
+/// globally mirrored codebook (a palette is a frontend's private reading).
+pub const FLOW_BODY_CONCEPT_ID: u16 = 0x1718;
+
+/// The full render classid of a flow body under `app_prefix`.
+#[must_use]
+pub const fn flow_body_render_classid(app_prefix: u16) -> u32 {
+    ((FLOW_BODY_CONCEPT_ID as u32) << 16) | (app_prefix as u32)
+}
+
+/// Register [`FlowVocabulary`] under [`FLOW_BODY_CONCEPT_ID`].
+///
+/// # Errors
+///
+/// [`RegistryError::ConceptTaken`] when the registry already has a vocabulary
+/// for `0x1718`.
+pub fn plug_into(registry: &mut VocabularyRegistry) -> Result<(), RegistryError> {
+    registry.plug(FLOW_BODY_CONCEPT_ID, &checked())
+}
 
 /// `get_user`: look up one directory user.
 pub const GET_USER: FnIndex = FnIndex(0x90);

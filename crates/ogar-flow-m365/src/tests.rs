@@ -252,12 +252,21 @@ fn f3_no_classid_is_minted_and_no_label_is_a_concept() {
             "{}",
             op.name
         );
-        // Bindings name an existing schema, the generic operator, or the
-        // missing concept, never a classid of their own.
-        assert!(matches!(
-            op.binding,
-            ConceptBinding::Generic | ConceptBinding::DirSchema(_) | ConceptBinding::Unminted(_)
-        ));
+        // A minted binding names a concept ogar-vocab actually mints, in the
+        // IAM domain; nothing here invents a classid of its own.
+        if let ConceptBinding::Minted(id) = op.binding {
+            assert!(
+                ogar_vocab::canonical_concept_name(id).is_some(),
+                "{}",
+                op.name
+            );
+            assert_eq!(
+                ogar_vocab::canonical_concept_domain(id),
+                ogar_vocab::ConceptDomain::Auth,
+                "{}",
+                op.name
+            );
+        }
     }
     for l in LABELS {
         let normal = l.text.to_ascii_lowercase().replace('-', "_");
@@ -821,5 +830,77 @@ fn a_run_that_leaves_values_on_the_stack_returns_no_report() {
             &FixtureAuthority::standard()
         ),
         Err(RunError::Dialect(FlowError::NoReport))
+    );
+}
+
+#[test]
+fn f3_directory_operations_bind_to_the_minted_directory_concepts() {
+    use ogar_vocab::class_ids;
+    let binding = |name: &str| {
+        OPERATIONS
+            .iter()
+            .find(|o| o.name == name)
+            .map(|o| o.binding)
+            .unwrap()
+    };
+    for (op, id, concept) in [
+        ("query_user", class_ids::DIRECTORY_USER, "directory_user"),
+        (
+            "read_license_evidence",
+            class_ids::LICENSE_ASSIGNMENT,
+            "license_assignment",
+        ),
+        (
+            "read_membership",
+            class_ids::GROUP_MEMBERSHIP,
+            "group_membership",
+        ),
+        ("update_user", class_ids::DIRECTORY_USER, "directory_user"),
+        (
+            "assign_license",
+            class_ids::LICENSE_ASSIGNMENT,
+            "license_assignment",
+        ),
+        (
+            "add_group_member",
+            class_ids::GROUP_MEMBERSHIP,
+            "group_membership",
+        ),
+    ] {
+        assert_eq!(binding(op), ConceptBinding::Minted(id), "{op}");
+        assert_eq!(ogar_vocab::canonical_concept_name(id), Some(concept));
+    }
+    // Pipeline operators have no concept, and report execution has none here.
+    assert_eq!(binding("filter_rows"), ConceptBinding::Generic);
+    assert_eq!(binding("select_fields"), ConceptBinding::Generic);
+    assert!(matches!(
+        binding("export_report"),
+        ConceptBinding::Unminted(_)
+    ));
+}
+
+#[test]
+fn f9_the_flow_vocabulary_plugs_into_a_registry_under_its_body_classid() {
+    let mut hub = ogar_loco::VocabularyRegistry::new();
+    vocab::plug_into(&mut hub).unwrap();
+    let t = hub
+        .resolve_classid(vocab::flow_body_render_classid(0x0001))
+        .expect("0x1718 routes to the flow vocabulary");
+    assert_eq!(t, vocab::checked().table());
+    assert_eq!(t.name(vocab::GET_USER), Some("get_user"));
+    assert_eq!(
+        vocab::plug_into(&mut hub),
+        Err(ogar_loco::RegistryError::ConceptTaken {
+            concept_id: vocab::FLOW_BODY_CONCEPT_ID
+        })
+    );
+    // A palette slot: in LOCO's domain, and absent from the global codebook.
+    assert_eq!(
+        ogar_vocab::canonical_concept_domain(vocab::FLOW_BODY_CONCEPT_ID),
+        ogar_vocab::ConceptDomain::Blocks
+    );
+    assert_eq!(
+        ogar_vocab::canonical_concept_name(vocab::FLOW_BODY_CONCEPT_ID),
+        None
     );
 }
