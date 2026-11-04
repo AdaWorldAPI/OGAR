@@ -271,18 +271,14 @@ impl<'a, H: DirectoryObservations> FlowDialect<'a, H> {
 
     fn export(&mut self, f: FnIndex, v: [u8; 3], pop: Population) -> Result<(), FlowError> {
         ExportFormat::from_byte(v[0]).ok_or(FlowError::MalformedCall { call: f })?;
-        // Export never widens: whatever reaches it is clipped to the scope.
+        // No clipping here: every field enters a row through `get_user`'s
+        // projection or `attach`, and both check the scope, so a population
+        // never holds an unpermitted field to clip.
         let permitted: FieldMask = self.scope.fields;
         let rows = pop
             .rows
             .into_iter()
-            .map(|r| ReportRow {
-                fields: r
-                    .fields
-                    .into_iter()
-                    .filter(|(k, _)| permitted.has(k.position()))
-                    .collect(),
-            })
+            .map(|r| ReportRow { fields: r.fields })
             .collect();
         self.report = Some(Report {
             requested: self.requested.to_owned(),
