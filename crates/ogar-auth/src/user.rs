@@ -37,16 +37,22 @@
 //! is the single place it is produced.
 //!
 //! ```text
-//!   ("zitadel", external_subject) ─┐
-//!   ("entra",   object_id)        ─┼──► UserStore::resolve ──► User(42)
-//!   ("local",   "dr-house")       ─┘                            │
-//!   kiosk ──────────────────────────────────────────────────────┤
-//!                                                               ▼
-//!                                                        ActorContext
-//!                                                               │
-//!                                                               ▼
-//!                                                          ogar-rbac
+//!   (iss, sub)  ExternalIdentity  ─┐
+//!   (iss', sub') ExternalIdentity ─┼──► UserStore::resolve_external ──► User(42)
+//!   ("local", "dr-house") binding ─┘   (UserStore::resolve: local path)  │
+//!   kiosk ──────────────────────────────────────────────────────────────┤
+//!                                                                     ▼
+//!                                                              ActorContext
+//!                                                                     │
+//!                                                                     ▼
+//!                                                                ogar-rbac
 //! ```
+//!
+//! A federated login resolves by the issuer-scoped pair `(iss, sub)` (see
+//! [`crate::identity`]), never by a provider label or an email. The proof that
+//! an OIDC login happened is holding a [`crate::federation::VerifiedLogin`];
+//! [`AuthContext::federated`] and [`AuthenticatedUser`] are **descriptive** —
+//! constructing one proves nothing.
 //!
 //! # What this module deliberately does NOT do
 //!
@@ -60,8 +66,12 @@
 //!   the [`User`]; [`AuthContext`] describes *how* they logged in and never
 //!   contributes a role.
 
+use std::collections::BTreeMap;
+
 use lance_graph_contract::auth::ActorContext;
 use lance_graph_contract::sla::TenantId;
+
+use crate::identity::ExternalIdentity;
 
 /// The canonical OGAR user id — `project_actor` (`0x0104`) as a value.
 ///
@@ -97,6 +107,12 @@ impl ProviderId {
 }
 
 /// One external identity bound to a canonical [`User`].
+///
+/// **Not a federated resolution key.** The `provider` is a free-form label, not
+/// a trust root, and `external_subject` is not issuer-scoped. A federated
+/// (OIDC) login resolves by [`crate::identity::ExternalIdentity`] through
+/// [`UserStore::resolve_external`]; this type serves the local/kiosk path and
+/// descriptive records (e.g. delegation actors).
 ///
 /// A user may hold several: `("zitadel", "a1b2…")` and `("entra", "0000-…")`
 /// can both resolve to the same [`UserId`]. That is the point — it is what
@@ -233,7 +249,12 @@ impl AuthContext {
         Ok(self)
     }
 
-    /// A verified federated login, asserted by `provider`.
+    /// A federated login context, asserted by `provider`.
+    ///
+    /// **Descriptive only.** This sets fields; it verifies nothing. Holding the
+    /// result (or an [`AuthenticatedUser`] built from it) is not proof that any
+    /// IdP authenticated anyone. The proof of an OIDC login is a
+    /// [`crate::federation::VerifiedLogin`].
     #[must_use]
     pub const fn federated(provider: ProviderId, strength: AuthStrength) -> Self {
         Self {
@@ -273,6 +294,11 @@ pub struct User {
 /// This is the type `ogar-rbac` consumes. It is the *only* sanctioned input to
 /// authorization, which is what makes "RBAC operates on the canonical user"
 /// checkable rather than aspirational.
+///
+/// **Descriptive, not a proof.** Its fields are public, so any code can build
+/// one. Constructing it proves nothing about how (or whether) the actor
+/// authenticated; the proof of a federated login is a
+/// [`crate::federation::VerifiedLogin`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AuthenticatedUser {
     /// The canonical user.
@@ -323,7 +349,63 @@ pub trait UserStore {
 
     /// Look a canonical user up directly.
     fn user(&self, id: UserId) -> Option<&User>;
+
+    /// The canonical user an issuer-scoped external identity is bound to.
+    ///
+    /// The default is `None` (fail closed): a store that does not implement
+    /// external resolution resolves no federated login. Implementors must match
+    /// on the full `(issuer, subject)` pair and must never fall back to an
+    /// email, a provider label or an [`AuthBinding`].
+    fn resolve_external(&self, _id: &crate::identity::ExternalIdentity) -> Option<&User> {
+        None
+    }
 }
+
+/// Why a [`LocalUserStore`] mutation was refused. Carries identifiers only —
+/// never secrets or key material.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum StoreConflict {
+    /// A user with this id is already stored.
+    DuplicateUserId(UserId),
+    /// A user with this subject string is already stored.
+    DuplicateSubject(String),
+    /// The [`AuthBinding`] is already held by another user.
+    BindingHeldBy {
+        /// The user that holds it.
+        holder: UserId,
+    },
+    /// The same [`AuthBinding`] appears twice on the user being inserted.
+    DuplicateBinding,
+    /// No user with this id exists.
+    UnknownUser(UserId),
+    /// The external identity is already bound to another user.
+    ExternalHeldBy {
+        /// The user that holds it.
+        holder: UserId,
+    },
+    /// The external identity is already bound to this same user.
+    DuplicateExternal,
+}
+
+impl core::fmt::Display for StoreConflict {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Self::DuplicateUserId(id) => write!(f, "user id {} already exists", id.0),
+            Self::DuplicateSubject(s) => write!(f, "user subject {s:?} already exists"),
+            Self::BindingHeldBy { holder } => {
+                write!(f, "binding already held by user {}", holder.0)
+            }
+            Self::DuplicateBinding => f.write_str("duplicate binding on the same user"),
+            Self::UnknownUser(id) => write!(f, "unknown user {}", id.0),
+            Self::ExternalHeldBy { holder } => {
+                write!(f, "external identity already bound to user {}", holder.0)
+            }
+            Self::DuplicateExternal => f.write_str("external identity already bound to this user"),
+        }
+    }
+}
+
+impl std::error::Error for StoreConflict {}
 
 /// An in-memory [`UserStore`] — the local/kiosk path, and the fixture an
 /// adapter-free build uses. Not a placeholder for a database so much as the
@@ -331,18 +413,85 @@ pub trait UserStore {
 #[derive(Debug, Clone, Default)]
 pub struct LocalUserStore {
     users: Vec<User>,
+    /// `(issuer, subject)` → canonical user. Each identity maps to exactly one
+    /// user; see [`LocalUserStore::bind_external`].
+    external: BTreeMap<ExternalIdentity, UserId>,
 }
 
 impl LocalUserStore {
     /// An empty store.
     #[must_use]
     pub const fn new() -> Self {
-        Self { users: Vec::new() }
+        Self {
+            users: Vec::new(),
+            external: BTreeMap::new(),
+        }
+    }
+
+    /// Add a user, refusing anything that would make resolution ambiguous.
+    ///
+    /// # Errors
+    ///
+    /// [`StoreConflict`] when the user id or subject is already stored, when a
+    /// binding is already held by another user, or when the user lists the same
+    /// binding twice. The store is unchanged on error.
+    pub fn try_insert(&mut self, user: User) -> Result<(), StoreConflict> {
+        if self.users.iter().any(|u| u.id == user.id) {
+            return Err(StoreConflict::DuplicateUserId(user.id));
+        }
+        if self.users.iter().any(|u| u.subject == user.subject) {
+            return Err(StoreConflict::DuplicateSubject(user.subject));
+        }
+        for (i, b) in user.bindings.iter().enumerate() {
+            if let Some(holder) = self.users.iter().find(|u| u.bindings.contains(b)) {
+                return Err(StoreConflict::BindingHeldBy { holder: holder.id });
+            }
+            if user.bindings[..i].contains(b) {
+                return Err(StoreConflict::DuplicateBinding);
+            }
+        }
+        self.users.push(user);
+        Ok(())
     }
 
     /// Add a user. Later lookups resolve any of its bindings.
+    ///
+    /// # Panics
+    ///
+    /// Panics if [`try_insert`](Self::try_insert) would refuse the user
+    /// (duplicate id, subject or binding). Use `try_insert` for untrusted input.
+    #[track_caller]
     pub fn insert(&mut self, user: User) {
-        self.users.push(user);
+        self.try_insert(user)
+            .expect("LocalUserStore::insert: conflicting user");
+    }
+
+    /// Bind an issuer-scoped external identity to an existing user.
+    ///
+    /// Never overwrites: an identity is bound once, to one user.
+    ///
+    /// # Errors
+    ///
+    /// [`StoreConflict::UnknownUser`] if `user` is not stored;
+    /// [`StoreConflict::ExternalHeldBy`] if another user holds `id`;
+    /// [`StoreConflict::DuplicateExternal`] if `user` already holds it.
+    pub fn bind_external(
+        &mut self,
+        user: UserId,
+        id: ExternalIdentity,
+    ) -> Result<(), StoreConflict> {
+        if !self.users.iter().any(|u| u.id == user) {
+            return Err(StoreConflict::UnknownUser(user));
+        }
+        if let Some(&holder) = self.external.get(&id) {
+            return Err(if holder == user {
+                StoreConflict::DuplicateExternal
+            } else {
+                StoreConflict::ExternalHeldBy { holder }
+            });
+        }
+        self.external.insert(id, user);
+        Ok(())
     }
 }
 
@@ -353,6 +502,11 @@ impl UserStore for LocalUserStore {
 
     fn user(&self, id: UserId) -> Option<&User> {
         self.users.iter().find(|u| u.id == id)
+    }
+
+    fn resolve_external(&self, id: &ExternalIdentity) -> Option<&User> {
+        let uid = *self.external.get(id)?;
+        self.user(uid)
     }
 }
 

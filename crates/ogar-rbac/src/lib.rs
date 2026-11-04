@@ -850,4 +850,116 @@ mod tests {
         assert!(matches!(d.decision, AccessDecision::Deny { .. }));
         assert_eq!(d.scope, None);
     }
+
+    /// Federated logins established through `ogar_auth::federation::establish`.
+    mod federated {
+        use super::*;
+        use ogar_auth::federation::{
+            AssertionVerifier, LoginError, TrustedIssuers, VerifiedClaims, establish,
+        };
+        use ogar_auth::identity::{ExternalIdentity, ExternalSubject, Issuer};
+
+        const ISS_1: &str = "https://idp-one.example";
+        const ISS_2: &str = "https://idp-two.example";
+
+        fn ident(iss: &str, sub: &str) -> ExternalIdentity {
+            ExternalIdentity::new(
+                Issuer::new(iss).expect("issuer"),
+                ExternalSubject::new(sub).expect("subject"),
+            )
+        }
+
+        /// Returns the configured identity; stands in for a real adapter.
+        struct Verifier(ExternalIdentity);
+        impl AssertionVerifier for Verifier {
+            type Input = str;
+            type Error = ();
+            const ID: &'static str = "test-verifier";
+            fn verify(&self, _t: &TrustedIssuers, _i: &str) -> Result<VerifiedClaims, ()> {
+                Ok(VerifiedClaims {
+                    identity: self.0.clone(),
+                    strength: AuthStrength::MultiFactor,
+                    email: None,
+                })
+            }
+        }
+
+        fn trusted() -> TrustedIssuers {
+            let mut t = TrustedIssuers::new();
+            t.insert(Issuer::new(ISS_1).unwrap(), ZITADEL).unwrap();
+            t.insert(Issuer::new(ISS_2).unwrap(), ENTRA).unwrap();
+            t
+        }
+
+        fn user(id: u64, subject: &str, role: &str) -> User {
+            User {
+                id: UserId(id),
+                subject: subject.to_string(),
+                tenant: 7,
+                roles: vec![role.to_string()],
+                memberships: vec![],
+                bindings: vec![],
+                key_refs: vec![],
+            }
+        }
+
+        fn act() -> Operation<'static> {
+            Operation::Act { action: "approve" }
+        }
+
+        /// F5 — two providers both explicitly bound to user 42 give the same
+        /// envelope and the same decision.
+        #[test]
+        fn provider_switch_keeps_decision_for_explicitly_bound_actor() {
+            let mut s = LocalUserStore::new();
+            s.insert(user(42, "dr-house", "physician"));
+            s.bind_external(UserId(42), ident(ISS_1, "a1")).unwrap();
+            s.bind_external(UserId(42), ident(ISS_2, "b2")).unwrap();
+
+            let l1 = establish(&Verifier(ident(ISS_1, "a1")), &trusted(), "t", &s)
+                .expect("login via issuer one");
+            let l2 = establish(&Verifier(ident(ISS_2, "b2")), &trusted(), "t", &s)
+                .expect("login via issuer two");
+            assert_ne!(
+                l1.authenticated_user().auth.provider,
+                l2.authenticated_user().auth.provider
+            );
+            assert_eq!(l1.actor_context(), l2.actor_context());
+
+            let a = authority();
+            let d1 = a.authorize_user(l1.authenticated_user(), patient_class(), act());
+            let d2 = a.authorize_user(l2.authenticated_user(), patient_class(), act());
+            assert_eq!(d1, d2, "the provider must not change the decision");
+            assert_eq!(d1.decision, AccessDecision::Allow);
+        }
+
+        /// Stay-silent: a second provider that was never bound yields no login.
+        #[test]
+        fn unbound_second_provider_yields_no_login() {
+            let mut s = LocalUserStore::new();
+            s.insert(user(42, "dr-house", "physician"));
+            s.bind_external(UserId(42), ident(ISS_1, "a1")).unwrap();
+            let r = establish(&Verifier(ident(ISS_2, "b2")), &trusted(), "t", &s);
+            assert!(matches!(r, Err(LoginError::Unbound)));
+        }
+
+        /// Can-fire: binding the second provider to a DIFFERENT canonical user
+        /// changes the decision — the check is not vacuously "always Allow".
+        #[test]
+        fn different_canonical_user_changes_decision() {
+            let mut s = LocalUserStore::new();
+            s.insert(user(42, "dr-house", "physician"));
+            s.insert(user(43, "betty", "cashier"));
+            s.bind_external(UserId(42), ident(ISS_1, "a1")).unwrap();
+            s.bind_external(UserId(43), ident(ISS_2, "b2")).unwrap();
+
+            let l1 = establish(&Verifier(ident(ISS_1, "a1")), &trusted(), "t", &s).unwrap();
+            let l2 = establish(&Verifier(ident(ISS_2, "b2")), &trusted(), "t", &s).unwrap();
+            let a = authority();
+            let d1 = a.authorize_user(l1.authenticated_user(), patient_class(), act());
+            let d2 = a.authorize_user(l2.authenticated_user(), patient_class(), act());
+            assert_eq!(d1.decision, AccessDecision::Allow);
+            assert!(matches!(d2.decision, AccessDecision::Deny { .. }));
+        }
+    }
 }

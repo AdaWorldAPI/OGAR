@@ -21,6 +21,7 @@
 | 5 (`lance-graph-contract` SoA integration) | `NiblePath` segment encoding (27-bit identity per segment), `LanceDataset::append`, `versions()` watcher | LOCKED — breaking changes coordinated |
 | 6 (`lance-graph-ontology` cache) | manifest-watch event API for cache invalidation | LOCKED |
 | 7 (`lance-graph-callcenter`) | dataset transactional commit boundary; tag-based version retention | LOCKED |
+| `ogar-auth` (identity / federation) | `lance_graph_contract::auth::ActorContext` (canonical identity envelope) + `sla::TenantId`; git dep, branch `main`, unpinned. Measured: OGAR base `5b82ae0`; resolved lance-graph-contract at `f859d484c46dda9725ace2dc870c73e95203edde` | CURRENT-CONTRACT (unpinned `main`; re-measure the resolved rev when it matters) |
 
 **Coordination notes**:
 - OGAR's `Identity::class_identity_versioned(prefix, class, n)` MUST produce a string that `NiblePath` can split losslessly.
