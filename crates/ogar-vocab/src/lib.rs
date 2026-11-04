@@ -1414,6 +1414,16 @@ const CODEBOOK: &[(&str, u16)] = &[
     // directory. Mailboxes, folders, flags and threads are columns of an
     // email row, not concepts of their own. Consumed by spear (`SpearPort`).
     ("email", 0x0B05),
+    // Directory objects as observed (AD / Entra / Exchange), above `email`.
+    // `directory_user` / `directory_group` are the users and groups of
+    // `ogar-dir-sim`'s two populations; `group_membership` is one
+    // user→group edge; `license_assignment` is one observed license SKU on
+    // one user. They are what directory reads (ogar-flow-m365) bind to and
+    // what RBAC grants and field masks on directory data key on.
+    ("directory_user", 0x0B06),
+    ("directory_group", 0x0B07),
+    ("group_membership", 0x0B08),
+    ("license_assignment", 0x0B09),
     // ── 0x0CXX — Automation domain (the HIRO IT-automation stack) ──
     // One domain spanning the MARS structural CMDB (`ogit.MARS:` —
     // Application/Resource/Software/Machine, the A→R→S→M dependsOn backbone)
@@ -2335,6 +2345,17 @@ pub mod class_ids {
     /// `email` (`0x0B05`) — one email message. OGIT `ogit:Email`. In the IAM
     /// domain, above the AuthStore profiles.
     pub const EMAIL: u16 = 0x0B05;
+    /// `directory_user` (`0x0B06`) — one directory user as observed
+    /// (AD / Entra), keyed by its object GUID.
+    pub const DIRECTORY_USER: u16 = 0x0B06;
+    /// `directory_group` (`0x0B07`) — one directory group (security or
+    /// distribution), keyed by its object GUID.
+    pub const DIRECTORY_GROUP: u16 = 0x0B07;
+    /// `group_membership` (`0x0B08`) — one user→group membership edge.
+    pub const GROUP_MEMBERSHIP: u16 = 0x0B08;
+    /// `license_assignment` (`0x0B09`) — one observed license SKU assigned
+    /// to one directory user.
+    pub const LICENSE_ASSIGNMENT: u16 = 0x0B09;
 
     // ── 0x0DXX — HR domain (employment / org / contracts) ──
 
@@ -2557,6 +2578,10 @@ pub mod class_ids {
         ("auth_zanzibar", AUTH_ZANZIBAR),
         ("auth_ory_keto", AUTH_ORY_KETO),
         ("email", EMAIL),
+        ("directory_user", DIRECTORY_USER),
+        ("directory_group", DIRECTORY_GROUP),
+        ("group_membership", GROUP_MEMBERSHIP),
+        ("license_assignment", LICENSE_ASSIGNMENT),
         // 0x0DXX — HR (employment / org / contracts; closes the final
         // 4-of-11 cross-axis gap from odoo-rs PR #14)
         ("hr_employee", HR_EMPLOYEE),
@@ -3508,6 +3533,10 @@ pub fn all_promoted_classes() -> Vec<Class> {
         auth_zanzibar(),
         auth_ory_keto(),
         email(),
+        directory_user(),
+        directory_group(),
+        group_membership(),
+        license_assignment(),
         // 0x0DXX — HR arm
         hr_employee(),
         hr_department(),
@@ -5331,6 +5360,48 @@ pub fn email() -> Class {
 }
 
 // ─────────────────────────────────────────────────────────────────────
+// Directory objects (`0x0B06`–`0x0B09`, IAM domain). Identity only; the
+// columns live in the consumer's ClassView (lance-graph-dir-sim's
+// populations, ogar-flow-m365's report fields).
+// ─────────────────────────────────────────────────────────────────────
+
+/// `directory_user` (`0x0B06`) — one directory user as observed (AD / Entra).
+#[must_use]
+pub fn directory_user() -> Class {
+    let mut c = Class::new("DirectoryUser");
+    c.language = Language::Unknown;
+    c.canonical_concept = Some("directory_user".to_string());
+    c
+}
+
+/// `directory_group` (`0x0B07`) — one directory group (security or distribution).
+#[must_use]
+pub fn directory_group() -> Class {
+    let mut c = Class::new("DirectoryGroup");
+    c.language = Language::Unknown;
+    c.canonical_concept = Some("directory_group".to_string());
+    c
+}
+
+/// `group_membership` (`0x0B08`) — one user→group membership edge.
+#[must_use]
+pub fn group_membership() -> Class {
+    let mut c = Class::new("GroupMembership");
+    c.language = Language::Unknown;
+    c.canonical_concept = Some("group_membership".to_string());
+    c
+}
+
+/// `license_assignment` (`0x0B09`) — one observed license SKU on one directory user.
+#[must_use]
+pub fn license_assignment() -> Class {
+    let mut c = Class::new("LicenseAssignment");
+    c.language = Language::Unknown;
+    c.canonical_concept = Some("license_assignment".to_string());
+    c
+}
+
+// ─────────────────────────────────────────────────────────────────────
 // 0xC6XX — MMIO hardware-platform builders (C64 = founding tenant).
 // Kind-level containers only: registers/opcodes are content rows.
 // ─────────────────────────────────────────────────────────────────────
@@ -6441,6 +6512,10 @@ mod tests {
             ("auth_zanzibar", 0x0B03),
             ("auth_ory_keto", 0x0B04),
             ("email", 0x0B05),
+            ("directory_user", 0x0B06),
+            ("directory_group", 0x0B07),
+            ("group_membership", 0x0B08),
+            ("license_assignment", 0x0B09),
         ] {
             assert_eq!(
                 canonical_concept_id(concept),
@@ -6449,8 +6524,9 @@ mod tests {
             );
             assert_eq!(canonical_concept_domain(id), ConceptDomain::Auth);
         }
-        // The four preminted profiles plus `email` are the Auth block today.
-        assert_eq!(concepts_in_domain(ConceptDomain::Auth).count(), 5);
+        // The four preminted profiles, `email`, and the four directory
+        // concepts are the Auth block today.
+        assert_eq!(concepts_in_domain(ConceptDomain::Auth).count(), 9);
     }
 
     #[test]
@@ -6602,7 +6678,7 @@ mod tests {
         assert_eq!(concepts_in_domain(ConceptDomain::Commerce).count(), 11);
         assert_eq!(concepts_in_domain(ConceptDomain::ProjectMgmt).count(), 26);
         assert_eq!(concepts_in_domain(ConceptDomain::Anatomy).count(), 4);
-        assert_eq!(concepts_in_domain(ConceptDomain::Auth).count(), 5);
+        assert_eq!(concepts_in_domain(ConceptDomain::Auth).count(), 9);
         assert_eq!(concepts_in_domain(ConceptDomain::Automation).count(), 9);
         // Every yielded Automation id really is in-domain (0x0CXX).
         let automation: Vec<&str> = concepts_in_domain(ConceptDomain::Automation)

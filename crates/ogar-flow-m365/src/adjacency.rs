@@ -16,8 +16,8 @@
 //! String matching happens here, once, at the compile boundary. Execution
 //! sees only [`FnIndex`] bytes.
 
-use ogar_dir_core::{SchemaFamily, SchemaId};
 use ogar_loco::FnIndex;
+use ogar_vocab::class_ids;
 
 use crate::vocab;
 
@@ -105,19 +105,18 @@ pub enum Backend {
 
 /// The semantic target an operation is bound to.
 ///
-/// No variant carries a classid, because no directory-user, license,
-/// group-membership or report concept is minted in `ogar-vocab` today, and
-/// this crate does not mint concepts. Binding these to classids is the gate
-/// for the production RBAC integration (README § Deferred).
+/// A directory operation is bound to the `ogar-vocab` concept its rows are
+/// (`directory_user`, `group_membership`, `license_assignment`), which is
+/// what RBAC grants and field masks on that data key on.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ConceptBinding {
     /// A pipeline operator over any population (filter, projection). It has
     /// no concept of its own.
     Generic,
-    /// Bound to an existing typed directory schema in `ogar-dir-core`.
-    DirSchema(SchemaId),
-    /// The operation has no canonical OGAR concept yet. The string names the
-    /// missing piece so the gap is visible at the call site.
+    /// Bound to a concept minted in `ogar-vocab` (the hi-u16 concept id).
+    Minted(u16),
+    /// The operation has no OGAR concept. The string names why, so the gap is
+    /// visible at the call site.
     Unminted(&'static str),
 }
 
@@ -153,12 +152,6 @@ impl Operation {
     }
 }
 
-/// The Graph `user` schema `ogar-az` encodes against.
-const MS_GRAPH_USER: SchemaId = SchemaId {
-    family: SchemaFamily::MsGraph,
-    version: 2,
-};
-
 /// Every operation, indexed by [`OperationId`].
 pub const OPERATIONS: &[Operation] = &[
     // 0
@@ -170,7 +163,7 @@ pub const OPERATIONS: &[Operation] = &[
         input: FlowShape::Nothing,
         output: FlowShape::Population,
         backend: Backend::Loco,
-        binding: ConceptBinding::DirSchema(MS_GRAPH_USER),
+        binding: ConceptBinding::Minted(class_ids::DIRECTORY_USER),
     },
     // 1
     Operation {
@@ -181,7 +174,7 @@ pub const OPERATIONS: &[Operation] = &[
         input: FlowShape::Population,
         output: FlowShape::Population,
         backend: Backend::Loco,
-        binding: ConceptBinding::Unminted("no license-assignment concept in ogar-vocab"),
+        binding: ConceptBinding::Minted(class_ids::LICENSE_ASSIGNMENT),
     },
     // 2
     Operation {
@@ -192,7 +185,7 @@ pub const OPERATIONS: &[Operation] = &[
         input: FlowShape::Population,
         output: FlowShape::Population,
         backend: Backend::Loco,
-        binding: ConceptBinding::Unminted("no directory group-membership concept in ogar-vocab"),
+        binding: ConceptBinding::Minted(class_ids::GROUP_MEMBERSHIP),
     },
     // 3
     Operation {
@@ -226,7 +219,7 @@ pub const OPERATIONS: &[Operation] = &[
         output: FlowShape::Report,
         backend: Backend::Loco,
         binding: ConceptBinding::Unminted(
-            "report execution is lance-graph-report's; no OGAR concept",
+            "report execution belongs to lance-graph-report; no OGAR concept",
         ),
     },
     // 6 — known, refused.
@@ -238,7 +231,7 @@ pub const OPERATIONS: &[Operation] = &[
         input: FlowShape::Population,
         output: FlowShape::Nothing,
         backend: Backend::None,
-        binding: ConceptBinding::DirSchema(MS_GRAPH_USER),
+        binding: ConceptBinding::Minted(class_ids::DIRECTORY_USER),
     },
     // 7
     Operation {
@@ -249,7 +242,7 @@ pub const OPERATIONS: &[Operation] = &[
         input: FlowShape::Population,
         output: FlowShape::Nothing,
         backend: Backend::None,
-        binding: ConceptBinding::DirSchema(MS_GRAPH_USER),
+        binding: ConceptBinding::Minted(class_ids::DIRECTORY_USER),
     },
     // 8
     Operation {
@@ -260,7 +253,7 @@ pub const OPERATIONS: &[Operation] = &[
         input: FlowShape::Population,
         output: FlowShape::Nothing,
         backend: Backend::None,
-        binding: ConceptBinding::Unminted("no directory group-membership concept in ogar-vocab"),
+        binding: ConceptBinding::Minted(class_ids::GROUP_MEMBERSHIP),
     },
     // 9
     Operation {
@@ -271,7 +264,7 @@ pub const OPERATIONS: &[Operation] = &[
         input: FlowShape::Population,
         output: FlowShape::Nothing,
         backend: Backend::None,
-        binding: ConceptBinding::Unminted("no license-assignment concept in ogar-vocab"),
+        binding: ConceptBinding::Minted(class_ids::LICENSE_ASSIGNMENT),
     },
     // 10
     Operation {
