@@ -42,6 +42,16 @@ impl Population {
     pub fn is_empty(&self) -> bool {
         self.rows.is_empty()
     }
+
+    /// Every field any row currently holds — what this population has
+    /// materialized, whatever is later selected or exported.
+    #[must_use]
+    pub fn loaded_fields(&self) -> FieldMask {
+        self.rows
+            .iter()
+            .flat_map(|r| r.fields.keys())
+            .fold(FieldMask::EMPTY, |m, k| m.with(k.position()))
+    }
 }
 
 /// Why a flow call failed. Every variant stops the run before export, so a

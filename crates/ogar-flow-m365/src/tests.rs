@@ -766,3 +766,60 @@ fn f10_unsupported_stages_and_shapes_are_refused() {
         Err(CompileError::EmptyStage)
     );
 }
+
+#[test]
+fn f6_an_oversharing_host_does_not_materialize_the_field_in_the_run() {
+    use ogar_loco::Dialect;
+    let flow = compile(JOHN_DOE_101).unwrap();
+    let scope = fixture::reader_scope();
+    let mut dialect = crate::FlowDialect::new(&OversharingHost, &scope, &flow);
+    let mut stack = Vec::new();
+    dialect
+        .call(vocab::GET_USER, [0, 0, 0], &mut stack)
+        .unwrap();
+    let loaded = stack[0].loaded_fields();
+    assert!(!loaded.has(ReportField::Mail.position()), "{loaded:?}");
+    assert!(loaded.has(ReportField::DisplayName.position()));
+}
+
+#[test]
+fn f5_the_host_is_only_ever_asked_about_the_scoped_tenant() {
+    let host = CountingHost::default();
+    let flow = compile(
+        "Get-MgUser john.doe@other.test | Get-IamLicenseEvidence | Get-IamMembership | Select-Object DisplayName | Export-Report",
+    )
+    .unwrap();
+    run_flow(&reader(), &flow, &host, &FixtureAuthority::standard()).unwrap();
+    let q = host.queries.borrow();
+    assert!(!q.is_empty());
+    for line in q.iter() {
+        assert!(line.contains(&format!(" {TEST_TENANT} ")), "{line}");
+    }
+}
+
+#[test]
+fn a_run_that_leaves_values_on_the_stack_returns_no_report() {
+    let mut flow = compile(JOHN_DOE_101).unwrap();
+    flow.program = Program {
+        functions: vec![
+            FunctionBody::from_calls(
+                FLOW_SHAPE,
+                &[
+                    Call::with_value(vocab::GET_USER, 0),
+                    Call::with_value(vocab::EXPORT, 1),
+                    Call::with_value(vocab::GET_USER, 0),
+                ],
+            )
+            .unwrap(),
+        ],
+    };
+    assert_eq!(
+        run_flow(
+            &reader(),
+            &flow,
+            &FixtureDirectory,
+            &FixtureAuthority::standard()
+        ),
+        Err(RunError::Dialect(FlowError::NoReport))
+    );
+}
