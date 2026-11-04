@@ -41,13 +41,16 @@
 //! Today ogar-auth is the *local* authentication substrate: passwords, second
 //! factor, legacy migration, envelopes. The next arm is **federated identity**
 //! — OGAR ↔ `OGIT[auth]` bound to an external IdP (OIDC / Zitadel / any
-//! standards IAM). That surface is deliberately NOT built yet; it lands as a
-//! sibling adapter (cf. the `ogar-adapter-*` family) that maps an OIDC
-//! `IdToken` / introspection response onto the same identity envelope the
-//! local path produces, so a consumer's authorization code is IdP-agnostic.
-//! See [`federation`] for the reserved shape and the one invariant that seam
-//! must honour.
+//! standards IAM). The *boundary* is built: [`identity`] (issuer-scoped
+//! `(iss, sub)`), and [`federation`] ([`federation::AssertionVerifier`],
+//! [`federation::establish`], the [`federation::VerifiedLogin`] proof). The
+//! token-validating adapter itself (JWKS, claim parsing) is NOT built here; it
+//! lands as a sibling crate implementing `AssertionVerifier`, so a consumer's
+//! authorization code stays IdP-agnostic. See [`federation`] for the invariant
+//! and for what the types cannot guarantee.
 
+pub mod federation;
+pub mod identity;
 pub mod legacy;
 pub mod password;
 pub mod totp;
@@ -86,31 +89,3 @@ impl std::error::Error for AuthError {}
 
 /// Result alias for the auth-specific primitives.
 pub type AuthResult<T> = Result<T, AuthError>;
-
-/// The reserved federation seam — OGAR ↔ `OGIT[auth]` external-IdP binding.
-///
-/// This module is intentionally a **contract stub**, not an implementation.
-/// It records the one invariant a future OIDC / Zitadel adapter MUST honour so
-/// the endgame is legible from the SDK today, and so nobody re-derives it:
-///
-/// > **A federated login and a local login converge on the SAME identity
-/// > envelope before any authorization decision is made.** The IdP adapter's
-/// > job ends at producing `(subject, tenant, roles)` — the exact shape the
-/// > local password + TOTP path already produces (mirrors
-/// > `lance_graph_contract::auth::ActorContext`). Authorization code downstream
-/// > is therefore identical whether the actor authenticated locally or through
-/// > Zitadel; the IdP is a *source of the envelope*, never a fork in the
-/// > authorization logic.
-///
-/// The adapter itself (token validation, JWKS fetch, claim mapping) lands as a
-/// sibling crate under the `ogar-adapter-*` convention when the endgame is
-/// scheduled — it is out of scope for the local auth substrate this crate is.
-///
-/// **The convergence point is now shipped**, as [`crate::user`]: an adapter's
-/// job ends at producing an [`AuthBinding`](crate::user::AuthBinding), which
-/// [`UserStore::resolve`](crate::user::UserStore::resolve) maps to the canonical
-/// [`User`](crate::user::User); the envelope every path converges on is
-/// [`AuthenticatedUser::actor_context`](crate::user::AuthenticatedUser::actor_context).
-/// This module stays an empty marker: what is still out of scope here is
-/// unchanged — token validation, JWKS fetch and claim parsing.
-pub mod federation {}
