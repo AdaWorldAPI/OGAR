@@ -26,6 +26,7 @@ members = [
     "crates/ogar-adapter-python",
     "crates/ogar-adapter-csharp",
     "crates/ogar-auth",
+    "crates/ogar-oidc",
     "crates/ogar-encryption",
     "crates/ogar-doc-ir",
     "crates/ogar-a2ui-frame",
@@ -129,3 +130,8 @@ surrealdb-core   = { git = "https://github.com/AdaWorldAPI/surrealdb", branch = 
 # temporary edit, not a reason to keep the default expensive.
 [profile.dev]
 debug = 0
+
+# ecdsa (pulled by p256 for ogar-oidc's ES256) resolves to the AdaWorldAPI fork
+# of RustCrypto/signatures, at the same 0.17.0 version crates.io carries.
+[patch.crates-io]
+ecdsa = { git = "https://github.com/AdaWorldAPI/signatures", rev = "5595c3b1bfa14022b46ec3cc662a87e49b954266" }

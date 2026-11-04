@@ -1,0 +1,18 @@
+[package]
+name = "ogar-oidc"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Provider-agnostic OIDC ID-token verifier for ogar-auth: implements `AssertionVerifier` over compact JWS ID tokens (ES256, EdDSA) against per-issuer JWKS the caller supplies. No network I/O, no provider-specific claims."
+
+[dependencies]
+ogar-auth = { path = "../ogar-auth" }
+# Ed25519 verification — reused from OGAR's encryption surface, never re-implemented.
+ogar-encryption = { path = "../ogar-encryption" }
+# ES256 (P-256 ECDSA). AdaWorldAPI fork of RustCrypto/elliptic-curves, the rev the
+# ndarray `encryption` crate already pins for x448. `ecdsa` itself is redirected to
+# the AdaWorldAPI/signatures fork by the workspace `[patch.crates-io]`.
+p256 = { git = "https://github.com/AdaWorldAPI/elliptic-curves", rev = "739304e026fdf06cd1a31606e4db487d3f47c5ae", default-features = false, features = ["ecdsa", "alloc"] }
+base64 = "0.22"
+serde_json = "1"

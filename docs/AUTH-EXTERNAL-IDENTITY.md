@@ -67,9 +67,29 @@ which code may call RBAC with a hand-built user, is not enforceable by types.
   unscoped subject) **cannot be auto-migrated**: the issuer is not recorded in
   them. Re-bind explicitly with `bind_external`.
 
-## 6. PR-01 handoff
+## 6. The OIDC adapter (`ogar-oidc`, PR-01)
 
-The next piece is a reusable OIDC adapter implementing `AssertionVerifier`
-(signature, audience, expiry, JWKS) that returns `VerifiedClaims`. It must stay
-provider-agnostic: provider differences are data in `TrustedIssuers`, not match
-arms.
+`ogar_oidc::OidcVerifier` implements `AssertionVerifier` for compact JWS ID
+tokens. It is provider-agnostic: a provider is a `Client` (issuer, client id,
+JWKS), never a match arm.
+
+- **No network I/O.** The caller fetches discovery and JWKS and passes the
+  bytes (`Discovery::from_json`, `KeySet::from_jwks_json`); key rotation is
+  `Client::set_keys`. The clock and the expected nonce come in with the token
+  (`IdToken`), so verification is deterministic.
+- **Algorithms:** ES256 and EdDSA. `none`, `HS*` and a header with `crit` are
+  refused. RS256 is not implemented: no AdaWorldAPI fork of an RSA crate is
+  wired yet, so a provider must sign ID tokens with a P-256 or Ed25519 key.
+- **Keys are per issuer.** The unverified `iss` only chooses which issuer's keys
+  to try; a key registered for one issuer never verifies a token naming
+  another.
+- **Claims:** `iss` byte-equal and in `TrustedIssuers`; `sub` non-empty; `aud`
+  contains the client id; several audiences require `azp`; `azp` when present
+  equals the client id; `exp` and `iat` required, `nbf` optional, with a
+  leeway (default 60 s); `nonce` equal when the login sent one.
+- **Strength:** `MultiFactor` when `amr` contains `mfa` or covers two
+  independent factor categories (knowledge, possession, inherence; RFC 8176),
+  otherwise `SingleFactor`. `user` (presence) is not a factor.
+- **Email** is returned only when `email_verified` is `true`, and stays a
+  display hint (section 3).
+- Errors (`OidcError`) carry no token contents.

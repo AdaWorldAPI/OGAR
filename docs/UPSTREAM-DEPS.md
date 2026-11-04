@@ -22,6 +22,7 @@
 | 6 (`lance-graph-ontology` cache) | manifest-watch event API for cache invalidation | LOCKED |
 | 7 (`lance-graph-callcenter`) | dataset transactional commit boundary; tag-based version retention | LOCKED |
 | `ogar-auth` (identity / federation) | `lance_graph_contract::auth::ActorContext` (canonical identity envelope) + `sla::TenantId`; git dep, branch `main`, unpinned. Measured: OGAR base `5b82ae0`; resolved lance-graph-contract at `f859d484c46dda9725ace2dc870c73e95203edde` | CURRENT-CONTRACT (unpinned `main`; re-measure the resolved rev when it matters) |
+| `ogar-oidc` (OIDC ID-token verifier) | `p256` from AdaWorldAPI/elliptic-curves rev `739304e026fdf06cd1a31606e4db487d3f47c5ae` (the rev ndarray `encryption` pins); `ecdsa` 0.17.0 redirected by workspace `[patch.crates-io]` to AdaWorldAPI/signatures rev `5595c3b1bfa14022b46ec3cc662a87e49b954266`; Ed25519 via `ogar-encryption`. RS256: no RSA fork wired | CURRENT-CONTRACT (rev-pinned) |
 
 **Coordination notes**:
 - OGAR's `Identity::class_identity_versioned(prefix, class, n)` MUST produce a string that `NiblePath` can split losslessly.
