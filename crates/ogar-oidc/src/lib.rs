@@ -424,12 +424,15 @@ fn verify_signature(key: &Key, message: &[u8], signature: &[u8]) -> bool {
     }
 }
 
-/// `MultiFactor` when the provider says so (`amr` contains `mfa`) or lists at
-/// least two distinct recognised factors; otherwise `SingleFactor`.
+/// `MultiFactor` when the provider says so (`amr` contains `mfa`) or when the
+/// `amr` values (RFC 8176) cover at least two independent factor categories:
+/// knowledge, possession, inherence. Several methods of one category (e.g.
+/// `otp` + `sms`) are one factor, and `user` (presence) or other method labels
+/// that are not a factor count for nothing. Otherwise `SingleFactor`.
 fn strength(claims: &Value) -> AuthStrength {
-    const FACTORS: [&str; 10] = [
-        "pwd", "otp", "hwk", "swk", "user", "pop", "sms", "tel", "fpt", "face",
-    ];
+    const KNOWLEDGE: [&str; 3] = ["pwd", "pin", "kba"];
+    const POSSESSION: [&str; 7] = ["hwk", "swk", "otp", "sms", "tel", "pop", "sc"];
+    const INHERENCE: [&str; 5] = ["fpt", "face", "iris", "retina", "vbm"];
     let Some(amr) = claims.get("amr").and_then(Value::as_array) else {
         return AuthStrength::SingleFactor;
     };
@@ -437,8 +440,12 @@ fn strength(claims: &Value) -> AuthStrength {
     if values.contains(&"mfa") {
         return AuthStrength::MultiFactor;
     }
-    let distinct = FACTORS.iter().filter(|f| values.contains(f)).count();
-    if distinct >= 2 {
+    let covers = |category: &[&str]| category.iter().any(|m| values.contains(m));
+    let categories = [&KNOWLEDGE[..], &POSSESSION[..], &INHERENCE[..]]
+        .into_iter()
+        .filter(|c| covers(c))
+        .count();
+    if categories >= 2 {
         AuthStrength::MultiFactor
     } else {
         AuthStrength::SingleFactor

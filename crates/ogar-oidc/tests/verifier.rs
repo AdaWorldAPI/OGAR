@@ -371,6 +371,12 @@ fn amr_decides_strength() {
     assert_eq!(with_amr(json!(["pwd", "otp"])), AuthStrength::MultiFactor);
     assert_eq!(with_amr(json!(["mfa"])), AuthStrength::MultiFactor);
     assert_eq!(with_amr(json!(["pwd"])), AuthStrength::SingleFactor);
+    // Hardware key with user presence: one factor (RFC 8176: `user` is presence).
+    assert_eq!(with_amr(json!(["hwk", "user"])), AuthStrength::SingleFactor);
+    // Two methods of one category (possession) are still one factor.
+    assert_eq!(with_amr(json!(["otp", "sms"])), AuthStrength::SingleFactor);
+    // Possession + inherence (e.g. a passkey unlocked by fingerprint).
+    assert_eq!(with_amr(json!(["hwk", "fpt"])), AuthStrength::MultiFactor);
 }
 
 // ── 12: email ───────────────────────────────────────────────────────────────

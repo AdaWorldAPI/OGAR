@@ -87,8 +87,9 @@ JWKS), never a match arm.
   contains the client id; several audiences require `azp`; `azp` when present
   equals the client id; `exp` and `iat` required, `nbf` optional, with a
   leeway (default 60 s); `nonce` equal when the login sent one.
-- **Strength:** `MultiFactor` when `amr` contains `mfa` or two distinct
-  recognised factors, otherwise `SingleFactor`.
+- **Strength:** `MultiFactor` when `amr` contains `mfa` or covers two
+  independent factor categories (knowledge, possession, inherence; RFC 8176),
+  otherwise `SingleFactor`. `user` (presence) is not a factor.
 - **Email** is returned only when `email_verified` is `true`, and stays a
   display hint (section 3).
 - Errors (`OidcError`) carry no token contents.
