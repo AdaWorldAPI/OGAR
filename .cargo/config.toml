@@ -1,0 +1,11 @@
+# Keep foreign SIMD intrinsics out of the crypto crates, as ndarray's own
+# `.cargo/config.toml` does (all SIMD comes from `ndarray::simd`):
+#
+# - `curve25519_dalek_backend="serial"`: curve25519-dalek's build.rs otherwise
+#   auto-selects its AVX2 vector backend.
+# - `poly1305_force_soft`: poly1305 otherwise selects its AVX2 backend.
+#
+# Both are arch-neutral. A `RUSTFLAGS` environment variable REPLACES these
+# flags rather than adding to them; a caller that sets one must repeat them.
+[build]
+rustflags = ["--cfg", 'curve25519_dalek_backend="serial"', "--cfg", "poly1305_force_soft"]
