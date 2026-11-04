@@ -441,6 +441,19 @@ fn jwks_parsing_skips_and_rejects() {
     assert_eq!(set.len(), 1);
     assert_eq!(set.skipped(), 1);
 
+    // key_ops restricts usage (RFC 7517 §4.3): without "verify" it is skipped.
+    let mut derive = jwk_es256(&es_key(8), "k3");
+    derive.as_object_mut().expect("object").remove("use");
+    derive["key_ops"] = json!(["deriveKey"]);
+    let set = parse(vec![ec.clone(), derive]).expect("deriveKey skipped");
+    assert_eq!(set.len(), 1);
+    assert_eq!(set.skipped(), 1);
+    let mut verify = jwk_es256(&es_key(8), "k4");
+    verify["key_ops"] = json!(["verify"]);
+    let set = parse(vec![ec.clone(), verify]).expect("verify kept");
+    assert_eq!(set.len(), 2);
+    assert_eq!(set.skipped(), 0);
+
     let dup = jwk_es256(&es_key(8), "k1");
     assert!(matches!(
         parse(vec![ec, dup]),

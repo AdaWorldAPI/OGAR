@@ -113,7 +113,8 @@ impl KeySet {
     /// Parse a JWKS document (`{"keys":[...]}`).
     ///
     /// EC P-256 and OKP Ed25519 signing keys are kept. Keys of other types
-    /// (RSA included) and keys whose `use` is not `sig` are skipped and counted
+    /// (RSA included), keys whose `use` is not `sig` and keys whose `key_ops`
+    /// does not include `verify` are skipped and counted
     /// in [`KeySet::skipped`], so a mixed JWKS still loads.
     ///
     /// # Errors
@@ -132,6 +133,7 @@ impl KeySet {
                 .get("use")
                 .and_then(Value::as_str)
                 .is_some_and(|u| u != "sig")
+                || !permits_verify(jwk)
             {
                 set.skipped += 1;
                 continue;
@@ -179,6 +181,17 @@ impl KeySet {
             None if self.len() == 1 => self.keys.values().chain(&self.unkeyed).next(),
             None => None,
         }
+    }
+}
+
+/// RFC 7517 §4.3: when `key_ops` is present, the key may be used only for the
+/// listed operations. A key whose `key_ops` is not an array, or does not list
+/// `verify`, is not a verification key.
+fn permits_verify(jwk: &Value) -> bool {
+    match jwk.get("key_ops") {
+        None => true,
+        Some(Value::Array(ops)) => ops.iter().any(|op| op.as_str() == Some("verify")),
+        Some(_) => false,
     }
 }
 
