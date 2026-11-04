@@ -32,6 +32,7 @@ members = [
     "crates/ogar-from-docv1",
     "crates/ogar-render-typst",
     "crates/ogar-loco",
+    "crates/ogar-flow-m365",
     "crates/ogar-r2il",
     "crates/ogar-rbac",
     "crates/ogar-ro",
