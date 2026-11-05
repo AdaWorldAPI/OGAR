@@ -740,7 +740,10 @@ impl Ruler {
     /// failing that exactly one backsync target; exactly one mailbox);
     /// anything else leaves the cell empty, so ambiguity can never be read
     /// back as agreement.
-    pub fn from_fold(l: &Lanes, ix: &Index, out: &Output) -> Self {
+    ///
+    /// `_ix` is unused since the mailbox ordinal moved into [`Output`]; it
+    /// stays so callers keep compiling.
+    pub fn from_fold(l: &Lanes, _ix: &Index, out: &Output) -> Self {
         let n = l.ad.len();
         let mut r = Self {
             ad_anchor: vec![Guid128::NIL; n],
