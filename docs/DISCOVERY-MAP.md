@@ -1,5 +1,12 @@
 # Discovery Map — the shape‑preserving index
 
+> **FROZEN 2026-11-06.** This file is now the historical record. Shared
+> append-only ledgers conflicted in every concurrent session, so new
+> discoveries are filed in Linear project **OGAR · Discovery Map**
+> (`P-EXO-15`), one issue per discovery, titled
+> `DISCOVERY: D-<NAME> — <claim>`. Existing entries stay here unchanged and
+> are cited by id. Nothing is deleted, rewritten or migrated.
+
 > **Purpose.** A single append‑only index of every discovery, idea, and
 > decision in the substrate arc — each with its **grade**, **materialization
 > status**, **home**, and **dependencies** — so the *shape* (the connections
@@ -519,6 +526,14 @@ isolation. The map's job is to keep them visible.
 5. **The map mirrors the substrate.** Append‑only + status‑versioned, like
    the audit log it documents (ADR‑008/013). If that feels recursive, it
    is — and that's the tell that the shape is intact.
+
+> ⊘ SUPERSEDED 2026-11-06 (for new entries only): rules 1–5 above still
+> govern the entries in this file. New discoveries follow the Linear rules
+> instead: one issue per discovery in `P-EXO-15`, title
+> `DISCOVERY: D-<NAME> — <claim>`, grade/status/home as labels or fields,
+> dependencies as Linear relations (blocked-by / related). A regrade is a
+> status or label change plus a comment citing the pass; the claim text is
+> never rewritten.
 
 ---
 

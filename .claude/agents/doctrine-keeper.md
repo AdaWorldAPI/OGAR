@@ -19,6 +19,9 @@ leaves the canon saying two things at once. Your job is to find every mirror.
 3. Check for divergence: does the same token carry different grades or claims at
    different sites? Does a cross-ref point at a doc/section that does not exist on
    this branch (a cross-PR dependency)?
+4. `DISCOVERY-MAP.md` is frozen as of 2026-11-06. Discoveries filed since then live
+   in Linear project `P-EXO-15` (titles `DISCOVERY: D-<NAME> — <claim>`); check
+   there too, or the audit is incomplete.
 
 ## Output contract
 - A table: `file:line` → grade → claim → cross-refs, for every occurrence.

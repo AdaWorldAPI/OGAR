@@ -48,7 +48,8 @@ all waves until fixed and never counts as an acceptable quorum
 casualty. Of the remaining six, ≥4 green → proceed. **General rule: a
 probe that is a PREREQUISITE of later bricks is a mandatory pass, never
 a quorum member.** J3 resolved either way. Any red is a *result* —
-recorded in DISCOVERY-MAP, grade moved, prose corrected (the D-EXCITON
+recorded in DISCOVERY-MAP (for entries filed in Linear `P-EXO-15`, on
+that discovery issue), grade moved, prose corrected (the D-EXCITON
 pattern: revert with reasons, keep the `[G]`-real legs).
 
 **First receipt already in (2026-06-10):** the HILBERT-L4 question was
@@ -110,7 +111,10 @@ route-by-prefix, X5/X6) → F14/X7 wide-model render after B.
    condition is met or its reds are *recorded as results*).
 2. **Every red is a ledger event** — grade moves in DISCOVERY-MAP the
    same day (the D-EXCITON revert is the template: keep `[G]`-real
-   legs, strike the dead analogy, name the survivor).
+   legs, strike the dead analogy, name the survivor). Since 2026-11-06
+   the grade move happens on the Linear discovery issue (`P-EXO-15`) for
+   entries filed there; entries already in the file are regraded in
+   place as before.
 3. **Thresholds are measured, never optimism** (PP-13 P0-2/P0-3:
    placeholder thresholds must not gate; relative tolerances for
    spectral claims).

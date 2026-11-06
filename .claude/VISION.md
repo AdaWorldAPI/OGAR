@@ -196,7 +196,8 @@ When in doubt: read principle 1 again.
 - `docs/ARCHITECTURE.md` — the longer architectural writeup
 - `.claude/PLAN.md` — meticulous sprint-by-sprint roadmap
 - `.claude/AGENTS.md` — extension rules + producer/consumer contract
-- `.claude/board/EPIPHANIES.md` — append-only findings log
+- `.claude/board/EPIPHANIES.md` — findings log, frozen 2026-11-06; new
+  findings go to Linear `P-EXO-16`
 - `vocab/ogar.ttl` — the canonical Turtle/RDF vocabulary
 - `vocab/ogar.surql` — the SurrealQL DDL projection
 - `crates/ogar-vocab/` — the canonical Rust IR types

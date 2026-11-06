@@ -192,8 +192,9 @@ alignment costs. Until measured: 3×4 stands.
 
 ## Doc family (read in this order)
 
-1. `docs/DISCOVERY-MAP.md` — the discovery ledger (D-* entries, graded
-   `[G]`/`[H]`/`[S]`, append-only).
+1. `docs/DISCOVERY-MAP.md` — the frozen record of D-* discoveries (graded
+   `[G]`/`[H]`/`[S]`) up to 2026-11-06. New discoveries go to Linear
+   `P-EXO-15`; the file stays citable by id.
 2. `docs/INTEGRATION-MAP.md` — layers, seams (each with its contract
    TYPE), the phase DAG, falsification gates F1–F14.
 3. `docs/INTEGRATION-TEST-PLAN.md` — the probe-first execution
@@ -314,3 +315,12 @@ alignment costs. Until measured: 3×4 stands.
   repo's `PreToolUse` guard.
 - **Append-only canon:** never delete a ledger entry; regrade in place;
   corrections cite their pass (savant / G-pass / canon-pass).
+
+> ⊘ SUPERSEDED 2026-11-06 (for new entries): the repo ledgers
+> (`docs/DISCOVERY-MAP.md`, `.claude/board/EPIPHANIES.md`) are frozen as the
+> historical record; the rule above still governs them and every D-… / E-…
+> id stays citable. New entries go to Linear: discoveries `P-EXO-15`,
+> epiphanies `P-EXO-16`, decisions/ADRs/rulings `P-EXO-14`. Agent
+> coordination (briefs, hand-backs, blockers) goes to the A2A board
+> `P-EXO-13`. Tiers: Opus plans and runs every cargo/git command, Sonnet
+> drafts from a complete brief, Haiku does read-only grindwork.

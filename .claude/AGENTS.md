@@ -113,7 +113,9 @@ segment under an existing prefix.
 
 ## EPIPHANIES log
 
-Append-only findings log at `.claude/board/EPIPHANIES.md`. Conventions:
+Findings log at `.claude/board/EPIPHANIES.md`, frozen 2026-11-06 as the
+historical record. New findings go to Linear `P-EXO-16` (title
+`EPIPHANY: E-<NAME>-<n> — <claim>`). Conventions for the existing file:
 
 - **Newest at top.** Always.
 - **Each entry**: `## YYYY-MM-DD — short headline` + `**Status:**` line
