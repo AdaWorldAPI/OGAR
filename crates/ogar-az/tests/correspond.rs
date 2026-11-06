@@ -9,8 +9,8 @@
 
 use ogar_ad::AdEntry;
 use ogar_dir_core::correspond::{
-    AdStatus, Binding, Index, Lanes, Output, Planes, Profile, Ruler, Source, flag, fold,
-    fold_aligned,
+    AdStatus, Binding, Index, Lanes, NO_ROW, Output, Planes, Profile, Ruler, Source, UNBOUND, flag,
+    fold, fold_aligned, state,
 };
 use ogar_dir_core::identity::{
     BACKSYNC_TO_ENTRA_ID, CONSISTENCY_GUID_TO_IMMUTABLE_ID, ENTRA_ID_TO_EXO_EXTERNAL_ID,
@@ -280,6 +280,11 @@ fn run_encoded(e: &Encoded, anchor: IdentityRule, b: &[Binding]) -> Run {
     let mut out = Output::for_index(&lanes, &ix);
     fold(&lanes, &ix, &mut out);
     assert_eq!(out.edges.len(), ix.edges, "the index counts every edge");
+    assert_eq!(
+        out.entra_mailbox,
+        mailbox_oracle(&lanes),
+        "the fold's mailbox ordinal is the unique in-scope match"
+    );
     // The same rows on one ruler: the position-wise fold confirms exactly
     // the slots the join confirms.
     let ruler = Ruler::from_fold(&lanes, &ix, &out);
@@ -295,6 +300,29 @@ fn run_encoded(e: &Encoded, anchor: IdentityRule, b: &[Binding]) -> Run {
         );
     }
     Run { lanes, out }
+}
+
+/// Scalar reference for [`Output::entra_mailbox`]: a linear scan, without the
+/// index or the merge. Exactly one present, same-scope Exchange Online row
+/// naming the Entra id, else `NO_ROW`.
+fn mailbox_oracle(l: &Lanes) -> Vec<u32> {
+    (0..l.entra.len())
+        .map(|j| {
+            let scope = l.entra.scope[j];
+            if scope == UNBOUND {
+                return NO_ROW;
+            }
+            let mut hits = (0..l.exo.len()).filter(|&x| {
+                l.exo.scope[x] == scope
+                    && l.exo_external.state[x] == state::PRESENT
+                    && l.exo_external.id[x] == l.entra.owner[j]
+            });
+            match (hits.next(), hits.next()) {
+                (Some(x), None) => x as u32,
+                _ => NO_ROW,
+            }
+        })
+        .collect()
 }
 
 fn statuses(r: &Run) -> Vec<AdStatus> {
@@ -814,6 +842,7 @@ fn f14_observations_are_not_touched() {
     );
     assert_ne!(r.out.entra[0] & flag::E_EXO_ONE, 0);
     assert_ne!(r.out.exo[0] & flag::X_ONE, 0);
+    assert_eq!(r.out.entra_mailbox, [0], "the one mailbox, by row ordinal");
 }
 
 #[test]
@@ -836,10 +865,40 @@ fn exchange_online_dangling_and_duplicate() {
     };
     let r = run(&w, CONSISTENCY_GUID_TO_IMMUTABLE_ID);
     assert_ne!(r.out.entra[0] & flag::E_EXO_MANY, 0);
+    assert_eq!(r.out.entra_mailbox, [NO_ROW], "two mailboxes: no choice");
     assert_eq!(
         r.out.exo,
         [flag::X_ONE, flag::X_ONE, flag::X_DANGLING, flag::X_ABSENT]
     );
+}
+
+/// The mailbox ordinal is scoped: the same external id in another bound
+/// tenant names a different Entra row, never this one.
+#[test]
+fn mailbox_ordinal_does_not_cross_tenants() {
+    let x = g(3);
+    let mut there = entra(x, Wire::Absent);
+    there.tenant = g(OTHER_TENANT);
+    let exo = |n, tenant| Exo {
+        guid: g(n),
+        tenant: g(tenant),
+        external: Wire::Id(x),
+    };
+    let w = World {
+        entra: vec![entra(x, Wire::Absent), there],
+        exo: vec![exo(40, OTHER_TENANT), exo(41, TENANT)],
+        ..World::default()
+    };
+    let both = [
+        bindings()[0],
+        Binding {
+            ad_domain: g(OTHER_DOMAIN),
+            tenant: g(OTHER_TENANT),
+        },
+    ];
+    let r = run_encoded(&encode(&w), CONSISTENCY_GUID_TO_IMMUTABLE_ID, &both);
+    assert_ne!(r.lanes.entra.scope[0], r.lanes.entra.scope[1]);
+    assert_eq!(r.out.entra_mailbox, [1, 0]);
 }
 
 // ---- randomized comparison --------------------------------------------------

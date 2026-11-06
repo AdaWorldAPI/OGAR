@@ -398,6 +398,9 @@ pub struct Output {
     pub ad_back: Vec<u32>,
     /// Per Entra row.
     pub entra: Vec<u32>,
+    /// Per Entra row: the one Exchange Online row whose external id names
+    /// it, else [`NO_ROW`] (none, or several: a choice is never made).
+    pub entra_mailbox: Vec<u32>,
     /// Per Entra row: the AD row whose anchor alone claims it, else [`NO_ROW`].
     pub entra_claimer: Vec<u32>,
     /// Per Entra row: the AD row whose backsync alone names it, else [`NO_ROW`].
@@ -416,6 +419,7 @@ impl Output {
             ad_target: vec![NO_ROW; l.ad.len()],
             ad_back: vec![NO_ROW; l.ad.len()],
             entra: vec![0; l.entra.len()],
+            entra_mailbox: vec![NO_ROW; l.entra.len()],
             entra_claimer: vec![NO_ROW; l.entra.len()],
             entra_namer: vec![NO_ROW; l.entra.len()],
             exo: vec![0; l.exo.len()],
@@ -585,6 +589,7 @@ pub fn fold(l: &Lanes, ix: &Index, out: &mut Output) {
         let mbx = count_flag(x.len(), 0, flag::E_EXO_ONE, flag::E_EXO_MANY);
         for y in e {
             out.entra[y.row as usize] |= mbx;
+            out.entra_mailbox[y.row as usize] = sole(x);
         }
     });
 
@@ -735,7 +740,10 @@ impl Ruler {
     /// failing that exactly one backsync target; exactly one mailbox);
     /// anything else leaves the cell empty, so ambiguity can never be read
     /// back as agreement.
-    pub fn from_fold(l: &Lanes, ix: &Index, out: &Output) -> Self {
+    ///
+    /// `_ix` is unused since the mailbox ordinal moved into [`Output`]; it
+    /// stays so callers keep compiling.
+    pub fn from_fold(l: &Lanes, _ix: &Index, out: &Output) -> Self {
         let n = l.ad.len();
         let mut r = Self {
             ad_anchor: vec![Guid128::NIL; n],
@@ -747,13 +755,9 @@ impl Ruler {
             exo_external: vec![Guid128::NIL; n],
             max_skew_ms: l.max_skew_ms,
         };
-        // The one mailbox of each Entra row, if exactly one.
-        let mut mailbox = vec![NO_ROW; l.entra.len()];
-        merge(&ix.exo_by_external, &ix.entra_by_id, |x, e| {
-            for y in e {
-                mailbox[y.row as usize] = sole(x);
-            }
-        });
+        // The one mailbox of each Entra row comes from the fold; no second
+        // merge.
+        let mailbox = &out.entra_mailbox;
         for i in 0..n {
             if l.ad_anchor.state[i] == state::PRESENT && out.ad[i] & flag::ANCHOR_SHARED == 0 {
                 r.ad_anchor[i] = l.ad_anchor.id[i];
