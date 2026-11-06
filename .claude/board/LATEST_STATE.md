@@ -6,7 +6,9 @@
 > classid domain is minted, or queued work lands/changes. It does **not**
 > replace `docs/DISCOVERY-MAP.md` (the graded discovery ledger — *what was
 > found*) or `docs/INTEGRATION-MAP.md` (the composition map — *how it
-> composes*); those stay the deep, append-only record. This file is the
+> composes*); those stay the deep record. As of 2026-11-06 DISCOVERY-MAP is
+> frozen (historical record, still citable by id) and new discovery entries
+> go to Linear `P-EXO-15`. This file is the
 > five-second version: the crate inventory, the classid domain map, and
 > what is actively queued. When in doubt about a claim here, the two docs
 > above (or the source under `crates/`) are the authority — this is an

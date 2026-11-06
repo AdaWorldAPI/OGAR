@@ -4,6 +4,12 @@
 > `**Status:**` line (FINDING / CONJECTURE / FRAMING / SUPERSEDED /
 > RULING). Only the Status line is mutable — body and date are immutable.
 > Corrections append as new dated entries citing the original.
+>
+> **FROZEN 2026-11-06.** This file is now the historical record. Shared
+> append-only ledgers conflicted in every concurrent session, so new
+> epiphanies are filed in Linear project **OGAR · Epiphanies** (`P-EXO-16`),
+> titled `EPIPHANY: E-<NAME>-<n> — <claim>`. Existing entries stay here
+> unchanged and are cited by id.
 
 ---
 

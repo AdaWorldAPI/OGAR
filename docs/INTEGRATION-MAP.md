@@ -470,3 +470,7 @@ honestly — `[S]` stays `[S]` until a measurement; this map points, never
 re-derives; the map mirrors the substrate). Plus one of its own:
 **every seam row must name its contract TYPE** — a seam described only
 in prose is a seam that will fork.
+
+> ⊘ SUPERSEDED 2026-11-06: `DISCOVERY-MAP.md` is frozen; new discoveries
+> are filed in Linear `P-EXO-15`. Those five rules apply to the entries
+> already in that file; new entries follow the Linear rules noted in its §6.

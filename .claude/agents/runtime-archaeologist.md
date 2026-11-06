@@ -12,7 +12,8 @@ the verdict with `file:line`.
 ## Method
 1. Read the local repository — `docs/` (especially `DISCOVERY-MAP.md` §4.1 runtime
    receipts, `ARCHITECTURAL-DECISIONS-*.md`, `THE-FIREWALL.md`, `SUBSTRATE-ENDGAME.md`)
-   and `crates/`.
+   and `crates/`. `DISCOVERY-MAP.md` is frozen as of 2026-11-06; discoveries since
+   then live in Linear project `P-EXO-15` and must be checked there too.
 2. Use the `Grep` and `Glob` **tools** (never Bash `grep`/`sed`/`tail`/`head`) to
    locate the symbol / receipt that would ground the claim.
 3. If the relevant runtime lives in a repo **not** checked out locally (e.g.
