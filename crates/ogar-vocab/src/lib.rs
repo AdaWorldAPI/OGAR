@@ -852,7 +852,7 @@ pub struct Association {
 /// An enum-backed column declaration.
 ///
 /// The `source` field captures three Odoo cases (static / computed /
-/// additive); for Rails / Django / Ecto only `Static` applies.
+/// additive); Rails uses `Unlabeled` / `Unresolved` / `Invalid`.
 /// See `docs/ODOO-TRANSCODING.md` §6.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -879,7 +879,8 @@ impl Default for EnumDecl {
 
 /// Source of an enum's variant list. Three cases capture Odoo's
 /// `selection=`, `selection=lambda`, and `selection_add=`
-/// surface; Rails / Django / Ecto producers always emit `Static`.
+/// surface; `Unlabeled`, `Unresolved` and `Invalid` keep unlabeled static
+/// variants and unrecovered or unrepresentable declarations explicit.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[non_exhaustive]
@@ -900,6 +901,21 @@ pub enum EnumSource {
         /// (e.g. `"account.move.line"`).
         parent_selection: String,
     },
+    /// Fixed variant keys in source order, where the source declares **no
+    /// label** (Rails: labels live in i18n files outside the model).
+    /// A label is never synthesized from the key, and a source-local
+    /// physical value (such as a Rails integer) is never stored here.
+    Unlabeled(Vec<String>),
+    /// The source declares an enum but its variant list was not
+    /// recovered. The string records why, or what was seen, verbatim
+    /// (e.g. `"not recovered"` or a constant name). Asserts no values:
+    /// distinct from `Static(vec![])` (a trusted empty set) and from a
+    /// field that is not an enum.
+    Unresolved(String),
+    /// The declaration cannot be represented faithfully (e.g. a duplicate
+    /// key); the string is the reason. Asserts no values. The declaration
+    /// stays visible so a consumer can refuse it.
+    Invalid(String),
 }
 
 /// A `store_accessor :col, %i[a b c], prefix: true` declaration — N

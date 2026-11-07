@@ -520,7 +520,7 @@ impl TripleEmitter {
             Triple::new(&enum_id, "rdf:type", "ogar:EnumDecl"),
             Triple::new(&enum_id, "ogar:column", enum_decl.column.clone()),
         ];
-        // EnumSource has three variants — emit different triples for each
+        // EnumSource has several variants — emit different triples for each
         // to preserve Odoo's `selection=lambda` and `selection_add=` cases
         // beyond the simple static list.
         match &enum_decl.source {
@@ -559,6 +559,35 @@ impl TripleEmitter {
                     triples.push(Triple::new(&variant_id, "ogar:variantName", name.clone()));
                     triples.push(Triple::new(&variant_id, "ogar:variantValue", value.clone()));
                 }
+            }
+            ogar_vocab::EnumSource::Unlabeled(keys) => {
+                triples.push(Triple::new(
+                    &enum_id,
+                    "ogar:enumSourceKind",
+                    "ogar:Unlabeled",
+                ));
+                for (i, name) in keys.iter().enumerate() {
+                    let variant_id = format!("{enum_id}#{i}");
+                    triples.push(Triple::new(&enum_id, "ogar:hasVariant", variant_id.clone()));
+                    triples.push(Triple::new(&variant_id, "rdf:type", "ogar:EnumVariant"));
+                    triples.push(Triple::new(&variant_id, "ogar:variantName", name.clone()));
+                }
+            }
+            ogar_vocab::EnumSource::Unresolved(why) => {
+                triples.push(Triple::new(
+                    &enum_id,
+                    "ogar:enumSourceKind",
+                    "ogar:Unresolved",
+                ));
+                triples.push(Triple::new(
+                    &enum_id,
+                    "ogar:enumUnresolvedReason",
+                    why.clone(),
+                ));
+            }
+            ogar_vocab::EnumSource::Invalid(why) => {
+                triples.push(Triple::new(&enum_id, "ogar:enumSourceKind", "ogar:Invalid"));
+                triples.push(Triple::new(&enum_id, "ogar:enumInvalidReason", why.clone()));
             }
             _ => {
                 // Future non_exhaustive EnumSource variants — emit a
@@ -1172,6 +1201,68 @@ mod tests {
                 && t.predicate == "rdf:type"
                 && t.object == "ogar:EnumDecl"
         }));
+    }
+
+    fn enum_triples(source: ogar_vocab::EnumSource) -> Vec<Triple> {
+        let mut class = sample_work_package();
+        let mut e = EnumDecl::new("status");
+        e.source = source;
+        class.enums.push(e);
+        TripleEmitter::emit_class(&class, "ogit-op")
+    }
+
+    #[test]
+    fn unlabeled_enum_emits_names_and_no_variant_value() {
+        let triples = enum_triples(ogar_vocab::EnumSource::Unlabeled(vec![
+            "open".into(),
+            "closed".into(),
+        ]));
+        assert!(
+            triples
+                .iter()
+                .any(|t| t.predicate == "ogar:enumSourceKind" && t.object == "ogar:Unlabeled")
+        );
+        for name in ["open", "closed"] {
+            assert!(
+                triples
+                    .iter()
+                    .any(|t| t.predicate == "ogar:variantName" && t.object == name)
+            );
+        }
+        assert_eq!(
+            triples
+                .iter()
+                .filter(|t| t.predicate == "ogar:variantValue")
+                .count(),
+            0
+        );
+    }
+
+    #[test]
+    fn unresolved_and_invalid_enums_emit_reason_and_no_variants() {
+        let unresolved = enum_triples(ogar_vocab::EnumSource::Unresolved("not recovered".into()));
+        assert!(
+            unresolved
+                .iter()
+                .any(|t| { t.predicate == "ogar:enumSourceKind" && t.object == "ogar:Unresolved" })
+        );
+        assert!(unresolved.iter().any(|t| {
+            t.predicate == "ogar:enumUnresolvedReason" && t.object == "not recovered"
+        }));
+        assert!(!unresolved.iter().any(|t| t.predicate == "ogar:hasVariant"));
+
+        let invalid = enum_triples(ogar_vocab::EnumSource::Invalid(
+            "duplicate enum key `a`".into(),
+        ));
+        assert!(
+            invalid
+                .iter()
+                .any(|t| t.predicate == "ogar:enumSourceKind" && t.object == "ogar:Invalid")
+        );
+        assert!(invalid.iter().any(|t| {
+            t.predicate == "ogar:enumInvalidReason" && t.object == "duplicate enum key `a`"
+        }));
+        assert!(!invalid.iter().any(|t| t.predicate == "ogar:hasVariant"));
     }
 
     #[test]
