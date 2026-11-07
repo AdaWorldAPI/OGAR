@@ -780,48 +780,38 @@ fn lift_attribute(a: &AttrDecl) -> Option<Attribute> {
 }
 
 /// Lift a Rails `enum :status, { open: 0, closed: 1 }` declaration
-/// to an OGAR [`EnumDecl`]. Returns `None` for non-Enum [`AttrDecl`]
-/// kinds, and for an enum that declares the same key twice (refused,
-/// like every other `lift_*` that cannot represent its input
-/// faithfully; the column is not claimed to be enum-backed with a
-/// guessed variant list).
+/// to an OGAR [`EnumDecl`]. Returns `None` only for non-Enum
+/// [`AttrDecl`] kinds; an enum declaration is never dropped.
 ///
-/// The ruby walker keeps the variant hash of the `enum :col, { k: n }`
-/// form in `AttrDecl::options`, in source order. This lift carries the
-/// **keys**, in that order, into [`EnumSource::Static`].
+/// The ruby walker keeps the variant hash in `AttrDecl::options`, in
+/// source order. The mapping is:
 ///
-/// - **Label slot.** [`EnumSource::Static`] holds `(key, label)` pairs
-///   and Rails source declares no label (labels live in i18n files
-///   outside the model). No "absent label" representation exists in
-///   the vocab, so the label is the key, the same self-label
-///   `ogar-from-schema` uses. The Rails integer is deliberately **not**
-///   put there: the emitter publishes the label slot as `variantValue`,
-///   and the integer is a source-local physical id, not a canonical
-///   value.
-/// - **Empty options.** The walker also yields empty options for forms
-///   whose variants it cannot see: the array form
-///   (`enum :status, [:a, :b]`), a constant or other dynamic argument,
-///   and a declaration with no variant argument at all. These are
-///   indistinguishable from each other here, and no [`EnumSource`]
-///   variant can say "variants not recoverable" (`Computed` needs a
-///   verbatim body the walker does not keep). The lift therefore
-///   returns `Static` with no variants, which means "the variant list
-///   was not recovered", not "the enum has no values". The kwarg form
-///   `enum status: { .. }` produces no `AttrDecl` at all and never
-///   reaches this function.
+/// - non-empty options, unique keys: [`EnumSource::Unlabeled`] with the
+///   keys in order. Rails declares no label, so none is synthesized, and
+///   the source integer (a physical id) is not carried.
+/// - a duplicate key: [`EnumSource::Invalid`] naming the first
+///   duplicated key, so the declaration stays visible and refusable.
+/// - empty options: [`EnumSource::Unresolved`]. The walker also yields
+///   empty options for the array form, a constant argument, and a
+///   missing argument, and cannot tell them apart; no values are claimed.
 fn lift_enum(a: &AttrDecl) -> Option<EnumDecl> {
     if !matches!(a.kind, AttrKind::Enum) {
         return None;
     }
-    let mut variants: Vec<(String, String)> = Vec::with_capacity(a.options.len());
-    for (key, _source_integer) in &a.options {
-        if variants.iter().any(|(seen, _)| seen == key) {
-            return None;
-        }
-        variants.push((key.clone(), key.clone()));
-    }
     let mut out = EnumDecl::new(&a.name);
-    out.source = EnumSource::Static(variants);
+    if a.options.is_empty() {
+        out.source = EnumSource::Unresolved("variant list not recovered by the Ruby walker".into());
+        return Some(out);
+    }
+    let mut keys: Vec<String> = Vec::with_capacity(a.options.len());
+    for (key, _source_integer) in &a.options {
+        if keys.iter().any(|seen| seen == key) {
+            out.source = EnumSource::Invalid(format!("duplicate enum key `{key}`"));
+            return Some(out);
+        }
+        keys.push(key.clone());
+    }
+    out.source = EnumSource::Unlabeled(keys);
     Some(out)
 }
 
@@ -1605,9 +1595,9 @@ mod tests {
         assert_eq!(class.enums.len(), 1);
         assert_eq!(class.enums[0].column, "status");
         // The fixture has no options (the walker's output for an enum whose
-        // variants it could not see), so the variant list stays empty. The
+        // variants it could not see), so the variant list is Unresolved. The
         // variant-bearing case is pinned by the `lift_enum_*` tests below.
-        assert!(matches!(class.enums[0].source, EnumSource::Static(ref v) if v.is_empty()));
+        assert!(matches!(class.enums[0].source, EnumSource::Unresolved(_)));
         // Attribute lifts to attributes slot only — enum does NOT
         // double-emit.
         assert_eq!(class.attributes.len(), 1);
@@ -1628,13 +1618,13 @@ mod tests {
 
     fn lifted_keys(a: &AttrDecl) -> Vec<String> {
         match lift_enum(a).expect("enum lifts").source {
-            EnumSource::Static(v) => v.into_iter().map(|(k, _)| k).collect(),
-            other => panic!("expected Static, got {other:?}"),
+            EnumSource::Unlabeled(v) => v,
+            other => panic!("expected Unlabeled, got {other:?}"),
         }
     }
 
     /// `enum :status, { shipped: 3, cancelled: 7 }` keeps both keys in
-    /// declared order (was `Static(empty)`: the lift never read options).
+    /// declared order .
     #[test]
     fn lift_enum_keeps_variant_keys_in_declared_order() {
         let a = enum_decl("status", &[("shipped", "3"), ("cancelled", "7")]);
@@ -1654,43 +1644,69 @@ mod tests {
         assert_eq!(ka, kb);
     }
 
-    /// Label convention: no label is declared in Rails source, so the label
-    /// is the key (as in `ogar-from-schema`). The Rails integer must never
-    /// appear in the label slot: the emitter publishes it as `variantValue`.
+    /// Unlabeled carries only the keys; the Rails integers appear nowhere
+    /// in the lifted declaration.
     #[test]
-    fn lift_enum_label_is_the_key_never_the_rails_integer() {
+    fn lift_enum_unlabeled_carries_keys_and_no_rails_integer() {
         let a = enum_decl("status", &[("shipped", "3"), ("cancelled", "7")]);
-        match lift_enum(&a).unwrap().source {
-            EnumSource::Static(v) => assert_eq!(
-                v,
-                [
-                    ("shipped".to_string(), "shipped".to_string()),
-                    ("cancelled".to_string(), "cancelled".to_string()),
-                ]
-            ),
-            other => panic!("expected Static, got {other:?}"),
-        }
+        let decl = lift_enum(&a).unwrap();
+        assert_eq!(
+            decl.source,
+            EnumSource::Unlabeled(vec!["shipped".to_string(), "cancelled".to_string()])
+        );
+        let dbg = format!("{decl:?}");
+        assert!(!dbg.contains('3') && !dbg.contains('7'), "{dbg}");
     }
 
-    /// A duplicate key is refused (`None`, like the other `lift_*` that cannot
-    /// represent their input), never collapsed or lifted with a guessed list.
+    /// A duplicate key is kept as an observable `Invalid` declaration on the
+    /// class, never silently dropped and never collapsed.
     #[test]
-    fn lift_enum_refuses_duplicate_key() {
+    fn lift_enum_duplicate_key_is_kept_as_invalid() {
         let a = enum_decl("status", &[("shipped", "3"), ("shipped", "7")]);
-        assert!(lift_enum(&a).is_none());
+        let decl = lift_enum(&a).expect("kept, not dropped");
+        match decl.source {
+            EnumSource::Invalid(ref why) => assert!(why.contains("shipped"), "{why}"),
+            other => panic!("expected Invalid, got {other:?}"),
+        }
         let mut m = Model::new("Order");
         m.attributes.push(a);
-        assert!(lift_model(&m).enums.is_empty());
+        let class = lift_model(&m);
+        assert_eq!(class.enums.len(), 1);
+        assert!(matches!(class.enums[0].source, EnumSource::Invalid(_)));
     }
 
     /// Empty options (array form, constant argument, no variant argument)
-    /// stay a key-less `Static`: no variant is invented, and no value is
-    /// claimed. Pins the documented limitation.
+    /// are `Unresolved`: no values are claimed, and it is not a trusted
+    /// empty `Static` set.
     #[test]
-    fn lift_enum_without_visible_variants_claims_no_values() {
+    fn lift_enum_without_visible_variants_is_unresolved_not_static() {
         let a = enum_decl("status", &[]);
-        assert!(lifted_keys(&a).is_empty());
-        assert_eq!(lift_enum(&a).unwrap().column, "status");
+        let decl = lift_enum(&a).unwrap();
+        assert_eq!(decl.column, "status");
+        assert!(matches!(decl.source, EnumSource::Unresolved(_)));
+        assert!(!matches!(decl.source, EnumSource::Static(_)));
+    }
+
+    /// Unlabeled, Unresolved and Static(empty) are three distinct states.
+    #[test]
+    fn lift_enum_states_are_distinguishable() {
+        let unlabeled = lift_enum(&enum_decl("s", &[("a", "0")])).unwrap().source;
+        let unresolved = lift_enum(&enum_decl("s", &[])).unwrap().source;
+        let static_empty = EnumSource::Static(Vec::new());
+        assert_ne!(unlabeled, unresolved);
+        assert_ne!(unlabeled, static_empty);
+        assert_ne!(unresolved, static_empty);
+    }
+
+    /// A non-Enum attribute still yields no enum declaration.
+    #[test]
+    fn lift_enum_non_enum_kind_returns_none() {
+        let a = AttrDecl {
+            kind: AttrKind::Attribute,
+            name: "age".to_string(),
+            options: vec![],
+        };
+        assert!(lift_enum(&a).is_none());
     }
 
     /// Ordinary attributes are unchanged and an enum-less class has no enums.

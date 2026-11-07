@@ -712,7 +712,31 @@ fn emit_field_enum(table: &str, enum_decl: &EnumDecl, out: &mut String) {
                 "DEFINE FIELD {column_ident} ON {table} TYPE string /* computed: {escaped} */;\n"
             ));
         }
-        // `EnumSource` is `#[non_exhaustive]` in `ogar-vocab`; the three arms
+        ogar_vocab::EnumSource::Unlabeled(keys) => {
+            // Keys are canonical; the source declares no label.
+            let variants = keys
+                .iter()
+                .map(|key| surreal_string_literal(key))
+                .collect::<Vec<_>>()
+                .join(", ");
+            out.push_str(&format!(
+                "DEFINE FIELD {column_ident} ON {table} TYPE string ASSERT $value IN [{variants}];\n"
+            ));
+        }
+        ogar_vocab::EnumSource::Unresolved(why) => {
+            // Enum declared, variants not recovered: never assert a value set.
+            let escaped = why.replace("*/", "* /");
+            out.push_str(&format!(
+                "DEFINE FIELD {column_ident} ON {table} TYPE string /* unresolved enum: {escaped} */;\n"
+            ));
+        }
+        ogar_vocab::EnumSource::Invalid(why) => {
+            let escaped = why.replace("*/", "* /");
+            out.push_str(&format!(
+                "DEFINE FIELD {column_ident} ON {table} TYPE string /* invalid enum: {escaped} */;\n"
+            ));
+        }
+        // `EnumSource` is `#[non_exhaustive]` in `ogar-vocab`; the arms
         // above cover every variant defined today. The wildcard exists only
         // so adding a variant in `ogar-vocab` produces a clean panic-on-first
         // -emit instead of a silent miscompile elsewhere.
@@ -939,6 +963,42 @@ mod tests {
             !ddl.contains("ASSERT $value IN ["),
             "computed enums shouldn't ASSERT on a static list, got: {ddl}"
         );
+    }
+
+    #[test]
+    fn emit_class_with_unlabeled_enum_asserts_the_keys() {
+        let mut c = Class::new("order");
+        let mut e = EnumDecl::new("status");
+        e.source = ogar_vocab::EnumSource::Unlabeled(vec!["shipped".into(), "cancelled".into()]);
+        c.enums.push(e);
+        let ddl = emit_surrealql_ddl(&[c]);
+        assert!(
+            ddl.contains("ASSERT $value IN ['shipped', 'cancelled']"),
+            "got: {ddl}"
+        );
+    }
+
+    #[test]
+    fn emit_class_with_unresolved_or_invalid_enum_never_asserts_values() {
+        let mut c = Class::new("order");
+        let mut u = EnumDecl::new("status");
+        u.source = ogar_vocab::EnumSource::Unresolved("not recovered */ x".into());
+        let mut i = EnumDecl::new("kind");
+        i.source = ogar_vocab::EnumSource::Invalid("duplicate enum key `a`".into());
+        c.enums.push(u);
+        c.enums.push(i);
+        let ddl = emit_surrealql_ddl(&[c]);
+        assert!(
+            ddl.contains("DEFINE FIELD status ON order TYPE string /* unresolved enum: not recovered * / x */;"),
+            "got: {ddl}"
+        );
+        assert!(
+            ddl.contains(
+                "DEFINE FIELD kind ON order TYPE string /* invalid enum: duplicate enum key `a` */;"
+            ),
+            "got: {ddl}"
+        );
+        assert!(!ddl.contains("ASSERT $value IN ["), "got: {ddl}");
     }
 
     #[test]
