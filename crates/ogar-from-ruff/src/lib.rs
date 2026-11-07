@@ -781,22 +781,47 @@ fn lift_attribute(a: &AttrDecl) -> Option<Attribute> {
 
 /// Lift a Rails `enum :status, { open: 0, closed: 1 }` declaration
 /// to an OGAR [`EnumDecl`]. Returns `None` for non-Enum [`AttrDecl`]
-/// kinds.
+/// kinds, and for an enum that declares the same key twice (refused,
+/// like every other `lift_*` that cannot represent its input
+/// faithfully; the column is not claimed to be enum-backed with a
+/// guessed variant list).
 ///
-/// `ruff_ruby_spo::walk` drops the variant-list hash on the floor
-/// (see the walker comment: "`enum :status, { active: 0 }` — 1 attr
-/// (skip Hash)"), so the lifted `EnumDecl::source` is always
-/// `EnumSource::Static(empty)` for Rails today. The column name is
-/// still useful — downstream consumers know "this column is
-/// enum-backed", even without the variant list. A future
-/// `ruff_ruby_spo` enrichment could pass the variants through
-/// `AttrDecl::options` and this lift would extend.
+/// The ruby walker keeps the variant hash of the `enum :col, { k: n }`
+/// form in `AttrDecl::options`, in source order. This lift carries the
+/// **keys**, in that order, into [`EnumSource::Static`].
+///
+/// - **Label slot.** [`EnumSource::Static`] holds `(key, label)` pairs
+///   and Rails source declares no label (labels live in i18n files
+///   outside the model). No "absent label" representation exists in
+///   the vocab, so the label is the key, the same self-label
+///   `ogar-from-schema` uses. The Rails integer is deliberately **not**
+///   put there: the emitter publishes the label slot as `variantValue`,
+///   and the integer is a source-local physical id, not a canonical
+///   value.
+/// - **Empty options.** The walker also yields empty options for forms
+///   whose variants it cannot see: the array form
+///   (`enum :status, [:a, :b]`), a constant or other dynamic argument,
+///   and a declaration with no variant argument at all. These are
+///   indistinguishable from each other here, and no [`EnumSource`]
+///   variant can say "variants not recoverable" (`Computed` needs a
+///   verbatim body the walker does not keep). The lift therefore
+///   returns `Static` with no variants, which means "the variant list
+///   was not recovered", not "the enum has no values". The kwarg form
+///   `enum status: { .. }` produces no `AttrDecl` at all and never
+///   reaches this function.
 fn lift_enum(a: &AttrDecl) -> Option<EnumDecl> {
     if !matches!(a.kind, AttrKind::Enum) {
         return None;
     }
+    let mut variants: Vec<(String, String)> = Vec::with_capacity(a.options.len());
+    for (key, _source_integer) in &a.options {
+        if variants.iter().any(|(seen, _)| seen == key) {
+            return None;
+        }
+        variants.push((key.clone(), key.clone()));
+    }
     let mut out = EnumDecl::new(&a.name);
-    out.source = EnumSource::Static(Vec::new());
+    out.source = EnumSource::Static(variants);
     Some(out)
 }
 
@@ -1579,12 +1604,110 @@ mod tests {
         // Enum lifts to enums slot only.
         assert_eq!(class.enums.len(), 1);
         assert_eq!(class.enums[0].column, "status");
+        // The fixture has no options (the walker's output for an enum whose
+        // variants it could not see), so the variant list stays empty. The
+        // variant-bearing case is pinned by the `lift_enum_*` tests below.
         assert!(matches!(class.enums[0].source, EnumSource::Static(ref v) if v.is_empty()));
         // Attribute lifts to attributes slot only — enum does NOT
         // double-emit.
         assert_eq!(class.attributes.len(), 1);
         assert_eq!(class.attributes[0].name, "age");
         assert!(!class.attributes.iter().any(|a| a.name == "status"));
+    }
+
+    fn enum_decl(name: &str, options: &[(&str, &str)]) -> AttrDecl {
+        AttrDecl {
+            kind: AttrKind::Enum,
+            name: name.to_string(),
+            options: options
+                .iter()
+                .map(|(k, v)| (k.to_string(), v.to_string()))
+                .collect(),
+        }
+    }
+
+    fn lifted_keys(a: &AttrDecl) -> Vec<String> {
+        match lift_enum(a).expect("enum lifts").source {
+            EnumSource::Static(v) => v.into_iter().map(|(k, _)| k).collect(),
+            other => panic!("expected Static, got {other:?}"),
+        }
+    }
+
+    /// `enum :status, { shipped: 3, cancelled: 7 }` keeps both keys in
+    /// declared order (was `Static(empty)`: the lift never read options).
+    #[test]
+    fn lift_enum_keeps_variant_keys_in_declared_order() {
+        let a = enum_decl("status", &[("shipped", "3"), ("cancelled", "7")]);
+        assert_eq!(lifted_keys(&a), ["shipped", "cancelled"]);
+    }
+
+    /// Reordering the declarations changes the order, not the key set.
+    #[test]
+    fn lift_enum_reorder_changes_order_not_key_identity() {
+        let a = enum_decl("status", &[("shipped", "3"), ("cancelled", "7")]);
+        let b = enum_decl("status", &[("cancelled", "7"), ("shipped", "3")]);
+        assert_eq!(lifted_keys(&b), ["cancelled", "shipped"]);
+        let mut ka = lifted_keys(&a);
+        let mut kb = lifted_keys(&b);
+        ka.sort();
+        kb.sort();
+        assert_eq!(ka, kb);
+    }
+
+    /// Label convention: no label is declared in Rails source, so the label
+    /// is the key (as in `ogar-from-schema`). The Rails integer must never
+    /// appear in the label slot: the emitter publishes it as `variantValue`.
+    #[test]
+    fn lift_enum_label_is_the_key_never_the_rails_integer() {
+        let a = enum_decl("status", &[("shipped", "3"), ("cancelled", "7")]);
+        match lift_enum(&a).unwrap().source {
+            EnumSource::Static(v) => assert_eq!(
+                v,
+                [
+                    ("shipped".to_string(), "shipped".to_string()),
+                    ("cancelled".to_string(), "cancelled".to_string()),
+                ]
+            ),
+            other => panic!("expected Static, got {other:?}"),
+        }
+    }
+
+    /// A duplicate key is refused (`None`, like the other `lift_*` that cannot
+    /// represent their input), never collapsed or lifted with a guessed list.
+    #[test]
+    fn lift_enum_refuses_duplicate_key() {
+        let a = enum_decl("status", &[("shipped", "3"), ("shipped", "7")]);
+        assert!(lift_enum(&a).is_none());
+        let mut m = Model::new("Order");
+        m.attributes.push(a);
+        assert!(lift_model(&m).enums.is_empty());
+    }
+
+    /// Empty options (array form, constant argument, no variant argument)
+    /// stay a key-less `Static`: no variant is invented, and no value is
+    /// claimed. Pins the documented limitation.
+    #[test]
+    fn lift_enum_without_visible_variants_claims_no_values() {
+        let a = enum_decl("status", &[]);
+        assert!(lifted_keys(&a).is_empty());
+        assert_eq!(lift_enum(&a).unwrap().column, "status");
+    }
+
+    /// Ordinary attributes are unchanged and an enum-less class has no enums.
+    #[test]
+    fn lift_enum_leaves_ordinary_attributes_and_enum_less_classes_alone() {
+        let mut m = Model::new("Order");
+        m.attributes.push(AttrDecl {
+            kind: AttrKind::Attribute,
+            name: "age".to_string(),
+            options: vec![("type".to_string(), "integer".to_string())],
+        });
+        let class = lift_model(&m);
+        assert!(class.enums.is_empty());
+        assert_eq!(class.attributes.len(), 1);
+        assert_eq!(class.attributes[0].name, "age");
+        assert_eq!(class.attributes[0].type_name.as_deref(), Some("integer"));
+        assert!(lift_enum(&m.attributes[0]).is_none());
     }
 
     /// **Codex P2 on #52** — block-form callbacks (`before_save { ... }`
