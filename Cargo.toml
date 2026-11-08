@@ -134,10 +134,13 @@ debug = 0
 
 # RustCrypto crates resolve to their AdaWorldAPI forks (fork-first policy).
 #
-# Each fork's default branch is a major version ahead of what this graph uses,
-# so every entry pins the fork commit whose Cargo.toml carries exactly the
-# version crates.io would have resolved; a patch whose version does not match
-# is silently unused. `docs/UPSTREAM-DEPS.md` lists the crates that have no
+# Internal pins are prohibited (2026-11-08): an entry floats on its fork's
+# default branch whenever that branch carries the version crates.io would
+# resolve (ecdsa, ed448-goldilocks). The rest still pin a commit, because their
+# fork's default branch is a semver-incompatible major ahead and a patch whose
+# version does not match is silently unused (the crate would then come from
+# crates.io). Each of those is unpinned by migrating its consumer to the new
+# major, not by editing this line. `docs/UPSTREAM-DEPS.md` lists the crates that have no
 # matching commit in their fork and therefore still come from crates.io.
 #
 # These patches apply to builds of THIS workspace only. A consumer (a2ui-rs,
@@ -145,7 +148,7 @@ debug = 0
 # repeats this block: cargo never applies a dependency's [patch] downstream.
 [patch.crates-io]
 # p256's ECDSA (ogar-oidc ES256).
-ecdsa = { git = "https://github.com/AdaWorldAPI/signatures", rev = "5595c3b1bfa14022b46ec3cc662a87e49b954266" }
+ecdsa = { git = "https://github.com/AdaWorldAPI/signatures", branch = "master" }
 # XChaCha20-Poly1305 (ndarray `encryption`, via ogar-encryption).
 chacha20poly1305 = { git = "https://github.com/AdaWorldAPI/AEADs", rev = "c5c199953aba561261bed1c55f62b9c19d0f49cf" }
 # The keystream comes from ndarray's own chacha20 0.9.1 fork, which adds an
@@ -155,7 +158,7 @@ chacha20 = { git = "https://github.com/AdaWorldAPI/ndarray", branch = "master" }
 poly1305 = { git = "https://github.com/AdaWorldAPI/universal-hashes", rev = "35de31af7396fe57fa28265e91532c816183c47f" }
 # Ed25519 (ndarray `encryption`) and X448's curve (elliptic-curves fork).
 curve25519-dalek = { git = "https://github.com/AdaWorldAPI/curve25519-dalek", rev = "5312a0311ec40df95be953eacfa8a11b9a34bc54" }
-ed448-goldilocks = { git = "https://github.com/AdaWorldAPI/elliptic-curves", rev = "f5cb30ebc9c2ccdbeb56965cf0c037e250b8f9c9" }
+ed448-goldilocks = { git = "https://github.com/AdaWorldAPI/elliptic-curves", branch = "master" }
 # ogar-auth's legacy 3DES-EDE2 / PBKDF1-MD5 transition.
 md-5 = { git = "https://github.com/AdaWorldAPI/hashes", rev = "026b0e81e90ba476a5d343a8e4efbc63b814737b" }
 des = { git = "https://github.com/AdaWorldAPI/block-ciphers", rev = "7de364ede310f1ea7080c99ddf1138aeb47f9a69" }
