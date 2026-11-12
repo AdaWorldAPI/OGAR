@@ -14,6 +14,9 @@
 //! | [`Table::Allowed`] | `ogit:allowed` tuple | src, verb, dst | src, verb, dst |
 //!
 //! - **Ids are row ordinals**, so the same OGIT tree always gives the same ids.
+//!   A different tree can give the same id a different meaning, so an id kept
+//!   outside this process must be stored with [`OgitTables::tree`], and read
+//!   back only against tables whose tree is the same.
 //! - **A table past 65,536 rows is refused** ([`LoadError::TooManyRows`])
 //!   rather than given a wider index.
 //! - **Names stay on this side.** The tables keep each table's names for
@@ -128,6 +131,34 @@ pub struct Unresolved {
     pub name: String,
 }
 
+/// Which OGIT tree a set of tables was read from: the git commit its
+/// checkout is at, when that can be read.
+///
+/// It names the commit, not the working tree: uncommitted edits to the files
+/// do not change it. It is read from `.git` without running git, so a tree
+/// that is not a checkout (an export, a tarball) has none.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
+pub struct TreeId {
+    commit: Option<String>,
+}
+
+impl TreeId {
+    /// The tree at `root`, which is unknown rather than an error when its
+    /// commit cannot be read.
+    #[must_use]
+    pub fn of(root: &Path) -> Self {
+        Self {
+            commit: checkout_commit(root),
+        }
+    }
+
+    /// The checkout's commit as lowercase hex, if it was read.
+    #[must_use]
+    pub fn commit(&self) -> Option<&str> {
+        self.commit.as_deref()
+    }
+}
+
 /// Why [`OgitTables::load`] failed.
 #[derive(Debug)]
 pub enum LoadError {
@@ -215,6 +246,7 @@ pub struct OgitTables {
     rejected: Vec<String>,
     duplicates: Vec<String>,
     unresolved: Vec<Unresolved>,
+    tree: TreeId,
 }
 
 impl OgitTables {
@@ -366,7 +398,15 @@ impl OgitTables {
             rejected,
             duplicates,
             unresolved,
+            tree: TreeId::of(root),
         })
+    }
+
+    /// The tree these tables were read from. Ids are row ordinals of that
+    /// tree: store it with any id kept outside this process.
+    #[must_use]
+    pub fn tree(&self) -> &TreeId {
+        &self.tree
     }
 
     /// How many rows `table` has.
@@ -552,6 +592,48 @@ fn ttl_files(root: &Path) -> io::Result<Vec<PathBuf>> {
     Ok(out)
 }
 
+/// The commit a checkout at `root` is on, from `.git` alone: `HEAD`, then the
+/// ref it names in the gitdir, the common dir (a worktree) or `packed-refs`.
+/// `.git` may be a file pointing at the gitdir (a submodule or worktree).
+fn checkout_commit(root: &Path) -> Option<String> {
+    let dot_git = root.join(".git");
+    let gitdir = if dot_git.is_file() {
+        let text = fs::read_to_string(&dot_git).ok()?;
+        root.join(text.trim().strip_prefix("gitdir:")?.trim())
+    } else {
+        dot_git
+    };
+    let text = fs::read_to_string(gitdir.join("HEAD")).ok()?;
+    let text = text.trim();
+    let Some(name) = text.strip_prefix("ref:").map(str::trim) else {
+        return hex_commit(text);
+    };
+    // A worktree keeps its refs in the common dir its gitdir points at.
+    let common = fs::read_to_string(gitdir.join("commondir"))
+        .ok()
+        .map(|c| gitdir.join(c.trim()));
+    [Some(&gitdir), common.as_ref()]
+        .into_iter()
+        .flatten()
+        .find_map(|dir| {
+            let loose = fs::read_to_string(dir.join(name)).ok();
+            let packed = || {
+                let packed = fs::read_to_string(dir.join("packed-refs")).ok()?;
+                packed.lines().find_map(|l| {
+                    let (sha, r) = l.split_once(' ')?;
+                    (r == name).then(|| sha.to_owned())
+                })
+            };
+            hex_commit(loose.or_else(packed)?.trim())
+        })
+}
+
+/// `s` as a commit id (40 or 64 hex digits), lowercased.
+fn hex_commit(s: &str) -> Option<String> {
+    ((s.len() == 40 || s.len() == 64) && s.bytes().all(|b| b.is_ascii_hexdigit()))
+        .then(|| s.to_ascii_lowercase())
+}
+
 fn relative(root: &Path, path: &Path) -> String {
     path.strip_prefix(root)
         .unwrap_or(path)
@@ -653,6 +735,75 @@ mod tests {
             Some(Kind::Attribute)
         );
         assert_eq!(kind_of(Path::new("ogit.ttl")), None);
+    }
+
+    /// A scratch directory, removed when dropped.
+    struct Scratch(PathBuf);
+
+    impl Scratch {
+        fn new(tag: &str) -> Self {
+            let dir = std::env::temp_dir().join(format!("ogit-tree-{tag}-{}", std::process::id()));
+            let _ = fs::remove_dir_all(&dir);
+            fs::create_dir_all(&dir).unwrap();
+            Scratch(dir)
+        }
+
+        fn write(&self, path: &str, text: &str) {
+            let file = self.0.join(path);
+            fs::create_dir_all(file.parent().unwrap()).unwrap();
+            fs::write(file, text).unwrap();
+        }
+    }
+
+    impl Drop for Scratch {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.0);
+        }
+    }
+
+    const SHA: &str = "0123456789abcdef0123456789abcdef01234567";
+    const OTHER: &str = "fedcba9876543210fedcba9876543210fedcba98";
+
+    #[test]
+    fn a_detached_head_is_the_commit() {
+        let s = Scratch::new("detached");
+        s.write(".git/HEAD", &format!("{}\n", SHA.to_uppercase()));
+        assert_eq!(TreeId::of(&s.0).commit(), Some(SHA));
+    }
+
+    #[test]
+    fn a_head_ref_is_resolved_loose_then_packed() {
+        let s = Scratch::new("ref");
+        s.write(".git/HEAD", "ref: refs/heads/main\n");
+        s.write(
+            ".git/packed-refs",
+            &format!("# pack-refs\n{OTHER} refs/heads/other\n{SHA} refs/heads/main\n"),
+        );
+        assert_eq!(TreeId::of(&s.0).commit(), Some(SHA));
+        s.write(".git/refs/heads/main", &format!("{OTHER}\n"));
+        assert_eq!(TreeId::of(&s.0).commit(), Some(OTHER), "a loose ref wins");
+    }
+
+    #[test]
+    fn a_git_file_points_at_the_gitdir_and_a_worktree_at_its_common_dir() {
+        let s = Scratch::new("gitfile");
+        s.write("tree/.git", "gitdir: ../meta/worktrees/w\n");
+        s.write("meta/worktrees/w/HEAD", "ref: refs/heads/topic\n");
+        s.write("meta/worktrees/w/commondir", "../..\n");
+        s.write("meta/refs/heads/topic", &format!("{SHA}\n"));
+        assert_eq!(TreeId::of(&s.0.join("tree")).commit(), Some(SHA));
+    }
+
+    #[test]
+    fn an_unreadable_commit_is_unknown_not_an_error() {
+        let s = Scratch::new("unknown");
+        assert_eq!(TreeId::of(&s.0), TreeId::default(), "no .git");
+        s.write(".git/HEAD", "ref: refs/heads/gone\n");
+        assert_eq!(TreeId::of(&s.0).commit(), None, "ref with no file");
+        s.write(".git/HEAD", "not a commit\n");
+        assert_eq!(TreeId::of(&s.0).commit(), None);
+        s.write(".git/HEAD", &format!("{}zz\n", &SHA[..38]));
+        assert_eq!(TreeId::of(&s.0).commit(), None, "right length, not hex");
     }
 
     #[test]
