@@ -29,8 +29,13 @@
 //! With the `ontology-cache` feature, `load_registry` is the Ontology cache
 //! itself: lance-graph-ontology's `OntologyRegistry`, loaded from the same tree
 //! and used as it is. It holds identity only, and only for names with a
-//! domain; these tables hold the rest. The plan is bardioc's
-//! `ONTOLOGY_CACHE_INTEGRATION_PLAN.md`.
+//! domain; these tables hold the rest.
+//!
+//! With the `quack` feature, `OgitBinder` is a Quack `Binder` over the
+//! tables: names are resolved to ids once, at bind time, and a query bound
+//! under one OGIT tree is refused against another.
+//!
+//! The plan is bardioc's `ONTOLOGY_CACHE_INTEGRATION_PLAN.md`.
 
 use std::collections::BTreeSet;
 use std::fmt;
@@ -41,6 +46,11 @@ use std::path::{Path, PathBuf};
 use ogar_from_schema::sgo::parse_verb;
 use ogar_from_schema::ttl::parse_all;
 use ogar_from_schema::{EntityDecl, TtlDeclaration};
+
+#[cfg(feature = "quack")]
+mod binder;
+#[cfg(feature = "quack")]
+pub use binder::OgitBinder;
 
 /// The most rows a `u16` row address can reach.
 pub const MAX_ROWS: usize = 1 << 16;

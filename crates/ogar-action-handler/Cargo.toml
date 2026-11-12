@@ -6,7 +6,7 @@ license.workspace = true
 repository.workspace = true
 authors.workspace = true
 rust-version.workspace = true
-description = "OGAR-native HIRO ActionHandler runtime — CapabilityExecutor impls (the B1 executor seam) over the action-ws protocol core in ogar-from-schema. The reference NativeCommandExecutor runs a capability's command via a local process; SSH/REST targets follow the same trait. rs-graph-llm's graph-flow-action provides the production executors. Also holds the OGIT tables HIRO validates against and, behind `ontology-cache`, the Ontology cache loader."
+description = "OGAR-native HIRO ActionHandler runtime — CapabilityExecutor impls (the B1 executor seam) over the action-ws protocol core in ogar-from-schema. The reference NativeCommandExecutor runs a capability's command via a local process; SSH/REST targets follow the same trait. rs-graph-llm's graph-flow-action provides the production executors. Also holds the OGIT tables HIRO validates against and, behind `ontology-cache`, the Ontology cache loader and, behind `quack`, the Quack binder over those tables."
 
 [features]
 default = []
@@ -15,6 +15,11 @@ default = []
 # lance-graph by git, which path-based consumers such as rs-graph-llm's
 # graph-flow-action-ogar do not need.
 ontology-cache = ["dep:lance-graph-ontology"]
+# The Quack binder over the OGIT tables (`ogit::OgitBinder`). Off by default for
+# the same reason as `ontology-cache`. mask-risc is the executor the bound
+# queries run on; the tests execute them, and its types appear beside Quack's
+# in any consumer that does the same.
+quack = ["dep:lance-graph-quack", "dep:lance-graph-mask-risc"]
 
 [dependencies]
 ogar-from-schema = { path = "../ogar-from-schema", features = ["serde"] }
@@ -25,6 +30,8 @@ ogar-vocab = { path = "../ogar-vocab" }
 # the pure lift; this crate does the `from_str`. (B2-lift.)
 serde_json = "1.0"
 lance-graph-ontology = { git = "https://github.com/AdaWorldAPI/lance-graph", branch = "main", optional = true }
+lance-graph-quack = { git = "https://github.com/AdaWorldAPI/lance-graph", branch = "main", optional = true }
+lance-graph-mask-risc = { git = "https://github.com/AdaWorldAPI/lance-graph", branch = "main", optional = true }
 
 [dev-dependencies]
 # Execution probe only: drives the executor from a *lifted* ActionDef
