@@ -50,12 +50,20 @@ pub struct VerbDecl {
 }
 
 /// Parse one SGO verb TTL file's bytes. Returns `None` when the file
-/// doesn't declare an `owl:ObjectProperty` subject.
+/// declares neither an `owl:ObjectProperty` subject nor an `rdfs:Class`
+/// whose `rdfs:subClassOf` is `ogit:Verb` (OGIT's WorkOrder verbs use the
+/// second form; an entity class has another parent, so it is not a verb).
 #[must_use]
 pub fn parse_verb(src: &str) -> Option<VerbDecl> {
     use crate::ttl::*;
     // Reuse the line-extractors from the ttl module via a narrow API.
-    if !src.contains("a owl:ObjectProperty") {
+    let masked = mask(src);
+    let mut types = declared_types(&masked);
+    let verb_class = || {
+        extract_token_value(src, "rdfs:subClassOf")
+            .is_some_and(|parent| parent.trim_end_matches('.').trim_end() == "ogit:Verb")
+    };
+    if !types.any(|ty| ty == "owl:ObjectProperty" || (ty == "rdfs:Class" && verb_class())) {
         return None;
     }
     let curie = find_subject_curie(src)?;
@@ -118,6 +126,44 @@ mod tests {
 
     fn verb_ttl(name: &str) -> String {
         crate::ogit_checkout::read(&format!("SGO/sgo/verbs/{name}.ttl"))
+    }
+
+    const PREFIXES: &str = "@prefix ogit: <http://www.purl.org/ogit/> .\n\
+        @prefix ogit.X: <http://www.purl.org/ogit/X/> .\n";
+
+    #[test]
+    fn a_verb_is_an_object_property_with_any_whitespace_after_a() {
+        let src = format!(
+            "{PREFIXES}\nogit.X:uses\n    a                   owl:ObjectProperty ;\n    \
+             rdfs:label \"uses\" .\n"
+        );
+        assert_eq!(parse_verb(&src).expect("parses").curie, "ogit.X:uses");
+    }
+
+    #[test]
+    fn a_verb_may_be_a_class_under_ogit_verb() {
+        // The WorkOrder form: `a rdfs:Class; rdfs:subClassOf ogit:Verb`.
+        let src = format!(
+            "{PREFIXES}\nogit.X:uses\n    a  rdfs:Class;\n    rdfs:subClassOf ogit:Verb;\n    \
+             rdfs:label \"uses\";\n    ogit:from-to (\n        \
+             [ ogit:from ogit.X:A ; ogit:to ogit.X:B ]\n    ) .\n"
+        );
+        let v = parse_verb(&src).expect("parses");
+        assert_eq!(
+            (v.curie.as_str(), v.label.as_str()),
+            ("ogit.X:uses", "uses")
+        );
+    }
+
+    #[test]
+    fn an_entity_class_is_not_a_verb() {
+        let src = format!(
+            "{PREFIXES}\nogit.X:Thing\n    a rdfs:Class;\n    rdfs:subClassOf ogit:Entity;\n    \
+             rdfs:label \"Thing\" .\n"
+        );
+        assert!(parse_verb(&src).is_none());
+        let bare = format!("{PREFIXES}\nogit.X:Thing\n    a rdfs:Class;\n    rdfs:label \"T\" .\n");
+        assert!(parse_verb(&bare).is_none());
     }
 
     #[test]

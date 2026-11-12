@@ -1,7 +1,7 @@
 //! The OGIT tables HIRO validates against, and the Ontology cache.
 //!
 //! [`OgitTables`] reads an OGIT tree once, through OGAR's own reader
-//! ([`parse_file`], [`parse_verb`]), into five tables. Every row is addressed
+//! ([`parse_all`], [`parse_verb`]), into five tables. Every row is addressed
 //! by a `u16`, and every column is a `u32` lane lent as a slice
 //! ([`OgitTables::lane`]), so a mask executor can read it without a copy.
 //!
@@ -36,7 +36,7 @@ use std::io;
 use std::path::{Path, PathBuf};
 
 use ogar_from_schema::sgo::parse_verb;
-use ogar_from_schema::ttl::parse_file;
+use ogar_from_schema::ttl::parse_all;
 use ogar_from_schema::{EntityDecl, TtlDeclaration};
 
 /// The most rows a `u16` row address can reach.
@@ -222,6 +222,8 @@ impl OgitTables {
     ///
     /// A file declares what its directory says: `entities/`, `verbs/` or
     /// `attributes/`, in any letter case. Other `.ttl` files are not read.
+    /// An `entities/` file's attribute declarations are read too; every
+    /// subject in a file counts.
     ///
     /// # Errors
     /// [`LoadError::Io`] if the tree does not read, and
@@ -244,17 +246,20 @@ impl OgitTables {
                     }
                     None => false,
                 },
-                Kind::Entity | Kind::Attribute => match (kind, parse_file(&src)) {
-                    (Kind::Entity, Some(TtlDeclaration::Entity(e))) => {
-                        entities.push(e);
-                        true
+                Kind::Entity | Kind::Attribute => {
+                    // A file may declare more than one subject; an entity
+                    // file can carry its own attributes.
+                    let mut any = false;
+                    for decl in parse_all(&src) {
+                        match (kind, decl) {
+                            (Kind::Entity, TtlDeclaration::Entity(e)) => entities.push(e),
+                            (_, TtlDeclaration::DatatypeAttribute(a)) => attributes.push(a.curie),
+                            _ => continue,
+                        }
+                        any = true;
                     }
-                    (Kind::Attribute, Some(TtlDeclaration::DatatypeAttribute(a))) => {
-                        attributes.push(a.curie);
-                        true
-                    }
-                    _ => false,
-                },
+                    any
+                }
             };
             if !accepted {
                 rejected.push(relative(root, &path));
