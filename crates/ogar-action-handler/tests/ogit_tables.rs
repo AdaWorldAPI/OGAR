@@ -21,16 +21,13 @@ fn id(i: usize) -> u16 {
     u16::try_from(i).expect("a u16 row")
 }
 
-/// Files OGAR's reader is known to reject; Bardioc-rs's codebook tracks the
-/// same set.
-const KNOWN_REJECTED: [&str; 6] = [
-    "NTO/CustomerSupport/",
-    "NTO/Mobile/",
-    "NTO/WorkOrder/verbs/",
-    "SGO/sgo/attributes/public.ttl",
-    "SGO/sgo/attributes/source.ttl",
-    "SGO/sgo/attributes/timeZone.ttl",
-];
+/// Files OGAR's reader is known to reject, as path prefixes inside the tree,
+/// each with why. None on OGIT cb94c6f: the reader once rejected the
+/// CustomerSupport and Mobile files, the WorkOrder verbs and three SGO
+/// attributes (column-aligned `a  rdfs:Class`, verbs declared as classes,
+/// a comment after a subject), all read now. A file that must stay rejected
+/// goes here, so only a new reject fails the test below.
+const KNOWN_REJECTED: [&str; 0] = [];
 
 fn strictly_increasing<T: PartialOrd + Debug>(what: &str, rows: &[T]) {
     if let Some(w) = rows.windows(2).find(|w| w[0] >= w[1]) {
@@ -79,6 +76,51 @@ fn the_reader_rejects_nothing_beyond_the_known_files() {
         "OGAR's reader rejects new files: {fresh:?}"
     );
     assert!(t.duplicates().is_empty(), "{:?}", t.duplicates());
+}
+
+/// Directories whose files the reader used to reject: the real tree yields no
+/// reject and no malformed reference from them. Each file below is read as the
+/// shape its directory names.
+#[test]
+fn the_files_the_reader_once_rejected_are_read() {
+    let t = tables();
+    for dir in [
+        "NTO/CustomerSupport/",
+        "NTO/Mobile/",
+        "NTO/WorkOrder/verbs/",
+        "SGO/sgo/attributes/",
+    ] {
+        let rejected: Vec<&String> = t.rejected().iter().filter(|f| f.starts_with(dir)).collect();
+        assert!(rejected.is_empty(), "{dir}: {rejected:?}");
+    }
+    assert!(t.type_id("ogit.CustomerSupport:Ticket").is_some());
+    assert!(t.attribute_id("ogit.Mobile:appVersion").is_some());
+    assert!(t.verb_id("ogit.WorkOrder:accessesPortal").is_some());
+    assert!(t.attribute_id("ogit:public").is_some());
+    // A comment after a subject is not part of its name (GeoProfile:isoCode).
+    assert!(t.attribute_id("ogit.GeoProfile:isoCode").is_some());
+    // No reference is a comment or list fragment.
+    let junk: Vec<_> = t
+        .unresolved()
+        .iter()
+        .filter(|u| u.name.contains(['#', '(', ')', '[', ']', '"']))
+        .collect();
+    assert!(junk.is_empty(), "{junk:?}");
+}
+
+#[test]
+fn the_tables_record_the_commit_of_their_tree() {
+    let t = tables();
+    // The checkout may be an export with no `.git`; when it has one, the id
+    // is a full commit, the same across loads.
+    if let Some(commit) = t.tree().commit() {
+        assert!(matches!(commit.len(), 40 | 64), "{commit}");
+        assert!(commit.bytes().all(|b| b.is_ascii_hexdigit()));
+    }
+    assert_eq!(
+        OgitTables::load(&ogit_checkout::root()).unwrap().tree(),
+        t.tree()
+    );
 }
 
 #[test]
