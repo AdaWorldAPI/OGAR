@@ -84,3 +84,12 @@ jobs:
       # pattern as the other feature steps.
       - name: cargo test -p ogar-action-handler --features ontology-cache
         run: cargo test -p ogar-action-handler --features ontology-cache
+      # Exercise the `quack` feature on ogar-action-handler — pulls in
+      # lance-graph-quack and lance-graph-mask-risc by git (and ndarray under
+      # mask-risc) for the Quack binder over the OGIT tables. Off by default
+      # for the same reason as `ontology-cache`. Then both features together,
+      # the one build that links both lance-graph crates' git copies.
+      - name: cargo test -p ogar-action-handler --features quack
+        run: cargo test -p ogar-action-handler --features quack
+      - name: cargo test -p ogar-action-handler --features ontology-cache,quack
+        run: cargo test -p ogar-action-handler --features ontology-cache,quack
