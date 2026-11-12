@@ -36,8 +36,8 @@
 //! ```
 //!
 //! [`ogit`] holds the OGIT tables HIRO validates against, read once from an
-//! OGIT tree, and, behind the `ontology-cache` feature, the Ontology cache
-//! loader.
+//! OGIT tree, behind the `ontology-cache` feature the Ontology cache loader,
+//! and behind the `quack` feature a Quack binder over those tables.
 
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
