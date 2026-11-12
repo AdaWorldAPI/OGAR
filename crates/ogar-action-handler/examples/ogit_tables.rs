@@ -34,7 +34,17 @@ fn main() -> ExitCode {
     }
     println!("domains\t{}", tables.domains().len());
     println!("rejected files\t{}", tables.rejected().len());
+    for file in tables.rejected() {
+        println!("  rejected\t{file}");
+    }
+    println!("duplicates\t{}", tables.duplicates().len());
+    for name in tables.duplicates() {
+        println!("  duplicate\t{name}");
+    }
     println!("unresolved references\t{}", tables.unresolved().len());
+    for u in tables.unresolved() {
+        println!("  unresolved\t{:?}\t{}\t{}", u.table, u.from, u.name);
+    }
     println!("load\t{:.1} ms", elapsed.as_secs_f64() * 1000.0);
     ExitCode::SUCCESS
 }
