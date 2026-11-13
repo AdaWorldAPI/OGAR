@@ -593,7 +593,7 @@ mod hotplug_tests {
     }
 
     /// The ERP table: `resolve_hotplug("erp-ledger", …)` is green and returns
-    /// the `erp_polyfill` seat row plus exactly the five capabilities.
+    /// the `erp_polyfill` seat row plus exactly the seven capabilities.
     #[test]
     fn erp_hotplug_resolves_vocab_and_actions() {
         let (concepts, caps) = resolve_hotplug(
@@ -610,11 +610,24 @@ mod hotplug_tests {
             caps,
             vec![
                 "create_entry",
+                "emit_row",
                 "mark_set",
                 "post_entry",
                 "read_entry",
+                "record_time_entry",
                 "set_const"
             ]
+        );
+    }
+
+    /// `billable_work_entry` (0x0103) gets no capability from the time-entry
+    /// rows: they sit on the seat, so other consumers that plug 0x0103 for a
+    /// reading are unaffected.
+    #[test]
+    fn billable_work_entry_still_answers_no_capabilities() {
+        assert_eq!(
+            resolve_hotplug("erp-ledger", &[crate::class_ids::BILLABLE_WORK_ENTRY], &[]),
+            Err(HotplugDrift::NoCapabilitiesFor(0x0103))
         );
     }
 
