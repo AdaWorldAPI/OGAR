@@ -46,6 +46,7 @@ pub mod recipe;
 /// minted `0x08XX` [`class_ids`] concept.
 pub mod capability_registry;
 pub mod document_actions;
+pub mod erp_actions;
 pub mod geo_actions;
 pub mod healthcare_actions;
 pub mod ocr_actions;
@@ -1280,6 +1281,16 @@ const CODEBOOK: &[(&str, u16)] = &[
     ("pricelist", 0x0209),
     ("pricelist_rule", 0x020A),
     ("unit_of_measure", 0x020B),
+    // Behaviour seat for the ERP consumer (erp-rs), NOT a business entity: per
+    // lance-graph plan `d-dt64-7-behaviour-addressing-registration-v1`
+    // decision D14'', a consumer registers behaviour lenses as `0xF###` in the
+    // low u16 under its own concept in the high u16; `0x020C` is that high
+    // half for erp-rs (first lens `0x020C_F000`, the ERP host-effect polyfill).
+    // Its `Class` (`erp_polyfill()`) is attribute-less and exists only because
+    // every codebook row must resolve in the class registry; no port alias and
+    // no OSB/Odoo model maps here. 5+3 codebook pass: not run; decided
+    // directly by the repository owner 2026-11-13.
+    ("erp_polyfill", 0x020C),
     // ── 0x03XX — Ontology domain: ZERO vocabulary rows BY DESIGN ──
     // Public OBO biomedical reference ontologies (MONDO disease · HPO
     // phenotype · Uberon anatomy · PATO quality · RO relations). Same posture
@@ -2164,6 +2175,19 @@ pub mod class_ids {
     /// `unit_of_measure` (`0x020B`) — measurement unit. OSB `UoM`, Odoo
     /// `uom.uom` (`qudt:Unit`).
     pub const UNIT_OF_MEASURE: u16 = 0x020B;
+    /// `erp_polyfill` (`0x020C`) — the ERP consumer's behaviour seat, not a
+    /// business entity. Per lance-graph plan
+    /// `d-dt64-7-behaviour-addressing-registration-v1` decision D14'', a
+    /// consumer registers behaviour lenses with `0xF###` on the right (low
+    /// u16) under its own concept on the left (high u16); `0x020C` is that
+    /// left side for the erp-rs consumer. Its first behaviour lens is
+    /// `0x020C_F000`: the ERP host-effect polyfill, words that name writes the
+    /// admitted algebra cannot express yet, registered in DT64 and applied by
+    /// the host. Its `Class` is attribute-less (a registry row, not an
+    /// entity); it has no port alias and no OSB/Odoo model maps to it.
+    /// 5+3 codebook pass: not run; decided directly by the repository owner
+    /// 2026-11-13.
+    pub const ERP_POLYFILL: u16 = 0x020C;
 
     // ── 0x04XX — Weather / Atmosphere domain ──
 
@@ -2536,6 +2560,7 @@ pub mod class_ids {
         ("pricelist", PRICELIST),
         ("pricelist_rule", PRICELIST_RULE),
         ("unit_of_measure", UNIT_OF_MEASURE),
+        ("erp_polyfill", ERP_POLYFILL),
         // 0x04XX — Weather / Atmosphere
         ("weather_cell", WEATHER_CELL),
         ("weather_static_cell", WEATHER_STATIC_CELL),
@@ -3488,6 +3513,7 @@ pub fn all_promoted_classes() -> Vec<Class> {
         pricelist(),
         pricelist_rule(),
         unit_of_measure(),
+        erp_polyfill(),
         // 0x07XX — OSINT arm: ZERO vocabulary rows BY DESIGN (operator
         // ruling 2026-07-02, corrects PR #145's hallucinated
         // `osint_system` / `osint_person` mints); no calls follow — OGAR
@@ -4485,6 +4511,20 @@ pub fn unit_of_measure() -> Class {
     let mut uom_type = Attribute::new("uom_type");
     uom_type.type_name = Some("string".to_string());
     c.attributes = vec![name, symbol, factor, uom_type];
+    c
+}
+
+/// `erp_polyfill` (`0x020C`) — the ERP consumer's behaviour seat.
+///
+/// Not a business entity: no attributes, no associations. The class exists
+/// so the seat resolves in the class registry like every other codebook row;
+/// what it carries is the capability table in [`erp_actions`].
+pub fn erp_polyfill() -> Class {
+    let mut c = Class::new("ErpPolyfill");
+    c.language = Language::Unknown;
+    c.canonical_concept = Some("erp_polyfill".to_string());
+    c.associations = Vec::new();
+    c.attributes = Vec::new();
     c
 }
 
@@ -6402,6 +6442,7 @@ mod tests {
             "pricelist",
             "pricelist_rule",
             "unit_of_measure",
+            "erp_polyfill",
         ] {
             let id = canonical_concept_id(commerce_concept)
                 .unwrap_or_else(|| panic!("{commerce_concept} missing from codebook"));
@@ -6691,7 +6732,7 @@ mod tests {
         );
         assert_eq!(concepts_in_domain(ConceptDomain::HR).count(), 4);
         assert_eq!(concepts_in_domain(ConceptDomain::Crm).count(), 15);
-        assert_eq!(concepts_in_domain(ConceptDomain::Commerce).count(), 11);
+        assert_eq!(concepts_in_domain(ConceptDomain::Commerce).count(), 12);
         assert_eq!(concepts_in_domain(ConceptDomain::ProjectMgmt).count(), 26);
         assert_eq!(concepts_in_domain(ConceptDomain::Anatomy).count(), 4);
         assert_eq!(concepts_in_domain(ConceptDomain::Auth).count(), 9);

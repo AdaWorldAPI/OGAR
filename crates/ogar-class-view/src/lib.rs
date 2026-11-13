@@ -105,6 +105,7 @@ use ogar_vocab::{
     directory_user,
     document,
     email,
+    erp_polyfill,
     examination,
     external_practice,
     group_membership,
@@ -234,6 +235,7 @@ fn all_canonical_classes() -> Vec<(&'static str, Class)> {
         ("pricelist", pricelist()),
         ("pricelist_rule", pricelist_rule()),
         ("unit_of_measure", unit_of_measure()),
+        ("erp_polyfill", erp_polyfill()),
         // ── 0x03XX — Ontology: NO registry rows, BY DESIGN ──
         // Plug-and-play (operator, 2026-08-31: the domain is reached
         // "via plug and play"). The 14 OBO concepts are minted in the
