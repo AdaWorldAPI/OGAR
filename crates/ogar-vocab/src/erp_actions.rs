@@ -16,6 +16,11 @@
 //! Odoo 19.0 (commit `9cd6f090`); it is not derived here. The evidence
 //! stays in the consumer repo and is never committed here.
 //!
+//! `record_time_entry` and `emit_row` belong to the time-entry slice. The
+//! entry itself is the shared concept `billable_work_entry` (`0x0103`), which
+//! the consumer plugs for its reading only; the capabilities stay on the
+//! seat, so `0x0103` keeps answering `NoCapabilitiesFor` for everyone else.
+//!
 //! # Why the subject is the seat, not `commercial_document`
 //!
 //! The subject is `erp_polyfill`, the ERP consumer's behaviour seat, and not
@@ -42,9 +47,11 @@ pub const ERP_ACTION_NAMES: &[&str] = &[
     "read_entry",
     "set_const",
     "mark_set",
+    "record_time_entry",
+    "emit_row",
 ];
 
-const _: () = assert!(ERP_ACTION_NAMES.len() == 5);
+const _: () = assert!(ERP_ACTION_NAMES.len() == 7);
 
 /// Build one [`ActionDef`] for an ERP capability. `subject_concept` MUST be
 /// a name minted in [`crate::class_ids::ALL`] under the `0x02XX` (Commerce)
@@ -77,6 +84,8 @@ fn erp_action_def(capability: &'static str, subject_concept: &'static str) -> Ac
 /// | `read_entry` | reads an entry's state |
 /// | `set_const` | host-effect word: target field := constant |
 /// | `mark_set` | host-effect word: target field := 1 |
+/// | `record_time_entry` | records one time entry (guards: in scope, fields present, quantity in range, employee known) |
+/// | `emit_row` | host-effect word: hand the entry's row to a named sink |
 #[must_use]
 pub fn erp_actions() -> Vec<ActionDef> {
     const SUBJECT_OF: &[(&str, &str)] = &[
@@ -85,6 +94,8 @@ pub fn erp_actions() -> Vec<ActionDef> {
         ("read_entry", "erp_polyfill"),
         ("set_const", "erp_polyfill"),
         ("mark_set", "erp_polyfill"),
+        ("record_time_entry", "erp_polyfill"),
+        ("emit_row", "erp_polyfill"),
     ];
     SUBJECT_OF
         .iter()
