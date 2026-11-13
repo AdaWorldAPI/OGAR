@@ -208,6 +208,11 @@ pub fn domain_tables() -> Vec<DomainTable> {
             expected_executors: crate::document_actions::DOCUMENT_EXPECTED_EXECUTORS,
             entries: document_entries,
         },
+        DomainTable {
+            domain: "erp",
+            expected_executors: crate::erp_actions::ERP_EXPECTED_EXECUTORS,
+            entries: erp_entries,
+        },
     ]
 }
 
@@ -416,6 +421,14 @@ fn document_entries() -> Vec<(String, u16)> {
     entries_from_actions(&crate::document_actions::document_actions())
 }
 
+/// ERP domain rows ([`crate::erp_actions`], the erp-rs table), derived
+/// through the same generic [`entries_from_actions`] path as the others. All
+/// rows bind the `erp_polyfill` behaviour seat (`0x020C`), never
+/// `commercial_document`.
+fn erp_entries() -> Vec<(String, u16)> {
+    entries_from_actions(&crate::erp_actions::erp_actions())
+}
+
 /// A green hot-plug resolution: the `(concept, classid)` vocab rows and the
 /// sorted capability names for exactly the hot-plugged ids.
 pub type HotplugActivation = (Vec<(&'static str, u16)>, Vec<String>);
@@ -577,6 +590,64 @@ mod hotplug_tests {
             ),
             Err(HotplugDrift::UnexpectedConsumer(_))
         ));
+    }
+
+    /// The ERP table: `resolve_hotplug("erp-ledger", …)` is green and returns
+    /// the `erp_polyfill` seat row plus exactly the five capabilities.
+    #[test]
+    fn erp_hotplug_resolves_vocab_and_actions() {
+        let (concepts, caps) = resolve_hotplug(
+            "erp-ledger",
+            crate::erp_actions::ERP_SUBJECT_CLASSIDS,
+            crate::erp_actions::ERP_ACTION_NAMES,
+        )
+        .expect("erp hot-plug drifted from the authoritative table");
+        assert_eq!(
+            concepts,
+            vec![("erp_polyfill", crate::class_ids::ERP_POLYFILL)]
+        );
+        assert_eq!(
+            caps,
+            vec![
+                "create_entry",
+                "mark_set",
+                "post_entry",
+                "read_entry",
+                "set_const"
+            ]
+        );
+    }
+
+    #[test]
+    fn erp_hotplug_wrong_consumer_and_coverage_drift_bang() {
+        let ids = crate::erp_actions::ERP_SUBJECT_CLASSIDS;
+        let names = crate::erp_actions::ERP_ACTION_NAMES;
+        assert!(matches!(
+            resolve_hotplug("medcare-rs", ids, names),
+            Err(HotplugDrift::UnexpectedConsumer(_))
+        ));
+        let mut missing = names.to_vec();
+        missing.pop();
+        assert!(matches!(
+            resolve_hotplug("erp-ledger", ids, &missing),
+            Err(HotplugDrift::Uncovered(_))
+        ));
+        let mut extra = names.to_vec();
+        extra.push("does_not_exist");
+        assert!(matches!(
+            resolve_hotplug("erp-ledger", ids, &extra),
+            Err(HotplugDrift::Undeclared(_))
+        ));
+    }
+
+    /// `commercial_document` (0x0202) stays reading-only canon storage for
+    /// other consumers: the ERP table puts no capability on it.
+    #[test]
+    fn commercial_document_still_answers_no_capabilities() {
+        assert_eq!(
+            resolve_hotplug("erp-ledger", &[crate::class_ids::COMMERCIAL_DOCUMENT], &[]),
+            Err(HotplugDrift::NoCapabilitiesFor(0x0202))
+        );
     }
 
     #[test]
