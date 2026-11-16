@@ -325,6 +325,39 @@ fn a_typed_query_is_admitted_on_its_own_tree_and_refused_on_another() {
 }
 
 #[test]
+fn an_uncommitted_edit_that_renumbers_ids_is_refused() {
+    let tree = Subset::new("renumber", Some(COMMIT_A));
+    let before = tree.load();
+    let control = tree.load();
+    let typed = machine_mandatory().bind_typed(&before.binder()).unwrap();
+    // Control: the unchanged tree reloads to the same mapping.
+    assert_eq!(before.codes_digest(), control.codes_digest());
+    assert!(typed.admit(&control.binder()).is_ok());
+
+    // An uncommitted entity that sorts before ogit.MARS:Machine shifts its id.
+    let dir = tree.0.join("NTO/MARS/entities");
+    fs::create_dir_all(&dir).unwrap();
+    let machine = fs::read_to_string(dir.join("Machine.ttl")).unwrap();
+    fs::write(
+        dir.join("Aaa.ttl"),
+        machine.replace("ogit.MARS:Machine", "ogit.MARS:Aaa"),
+    )
+    .unwrap();
+    let after = tree.load();
+    assert!(after.type_id("ogit.MARS:Aaa").is_some(), "the edit is read");
+    assert_eq!(before.tree(), after.tree(), "HEAD did not change");
+    assert_ne!(before.codes_digest(), after.codes_digest());
+    assert_ne!(
+        before.type_id("ogit.MARS:Machine"),
+        after.type_id("ogit.MARS:Machine")
+    );
+    assert_eq!(
+        typed.admit(&after.binder()).err(),
+        Some(BindError::StaleCodeSpace)
+    );
+}
+
+#[test]
 fn a_tree_with_no_commit_cannot_be_vouched_for() {
     let anon = Subset::new("anon", None).load();
     let a = Subset::new("anon-a", Some(COMMIT_A)).load();
@@ -345,15 +378,12 @@ fn a_tree_with_no_commit_cannot_be_vouched_for() {
     // And a held witness without a commit is admitted nowhere.
     let b = anon.binder();
     let id = b.table("type_attr").unwrap();
-    let held = anon.tree().clone();
+    let held = a.binder().code_witness(id, Col(0)).unwrap();
     assert_eq!(
         b.admit_code(id, Col(0), &held),
         Err(BindError::StaleCodeSpace)
     );
-    assert_eq!(
-        a.binder().admit_code(id, Col(0), &held),
-        Err(BindError::StaleCodeSpace)
-    );
+    assert_eq!(anon.binder().code_witness(id, Col(0)), None);
 }
 
 #[test]
