@@ -177,6 +177,7 @@ use ogar_vocab::{
     rom_image,
     skeleton,
     tax_policy,
+    tenant_credential,
     textline,
     treatment,
     typed_field,
@@ -310,6 +311,7 @@ fn all_canonical_classes() -> Vec<(&'static str, Class)> {
         ("directory_group", directory_group()),
         ("group_membership", group_membership()),
         ("license_assignment", license_assignment()),
+        ("tenant_credential", tenant_credential()),
         // ── 0x0DXX — HR cluster (closes the final 4-of-11 odoo-rs #14 gap) ──
         ("hr_employee", hr_employee()),
         ("hr_department", hr_department()),

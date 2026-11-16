@@ -1451,6 +1451,11 @@ const CODEBOOK: &[(&str, u16)] = &[
     ("directory_group", 0x0B07),
     ("group_membership", 0x0B08),
     ("license_assignment", 0x0B09),
+    // `tenant_credential` is one tenant-scoped source credential reference
+    // (a Graph application, an ARM workload, a collector) that the
+    // `ogar-secrets` broker releases to an authorized workload. The concept
+    // names the reference; the secret value is never a row.
+    ("tenant_credential", 0x0B0A),
     // ── 0x0CXX — Automation domain (the HIRO IT-automation stack) ──
     // One domain spanning the MARS structural CMDB (`ogit.MARS:` —
     // Application/Resource/Software/Machine, the A→R→S→M dependsOn backbone)
@@ -2396,6 +2401,9 @@ pub mod class_ids {
     /// `license_assignment` (`0x0B09`) — one observed license SKU assigned
     /// to one directory user.
     pub const LICENSE_ASSIGNMENT: u16 = 0x0B09;
+    /// `tenant_credential` (`0x0B0A`) — one tenant-scoped source credential
+    /// reference, released only by `ogar-secrets` to an authorized workload.
+    pub const TENANT_CREDENTIAL: u16 = 0x0B0A;
 
     // ── 0x0DXX — HR domain (employment / org / contracts) ──
 
@@ -2623,6 +2631,7 @@ pub mod class_ids {
         ("directory_group", DIRECTORY_GROUP),
         ("group_membership", GROUP_MEMBERSHIP),
         ("license_assignment", LICENSE_ASSIGNMENT),
+        ("tenant_credential", TENANT_CREDENTIAL),
         // 0x0DXX — HR (employment / org / contracts; closes the final
         // 4-of-11 cross-axis gap from odoo-rs PR #14)
         ("hr_employee", HR_EMPLOYEE),
@@ -3579,6 +3588,7 @@ pub fn all_promoted_classes() -> Vec<Class> {
         directory_group(),
         group_membership(),
         license_assignment(),
+        tenant_credential(),
         // 0x0DXX — HR arm
         hr_employee(),
         hr_department(),
@@ -5457,6 +5467,16 @@ pub fn license_assignment() -> Class {
     c
 }
 
+/// `tenant_credential` (`0x0B0A`) — one tenant-scoped source credential
+/// reference. Identity of the reference only; the value is never a column.
+#[must_use]
+pub fn tenant_credential() -> Class {
+    let mut c = Class::new("TenantCredential");
+    c.language = Language::Unknown;
+    c.canonical_concept = Some("tenant_credential".to_string());
+    c
+}
+
 // ─────────────────────────────────────────────────────────────────────
 // 0xC6XX — MMIO hardware-platform builders (C64 = founding tenant).
 // Kind-level containers only: registers/opcodes are content rows.
@@ -6573,6 +6593,7 @@ mod tests {
             ("directory_group", 0x0B07),
             ("group_membership", 0x0B08),
             ("license_assignment", 0x0B09),
+            ("tenant_credential", 0x0B0A),
         ] {
             assert_eq!(
                 canonical_concept_id(concept),
@@ -6581,9 +6602,9 @@ mod tests {
             );
             assert_eq!(canonical_concept_domain(id), ConceptDomain::Auth);
         }
-        // The four preminted profiles, `email`, and the four directory
-        // concepts are the Auth block today.
-        assert_eq!(concepts_in_domain(ConceptDomain::Auth).count(), 9);
+        // The four preminted profiles, `email`, the four directory
+        // concepts and `tenant_credential` are the Auth block today.
+        assert_eq!(concepts_in_domain(ConceptDomain::Auth).count(), 10);
     }
 
     #[test]
@@ -6735,7 +6756,7 @@ mod tests {
         assert_eq!(concepts_in_domain(ConceptDomain::Commerce).count(), 12);
         assert_eq!(concepts_in_domain(ConceptDomain::ProjectMgmt).count(), 26);
         assert_eq!(concepts_in_domain(ConceptDomain::Anatomy).count(), 4);
-        assert_eq!(concepts_in_domain(ConceptDomain::Auth).count(), 9);
+        assert_eq!(concepts_in_domain(ConceptDomain::Auth).count(), 10);
         assert_eq!(concepts_in_domain(ConceptDomain::Automation).count(), 9);
         // Every yielded Automation id really is in-domain (0x0CXX).
         let automation: Vec<&str> = concepts_in_domain(ConceptDomain::Automation)

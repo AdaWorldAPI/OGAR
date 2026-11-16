@@ -36,6 +36,7 @@ members = [
     "crates/ogar-flow-m365",
     "crates/ogar-r2il",
     "crates/ogar-rbac",
+    "crates/ogar-secrets",
     "crates/ogar-ro",
     "crates/ogar-elk",
     "crates/ogar-osm",

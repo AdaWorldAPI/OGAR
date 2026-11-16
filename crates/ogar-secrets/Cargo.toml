@@ -1,0 +1,24 @@
+[package]
+name = "ogar-secrets"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "OGAR's tenant credential broker contract: releases a tenant-scoped source credential only to a workload that ogar-rbac admitted on the tenant_credential concept. Provider-neutral and offline; a Vault adapter is a separate crate."
+
+[dependencies]
+# Identity proof: only `VerifiedLogin` (produced by `establish`) can start a grant.
+ogar-auth = { path = "../ogar-auth" }
+
+# The decision: `authorize_identity` over the app's `RbacBinding`.
+ogar-rbac = { path = "../ogar-rbac" }
+
+# The minted concept the grant is pinned to (`TENANT_CREDENTIAL`, 0x0B0A).
+ogar-vocab = { path = "../ogar-vocab" }
+
+# The zero-dep socket: `RbacBinding`, `ClassId`, `Operation`, `render_classid`.
+# Same git source and branch policy as ogar-rbac (floats on main).
+lance-graph-contract = { git = "https://github.com/AdaWorldAPI/lance-graph", branch = "main" }
+
+# The decision type (`MembershipDecision`, `AccessDecision`) the kernel returns.
+lance-graph-rbac = { git = "https://github.com/AdaWorldAPI/lance-graph", branch = "main" }
