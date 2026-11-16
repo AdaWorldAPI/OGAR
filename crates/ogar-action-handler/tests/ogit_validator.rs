@@ -775,3 +775,52 @@ fn a_call_allocates_nothing_when_it_accepts_and_only_its_result_when_it_rejects(
     }
     assert_eq!(allocs() - before, 1000, "one vector per unknown type");
 }
+
+#[test]
+fn system_keys_are_ignored_even_where_the_tree_does_not_declare_them() {
+    // The checkout declares all ten as SGO attributes, so there the filter
+    // never decides. A tree without the SGO core declares none of them.
+    let tree = Subset::new("system", Some(COMMIT_A)).load();
+    let mut v = Validator::new(&tree).unwrap();
+    for k in SYSTEM_KEYS {
+        assert_eq!(v.attribute_id(k), None, "{k}");
+    }
+    let mut keys = vec!["ogit/MARS/Machine/class"];
+    keys.extend(SYSTEM_KEYS);
+    assert_eq!(v.validate(&tree, "ogit.MARS:Machine", &keys).unwrap(), []);
+    // A key that merely looks like one is reported.
+    keys.push("ogit/_vv");
+    assert_eq!(
+        v.validate(&tree, "ogit.MARS:Machine", &keys).unwrap(),
+        [Violation::UnknownProperty("ogit/_vv")]
+    );
+}
+
+#[test]
+fn an_uncommitted_edit_that_changes_the_row_counts_is_refused() {
+    // Same commit and same names, one more row in `type_attr`: the buffers
+    // the validator prepared do not fit the edited tables.
+    let tree = Subset::new("resize", Some(COMMIT_A));
+    let before = tree.load();
+    let mut v = Validator::new(&before).unwrap();
+    let path = tree.0.join("NTO/MARS/entities/Machine.ttl");
+    let ttl = fs::read_to_string(&path).unwrap();
+    let edited = ttl.replacen(
+        "ogit:optional-attributes (",
+        "ogit:optional-attributes (\n            ogit.MARS.Machine:class",
+        1,
+    );
+    assert_ne!(ttl, edited);
+    fs::write(&path, edited).unwrap();
+    let after = tree.load();
+    assert_eq!(before.codes_digest(), after.codes_digest());
+    assert_eq!(before.tree(), after.tree());
+    assert_eq!(
+        after.rows(Table::TypeAttr),
+        before.rows(Table::TypeAttr) + 1
+    );
+    assert_eq!(
+        v.validate(&after, "ogit.MARS:Machine", &[]).unwrap_err(),
+        ValidatorError::StaleTables
+    );
+}
