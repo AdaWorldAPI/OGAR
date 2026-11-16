@@ -42,6 +42,8 @@
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
 
+#[cfg(feature = "dt64")]
+pub mod dt64;
 pub mod ogit;
 
 use std::process::Command;
