@@ -39,10 +39,15 @@
 //! OGIT tree, behind the `ontology-cache` feature the Ontology cache loader,
 //! and behind the `quack` feature a Quack binder and the Java validator's
 //! structural checks over those tables.
+//!
+//! [`dt64`] (feature `dt64`) registers the authoritative domain tables'
+//! `ActionDef`s as lance-graph DT64 methods.
 
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
 
+#[cfg(feature = "dt64")]
+pub mod dt64;
 pub mod ogit;
 
 use std::process::Command;

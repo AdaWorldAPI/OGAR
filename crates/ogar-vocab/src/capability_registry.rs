@@ -165,6 +165,12 @@ pub struct DomainTable {
     pub expected_executors: &'static [&'static str],
     /// `(capability, subject classid)` rows — the join surface.
     pub entries: fn() -> Vec<(String, u16)>,
+    /// The table's [`crate::ActionDef`]s, in declared order — the SAME rows
+    /// [`entries`](Self::entries) is derived from. A consumer that needs more
+    /// than the join (the `ogar-action-handler` `dt64` converter binds each
+    /// def as a DT64 method) reads them here instead of re-deriving the
+    /// table from the per-domain constructor.
+    pub actions: fn() -> Vec<crate::ActionDef>,
 }
 
 /// Every registered authoritative domain table. Append-only: a new domain
@@ -192,26 +198,31 @@ pub fn domain_tables() -> Vec<DomainTable> {
             domain: "ocr",
             expected_executors: crate::ocr_actions::OCR_EXPECTED_EXECUTORS,
             entries: ocr_entries,
+            actions: ocr_defs,
         },
         DomainTable {
             domain: "geo",
             expected_executors: crate::geo_actions::GEO_EXPECTED_EXECUTORS,
             entries: geo_entries,
+            actions: crate::geo_actions::geo_actions,
         },
         DomainTable {
             domain: "healthcare",
             expected_executors: crate::healthcare_actions::HEALTHCARE_EXPECTED_EXECUTORS,
             entries: healthcare_entries,
+            actions: crate::healthcare_actions::healthcare_actions,
         },
         DomainTable {
             domain: "document",
             expected_executors: crate::document_actions::DOCUMENT_EXPECTED_EXECUTORS,
             entries: document_entries,
+            actions: crate::document_actions::document_actions,
         },
         DomainTable {
             domain: "erp",
             expected_executors: crate::erp_actions::ERP_EXPECTED_EXECUTORS,
             entries: erp_entries,
+            actions: crate::erp_actions::erp_actions,
         },
     ]
 }
@@ -340,11 +351,16 @@ pub fn entries_from_actions(actions: &[crate::ActionDef]) -> Vec<(String, u16)> 
 /// path — the hand-authored [`crate::ocr_actions`] table is just one data
 /// source feeding the agnostic derive.
 fn ocr_entries() -> Vec<(String, u16)> {
-    let defs: Vec<crate::ActionDef> = crate::ocr_actions::ocr_actions()
+    entries_from_actions(&ocr_defs())
+}
+
+/// The OCR table's [`crate::ActionDef`]s (each [`crate::ocr_actions::OcrActionSpec`]
+/// unwrapped to its `def`), in table order.
+fn ocr_defs() -> Vec<crate::ActionDef> {
+    crate::ocr_actions::ocr_actions()
         .into_iter()
         .map(|spec| spec.def)
-        .collect();
-    entries_from_actions(&defs)
+        .collect()
 }
 
 /// Geo domain rows ([`crate::geo_actions`], the osm-soa-bake table), derived
@@ -808,6 +824,29 @@ mod hotplug_tests {
             resolved.len(),
             crate::healthcare_actions::HEALTHCARE_ACTION_NAMES.len()
         );
+    }
+
+    /// `DomainTable::actions` is the SAME rows `entries` is derived from:
+    /// same length, same predicates in the same order, for every table, and
+    /// the five tables carry 14 / 6 / 20 / 3 / 7 defs.
+    #[test]
+    fn every_domain_table_exposes_the_defs_its_entries_derive_from() {
+        let expected = [
+            ("ocr", 14),
+            ("geo", 6),
+            ("healthcare", 20),
+            ("document", 3),
+            ("erp", 7),
+        ];
+        let tables = domain_tables();
+        assert_eq!(tables.len(), expected.len());
+        for (table, (domain, count)) in tables.iter().zip(expected) {
+            assert_eq!(table.domain, domain);
+            let defs = (table.actions)();
+            assert_eq!(defs.len(), count, "{domain}");
+            let from_defs = entries_from_actions(&defs);
+            assert_eq!((table.entries)(), from_defs, "{domain}");
+        }
     }
 
     /// The hand-authored OCR table, routed through the generic derive, has

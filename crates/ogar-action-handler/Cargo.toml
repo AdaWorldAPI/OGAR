@@ -20,6 +20,10 @@ ontology-cache = ["dep:lance-graph-ontology"]
 # queries run on; the tests execute them, and its types appear beside Quack's
 # in any consumer that does the same.
 quack = ["dep:lance-graph-quack", "dep:lance-graph-mask-risc"]
+# The DT64 converter (`dt64`): registers a domain table's ActionDefs as the
+# methods of lance-graph-dt64's `BindStore`. Off by default for the same
+# reason as `ontology-cache`: it brings lance-graph by git.
+dt64 = ["dep:lance-graph-dt64", "dep:lance-graph-contract"]
 
 [[example]]
 name = "ogit_validator_bench"
@@ -36,8 +40,14 @@ serde_json = "1.0"
 lance-graph-ontology = { git = "https://github.com/AdaWorldAPI/lance-graph", branch = "main", optional = true }
 lance-graph-quack = { git = "https://github.com/AdaWorldAPI/lance-graph", branch = "main", optional = true }
 lance-graph-mask-risc = { git = "https://github.com/AdaWorldAPI/lance-graph", branch = "main", optional = true }
+lance-graph-dt64 = { git = "https://github.com/AdaWorldAPI/lance-graph", branch = "main", optional = true }
+lance-graph-contract = { git = "https://github.com/AdaWorldAPI/lance-graph", branch = "main", optional = true }
 
 [dev-dependencies]
+# The ClassView the `dt64` tests resolve fields through (OGAR's promoted
+# canonical concepts). A path crate; it takes lance-graph-contract from the
+# same git source as above, so the tree holds one contract.
+ogar-class-view = { path = "../ogar-class-view" }
 # Execution probe only: drives the executor from a *lifted* ActionDef
 # (harvest arm) rather than a hand-written capability, so the probe
 # witnesses lift -> dispatch. Not a runtime dependency of this crate.
