@@ -28,6 +28,7 @@ use serde_json::Value;
 use std::collections::HashSet;
 
 pub mod group;
+pub mod license;
 pub mod mailbox;
 
 /// Encoder schema version understood by this crate.
