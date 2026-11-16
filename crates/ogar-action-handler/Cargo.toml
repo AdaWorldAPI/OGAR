@@ -21,6 +21,10 @@ ontology-cache = ["dep:lance-graph-ontology"]
 # in any consumer that does the same.
 quack = ["dep:lance-graph-quack", "dep:lance-graph-mask-risc"]
 
+[[example]]
+name = "ogit_validator_bench"
+required-features = ["quack"]
+
 [dependencies]
 ogar-from-schema = { path = "../ogar-from-schema", features = ["serde"] }
 ogar-vocab = { path = "../ogar-vocab" }
