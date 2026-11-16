@@ -33,7 +33,8 @@
 //!
 //! With the `quack` feature, `OgitBinder` is a Quack `Binder` over the
 //! tables: names are resolved to ids once, at bind time, and a query bound
-//! under one OGIT tree is refused against another.
+//! under one OGIT tree is refused against another. `Validator` is the Java
+//! OGIT validator's structural checks over the same tables.
 //!
 //! The plan is bardioc's `ONTOLOGY_CACHE_INTEGRATION_PLAN.md`.
 
@@ -50,7 +51,11 @@ use ogar_from_schema::{EntityDecl, TtlDeclaration};
 #[cfg(feature = "quack")]
 mod binder;
 #[cfg(feature = "quack")]
+mod validator;
+#[cfg(feature = "quack")]
 pub use binder::{OgitBinder, OgitWitness};
+#[cfg(feature = "quack")]
+pub use validator::{SYSTEM_KEYS, Validator, ValidatorError, Violation, is_system_key};
 
 /// The most rows a `u16` row address can reach.
 pub const MAX_ROWS: usize = 1 << 16;
