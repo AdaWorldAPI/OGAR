@@ -37,7 +37,8 @@
 //!
 //! [`ogit`] holds the OGIT tables HIRO validates against, read once from an
 //! OGIT tree, behind the `ontology-cache` feature the Ontology cache loader,
-//! and behind the `quack` feature a Quack binder over those tables.
+//! and behind the `quack` feature a Quack binder and the Java validator's
+//! structural checks over those tables.
 //!
 //! [`dt64`] (feature `dt64`) registers the authoritative domain tables'
 //! `ActionDef`s as lance-graph DT64 methods.

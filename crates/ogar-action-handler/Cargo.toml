@@ -25,6 +25,10 @@ quack = ["dep:lance-graph-quack", "dep:lance-graph-mask-risc"]
 # reason as `ontology-cache`: it brings lance-graph by git.
 dt64 = ["dep:lance-graph-dt64", "dep:lance-graph-contract"]
 
+[[example]]
+name = "ogit_validator_bench"
+required-features = ["quack"]
+
 [dependencies]
 ogar-from-schema = { path = "../ogar-from-schema", features = ["serde"] }
 ogar-vocab = { path = "../ogar-vocab" }
