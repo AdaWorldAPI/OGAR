@@ -29,8 +29,13 @@
 //! With the `ontology-cache` feature, `load_registry` is the Ontology cache
 //! itself: lance-graph-ontology's `OntologyRegistry`, loaded from the same tree
 //! and used as it is. It holds identity only, and only for names with a
-//! domain; these tables hold the rest. The plan is bardioc's
-//! `ONTOLOGY_CACHE_INTEGRATION_PLAN.md`.
+//! domain; these tables hold the rest.
+//!
+//! With the `quack` feature, `OgitBinder` is a Quack `Binder` over the
+//! tables: names are resolved to ids once, at bind time, and a query bound
+//! under one OGIT tree is refused against another.
+//!
+//! The plan is bardioc's `ONTOLOGY_CACHE_INTEGRATION_PLAN.md`.
 
 use std::collections::BTreeSet;
 use std::fmt;
@@ -41,6 +46,11 @@ use std::path::{Path, PathBuf};
 use ogar_from_schema::sgo::parse_verb;
 use ogar_from_schema::ttl::parse_all;
 use ogar_from_schema::{EntityDecl, TtlDeclaration};
+
+#[cfg(feature = "quack")]
+mod binder;
+#[cfg(feature = "quack")]
+pub use binder::{OgitBinder, OgitWitness};
 
 /// The most rows a `u16` row address can reach.
 pub const MAX_ROWS: usize = 1 << 16;
@@ -227,6 +237,30 @@ impl Names {
     }
 }
 
+/// FNV-1a, 64 bit: a deterministic hash with no dependency.
+fn fnv1a(mut h: u64, bytes: &[u8]) -> u64 {
+    for &b in bytes {
+        h ^= u64::from(b);
+        h = h.wrapping_mul(0x0000_0100_0000_01b3);
+    }
+    h
+}
+
+/// Hashes every name a literal code resolves through, in id order, with a
+/// separator after each name and after each table.
+fn codes_digest(domains: &[String], types: &Names, attrs: &Names, verbs: &Names) -> u64 {
+    let mut h = 0xcbf2_9ce4_8422_2325;
+    let tables: [&[String]; 4] = [domains, &types.names, &attrs.names, &verbs.names];
+    for names in tables {
+        for name in names {
+            h = fnv1a(h, name.as_bytes());
+            h = fnv1a(h, &[0x00]);
+        }
+        h = fnv1a(h, &[0xff]);
+    }
+    h
+}
+
 /// The five OGIT tables, read once from an OGIT tree.
 #[derive(Debug, PartialEq, Eq)]
 pub struct OgitTables {
@@ -247,6 +281,7 @@ pub struct OgitTables {
     duplicates: Vec<String>,
     unresolved: Vec<Unresolved>,
     tree: TreeId,
+    codes: u64,
 }
 
 impl OgitTables {
@@ -381,6 +416,8 @@ impl OgitTables {
         check(Table::TypeAttr, type_attr_type.len())?;
         check(Table::Allowed, allowed.len())?;
 
+        let codes = codes_digest(&domains, &types, &attributes, &verbs);
+
         Ok(OgitTables {
             domains,
             types,
@@ -399,7 +436,19 @@ impl OgitTables {
             duplicates,
             unresolved,
             tree: TreeId::of(root),
+            codes,
         })
+    }
+
+    /// A digest of the name-to-id mapping these tables were loaded with: the
+    /// domain, type, attribute and verb names in id order.
+    ///
+    /// Two loads give the same value iff every type, attribute, verb and
+    /// domain name has the same id in both. Unlike [`OgitTables::tree`], it
+    /// sees uncommitted edits to the checkout that renumber rows.
+    #[must_use]
+    pub fn codes_digest(&self) -> u64 {
+        self.codes
     }
 
     /// The tree these tables were read from. Ids are row ordinals of that
@@ -710,6 +759,29 @@ mod tests {
             } if rows == MAX_ROWS + 1
         ));
         assert_eq!(row(MAX_ROWS - 1), u16::MAX);
+    }
+
+    #[test]
+    fn the_codes_digest_follows_the_name_to_id_mapping() {
+        let d = |s: &[&str]| s.iter().map(|x| (*x).to_owned()).collect::<Vec<_>>();
+        let n = |s: &[&str]| Names::new(d(s));
+        let base = codes_digest(&d(&["", "A"]), &n(&["x", "y"]), &n(&["a"]), &n(&["v"]));
+        let same = codes_digest(&d(&["", "A"]), &n(&["x", "y"]), &n(&["a"]), &n(&["v"]));
+        let swapped = codes_digest(&d(&["", "A"]), &n(&["y", "x"]), &n(&["a"]), &n(&["v"]));
+        let moved = codes_digest(&d(&["", "A"]), &n(&["x"]), &n(&["y", "a"]), &n(&["v"]));
+        assert_eq!(base, same);
+        assert_ne!(base, swapped);
+        assert_ne!(base, moved);
+    }
+
+    #[test]
+    fn two_loads_of_one_tree_share_a_codes_digest() {
+        let root = std::env::temp_dir().join(format!("ogar-digest-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(&root).unwrap();
+        let (a, b) = (OgitTables::load(&root), OgitTables::load(&root));
+        let _ = fs::remove_dir_all(&root);
+        assert_eq!(a.unwrap().codes_digest(), b.unwrap().codes_digest());
     }
 
     #[test]
