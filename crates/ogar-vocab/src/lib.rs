@@ -46,10 +46,15 @@ pub mod recipe;
 /// minted `0x08XX` [`class_ids`] concept.
 pub mod capability_registry;
 pub mod document_actions;
+/// The shared effect classification ([`effect_class::EffectClass`],
+/// [`effect_class::classify`]): what a behaviour does, so a population fold
+/// (F000) is never confused with a write. Lance-free.
+pub mod effect_class;
 pub mod erp_actions;
 pub mod geo_actions;
 pub mod healthcare_actions;
 pub mod ocr_actions;
+pub use effect_class::{EffectClass, classify as classify_effect};
 /// The general loose-ends-as-DTO residual ([`residual::ResidualRepresentation`])
 /// — the doctrine `{ surface, storage, handler, unresolved_reason }` slag shape.
 /// [`capability_registry::UnmintedRow`] is the capability-minting-specific

@@ -13,6 +13,7 @@ use ogar_action_handler::dt64::{
 use ogar_class_view::OgarClassView;
 use ogar_vocab::app::render_classid;
 use ogar_vocab::capability_registry::{DomainTable, HotplugDrift, domain_tables};
+use ogar_vocab::effect_class::{EffectClass, classify};
 use ogar_vocab::{ActionDef, KausalSpec, class_ids};
 
 const APP: u16 = 0x0001;
@@ -245,6 +246,112 @@ fn every_registered_method_resolves_under_its_class() {
     // Six classes carry behaviour: patient, diagnosis, lab_value, medication,
     // treatment, vital_sign (6) + osm_node, osm_way (2) + erp_polyfill (1).
     assert_eq!(store.class_count(), 9);
+}
+
+/// Every registered method carries an effect class, the 33 are all
+/// `ExternalHost` (name-only `External` defs), and no method whose class is not
+/// F000-admissible carries F000 effects: a write, lifecycle step, transaction
+/// or external call is dispatched through the gate, never run as a fold.
+#[test]
+fn every_registered_method_carries_an_effect_class_and_only_folds_may_carry_f000() {
+    let (store, outcomes) = census();
+    let view = OgarClassView::new();
+    let mut by_class: std::collections::BTreeMap<&str, usize> = Default::default();
+    for o in &outcomes {
+        for reg in o.registered() {
+            *by_class.entry(reg.effect.name()).or_default() += 1;
+            // The class is exactly what `classify` says of the def.
+            let def = (domain_tables()
+                .iter()
+                .find(|t| t.domain == o.domain)
+                .unwrap()
+                .actions)()
+            .into_iter()
+            .find(|d| d.identity == reg.identity)
+            .expect("identity finds the def");
+            assert_eq!(reg.effect, classify(&def), "{}", reg.capability);
+
+            let resolved = store.resolve(&view, reg.class, REV).unwrap();
+            let m = resolved.methods.iter().find(|m| m.id == reg.id).unwrap();
+            assert!(
+                reg.effect.is_f000_admissible() || m.effects.is_empty(),
+                "{} is {:?} and must not carry F000 effects",
+                reg.capability,
+                reg.effect
+            );
+            assert!(reg.effect.requires_gate(), "{}", reg.capability);
+        }
+    }
+    assert_eq!(
+        by_class,
+        std::collections::BTreeMap::from([("external_host", 33)])
+    );
+    // The 17 refused defs are classified by the same function: they name
+    // `writes`, so they are LifecycleWrite, not ExternalHost.
+    let refused: Vec<_> = domain_tables()
+        .iter()
+        .filter(|t| t.domain == "ocr" || t.domain == "document")
+        .flat_map(|t| (t.actions)())
+        .map(|d| classify(&d))
+        .collect();
+    assert_eq!(refused.len(), 17);
+    assert!(refused.iter().all(|c| *c == EffectClass::LifecycleWrite));
+}
+
+/// A def that names a write registers with its class and empty F000 effects:
+/// the class, not the converter, is what keeps a write off the lens.
+#[test]
+fn a_write_def_registers_as_a_lifecycle_write_with_no_f000_effects() {
+    fn writer() -> Vec<ActionDef> {
+        let mut d = ActionDef::new(
+            "ogit-ocr/textline::action_def::rewrite",
+            "rewrite",
+            "ogit-ocr/textline",
+        );
+        d.writes = vec!["text".into()];
+        let mut c = ActionDef::new(
+            "ogit-ocr/textline::action_def::after_commit_hook",
+            "after_commit_hook",
+            "ogit-ocr/textline",
+        );
+        // `OnCommit` alone is not commit-stage evidence (it also covers Odoo
+        // `@api.depends`), so this def stays Unresolved and needs the gate.
+        c.default_temporal = ogar_vocab::TemporalSpec::OnCommit;
+        let bare = ActionDef::new(
+            "ogit-ocr/textline::action_def::bare",
+            "bare",
+            "ogit-ocr/textline",
+        );
+        vec![d, c, bare]
+    }
+    fn none() -> Vec<(String, u16)> {
+        Vec::new()
+    }
+    let view = textline_view();
+    let table = DomainTable {
+        domain: "probe",
+        expected_executors: &[],
+        entries: none,
+        actions: writer,
+    };
+    let mut store = BindStore::new();
+    let out = register_domain_table(&mut store, &view, &table, APP, REV).unwrap();
+    let classes: Vec<_> = out.registered().map(|r| r.effect).collect();
+    assert_eq!(
+        classes,
+        vec![
+            EffectClass::LifecycleWrite,
+            EffectClass::Unresolved,
+            EffectClass::Unresolved
+        ]
+    );
+    let r = store
+        .resolve(&view, render_classid(APP, class_ids::TEXTLINE), REV)
+        .unwrap();
+    for (reg, m) in out.registered().zip(r.methods.iter()) {
+        assert!(reg.effect.requires_gate());
+        assert!(m.effects.is_empty(), "{}", reg.capability);
+    }
 }
 
 /// A method registered under one class is not found under another.
