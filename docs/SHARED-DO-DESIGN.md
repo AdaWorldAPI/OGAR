@@ -155,8 +155,12 @@ and keep `Verdict` where it is.
 
 Only what an `ActionDef` carries is read. First match wins:
 
-1. `on_enter` set, or `default_temporal == OnCommit`, or a `LifecycleTrigger`
-   of `after_commit` / `after_rollback`: `TransactionEffect`.
+1. `on_enter` set, or a `LifecycleTrigger` of `after_commit` /
+   `after_rollback`: `TransactionEffect`. `default_temporal == OnCommit` is
+   not evidence: `ogar-vocab` defines it as covering Odoo `@api.depends` too,
+   and odoo-rs sets it on every `_compute_` (`ogar_actions.rs:101`), so it
+   would class every derived value as commit-stage (zammad-rs session,
+   EXO-293). An Odoo compute with no declared writes is `Unresolved`.
 2. `kausal` is `Constrains`: `Validation`.
 3. `writes` or `calls` non-empty (`calls` is, by its doc, "lifecycle-mutator
    dispatch"): `FieldTransform` when the trigger is record-local (`Depends`,

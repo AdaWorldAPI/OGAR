@@ -31,10 +31,14 @@
 //! The rule, first match wins (mirroring zammad-rs `classify_class`, where the
 //! phase is the lifecycle event and `Binding` is the kind of body):
 //!
-//! 1. `on_enter` is set, or `default_temporal` is `OnCommit`, or `kausal` is a
-//!    `LifecycleTrigger` of `after_commit` / `after_rollback`:
-//!    [`EffectClass::TransactionEffect`]. The effect runs at or after the
-//!    commit crossing, ordered by it.
+//! 1. `on_enter` is set, or `kausal` is a `LifecycleTrigger` of
+//!    `after_commit` / `after_rollback`: [`EffectClass::TransactionEffect`].
+//!    The effect runs at or after the commit crossing, ordered by it.
+//!    `default_temporal == OnCommit` is NOT evidence of this: `ogar-vocab`
+//!    defines `OnCommit` as covering Odoo `@api.depends` too, and odoo-rs
+//!    sets it on every `_compute_` def (`od-ontology/src/ogar_actions.rs:101`),
+//!    so reading it would class every derived value as a commit-stage effect
+//!    (found by the zammad-rs session, EXO-293).
 //! 2. `kausal` is `Constrains` (declared by `ogar-vocab` to be "semantically a
 //!    VALIDATION"): [`EffectClass::Validation`].
 //! 3. The def mutates (`writes` or `calls` is non-empty; `calls` is by its own
@@ -58,7 +62,7 @@
 //! and neither is `ModalSpec::Atomic` (a retry/rollback mode, not a commit
 //! stage).
 
-use crate::{ActionDef, KausalSpec, TemporalSpec};
+use crate::{ActionDef, KausalSpec};
 
 /// What a behaviour is known to do, and so what may and may not be done with
 /// it. The classes and their meanings are zammad-rs
@@ -186,10 +190,7 @@ fn phase(def: &ActionDef) -> &str {
 #[must_use]
 pub fn classify(def: &ActionDef) -> EffectClass {
     let phase = phase(def);
-    if def.on_enter.is_some()
-        || def.default_temporal == TemporalSpec::OnCommit
-        || matches!(phase, "after_commit" | "after_rollback")
-    {
+    if def.on_enter.is_some() || matches!(phase, "after_commit" | "after_rollback") {
         return EffectClass::TransactionEffect;
     }
     if matches!(def.kausal, Some(KausalSpec::Constrains { .. })) {
@@ -284,13 +285,23 @@ mod tests {
         let mut d = with(KausalSpec::External);
         d.on_enter = Some(EnterEffect::transition("state", "1"));
         assert_eq!(classify(&d), EffectClass::TransactionEffect);
-        let mut d = def();
-        d.default_temporal = TemporalSpec::OnCommit;
-        assert_eq!(classify(&d), EffectClass::TransactionEffect);
         // It outranks a write.
         let mut d = lifecycle("after_commit");
         d.writes = vec!["a".into()];
         assert_eq!(classify(&d), EffectClass::TransactionEffect);
+    }
+
+    /// odoo-rs's `_compute_` shape: `Depends` + `OnCommit`. `OnCommit` is not
+    /// commit-stage evidence, so a compute is never a `TransactionEffect`.
+    #[test]
+    fn an_odoo_compute_is_not_a_transaction_effect() {
+        let mut d = with(KausalSpec::Depends {
+            paths: vec!["a".into()],
+        });
+        d.default_temporal = crate::TemporalSpec::OnCommit;
+        assert_eq!(classify(&d), EffectClass::Unresolved);
+        d.writes = vec!["b".into()];
+        assert_eq!(classify(&d), EffectClass::FieldTransform);
     }
 
     #[test]

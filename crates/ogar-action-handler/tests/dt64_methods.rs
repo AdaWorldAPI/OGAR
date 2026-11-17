@@ -314,9 +314,8 @@ fn a_write_def_registers_as_a_lifecycle_write_with_no_f000_effects() {
             "after_commit_hook",
             "ogit-ocr/textline",
         );
-        // A commit-stage def. (A `LifecycleTrigger` kausal would be refused by
-        // `method_of` as UnportedGuard, so the commit stage is stated as the
-        // def's temporal, which `classify` reads too.)
+        // `OnCommit` alone is not commit-stage evidence (it also covers Odoo
+        // `@api.depends`), so this def stays Unresolved and needs the gate.
         c.default_temporal = ogar_vocab::TemporalSpec::OnCommit;
         let bare = ActionDef::new(
             "ogit-ocr/textline::action_def::bare",
@@ -342,7 +341,7 @@ fn a_write_def_registers_as_a_lifecycle_write_with_no_f000_effects() {
         classes,
         vec![
             EffectClass::LifecycleWrite,
-            EffectClass::TransactionEffect,
+            EffectClass::Unresolved,
             EffectClass::Unresolved
         ]
     );
