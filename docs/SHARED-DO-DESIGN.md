@@ -165,6 +165,9 @@ Only what an `ActionDef` carries is read. First match wins:
 3. `writes` or `calls` non-empty (`calls` is, by its doc, "lifecycle-mutator
    dispatch"): `FieldTransform` when the trigger is record-local (`Depends`,
    `Onchange`, `before_*`, `after_initialize`), else `LifecycleWrite`.
+   Reading a non-empty `calls` as a write fails closed but overstates the
+   evidence (zammad-rs session, EXO-293): zammad-rs has no `calls` analogue and
+   checks for `.set(` in the lowered body instead.
 4. A `LifecycleTrigger` of `validate` / `*validation`: `Validation`.
 5. `kausal` is `External` with nothing else: `ExternalHost`.
 6. Otherwise `Unresolved`.
