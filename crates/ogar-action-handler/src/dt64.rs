@@ -66,6 +66,32 @@
 //! `on_enter` (a structured `field := value` transition) is refused as
 //! [`ConvertRefusal::UnportedEffect`] rather than dropped.
 //!
+//! ## Effect class
+//!
+//! Each [`Registered`] row also carries an [`EffectClass`]
+//! ([`ogar_vocab::effect_class::classify`], the shared classification of
+//! `docs/SHARED-DO-DESIGN.md`). A def is a write, a lifecycle step, a
+//! transaction or an external call, never a population fold, so the invariant
+//! is: **a method whose class is not F000-admissible
+//! ([`EffectClass::is_f000_admissible`]) has empty `effects`**; it is dispatched
+//! through the gate by `capability`. [`method_of`] always yields empty effects
+//! today, so the invariant holds for every row, and `tests/dt64_methods.rs`
+//! checks it so that the day a def does get F000 effects, its class is what
+//! allows it.
+//!
+//! The classes of OGAR's 50 `ActionDef`s (`classify` over the five
+//! authoritative tables): all 33 that register (geo 6, healthcare 20, erp 7)
+//! are `ExternalHost`: each is `kausal: External` and name-only (no `reads`,
+//! `writes`, `calls`, `raises` or `on_enter`), so the one thing the def
+//! evidences is an external cause with a body outside OGAR. The 17 refused
+//! defs (ocr 14, document 3) are `LifecycleWrite`: they are also
+//! `kausal: External`, but they name `writes`, which `classify` ranks above an
+//! external cause (caveat: for those two tables `writes` lists the
+//! capability's declared output names, not setter targets, so the class
+//! overstates a write; it still requires the gate, which is the safe side).
+//! Several of the 33 are in fact reads (`get_*`, `list_*`, `locate_*`); the
+//! def does not say so, so none is admitted as an F000 query.
+//!
 //! ## Immutability
 //!
 //! DT64 never rebinds a class (D5). A class is registered once with the
@@ -93,6 +119,7 @@ use lance_graph_dt64::{
 };
 use ogar_vocab::app::render_classid;
 use ogar_vocab::capability_registry::{DomainTable, HotplugDrift, resolve_hotplug};
+use ogar_vocab::effect_class::{EffectClass, classify};
 use ogar_vocab::{ActionDef, KausalSpec, canonical_concept_id};
 
 /// Which `ActionDef` field named a field the class does not have.
@@ -158,6 +185,10 @@ pub struct Registered {
     /// `ActionDef::identity`, which finds the def (its `writes`, `calls`,
     /// `raises`, statem carriers).
     pub identity: String,
+    /// What the def is known to do, from [`ogar_vocab::effect_class::classify`].
+    /// A class for which [`EffectClass::requires_gate`] holds is never an F000
+    /// method and goes to the gate (`commit_via`) as an `ActionInvocation`.
+    pub effect: EffectClass,
 }
 
 /// One def's outcome, in table order.
@@ -399,6 +430,7 @@ pub fn register_domain_table<V: ClassView + ?Sized>(
                     class: render_classid(app, concept),
                     capability: def.predicate.clone(),
                     identity: def.identity.clone(),
+                    effect: classify(def),
                 })
             }
             Err(refusal) => Err(refusal),
