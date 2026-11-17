@@ -226,9 +226,15 @@ on the lance-graph branch `vrl-recipe`.
 | Zero copy | Lanes are borrowed through one `LaneBinding::borrow_all` check, never copied; a row value is read in place | Done (`lib.rs:294-325`, `Rows::get` `:505`) |
 | SIMD stride | All computation is mask-risc on `ndarray::simd`, tile by tile (`TILE_WORDS = 256`, measured; strided kernels exist) | Done, inherited from mask-risc (`exec.rs:101-116`, `:524-543`) |
 | Late materialisation | Folds (`Count`, `Sum`) build no row; rows are a positional sink (kept mask, then a `u32` position table) built only on demand | Done (`lib.rs:404-432`) |
-| No allocation on the accepting path | Section 6 | One per-terminal lane `Vec` left (`lib.rs:302`); the probe's author has offered a fixed array |
-| Polyfill only | A recipe lowers to frozen `F000` words (`IntEqual`, `AND`/`IntAnd` + `NOT`, `COUNT`/`PopCount`, `SUM`) and runs through `lance-graph-r2il` `prepare` / `run` (`prepare_gated` for WHEN). No `dt64::vrl` module, no second kernel; materialising rows is a sink, not a word | Open: the probe builds a mask-risc `Program` directly (`lib.rs:436-473`). Asked on EXO-290 |
+| No allocation on the accepting path | Section 6 | Done at #2116 head `16091fbe9`: a fixed `[LaneRef; 16]` (`MAX_READS`), a program prepared once per row count, `run_into` over caller-owned scratch and output; measured 0 bytes and 0 calls at 64 to 65,536 rows |
+| Polyfill only | Computation never leaves the SIMD polyfill (`ndarray::simd`, through mask-risc); no intrinsics, kernel or `dt64::vrl` module of its own. The execution path is the consumer's own prepared mask-risc program. The `F000` words are the inspectable vocabulary of the same recipe, checked by a parity test through `lance-graph-r2il` `run`, not the hot path: r2il's own doc says so (`binding.rs:6-10`, D-DYNBAG §20), and `FoldDialect` builds its `Vec<MaskOp>` while running, which would break the allocation rule | SIMD: done. r2il parity test: proposed by the #2116 session (EXO-290). Making r2il the execution path would reverse §20 and is not proposed |
 | Work stealing | If added, it belongs to the one shared path at the tile level (tiles are independent: `Count` / `Sum` add up, `Keep` writes separate mask words), never to VRL. Threshold measured first; bit-for-bit parity with the serial run; a fixed scratch per worker | Open: `execute_into` is serial. Asked on EXO-290 |
+
+Strided records: mask-risc reaches records in place through `LaneRef::Strided`
+with `u32` predicates only (`EqU32Strided`, `NeU32Strided`); there is no
+strided `i32` compare. A WHEN over 512-byte records read in place would need
+one, in mask-risc and `ndarray` first. With dense lanes, as today, there is no
+gap.
 
 VRL stays read-only for good. DO adds computed values only as F000 folds and
 calls only through the gate; no DO effect type is added to VRL.
@@ -236,8 +242,8 @@ calls only through the gate; no DO effect type is added to VRL.
 ## 8. Board
 
 - OGAR design issue: EXO-289 (P-EXO-13), related to EXO-245.
-- lance-graph asks (P-EXO-10): EXO-290 (VRL through the polyfill, parallel
-  tiles), EXO-291 (is `commit_via` + `ActionInvocation` the only carrier for
+- lance-graph asks (P-EXO-10): EXO-290 (r2il parity test for the VRL recipe,
+  parallel tiles in mask-risc), EXO-291 (is `commit_via` + `ActionInvocation` the only carrier for
   calls; call parameters; effect class on the binding), EXO-292 (R7: Quack
   `Draft` ranges and grouped folds).
 - Decision B (validity plane) is posted by the #2116 session.
