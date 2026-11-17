@@ -214,3 +214,30 @@ and `EffectClass::ALL` is a fixed `[EffectClass; 8]`. Registration
 (`register_domain_table`) allocates, and is cold by design; the DT64 hot
 paths (`prepare_native` / `run_native`) allocate nothing after `prepare`
 (zammad-rs `exec.rs:187`, "Allocates nothing; reads only the lanes").
+
+## 7. Execution shape for VRL and DO folds (polyfill only)
+
+Every WHEN recipe and every F000 DO fold runs in one shape, through one path.
+What #2116's probe already does is checked against `crates/vrl-recipe-probe/src/lib.rs`
+on the lance-graph branch `vrl-recipe`.
+
+| Property | Rule | Status in #2116 |
+|---|---|---|
+| Zero copy | Lanes are borrowed through one `LaneBinding::borrow_all` check, never copied; a row value is read in place | Done (`lib.rs:294-325`, `Rows::get` `:505`) |
+| SIMD stride | All computation is mask-risc on `ndarray::simd`, tile by tile (`TILE_WORDS = 256`, measured; strided kernels exist) | Done, inherited from mask-risc (`exec.rs:101-116`, `:524-543`) |
+| Late materialisation | Folds (`Count`, `Sum`) build no row; rows are a positional sink (kept mask, then a `u32` position table) built only on demand | Done (`lib.rs:404-432`) |
+| No allocation on the accepting path | Section 6 | One per-terminal lane `Vec` left (`lib.rs:302`); the probe's author has offered a fixed array |
+| Polyfill only | A recipe lowers to frozen `F000` words (`IntEqual`, `AND`/`IntAnd` + `NOT`, `COUNT`/`PopCount`, `SUM`) and runs through `lance-graph-r2il` `prepare` / `run` (`prepare_gated` for WHEN). No `dt64::vrl` module, no second kernel; materialising rows is a sink, not a word | Open: the probe builds a mask-risc `Program` directly (`lib.rs:436-473`). Asked on EXO-290 |
+| Work stealing | If added, it belongs to the one shared path at the tile level (tiles are independent: `Count` / `Sum` add up, `Keep` writes separate mask words), never to VRL. Threshold measured first; bit-for-bit parity with the serial run; a fixed scratch per worker | Open: `execute_into` is serial. Asked on EXO-290 |
+
+VRL stays read-only for good. DO adds computed values only as F000 folds and
+calls only through the gate; no DO effect type is added to VRL.
+
+## 8. Board
+
+- OGAR design issue: EXO-289 (P-EXO-13), related to EXO-245.
+- lance-graph asks (P-EXO-10): EXO-290 (VRL through the polyfill, parallel
+  tiles), EXO-291 (is `commit_via` + `ActionInvocation` the only carrier for
+  calls; call parameters; effect class on the binding), EXO-292 (R7: Quack
+  `Draft` ranges and grouped folds).
+- Decision B (validity plane) is posted by the #2116 session.
