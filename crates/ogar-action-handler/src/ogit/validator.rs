@@ -53,7 +53,11 @@
 //! tables of any other tree, or of the same commit with other names or sizes,
 //! with [`ValidatorError::StaleTables`]. Tables whose commit cannot be read
 //! cannot be vouched for and give [`ValidatorError::Unwitnessed`]: the check
-//! fails closed, as the binder does.
+//! fails closed, as the binder does. The type's row range is also checked
+//! against the supplied tables' `type` lane on every call (O(1), see
+//! [`TypeRows`]), because an uncommitted edit can move rows between types
+//! and keep the commit, the digest and every row count: such tables give
+//! [`ValidatorError::StaleTables`] too.
 //!
 //! # Zero copy and allocation
 //!
@@ -68,8 +72,12 @@
 //!
 //! `TYPE` and `PRESENT` are caller-owned parameter planes over the `type` and
 //! `attribute` tables, one bit set per call and cleared after; they are the
-//! resident foreign planes `Filter::Semijoin` requires. The three `type_attr`
-//! lanes are lent from the tables as `LaneRef::U32`. The scratch, the planes
+//! resident foreign planes `Filter::Semijoin` requires. The program runs over
+//! one type's rows, not the whole table: `type_attr` is written type by type,
+//! and [`TypeRows`] (counted once per tree with Quack's `count_by`) gives each
+//! type's `[start, end)` as the executor's row extent. The `TYPE` semijoin
+//! stays in the program, so a run over a wider extent gives the same rows. The
+//! three `type_attr` lanes are lent from the tables as `LaneRef::U32`. The scratch, the planes
 //! and the result mask are allocated when the validator is made. A call that
 //! finds no violation allocates nothing; one that does allocates its result
 //! vector.
@@ -84,7 +92,7 @@ use lance_graph_mask_risc::{
 use lance_graph_quack::bind::{Binder, CodeWitness, TableId};
 use lance_graph_quack::{Agg, Cmp, Col, Filter, ForeignPlane, Query, lower};
 
-use super::{AttrId, Flag, OgitTables, OgitWitness, Table, TypeId};
+use super::{AttrId, Flag, OgitTables, OgitWitness, Table, TypeId, TypeRows};
 
 /// The keys HIRO injects on every vertex and the ontology does not declare:
 /// `OntologyLoader.SYSTEM_PROPERTY_KEYS`, `OntologyLoader.java:117-128`.
@@ -200,7 +208,12 @@ pub struct Validator {
     /// `PRESENT`: a bit over `attribute` per non-blank key of the call.
     present_plane: Vec<u64>,
     /// The mask the program writes: the missing mandatory rows of `type_attr`.
+    /// Only the rows of the type last run hold bits; see [`Validator::run`].
     missing: Vec<u64>,
+    /// The rows of `type_attr` per type, counted once with `count_by`.
+    rows: TypeRows,
+    /// The row range the last run wrote into `missing`.
+    dirty: std::ops::Range<usize>,
     types: HashMap<Box<str>, u16>,
     attributes: HashMap<Box<str>, u16>,
     /// Each attribute's JanusGraph key, by id.
@@ -288,6 +301,10 @@ impl Validator {
         };
         let program = lower(&query).map_err(|e| ValidatorError::Prepare(format!("{e:?}")))?;
         let sizes = Sizes::of(tables);
+        let rows = TypeRows::new(tables, Table::TypeAttr).map_err(|e| match e {
+            super::TypeRowsError::Unwitnessed => ValidatorError::Unwitnessed,
+            e => ValidatorError::Prepare(e.to_string()),
+        })?;
         let scratch = Scratch::for_program(&program, sizes.type_attr)
             .map_err(|e| ValidatorError::Prepare(format!("{e:?}")))?;
 
@@ -325,6 +342,8 @@ impl Validator {
             type_plane: vec![0; words_for(sizes.types)],
             present_plane: vec![0; words_for(sizes.attributes)],
             missing: vec![0; words_for(sizes.type_attr)],
+            rows,
+            dirty: 0..0,
             types,
             attributes,
             keys,
@@ -395,8 +414,29 @@ impl Validator {
     }
 
     /// Runs the program for the type in `TYPE` and the attributes in
-    /// `PRESENT`; the missing rows land in `self.missing`.
-    fn run(&mut self, tables: &OgitTables) -> Result<(), ValidatorError> {
+    /// `PRESENT`, over the rows of `ty` alone; the missing rows land in
+    /// `self.missing`.
+    ///
+    /// The type's rows are one contiguous extent, so the executor visits only
+    /// them. A partial extent writes only its own bits and leaves the rest of
+    /// the result as it was, so the words the previous run wrote are cleared
+    /// first: the mask then holds this type's rows and nothing else, as a scan
+    /// of the whole table gives.
+    fn run(&mut self, tables: &OgitTables, ty: TypeId) -> Result<(), ValidatorError> {
+        // Bound to the supplied tables' key lane, not only to their witness
+        // and sizes: an edit can move rows between types and change neither.
+        let extent = self
+            .rows
+            .range_in_lane(tables, ty)
+            .map_err(|_| ValidatorError::StaleTables)?;
+        let stale = self.dirty.clone();
+        if !stale.is_empty() {
+            self.missing[stale.start / 64..=(stale.end - 1) / 64].fill(0);
+        }
+        self.dirty = extent.clone();
+        if extent.is_empty() {
+            return Ok(());
+        }
         let [ty, attr, flag] = self.lanes(tables);
         let lanes = [LaneRef::U32(ty), LaneRef::U32(attr), LaneRef::U32(flag)];
         let planes = Planes {
@@ -424,7 +464,7 @@ impl Validator {
             &foreign,
             &mut self.scratch,
             Out::Mask(&mut self.missing),
-            0..self.sizes.type_attr,
+            extent,
         )
         .map(drop)
         .map_err(|e| ValidatorError::Execute(format!("{e:?}")))
@@ -456,7 +496,7 @@ impl Validator {
         for a in present {
             Self::set(&mut self.present_plane, a.0);
         }
-        let ran = self.run(tables);
+        let ran = self.run(tables, ty);
         self.type_plane.fill(0);
         self.present_plane.fill(0);
         ran.map(|()| self.missing.as_slice())
@@ -524,14 +564,21 @@ impl Validator {
                 None => unknown |= !is_system_key(key),
             }
         }
-        let ran = self.run(tables);
+        let ran = self.run(tables, TypeId(t));
         self.type_plane.fill(0);
         self.present_plane.fill(0);
         ran?;
 
         let attrs = self.lanes(tables)[1];
-        for (w, &word) in self.missing.iter().enumerate() {
-            let mut bits = word;
+        // Only this type's rows were written: read just the words they touch.
+        let touched = self.dirty.clone();
+        let words = if touched.is_empty() {
+            0..0
+        } else {
+            touched.start / 64..(touched.end - 1) / 64 + 1
+        };
+        for w in words {
+            let mut bits = self.missing[w];
             while bits != 0 {
                 let r = w * 64 + bits.trailing_zeros() as usize;
                 bits &= bits - 1;
