@@ -55,6 +55,7 @@ pub mod applicability;
 #[cfg(feature = "dt64")]
 pub mod dt64;
 pub mod ogit;
+pub mod session;
 pub mod submit_state;
 pub mod wire;
 
