@@ -485,3 +485,239 @@ fn a_tree_with_no_commit_cannot_be_vouched_for() {
         ValidatorError::Unwitnessed
     );
 }
+
+// ------------------------------------------- moved rows under an unchanged witness
+
+/// A minimal MARS entity file for `curie` with the given mandatory attributes
+/// (an absent list when there are none).
+fn entity_ttl(curie: &str, mandatory: &[&str]) -> String {
+    let list = if mandatory.is_empty() {
+        String::new()
+    } else {
+        format!(
+            "\togit:mandatory-attributes (\n{}\t);\n",
+            mandatory
+                .iter()
+                .map(|a| format!("\t    {a}\n"))
+                .collect::<String>()
+        )
+    };
+    format!(
+        "@prefix ogit.MARS: <http://www.purl.org/ogit/MARS/> .\n\
+         @prefix ogit.MARS.Machine: <http://www.purl.org/ogit/MARS/Machine/> .\n\
+         @prefix ogit: <http://www.purl.org/ogit/> .\n\
+         @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .\n\n\
+         {curie}\n\ta rdfs:Class;\n\trdfs:subClassOf ogit:Entity;\n\
+         \trdfs:label \"x\";\n\togit:scope \"NTO\";\n\togit:parent ogit:Node;\n{list}.\n"
+    )
+}
+
+/// Removes the first line of `file` (inside `tree`) that is `attr`, as an
+/// uncommitted edit would.
+fn drop_line(tree: &Subset, file: &str, attr: &str) {
+    let path = tree.0.join("NTO/MARS/entities").join(file);
+    let ttl = fs::read_to_string(&path).unwrap();
+    let mut gone = false;
+    let edited: String = ttl
+        .lines()
+        .filter(|l| {
+            let hit = !gone && l.trim() == attr;
+            gone |= hit;
+            !hit
+        })
+        .map(|l| format!("{l}\n"))
+        .collect();
+    assert!(gone, "{attr} is in {file}");
+    fs::write(path, edited).unwrap();
+}
+
+const CLASS: &str = "ogit.MARS.Machine:class";
+
+/// The tables, witness and sizes as `a` and `b` see them: all equal.
+fn assert_same_code_space(a: &OgitTables, b: &OgitTables) {
+    assert_eq!(a.tree(), b.tree(), "same commit");
+    assert_eq!(a.codes_digest(), b.codes_digest(), "same name-to-id digest");
+    for table in [
+        Table::Type,
+        Table::Attribute,
+        Table::TypeAttr,
+        Table::Allowed,
+    ] {
+        assert_eq!(a.rows(table), b.rows(table), "{table:?} row count");
+    }
+    assert!(a.witness().is_some() && a.witness() == b.witness());
+}
+
+/// The review finding: a mandatory attribute moves from `Machine` to the
+/// previously empty `Machine2`, and the commit, the name-to-id digest and the
+/// row counts all stay as they were while the per-type ranges change.
+#[test]
+fn a_mandatory_attribute_moved_to_an_empty_type_is_not_answered_from_stale_ranges() {
+    let tree = Subset::new("moved-empty", Some(COMMIT_A));
+    let dir = tree.0.join("NTO/MARS/entities");
+    fs::write(
+        dir.join("Machine2.ttl"),
+        entity_ttl("ogit.MARS:Machine2", &[]),
+    )
+    .unwrap();
+    let before = tree.load();
+    let machine = before.type_id("ogit.MARS:Machine").unwrap();
+    let machine2 = before.type_id("ogit.MARS:Machine2").unwrap();
+    let class = before.attribute_id(CLASS).unwrap();
+
+    let rows = TypeRows::new(&before, Table::TypeAttr).unwrap();
+    let mut old = Validator::new(&before).unwrap();
+    assert!(
+        rows.range(&before, machine2).unwrap().is_empty(),
+        "B is empty"
+    );
+    assert!(rows.range(&before, machine).unwrap().len() > 2);
+    assert!(
+        old.validate(&before, "ogit.MARS:Machine2", &[])
+            .unwrap()
+            .is_empty()
+    );
+
+    // The uncommitted edit: `class` is now Machine2's mandatory attribute.
+    drop_line(&tree, "Machine.ttl", CLASS);
+    fs::write(
+        dir.join("Machine2.ttl"),
+        entity_ttl("ogit.MARS:Machine2", &[CLASS]),
+    )
+    .unwrap();
+    let after = tree.load();
+    assert_same_code_space(&before, &after);
+    assert_eq!(mandatory_of(&after, machine2), vec![class]);
+    assert!(
+        !mandatory_of(&before, machine).is_empty()
+            && !mandatory_of(&after, machine).contains(&class)
+    );
+    assert_ne!(
+        before.lane(Lane::TypeAttrType),
+        after.lane(Lane::TypeAttrType),
+        "the layout did change"
+    );
+
+    // (i) the ranges are refused for both types the move touches.
+    assert_eq!(
+        rows.range(&after, machine2),
+        Err(TypeRowsError::StaleTables)
+    );
+    assert_eq!(rows.range(&after, machine), Err(TypeRowsError::StaleTables));
+    // (ii) the old validator does not accept a Machine2 write without `class`
+    // against the new tables: it refuses them as stale.
+    assert_eq!(
+        old.validate(&after, "ogit.MARS:Machine2", &[]),
+        Err(ValidatorError::StaleTables)
+    );
+    assert_eq!(
+        old.missing_mask(&after, machine2, &[]).map(<[u64]>::to_vec),
+        Err(ValidatorError::StaleTables)
+    );
+    // The tables it was made from are still served.
+    assert!(
+        old.validate(&before, "ogit.MARS:Machine2", &[])
+            .unwrap()
+            .is_empty()
+    );
+    // (iii) a validator rebuilt from the new tables reports the attribute.
+    let mut fresh = Validator::new(&after).unwrap();
+    assert_eq!(
+        fresh.validate(&after, "ogit.MARS:Machine2", &[]).unwrap(),
+        vec![Violation::MissingMandatoryAttribute(class)]
+    );
+    assert!(
+        fresh
+            .validate(&after, "ogit.MARS:Machine2", &[CLASS])
+            .unwrap()
+            .is_empty()
+    );
+    // And the whole-table scan agrees with the rebuilt validator.
+    let mut scratch =
+        Scratch::for_program(fresh.program().program(), after.rows(Table::TypeAttr)).unwrap();
+    let mask = full_scan(&after, &fresh, &mut scratch, machine2, &[]);
+    assert_eq!(mask.iter().map(|w| w.count_ones()).sum::<u32>(), 1);
+    check_parity(&after);
+}
+
+/// The same move between two types that both have rows: the counts of both
+/// change by one, the total does not.
+#[test]
+fn a_mandatory_attribute_moved_between_two_non_empty_types_is_refused_too() {
+    let tree = Subset::new("moved-swap", Some(COMMIT_A));
+    let before = tree.load();
+    let machine = before.type_id("ogit.MARS:Machine").unwrap();
+    let resource = before.type_id("ogit.MARS:Resource").unwrap();
+    let class = before.attribute_id(CLASS).unwrap();
+    let rows = TypeRows::new(&before, Table::TypeAttr).unwrap();
+    let mut old = Validator::new(&before).unwrap();
+    assert!(!rows.range(&before, resource).unwrap().is_empty());
+
+    // `class` leaves Machine's mandatory list and joins Resource's.
+    drop_line(&tree, "Machine.ttl", CLASS);
+    let path = tree.0.join("NTO/MARS/entities/Resource.ttl");
+    let ttl = fs::read_to_string(&path).unwrap();
+    let edited = ttl.replacen(
+        "ogit:mandatory-attributes (",
+        &format!("ogit:mandatory-attributes (\n\t    {CLASS}"),
+        1,
+    );
+    assert_ne!(ttl, edited);
+    fs::write(&path, edited).unwrap();
+    let after = tree.load();
+    assert_same_code_space(&before, &after);
+    assert!(mandatory_of(&after, resource).contains(&class));
+    assert!(!mandatory_of(&after, machine).contains(&class));
+
+    assert_eq!(rows.range(&after, machine), Err(TypeRowsError::StaleTables));
+    assert_eq!(
+        rows.range(&after, resource),
+        Err(TypeRowsError::StaleTables)
+    );
+    // A type the move did not touch is still answered.
+    let software = before.type_id("ogit.MARS:Software").unwrap();
+    assert_eq!(
+        rows.range(&after, software),
+        Ok(rows.range_unchecked(software))
+    );
+    for ty in ["ogit.MARS:Machine", "ogit.MARS:Resource"] {
+        assert_eq!(
+            old.validate(&after, ty, &[]),
+            Err(ValidatorError::StaleTables)
+        );
+    }
+    let mut fresh = Validator::new(&after).unwrap();
+    let want = fresh.validate(&after, "ogit.MARS:Resource", &[]).unwrap();
+    assert!(want.contains(&Violation::MissingMandatoryAttribute(class)));
+    check_parity(&after);
+}
+
+/// Tables loaded again from an unchanged tree are accepted by every range and
+/// by the validator made from the first load.
+#[test]
+fn unchanged_tables_are_still_accepted() {
+    let tree = Subset::new("unchanged", Some(COMMIT_A));
+    let a = tree.load();
+    let again = tree.load();
+    let rows = TypeRows::new(&a, Table::TypeAttr).unwrap();
+    let mut v = Validator::new(&a).unwrap();
+    for i in 0..a.rows(Table::Type) {
+        let ty = TypeId(u16::try_from(i).unwrap());
+        assert_eq!(rows.range(&again, ty), rows.range(&a, ty));
+        assert!(rows.range(&again, ty).is_ok());
+        assert_eq!(
+            v.validate(&again, a.type_name(ty).unwrap(), &[]),
+            v.validate(&a, a.type_name(ty).unwrap(), &[])
+        );
+    }
+    for (which, _, _, _) in PER_TYPE {
+        let rows = TypeRows::new(&a, which).unwrap();
+        for i in 0..a.rows(Table::Type) {
+            assert!(
+                rows.range(&again, TypeId(u16::try_from(i).unwrap()))
+                    .is_ok()
+            );
+        }
+    }
+    check_parity(&again);
+}

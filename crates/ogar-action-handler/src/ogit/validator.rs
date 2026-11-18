@@ -53,7 +53,11 @@
 //! tables of any other tree, or of the same commit with other names or sizes,
 //! with [`ValidatorError::StaleTables`]. Tables whose commit cannot be read
 //! cannot be vouched for and give [`ValidatorError::Unwitnessed`]: the check
-//! fails closed, as the binder does.
+//! fails closed, as the binder does. The type's row range is also checked
+//! against the supplied tables' `type` lane on every call (O(1), see
+//! [`TypeRows`]), because an uncommitted edit can move rows between types
+//! and keep the commit, the digest and every row count: such tables give
+//! [`ValidatorError::StaleTables`] too.
 //!
 //! # Zero copy and allocation
 //!
@@ -419,7 +423,12 @@ impl Validator {
     /// first: the mask then holds this type's rows and nothing else, as a scan
     /// of the whole table gives.
     fn run(&mut self, tables: &OgitTables, ty: TypeId) -> Result<(), ValidatorError> {
-        let extent = self.rows.range_unchecked(ty);
+        // Bound to the supplied tables' key lane, not only to their witness
+        // and sizes: an edit can move rows between types and change neither.
+        let extent = self
+            .rows
+            .range_in_lane(tables, ty)
+            .map_err(|_| ValidatorError::StaleTables)?;
         let stale = self.dirty.clone();
         if !stale.is_empty() {
             self.missing[stale.start / 64..=(stale.end - 1) / 64].fill(0);

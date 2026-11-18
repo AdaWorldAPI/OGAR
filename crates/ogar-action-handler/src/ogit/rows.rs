@@ -31,13 +31,39 @@
 //! refuses a table whose key ever decreases ([`TypeRowsError::Unsorted`]),
 //! instead of handing out ranges that name the wrong rows.
 //!
-//! # One tree
+//! # One tree, and one layout
 //!
 //! A [`TypeRows`] keeps the [`OgitWitness`] and the row count of the tables it
 //! was built from. [`TypeRows::range`] answers only against tables of that
 //! code space ([`TypeRowsError::StaleTables`] otherwise), and
 //! [`TypeRows::new`] fails closed on tables with no readable commit
 //! ([`TypeRowsError::Unwitnessed`]).
+//!
+//! The witness and the row counts do not see everything. An uncommitted edit
+//! that moves an attribute-list entry from one existing type to another keeps
+//! the commit, the name-to-id digest and every row count, yet moves the
+//! per-type boundaries. So every range handed out is also bound to the key
+//! lane of the tables it is asked of, in O(1) and without allocating. Because
+//! the lane is sorted by type, a range `[s, e)` for type `t` is the type's
+//! rows in that lane iff
+//!
+//! - non-empty: `lane[s] == t`, `lane[e - 1] == t`, and the rows on either
+//!   side (`s - 1`, `e`), where there are any, are not `t`;
+//! - empty: `t` has no row at its insertion point, that is `lane[s - 1] < t`
+//!   and `lane[s] > t`, where those rows exist;
+//!
+//! and every key of the lane is below the type count (checked at the last
+//! row). A range that fails is refused with [`TypeRowsError::StaleTables`],
+//! never answered.
+//!
+//! The check leans on the lane being sorted, which [`TypeRows::new`] verifies
+//! for the tables it is built from and which holds for every [`OgitTables`]
+//! by construction: the only constructor is [`OgitTables::load`] (struct
+//! literal at `ogit.rs` `Ok(OgitTables { .. })`), which pushes `type_attr`
+//! rows from an outer loop over the types in ascending id order and sorts the
+//! `allowed` tuples by `(src, verb, dst)`; every field is private, there is no
+//! `&mut self` method and no `Clone` or `Default`, so nothing outside this
+//! crate can reorder a lane afterwards.
 
 use std::fmt;
 use std::ops::Range;
@@ -46,7 +72,7 @@ use lance_graph_mask_risc::{Foreign, LaneRef, Out, Planes, Scratch, execute_into
 use lance_graph_quack::bind::{Binder, table};
 use lance_graph_quack::{Col, lower};
 
-use super::{OgitTables, OgitWitness, Table, TypeId};
+use super::{Lane, OgitTables, OgitWitness, Table, TypeId};
 
 /// Why [`TypeRows`] could not be built, or a range was refused.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -111,6 +137,15 @@ pub struct TypeRows {
     rows: usize,
     /// `types + 1` ascending row offsets: type `t` owns `starts[t]..starts[t + 1]`.
     starts: Vec<u32>,
+}
+
+/// The sorted key lane of a per-type table.
+fn key_lane(table: Table) -> Option<Lane> {
+    match table {
+        Table::TypeAttr => Some(Lane::TypeAttrType),
+        Table::Allowed => Some(Lane::AllowedSrc),
+        _ => None,
+    }
 }
 
 /// The query table and group key of a per-type table.
@@ -255,16 +290,54 @@ impl TypeRows {
     ///
     /// # Errors
     /// [`TypeRowsError::StaleTables`] for tables of another tree, another
-    /// name-to-id mapping or another row count.
+    /// name-to-id mapping, another row count, or the same of all three with
+    /// the rows of the types moved (see the [module docs](self)).
     pub fn range(&self, tables: &OgitTables, ty: TypeId) -> Result<Range<usize>, TypeRowsError> {
         if self.witness.admits(tables)
             && tables.rows(self.table) == self.rows
             && tables.rows(Table::Type) == self.types()
         {
-            Ok(self.range_unchecked(ty))
+            self.range_in_lane(tables, ty)
         } else {
             Err(TypeRowsError::StaleTables)
         }
+    }
+
+    /// The rows of type `ty`, checked against the key lane of `tables` alone:
+    /// the O(1) boundary test of the [module docs](self). The caller has
+    /// already admitted the tables' witness and sizes (as [`TypeRows::range`]
+    /// and the validator do).
+    pub(super) fn range_in_lane(
+        &self,
+        tables: &OgitTables,
+        ty: TypeId,
+    ) -> Result<Range<usize>, TypeRowsError> {
+        let stale = Err(TypeRowsError::StaleTables);
+        let Some(lane) = key_lane(self.table).map(|l| tables.lane(l)) else {
+            return stale;
+        };
+        let len = lane.len();
+        if len != self.rows || lane.last().is_some_and(|&k| k as usize >= self.types()) {
+            return stale;
+        }
+        let t = u32::from(ty.0);
+        if usize::from(ty.0) >= self.types() {
+            // No key reaches the type count, so no row is of this type.
+            return Ok(0..0);
+        }
+        let range = self.range_unchecked(ty);
+        let (s, e) = (range.start, range.end);
+        let at = |i: usize| lane.get(i).copied();
+        let before = |i: usize| i.checked_sub(1).and_then(at);
+        let bound = if s < e {
+            at(s) == Some(t)
+                && at(e - 1) == Some(t)
+                && before(s).is_none_or(|k| k != t)
+                && at(e).is_none_or(|k| k != t)
+        } else {
+            s <= len && before(s).is_none_or(|k| k < t) && at(s).is_none_or(|k| k > t)
+        };
+        if bound { Ok(range) } else { stale }
     }
 }
 
@@ -322,5 +395,32 @@ mod tests {
                 rows: 3
             })
         );
+    }
+
+    /// Moving a row from one type to another keeps the witness and the row
+    /// counts but moves the boundaries: every range the move touches is
+    /// refused, the untouched ones still answer.
+    #[test]
+    fn a_row_moved_between_types_refuses_the_ranges_it_touches() {
+        let mut t = fixture(&[0, 0, 2, 2, 2]);
+        let rows = TypeRows::new(&t, Table::TypeAttr).unwrap();
+        // Type 0 gives a row to the empty type 1.
+        t.type_attr_type = vec![0, 1, 2, 2, 2];
+        let of = |t: &OgitTables, i| rows.range(t, TypeId(i));
+        assert_eq!(of(&t, 0), Err(TypeRowsError::StaleTables));
+        assert_eq!(of(&t, 1), Err(TypeRowsError::StaleTables));
+        assert_eq!(of(&t, 2), Ok(2..5), "type 2 did not move");
+        // Type 2 gives its first row to the empty type 1: both neighbours move.
+        t.type_attr_type = vec![0, 0, 1, 2, 2];
+        assert_eq!(of(&t, 1), Err(TypeRowsError::StaleTables));
+        assert_eq!(of(&t, 2), Err(TypeRowsError::StaleTables));
+        assert_eq!(of(&t, 0), Ok(0..2));
+        // A key at or past the type count is refused for every type.
+        t.type_attr_type = vec![0, 0, 2, 2, 3];
+        assert_eq!(of(&t, 0), Err(TypeRowsError::StaleTables));
+        // A type past the table is empty on tables that name no such key.
+        t.type_attr_type = vec![0, 0, 2, 2, 2];
+        assert_eq!(of(&t, 9), Ok(0..0));
+        assert_eq!(of(&t, 1), Ok(2..2));
     }
 }

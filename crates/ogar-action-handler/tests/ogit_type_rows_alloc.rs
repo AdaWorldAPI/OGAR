@@ -13,7 +13,7 @@ use lance_graph_mask_risc::{
     Foreign, ForeignPlane as ForeignMask, LaneRef, Out, Planes, Scratch, execute_compiled,
     words_for,
 };
-use ogar_action_handler::ogit::{OgitTables, Table, TypeRows, Validator};
+use ogar_action_handler::ogit::{OgitTables, Table, TypeId, TypeRows, Validator};
 
 // Counts the allocations of the thread that reads it.
 struct Counting;
@@ -107,6 +107,14 @@ fn the_per_write_path_allocates_exactly_what_it_did_before_the_ranges() {
     }
     let lookup = allocs() - before;
 
+    // An empty type and a type past the table are bound too, and allocate
+    // nothing either.
+    let before = allocs();
+    for _ in 0..WRITES {
+        assert!(rows.range(&t, TypeId(u16::MAX)).unwrap().is_empty());
+    }
+    let lookup_past = allocs() - before;
+
     println!(
         "allocations per {WRITES} writes: accept {accept}, reject (unknown key) \
          {reject_unknown_key}, reject (missing) {reject_missing}, unknown type \
@@ -120,6 +128,7 @@ fn the_per_write_path_allocates_exactly_what_it_did_before_the_ranges() {
     // each alternating write returns its vector, so a vector per write.
     assert_eq!(alternating, WRITES, "one vector per write that rejects");
     assert_eq!(lookup, 0, "the range lookup allocates nothing");
+    assert_eq!(lookup_past, 0, "a lookup past the types allocates nothing");
 }
 
 /// The whole-table program the validator ran before, on the same tables: it
