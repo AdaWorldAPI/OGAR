@@ -540,3 +540,25 @@ fn error_display_never_leaks_subject_or_token() {
         assert!(!shown.contains(&token), "leaked token: {shown}");
     }
 }
+
+// ── 17: RS256 stays refused unless the `rs256` feature is on ─────────────────
+
+#[cfg(not(feature = "rs256"))]
+#[test]
+fn rsa_jwk_is_skipped_and_rs256_is_unsupported() {
+    // A 2048-bit-sized modulus: it is skipped because the feature is off.
+    let n = b64(&[0xFFu8; 256]);
+    let rsa = json!({ "kty": "RSA", "kid": "r1", "use": "sig", "n": n, "e": "AQAB" });
+    let set = keyset(vec![rsa]);
+    assert_eq!(set.len(), 0);
+    assert_eq!(set.skipped(), 1);
+
+    let v = verifier_a(set);
+    let header = json!({ "alg": "RS256", "kid": "r1" });
+    let token = format!(
+        "{}.{}",
+        signing_input(&header, &base_claims(ISS_A)),
+        b64(&[1u8; 256])
+    );
+    assert_eq!(run(&v, token), Err(OidcError::UnsupportedAlgorithm));
+}

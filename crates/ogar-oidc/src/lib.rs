@@ -19,8 +19,9 @@
 //! # Checks, in order
 //!
 //! 1. The token is three base64url segments; the header `alg` is `ES256` or
-//!    `EdDSA` (everything else, `none` and `HS*` included, is refused); a header
-//!    with `crit` is refused.
+//!    `EdDSA`, or `RS256` for a client that opted in (see below); everything
+//!    else, `none`, `HS*` and `PS*` included, is refused; a header with `crit`
+//!    is refused.
 //! 2. The payload `iss` is read **unverified** only to pick the [`Client`]; it
 //!    must byte-equal a registered issuer and be in [`TrustedIssuers`].
 //! 3. The signing key is looked up **only in that issuer's key set**, by `kid`,
@@ -33,8 +34,28 @@
 //!    future; `nbf` if present has passed (all with [`OidcVerifier::leeway_secs`]);
 //!    `nonce` equals the expected nonce when one is given.
 //!
-//! RS256 is not implemented yet: no AdaWorldAPI fork of an RSA crate is wired.
-//! A provider must sign ID tokens with a P-256 or Ed25519 key.
+//! # RS256 (opt-in)
+//!
+//! RS256 (RSASSA-PKCS1-v1_5 with SHA-256) is available only behind the `rs256`
+//! Cargo feature, which is **off by default**. With the feature off, RSA JWKs
+//! are skipped and counted, and a token with `alg: RS256` is refused with
+//! [`OidcError::UnsupportedAlgorithm`]; a provider must then sign ID tokens
+//! with a P-256 or Ed25519 key.
+//!
+//! With the feature on, RS256 is still refused unless the [`Client`] opted in
+//! through `Client::allow_rs256` (default: not allowed). The dependency is the
+//! `AdaWorldAPI/RSA` fork, never the crates.io `rsa`. RSA keys are subject to:
+//!
+//! - `kty` is `RSA`; a JWK `alg`, when present, must be `RS256`, else the key
+//!   is skipped.
+//! - The modulus must be 2048 to 8192 bits and the public exponent odd and at
+//!   least 3 (and within the fork's upper bound); otherwise the key is
+//!   **skipped** and counted in [`KeySet::skipped`], so a weak or oversized key
+//!   never verifies anything yet does not break loading the rest of a JWKS.
+//! - Malformed base64url in `n` or `e` is [`KeySetError::InvalidKey`].
+//! - The signature must be exactly the modulus length.
+//! - Key type must match the header `alg`, as for the other algorithms: an RSA
+//!   key never verifies an ES256 or EdDSA token and vice versa.
 
 use std::collections::BTreeMap;
 use std::fmt;
@@ -52,6 +73,8 @@ use serde_json::Value;
 enum Key {
     Es256(p256::ecdsa::VerifyingKey),
     Ed25519([u8; ogar_encryption::sign::PUBLIC_KEY_LEN]),
+    #[cfg(feature = "rs256")]
+    Rs256(Box<rsa::PublicKey>),
 }
 
 impl Key {
@@ -59,6 +82,8 @@ impl Key {
         match self {
             Self::Es256(_) => Alg::Es256,
             Self::Ed25519(_) => Alg::EdDsa,
+            #[cfg(feature = "rs256")]
+            Self::Rs256(_) => Alg::Rs256,
         }
     }
 }
@@ -68,6 +93,8 @@ impl fmt::Debug for Key {
         f.write_str(match self {
             Self::Es256(_) => "Key::Es256",
             Self::Ed25519(_) => "Key::Ed25519",
+            #[cfg(feature = "rs256")]
+            Self::Rs256(_) => "Key::Rs256",
         })
     }
 }
@@ -76,6 +103,8 @@ impl fmt::Debug for Key {
 enum Alg {
     Es256,
     EdDsa,
+    #[cfg(feature = "rs256")]
+    Rs256,
 }
 
 /// Why a JWKS document could not be read.
@@ -83,7 +112,8 @@ enum Alg {
 pub enum KeySetError {
     /// The document is not JSON or has no `keys` array.
     Malformed,
-    /// A supported key (EC P-256 or OKP Ed25519) has an invalid encoding.
+    /// A supported key (EC P-256, OKP Ed25519, or RSA with the `rs256` feature)
+    /// has an invalid encoding.
     InvalidKey,
     /// Two signing keys share a `kid`.
     DuplicateKid,
@@ -112,10 +142,12 @@ pub struct KeySet {
 impl KeySet {
     /// Parse a JWKS document (`{"keys":[...]}`).
     ///
-    /// EC P-256 and OKP Ed25519 signing keys are kept. Keys of other types
-    /// (RSA included), keys whose `use` is not `sig` and keys whose `key_ops`
-    /// does not include `verify` are skipped and counted
-    /// in [`KeySet::skipped`], so a mixed JWKS still loads.
+    /// EC P-256 and OKP Ed25519 signing keys are kept, and RSA keys too when
+    /// the `rs256` feature is on and they meet its key rules (see the crate
+    /// docs). Keys of other types (RSA included when the feature is off), keys
+    /// whose `use` is not `sig` and keys whose `key_ops` does not include
+    /// `verify` are skipped and counted in [`KeySet::skipped`], so a mixed JWKS
+    /// still loads.
     ///
     /// # Errors
     ///
@@ -220,8 +252,56 @@ fn parse_jwk(jwk: &Value) -> Result<Option<Key>, KeySetError> {
             let x = b64_fixed::<32>(field("x")).ok_or(KeySetError::InvalidKey)?;
             Ok(Some(Key::Ed25519(x)))
         }
+        #[cfg(feature = "rs256")]
+        (Some("RSA"), _) => parse_rsa(alg, field("n"), field("e")),
         _ => Ok(None),
     }
+}
+
+/// Smallest and largest accepted RSA modulus, in bits.
+#[cfg(feature = "rs256")]
+const RSA_MIN_BITS: usize = 2048;
+#[cfg(feature = "rs256")]
+const RSA_MAX_BITS: usize = 8192;
+
+/// An RSA JWK for RS256. `Ok(None)` skips a key that is not acceptable
+/// (wrong `alg`, modulus outside 2048..=8192 bits, unusable exponent);
+/// `Err` is for undecodable `n` / `e`.
+#[cfg(feature = "rs256")]
+fn parse_rsa(
+    alg: Option<&str>,
+    n: Option<&str>,
+    e: Option<&str>,
+) -> Result<Option<Key>, KeySetError> {
+    if alg.is_some_and(|a| a != "RS256") {
+        return Ok(None);
+    }
+    let decode = |s: Option<&str>| {
+        URL_SAFE_NO_PAD
+            .decode(s.ok_or(KeySetError::InvalidKey)?)
+            .map_err(|_| KeySetError::InvalidKey)
+    };
+    let n = decode(n)?;
+    let e = decode(e)?;
+    let strip = |b: &[u8]| -> Vec<u8> {
+        let first = b.iter().position(|&x| x != 0).unwrap_or(b.len());
+        b[first..].to_vec()
+    };
+    let (n, e) = (strip(&n), strip(&e));
+    // Bound the work before any big-integer conversion.
+    if n.len() > RSA_MAX_BITS / 8 || e.len() > 8 {
+        return Ok(None);
+    }
+    let e_val = e.iter().fold(0u64, |acc, &b| (acc << 8) | u64::from(b));
+    if e_val < 3 || e_val % 2 == 0 {
+        return Ok(None);
+    }
+    let public = rsa::PublicKey::new_with_size_limits(
+        rsa::BoxedUint::from_be_slice_vartime(&n),
+        rsa::BoxedUint::from(e_val),
+        RSA_MIN_BITS..=RSA_MAX_BITS,
+    );
+    Ok(public.ok().map(|k| Key::Rs256(Box::new(k))))
 }
 
 fn b64_fixed<const N: usize>(s: Option<&str>) -> Option<[u8; N]> {
@@ -235,6 +315,8 @@ pub struct Client {
     issuer: Issuer,
     client_id: String,
     keys: KeySet,
+    #[cfg(feature = "rs256")]
+    allow_rs256: bool,
 }
 
 impl Client {
@@ -245,7 +327,18 @@ impl Client {
             issuer,
             client_id: client_id.into(),
             keys,
+            #[cfg(feature = "rs256")]
+            allow_rs256: false,
         }
+    }
+
+    /// Accept RS256 ID tokens for this client (default: refused). Even then an
+    /// RS256 token verifies only against an RSA key of this issuer's key set.
+    #[cfg(feature = "rs256")]
+    #[must_use]
+    pub fn allow_rs256(mut self) -> Self {
+        self.allow_rs256 = true;
+        self
     }
 
     /// The issuer this registration belongs to.
@@ -339,7 +432,8 @@ pub struct IdToken {
 pub enum OidcError {
     /// Not three base64url segments, or a segment is not JSON.
     Malformed,
-    /// The header `alg` is not ES256 / EdDSA, or the header carries `crit`.
+    /// The header `alg` is not ES256 / EdDSA (RS256 only for a client that opted
+    /// in, with the `rs256` feature), or the header carries `crit`.
     UnsupportedAlgorithm,
     /// No [`Client`] is registered for the token's `iss`.
     UnknownIssuer,
@@ -434,6 +528,11 @@ fn verify_signature(key: &Key, message: &[u8], signature: &[u8]) -> bool {
             .is_ok_and(|sig| vk.verify(message, &sig).is_ok()),
         Key::Ed25519(pk) => <&[u8; ogar_encryption::sign::SIGNATURE_LEN]>::try_from(signature)
             .is_ok_and(|sig| ogar_encryption::sign::verify(pk, message, sig)),
+        // The fork rejects any signature whose length is not the modulus length.
+        #[cfg(feature = "rs256")]
+        Key::Rs256(pk) => pk
+            .pkcs1v15_verify::<rsa::sha2::Sha256>(message, signature)
+            .is_ok(),
     }
 }
 
@@ -527,6 +626,8 @@ impl AssertionVerifier for OidcVerifier {
         let alg = match header.get("alg").and_then(Value::as_str) {
             Some("ES256") => Alg::Es256,
             Some("EdDSA") => Alg::EdDsa,
+            #[cfg(feature = "rs256")]
+            Some("RS256") => Alg::Rs256,
             _ => return Err(OidcError::UnsupportedAlgorithm),
         };
 
@@ -540,6 +641,11 @@ impl AssertionVerifier for OidcVerifier {
         let client = self.clients.get(&issuer).ok_or(OidcError::UnknownIssuer)?;
         if trusted.provider_of(&issuer).is_none() {
             return Err(OidcError::UntrustedIssuer);
+        }
+
+        #[cfg(feature = "rs256")]
+        if alg == Alg::Rs256 && !client.allow_rs256 {
+            return Err(OidcError::UnsupportedAlgorithm);
         }
 
         let kid = header.get("kid").and_then(Value::as_str);
