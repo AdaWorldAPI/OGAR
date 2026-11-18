@@ -298,6 +298,33 @@ fn the_legacy_readers_refuse_the_on_shape_by_name() {
     }
 }
 
+/// A capability may carry a name the legacy shape uses as a key. The shape is read
+/// from the structure, so such a body is still the `on` shape and both entry points
+/// agree on it.
+#[test]
+fn a_capability_named_like_a_legacy_key_is_still_the_on_shape() {
+    for name in [
+        "model",
+        "filters",
+        "priority",
+        "Priority",
+        "modelFilters",
+        "parameters",
+        "parameter",
+        "Parameter",
+    ] {
+        let body = format!(r#"{{"h":{{"{name}":{{"on ogit/_id":{{"k":"${{ogit/_id}}"}}}}}}}}"#);
+        let direct = parse_applies_on(&body).expect("on shape parses");
+        assert_eq!(direct.len(), 1, "{name}");
+        assert_eq!(direct[0].capability, name);
+        assert_eq!(
+            parse_applicabilities_typed(&body),
+            Ok(Applicabilities::AppliesOn(direct)),
+            "{name}"
+        );
+    }
+}
+
 /// A body mixing both shapes is refused by name.
 #[test]
 fn mixed_shapes_are_refused() {
