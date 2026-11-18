@@ -450,3 +450,16 @@ decoded by `ogar_action_handler::wire` (`type` envelope, parameters as an object
 hiro-client-python. `capabilities` bodies now keep `resultParameters` and accept numeric
 defaults (graph_conn registers `"timeout": {"default": 60000}`); tests are in
 `tests/hiro_registration.rs`.
+
+**Session (text frame to state machine).** `ogar_action_handler::session::Session` joins
+`wire` and `submit_state`: a JSON text frame is decoded, stepped through `HandlerState`, and
+comes back as `Effect::Send(text)` or `Effect::Run { id, capability, parameters }`. It is
+sans-IO (the caller passes `now`, runs the `Run` effects and reports them with
+`on_finished`), and `on_text_sync` is the drop-in that runs `Run` effects through a
+`CapabilityExecutor`, so a repeated request id runs once. Wired: ack on claim, one run per
+id, 60 minute cached result, 3000 ms resend until `acknowledged` or `negativeAcknowledged`,
+the frame `timeout` (ms) as the deadline, the status-13 timeout result. Frames that do not
+decode are returned as a `WireError`, with no run and no reply (graph_conn sends none).
+Not wired: no socket, timer or reconnect loop; episodes are not persisted; class id, target
+and effect class stay unset in the episode; `handle_submit` is unchanged and still runs a
+repeated id twice.
