@@ -20,9 +20,27 @@
 //! - `GET /capabilities` → [`ConcreteCapability`] (a [`do_arm::ActionParam`] list
 //!   per capability — the signature [`crate::action_ws::bind_parameters`] validates
 //!   the engine's `parameters` against).
-//! - `GET /applicabilities` → the node-match guards: arago `ModelFilter{Var,Mode,
-//!   Value}` lifts field-for-field to [`KausalSpec::StateGuard`] (`Var` →
-//!   `guard_field`, `Value` → `guard_values`).
+//! - `GET /applicabilities` → the **ON** an applicability names: graph_conn's
+//!   readable wire shape (handler id → capability → `{"on <expr>": {param:
+//!   template}}`) lifts to [`AppliesOn`] (see below). The older
+//!   `ModelFilter{Var,Mode,Value}` → [`KausalSpec::StateGuard`] lift is kept as
+//!   the **legacy guard reading** (see [`ModelFilter`]); it is UNCONFIRMED.
+//!
+//! # The applicability is the ON, not a WHEN guard (2026-11-18)
+//!
+//! An applicability says the **class a behaviour applies on** (the `on ogit/_id`
+//! of HIRO's `ActionApplicability`), not a predicate that must hold at call time.
+//! [`AppliesOn`] is therefore the primary reading. Resolving the `on <expr>` text
+//! to a class id happens **at intake** and is **NOT built here**: this module only
+//! carries the expression and the `${...}` parameter templates verbatim. HIRO's
+//! own client library never expands those templates either, and this crate does
+//! not guess a class resolution.
+//!
+//! The wire shape the readers in this module accept is the one found in the
+//! graph_conn Elixir client (`lib/graph_conn/mock.ex`, `convert_applicabilities_from_json`;
+//! `test/graph_conn/mock_test.exs`). `ModelFilter` and `Priority` were searched for
+//! in every HIRO client repository available (graph_conn, hiro-client-python,
+//! hiro-client-java, python-arago-actors) and are not there.
 //!
 //! **No parser here.** Mirroring the crate's parser-free default path, this module
 //! defines the typed REST DTOs (`Deserialize` behind the `serde` feature) plus the
@@ -50,8 +68,43 @@ pub struct RegisteredParam {
     #[cfg_attr(feature = "serde", serde(default))]
     pub description: Option<String>,
     /// Default value when the engine does not supply one (arago `Parameter.Default`).
-    #[cfg_attr(feature = "serde", serde(default))]
+    ///
+    /// graph_conn's mock registers defaults as JSON numbers
+    /// (`"timeout": {"default": 60000}`, `test/graph_conn/mock_test.exs:73-93`), so
+    /// a number or boolean is accepted and kept as its JSON text (`60000` becomes
+    /// `"60000"`). `null` is no default. An object or array default is refused.
+    #[cfg_attr(
+        feature = "serde",
+        serde(default, deserialize_with = "lenient_default_text")
+    )]
     pub default: Option<String>,
+}
+
+/// Read a JSON scalar (string, integer, float or boolean) as its text; `null` is
+/// `None`. Used for [`RegisteredParam::default`].
+#[cfg(feature = "serde")]
+fn lenient_default_text<'de, D>(deserializer: D) -> Result<Option<String>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum Scalar {
+        Text(String),
+        Int(i64),
+        Uint(u64),
+        Float(f64),
+        Bool(bool),
+    }
+    Ok(
+        Option::<Scalar>::deserialize(deserializer)?.map(|v| match v {
+            Scalar::Text(s) => s,
+            Scalar::Int(n) => n.to_string(),
+            Scalar::Uint(n) => n.to_string(),
+            Scalar::Float(n) => n.to_string(),
+            Scalar::Bool(b) => b.to_string(),
+        }),
+    )
 }
 
 /// One capability as `GET /capabilities` reports it. The parameter maps are
@@ -69,15 +122,27 @@ pub struct RegisteredCapability {
     /// Optional-input signature, keyed by parameter name.
     #[cfg_attr(feature = "serde", serde(default))]
     pub optional_parameters: BTreeMap<String, RegisteredParam>,
+    /// The output signature (`resultParameters`, OGIT `ogit.Automation:resultParameters`:
+    /// "optional result parameters as key/value mapping"), keyed by name. Empty
+    /// when absent. Its body shape is read as a `MapOfParameters`, like the two
+    /// input maps; no HIRO client repository sends it, so that shape is UNVERIFIED.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub result_parameters: BTreeMap<String, RegisteredParam>,
 }
 
 /// The `GET /capabilities` response — a `MapOfCapabilities` keyed by capability
 /// name (the arago `Capability.Name`, which matches an `ActionDef::predicate`).
 pub type RegisteredCapabilities = BTreeMap<String, RegisteredCapability>;
 
-/// A single node-match filter as arago reports it: `ModelFilter{Var, Mode,
-/// Value}` — "the node attribute `Var` `Mode`-matches `Value`". The documented
-/// field-for-field source of a [`KausalSpec::StateGuard`].
+/// A single node-match filter: `ModelFilter{Var, Mode, Value}` — "the node
+/// attribute `Var` `Mode`-matches `Value`", the field-for-field source of a
+/// [`KausalSpec::StateGuard`].
+///
+/// **UNCONFIRMED (2026-11-18).** This shape is not found in any HIRO client
+/// repository (graph_conn, hiro-client-python, hiro-client-java,
+/// python-arago-actors); it comes from the arago handler YAML config and the
+/// earlier harvest only. It is still accepted, as the **legacy guard reading**.
+/// The readable wire shape is graph_conn's `on <expr>` form, see [`AppliesOn`].
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 #[cfg_attr(feature = "serde", derive(Deserialize))]
 #[cfg_attr(feature = "serde", serde(rename_all = "camelCase"))]
@@ -116,6 +181,11 @@ pub struct ConcreteCapability {
     /// re-checking `AdaWorldAPI/ActionHandlers` — the DTO carried it, the
     /// lift dropped it).
     pub param_descriptions: BTreeMap<String, String>,
+    /// The output signature (`resultParameters`) names, sorted. Empty when the
+    /// registration carried none.
+    pub result_params: Vec<String>,
+    /// Per-result-parameter descriptions, keyed by result parameter name.
+    pub result_param_descriptions: BTreeMap<String, String>,
 }
 
 /// Lift one deployed capability into its concrete [`ConcreteCapability`] —
@@ -145,6 +215,12 @@ pub fn lift_capability(name: &str, cap: &RegisteredCapability) -> ConcreteCapabi
         description: cap.description.clone(),
         params: mandatory.chain(optional).collect(),
         param_descriptions,
+        result_params: cap.result_parameters.keys().cloned().collect(),
+        result_param_descriptions: cap
+            .result_parameters
+            .iter()
+            .filter_map(|(n, p)| p.description.clone().map(|d| (n.clone(), d)))
+            .collect(),
     }
 }
 
@@ -155,11 +231,11 @@ pub fn lift_registration(caps: &RegisteredCapabilities) -> Vec<ConcreteCapabilit
     caps.iter().map(|(n, c)| lift_capability(n, c)).collect()
 }
 
-/// Lift one arago `ModelFilter{Var,Mode,Value}` into its OGAR
-/// [`KausalSpec::StateGuard`] — `Var` → `guard_field`, `Value` → the single
-/// `guard_values` entry. The documented field-for-field applicability mapping
-/// (the same one `do_arm::kausal_from_entity` reaches at the schema level, here
-/// carrying the deployed *value*).
+/// **Legacy guard reading** (UNCONFIRMED shape, see [`ModelFilter`]): lift one
+/// arago `ModelFilter{Var,Mode,Value}` into its OGAR [`KausalSpec::StateGuard`] —
+/// `Var` → `guard_field`, `Value` → the single `guard_values` entry. Kept because
+/// existing callers and tests use it. It reads an applicability as a WHEN guard;
+/// the primary reading is the ON, see [`AppliesOn`].
 #[must_use]
 pub fn model_filter_to_guard(filter: &ModelFilter) -> KausalSpec {
     KausalSpec::StateGuard {
@@ -168,16 +244,16 @@ pub fn model_filter_to_guard(filter: &ModelFilter) -> KausalSpec {
     }
 }
 
-/// Lift a deployed applicability's `ModelFilter`s into the OGAR guard set — one
-/// [`KausalSpec::StateGuard`] per filter (an applicability applies where **all**
-/// of its filters match; each guard is one such condition).
+/// **Legacy guard reading:** lift a deployed applicability's `ModelFilter`s into
+/// the OGAR guard set — one [`KausalSpec::StateGuard`] per filter (an applicability
+/// applies where **all** of its filters match; each guard is one such condition).
 #[must_use]
 pub fn lift_applicability(filters: &[ModelFilter]) -> Vec<KausalSpec> {
     filters.iter().map(model_filter_to_guard).collect()
 }
 
-/// One applicability as `GET /applicabilities` reports it — its node-match
-/// `ModelFilter`s.
+/// One applicability in the **legacy `ModelFilter` shape** (UNCONFIRMED, see
+/// [`ModelFilter`]) — its node-match `ModelFilter`s.
 ///
 /// The harvested spec (`docs/ARAGO-ACTIONHANDLER-PARITY.md` §2a) pins the
 /// *outer* shape (a `MapOfApplicabilities` keyed by handler id) and the
@@ -234,6 +310,40 @@ pub struct ApplicabilityParam {
 /// The `GET /applicabilities` response — a `MapOfApplicabilities` keyed by
 /// handler id.
 pub type RegisteredApplicabilities = BTreeMap<String, RegisteredApplicability>;
+
+/// One **ON**: the class (or attribute) expression a handler's capability applies
+/// on, as graph_conn's `GET /applicabilities` shape carries it.
+///
+/// Wire shape (graph_conn `lib/graph_conn/mock.ex` `convert_applicabilities_from_json`,
+/// stored per handler id): `{"<handler>": {"<capability>": {"on <expr>":
+/// {"<param>": "<template>"}}}}`. One `AppliesOn` is one `on <expr>` entry under one
+/// capability of one handler.
+///
+/// **Not resolved here.** `on` is the expression text after the `on ` prefix
+/// (`ogit/_id` for the key `on ogit/_id`). Resolving it to a class id happens at
+/// intake and is NOT built in this crate; no class resolution is invented.
+/// `parameters` are the templates **verbatim** (`${ogit/_id}` stays
+/// `${ogit/_id}`): HIRO's client library does not expand them either.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct AppliesOn {
+    /// The handler id the applicability is registered under.
+    pub handler: String,
+    /// The capability name it applies to.
+    pub capability: String,
+    /// The `on` expression, without the `on ` prefix (for example `ogit/_id`).
+    pub on: String,
+    /// Parameter templates, `(name, template)`, verbatim and in wire-key order
+    /// (sorted by name once parsed from a JSON object).
+    pub parameters: Vec<(String, String)>,
+}
+
+impl AppliesOn {
+    /// The wire key this entry was read from: `on <expr>`.
+    #[must_use]
+    pub fn wire_key(&self) -> String {
+        format!("on {}", self.on)
+    }
+}
 
 /// Lift a whole `GET /applicabilities` response into the per-handler guard sets:
 /// handler id → its [`KausalSpec::StateGuard`] list (each handler applies where
@@ -330,6 +440,7 @@ mod tests {
             description: Some("run a command over SSH".to_owned()),
             mandatory_parameters: mandatory,
             optional_parameters: optional,
+            result_parameters: BTreeMap::new(),
         }
     }
 

@@ -23,6 +23,15 @@
 //! Parameter binding ([`bind_parameters`]) validates the engine's `parameters`
 //! against the capability's [`ActionParam`] signature — the same check arago's
 //! Python handler performs before executing.
+//!
+//! # The serde derives here are NOT the HIRO wire (2026-11-18)
+//!
+//! The `Serialize`/`Deserialize` derives on the message types below produce an
+//! OGAR-internal shape: no `type` envelope, `parameters` as an array of pairs,
+//! `timeout_millis` instead of `timeout`. They are kept so existing consumers keep
+//! compiling. The HIRO wire (as graph_conn, the Elixir reference client, reads and
+//! writes it) is encoded and decoded by `ogar_action_handler::wire`, which maps
+//! these same types to and from HIRO's JSON.
 
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};

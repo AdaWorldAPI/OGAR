@@ -85,7 +85,7 @@ We do not invent the shape; we adopt the one arago validated at scale.
 |---|---|---|
 | `KnowledgeItem` | **`ActionDef`** | `knowledgeItemFormalRepresentation` = opaque body (→ payload table); `uses Variable` = params/defaults; `relates MARSNodeTemplate` = `object_class`; `solves Task` / `generates Timeseries` = `results_in` |
 | `ActionCapability` | `ActionDef` params + **adapter binding** | `mandatoryParameters`; "remote execution via ssh" = the executor the adapter wires |
-| `ActionApplicability` | **`KausalSpec::StateGuard`** | `environmentFilter`; "on `ogit/_id`" = the guard predicate (WHEN the action applies) |
+| `ActionApplicability` | **the ON** (`AppliesOn`, 2026-11-18) | "on `ogit/_id`" = the class the behaviour applies on, not a WHEN guard. ~~`KausalSpec::StateGuard` from `environmentFilter`; "on `ogit/_id`" = the guard predicate (WHEN the action applies)~~ (superseded 2026-11-18: the legacy guard reading, see `docs/ARAGO-ACTIONHANDLER-PARITY.md` §8). Resolving `on <expr>` to a class id happens at intake and is not built here |
 | `ActionHandler` | the **adapter** (+ membrane) | connects `Configuration` (= `auth_store` `0x0B01`) + `Capability` + `Applicability` |
 | `Trigger` | **`KausalSpec::LifecycleTrigger`** | "Trigger of a KI having a set of Subitems" |
 | `Intent` | **`ActionDef.results_in`** / desiredState | "The Intent of a KI processing chain" |

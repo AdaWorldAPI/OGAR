@@ -40,15 +40,27 @@
 //! and behind the `quack` feature a Quack binder and the Java validator's
 //! structural checks over those tables.
 //!
+//! [`wire`] is the HIRO `action-ws` JSON codec (the `type` envelope, parameters as
+//! an object, timeout in milliseconds, the typeless in-band 429 and 503).
+//! [`applicability`] reads a `GET /applicabilities` body as ON entries
+//! (graph_conn's shape); [`parse_applicabilities`] keeps the legacy guard view.
+//!
 //! [`dt64`] (feature `dt64`) registers the authoritative domain tables'
 //! `ActionDef`s as lance-graph DT64 methods.
 
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
 
+pub mod applicability;
 #[cfg(feature = "dt64")]
 pub mod dt64;
 pub mod ogit;
+pub mod wire;
+
+pub use applicability::{
+    Applicabilities, ApplicabilityError, parse_applicabilities_typed, parse_applies_on,
+    parse_applies_on_definitions,
+};
 
 use std::process::Command;
 
@@ -79,32 +91,35 @@ pub fn parse_capabilities(json: &str) -> Result<Vec<ConcreteCapability>, String>
     Ok(lift_registration(&caps))
 }
 
-/// Read a deployed handler's `GET /applicabilities` REST response (a JSON
-/// `MapOfApplicabilities`) and lift it into the per-handler guard sets — handler
-/// id → its [`KausalSpec::StateGuard`] list (the B2-lift applicabilities half).
+/// **Legacy guard reading** (UNCONFIRMED `ModelFilter` shape, see
+/// [`ogar_from_schema::registration::ModelFilter`]). Read a deployed handler's
+/// `GET /applicabilities` REST response (a JSON `MapOfApplicabilities`) and lift it
+/// into the per-handler guard sets: handler id to its [`KausalSpec::StateGuard`]
+/// list.
 ///
-/// Each handler's guards are the OGAR form of arago's node-match `ModelFilter`s:
-/// the action applies where they all match. The same `commit_via` state-guard the
-/// hard gate evaluates before executing.
+/// The primary reading of an applicability is the ON, not a WHEN guard: use
+/// [`parse_applies_on`] or [`parse_applicabilities_typed`], which read graph_conn's
+/// `on <expr>` shape. This function is kept for existing callers.
 ///
 /// # Errors
 /// Returns the `serde_json` error message if the body is not a valid
-/// `MapOfApplicabilities`.
+/// `MapOfApplicabilities`, or a message naming graph_conn's `on` shape when the
+/// body is that shape with entries (it would otherwise read as no guards).
 pub fn parse_applicabilities(json: &str) -> Result<BTreeMap<String, Vec<KausalSpec>>, String> {
+    refuse_on_shape(json)?;
     let apps: RegisteredApplicabilities = serde_json::from_str(json).map_err(|e| e.to_string())?;
     Ok(lift_applicabilities(&apps))
 }
 
-/// Read a deployed handler's `GET /applicabilities` REST response and lift it
-/// **in full** — per handler: the guards PLUS the applicability precedence
-/// (arago `Priority`) and the applicability-scoped parameter defaults (arago
-/// `Applicability.Parameter{Name,Value}`, e.g. the SSH handler's `SshOpts`).
+/// **Legacy guard reading**, in full: per handler the guards PLUS the applicability
+/// precedence (`Priority`) and the applicability-scoped parameter defaults
+/// (`Applicability.Parameter{Name,Value}`, e.g. the SSH handler's `SshOpts`). Same
+/// UNCONFIRMED `ModelFilter` shape as [`parse_applicabilities`], and the same
+/// refusal of graph_conn's `on` shape.
 ///
-/// The additive sibling of [`parse_applicabilities`] (which stays as the
-/// guard-only view the hard gate consumes). A dispatcher concatenates each
-/// [`ConcreteApplicability::params`] onto the matched capability's signature so
-/// `bind_parameters` fills the scoped defaults exactly the way arago expands
-/// them into the capability `Command` template.
+/// A dispatcher concatenates each [`ConcreteApplicability::params`] onto the matched
+/// capability's signature so `bind_parameters` fills the scoped defaults exactly the
+/// way arago expands them into the capability `Command` template.
 ///
 /// # Errors
 /// Returns the `serde_json` error message if the body is not a valid
@@ -112,8 +127,22 @@ pub fn parse_applicabilities(json: &str) -> Result<BTreeMap<String, Vec<KausalSp
 pub fn parse_applicabilities_full(
     json: &str,
 ) -> Result<BTreeMap<String, ConcreteApplicability>, String> {
+    refuse_on_shape(json)?;
     let apps: RegisteredApplicabilities = serde_json::from_str(json).map_err(|e| e.to_string())?;
     Ok(lift_applicabilities_full(&apps))
+}
+
+/// A body in graph_conn's `on` shape with entries would deserialize into the legacy
+/// DTO as empty guards, silently. Refuse it by name instead.
+fn refuse_on_shape(json: &str) -> Result<(), String> {
+    match parse_applicabilities_typed(json) {
+        Ok(Applicabilities::AppliesOn(rows)) if !rows.is_empty() => Err(
+            "body is graph_conn's `on <expr>` shape, not the legacy ModelFilter shape: \
+             use parse_applies_on or parse_applicabilities_typed"
+                .to_owned(),
+        ),
+        _ => Ok(()),
+    }
 }
 
 /// Reference executor for the **native** target: runs a capability's command via
