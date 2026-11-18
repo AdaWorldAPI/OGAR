@@ -7,15 +7,17 @@ use lance_graph_contract::ontology::{DisplayTemplate, FieldRef};
 use lance_graph_contract::set_algebra::{Logic, SetExpr};
 use lance_graph_dt64::{BindStore, MethodId, Refusal, SchemaRev};
 use ogar_action_handler::dt64::{
-    ConvertRefusal, FieldRole, TableOutcome, TableRefusal, method_of, register_domain_table,
-    register_domain_table_activated,
+    ARMS_PER_CLASS, BehaviourArmRefusal, BehaviourView, CanonicalClasses, ClassMap, ConvertRefusal,
+    FieldRole, TableOutcome, TableRefusal, behaviour_arm, method_of, register_domain_table,
+    register_domain_table_activated, register_domain_table_for,
 };
 use ogar_class_view::OgarClassView;
-use ogar_vocab::app::render_classid;
-use ogar_vocab::capability_registry::{DomainTable, HotplugDrift, domain_tables};
+use ogar_vocab::capability_registry::{DomainTable, HotplugDrift, domain_tables, resolve_hotplug};
 use ogar_vocab::effect_class::{EffectClass, classify};
 use ogar_vocab::{ActionDef, KausalSpec, class_ids};
 
+/// Ignored by the converter (the right half of a classid is the behaviour arm);
+/// kept because the entry points still take it.
 const APP: u16 = 0x0001;
 const REV: SchemaRev = SchemaRev(1);
 
@@ -168,63 +170,256 @@ fn every_one_of_the_fifty_defs_is_registered_or_refused_by_name() {
     );
 }
 
-/// `MethodId` is the def's position in its table. This pins today's ids: a
-/// reorder, insertion or removal in a table renumbers every later def, and
-/// fails here.
+/// The behaviour arm (right half of `class :: F###`) of every one of the 50
+/// defs, by identity. Pinned: a renumbering (a changed rule, a dropped `0xF`
+/// mask) fails here. Independent of the consumer and of table order.
+const GOLDEN_ARMS: [(&str, u16); 50] = [
+    ("ogit-ocr/textline::action_def::recognize_line", 0xf154),
+    ("ogit-ocr/page_image::action_def::recognize_page", 0xf268),
+    (
+        "ogit-ocr/page_image::action_def::extract_text_layer",
+        0xfcb8,
+    ),
+    (
+        "ogit-ocr/page_image::action_def::extract_page_image",
+        0xf622,
+    ),
+    ("ogit-ocr/ocr_renderer::action_def::render_text", 0xfa39),
+    ("ogit-ocr/ocr_renderer::action_def::render_tsv", 0xf93e),
+    ("ogit-ocr/ocr_renderer::action_def::render_hocr", 0xf3e1),
+    (
+        "ogit-ocr/ocr_renderer::action_def::render_searchable_pdf",
+        0xfcf7,
+    ),
+    (
+        "ogit-ocr/page_image::action_def::recognize_page_words",
+        0xf091,
+    ),
+    (
+        "ogit-ocr/page_image::action_def::recognize_document",
+        0xf023,
+    ),
+    ("ogit-ocr/page_layout::action_def::harvest_fields", 0xf788),
+    ("ogit-ocr/page_image::action_def::segment_page", 0xf40d),
+    (
+        "ogit-ocr/page_image::action_def::detect_halftone_regions",
+        0xfd9b,
+    ),
+    (
+        "ogit-ocr/page_layout::action_def::detect_page_furniture",
+        0xfb5b,
+    ),
+    ("ogit-geo/osm_node::action_def::locate_point", 0xffc9),
+    ("ogit-geo/osm_node::action_def::locate_tile", 0xfc3e),
+    ("ogit-geo/osm_node::action_def::locate_fragment", 0xf031),
+    ("ogit-geo/osm_node::action_def::project_fields", 0xfaf2),
+    ("ogit-geo/osm_way::action_def::street_edges", 0xf2ec),
+    ("ogit-geo/osm_way::action_def::polyline_length", 0xf4ee),
+    ("ogit-health/patient::action_def::register_patient", 0xfaa4),
+    (
+        "ogit-health/patient::action_def::get_patient_record",
+        0xff19,
+    ),
+    ("ogit-health/patient::action_def::list_patients", 0xf6c8),
+    (
+        "ogit-health/patient::action_def::update_patient_access",
+        0xf633,
+    ),
+    ("ogit-health/diagnosis::action_def::add_diagnosis", 0xf952),
+    ("ogit-health/diagnosis::action_def::get_diagnosis", 0xf70f),
+    ("ogit-health/diagnosis::action_def::list_diagnoses", 0xf196),
+    (
+        "ogit-health/diagnosis::action_def::delete_diagnosis",
+        0xf86a,
+    ),
+    ("ogit-health/lab_value::action_def::add_lab_result", 0xfb61),
+    ("ogit-health/lab_value::action_def::get_lab_result", 0xf462),
+    (
+        "ogit-health/lab_value::action_def::list_lab_results",
+        0xf947,
+    ),
+    ("ogit-health/medication::action_def::add_medication", 0xf595),
+    ("ogit-health/medication::action_def::get_medication", 0xf2bd),
+    (
+        "ogit-health/medication::action_def::list_medications",
+        0xfd56,
+    ),
+    ("ogit-health/treatment::action_def::add_treatment", 0xfb82),
+    ("ogit-health/treatment::action_def::get_treatment", 0xfb0e),
+    ("ogit-health/treatment::action_def::list_treatments", 0xf27f),
+    ("ogit-health/vital_sign::action_def::add_vital_sign", 0xfb53),
+    (
+        "ogit-health/vital_sign::action_def::list_vital_signs",
+        0xf201,
+    ),
+    (
+        "ogit-health/vital_sign::action_def::delete_vital_signs",
+        0xfa58,
+    ),
+    ("ogit-ocr/document::action_def::persist_document", 0xf50e),
+    ("ogit-ocr/document::action_def::read_document", 0xf77c),
+    (
+        "ogit-ocr/document::action_def::reconstruct_document",
+        0xfe7b,
+    ),
+    ("ogit-erp/erp_polyfill::action_def::create_entry", 0xf5ba),
+    ("ogit-erp/erp_polyfill::action_def::post_entry", 0xff92),
+    ("ogit-erp/erp_polyfill::action_def::read_entry", 0xf338),
+    ("ogit-erp/erp_polyfill::action_def::set_const", 0xfba5),
+    ("ogit-erp/erp_polyfill::action_def::mark_set", 0xf018),
+    (
+        "ogit-erp/erp_polyfill::action_def::record_time_entry",
+        0xf919,
+    ),
+    ("ogit-erp/erp_polyfill::action_def::emit_row", 0xf6f2),
+];
+
+fn all_defs() -> Vec<ActionDef> {
+    domain_tables().iter().flat_map(|t| (t.actions)()).collect()
+}
+
+/// The arm is the def's own number: the 50 arms are pinned, every one is in
+/// `0xF001..=0xFFFF`, and a refused row keeps its arm as its id.
 #[test]
-fn method_ids_are_pinned_to_the_tables_declared_order() {
+fn the_behaviour_arms_of_the_fifty_defs_are_pinned() {
+    let defs = all_defs();
+    assert_eq!(defs.len(), 50);
+    for (def, (identity, arm)) in defs.iter().zip(GOLDEN_ARMS) {
+        assert_eq!(def.identity, identity, "the golden list is in table order");
+        assert_eq!(behaviour_arm(&def.identity), arm, "{identity}");
+        assert!((0xF001..=0xFFFF).contains(&arm), "{identity}");
+    }
     let (_, outcomes) = census();
-    let id_of = |domain: &str, predicate: &str| {
+    let rows: Vec<_> = outcomes.iter().flat_map(|o| o.rows.iter()).collect();
+    assert_eq!(rows.len(), 50);
+    for (row, (_, arm)) in rows.iter().zip(GOLDEN_ARMS) {
+        assert_eq!(row.id, MethodId(u32::from(arm)), "{}", row.predicate);
+        if let Ok(reg) = &row.result {
+            assert_eq!(reg.arm, arm);
+        }
+    }
+}
+
+/// Every registered method's id has its right half in `0xF000..=0xFFFF` and
+/// its left half the class it applies on (the subject the def declares, where
+/// the consumer is OGAR's canon); ids are unique.
+#[test]
+fn every_registered_id_is_class_over_an_f_arm_and_unique() {
+    let (_, outcomes) = census();
+    let mut seen = std::collections::BTreeSet::new();
+    for o in &outcomes {
+        for reg in o.registered() {
+            assert!((0xF000..=0xFFFF).contains(&(reg.behaviour & 0xFFFF)));
+            assert_eq!((reg.behaviour & 0xFFFF) as u16, reg.arm);
+            assert_eq!((reg.behaviour >> 16) as u16, reg.on);
+            assert_eq!(reg.class, u32::from(reg.on) << 16);
+            let def = all_defs()
+                .into_iter()
+                .find(|d| d.identity == reg.identity)
+                .unwrap();
+            let subject = def.object_class.rsplit('/').next().unwrap().to_string();
+            assert_eq!(
+                Some(reg.on),
+                ogar_vocab::canonical_concept_id(&subject),
+                "{}",
+                reg.capability
+            );
+            assert!(seen.insert(reg.behaviour), "{:#x} twice", reg.behaviour);
+        }
+    }
+    assert_eq!(seen.len(), 33);
+}
+
+/// One consumer's full ids, pinned: OGAR's canon as the consumer (erp seat,
+/// patient).
+#[test]
+fn the_canonical_consumers_full_ids_are_pinned() {
+    let (_, outcomes) = census();
+    let full = |domain: &str, predicate: &str| {
         outcomes
             .iter()
             .find(|o| o.domain == domain)
-            .and_then(|o| o.rows.iter().find(|r| r.predicate == predicate))
-            .map(|r| r.id)
+            .and_then(|o| o.registered().find(|r| r.capability == predicate))
+            .map(|r| r.behaviour)
     };
-    // Literal anchors: first, middle and last of each registered domain, and a
-    // refused row (which keeps its number).
-    assert_eq!(id_of("geo", "locate_point"), Some(MethodId(0)));
-    assert_eq!(id_of("geo", "street_edges"), Some(MethodId(4)));
-    assert_eq!(id_of("geo", "polyline_length"), Some(MethodId(5)));
-    assert_eq!(id_of("healthcare", "register_patient"), Some(MethodId(0)));
-    assert_eq!(id_of("healthcare", "add_diagnosis"), Some(MethodId(4)));
-    assert_eq!(id_of("healthcare", "add_vital_sign"), Some(MethodId(17)));
+    assert_eq!(class_ids::ERP_POLYFILL, 0x020C);
+    assert_eq!(full("erp", "create_entry"), Some(0x020C_F5BA));
+    assert_eq!(full("erp", "emit_row"), Some(0x020C_F6F2));
     assert_eq!(
-        id_of("healthcare", "delete_vital_signs"),
-        Some(MethodId(19))
+        full("healthcare", "register_patient"),
+        Some(u32::from(class_ids::PATIENT) << 16 | 0xFAA4)
     );
-    assert_eq!(id_of("erp", "create_entry"), Some(MethodId(0)));
-    assert_eq!(id_of("erp", "record_time_entry"), Some(MethodId(5)));
-    assert_eq!(id_of("erp", "emit_row"), Some(MethodId(6)));
-    assert_eq!(id_of("ocr", "harvest_fields"), Some(MethodId(10)));
-    assert_eq!(id_of("document", "reconstruct_document"), Some(MethodId(2)));
-
-    // And in general: row i of every table has id i, and the registered ids are
-    // exactly the rows that converted, in order.
-    for o in &outcomes {
-        for (i, row) in o.rows.iter().enumerate() {
-            assert_eq!(row.id, MethodId(i as u32), "{} {}", o.domain, row.predicate);
-        }
-    }
     assert_eq!(
-        outcomes[4].method_ids(),
-        (0..7).map(MethodId).collect::<Vec<_>>()
+        full("geo", "street_edges"),
+        Some(u32::from(class_ids::OSM_WAY) << 16 | 0xF2EC)
     );
-    assert!(outcomes[0].method_ids().is_empty());
 }
 
-/// Every registered method is found under its class by the one lookup, with
-/// its name, and a reference the store issues for it is admitted.
+/// The arm does not depend on the table: a table holding only one more def, or
+/// the defs reversed or cut down, leaves every earlier def's id unchanged.
+#[test]
+fn registering_one_more_def_leaves_every_earlier_id_unchanged() {
+    let view = OgarClassView::new();
+    let erp = domain_tables()
+        .into_iter()
+        .find(|t| t.domain == "erp")
+        .unwrap();
+    let mut a = BindStore::new();
+    let before = register_domain_table(&mut a, &view, &erp, APP, REV).unwrap();
+
+    fn erp_plus_one() -> Vec<ActionDef> {
+        let mut defs = ogar_vocab::erp_actions::erp_actions();
+        defs.insert(
+            2,
+            ActionDef::new(
+                "ogit-erp/erp_polyfill::action_def::cancel_entry",
+                "cancel_entry",
+                "ogit-erp/erp_polyfill",
+            ),
+        );
+        defs.reverse();
+        defs
+    }
+    let bigger = DomainTable {
+        domain: "erp",
+        expected_executors: erp.expected_executors,
+        entries: erp.entries,
+        actions: erp_plus_one,
+    };
+    // Into the SAME store: the earlier ids are accepted as they were (D5), the
+    // new def lands on its own id.
+    let after = register_domain_table(&mut a, &view, &bigger, APP, REV).unwrap();
+    for r in before.registered() {
+        let again = after
+            .registered()
+            .find(|x| x.identity == r.identity)
+            .expect("still registered");
+        assert_eq!(again.behaviour, r.behaviour, "{}", r.capability);
+    }
+    assert_eq!(after.registered().count(), 8);
+    assert_eq!(a.class_count(), 8);
+}
+
+/// Every registered method is found under its behaviour classid by the one
+/// lookup, with its name, and a reference the store issues for it is admitted.
+/// The behaviour's basis is the class's fields, read by the full classid.
 #[test]
 fn every_registered_method_resolves_under_its_class() {
     let (store, outcomes) = census();
-    let view = OgarClassView::new();
+    let data = OgarClassView::new();
+    let view = BehaviourView::from_outcomes(&data, &outcomes);
     let mut found = 0;
     for o in &outcomes {
         for reg in o.registered() {
             let resolved = store
-                .resolve(&view, reg.class, REV)
+                .resolve(&view, reg.behaviour, REV)
                 .unwrap_or_else(|e| panic!("{}: {e}", reg.capability));
+            assert_eq!(resolved.fields.len(), data.fields(reg.on).len());
+            assert_eq!(
+                resolved.methods.len(),
+                1,
+                "one method per behaviour classid"
+            );
             let m = resolved
                 .methods
                 .iter()
@@ -237,15 +432,16 @@ fn every_registered_method_resolves_under_its_class() {
                 reg.capability
             );
             assert!(m.effects.is_empty(), "no Frozen word for the hand-off");
-            let r = store.method_ref(reg.class, reg.id).expect("issued");
+            let r = store.method_ref(reg.behaviour, reg.id).expect("issued");
             assert_eq!(store.admit(&r).expect("admitted").id, reg.id);
             found += 1;
         }
     }
     assert_eq!(found, 33);
-    // Six classes carry behaviour: patient, diagnosis, lab_value, medication,
-    // treatment, vital_sign (6) + osm_node, osm_way (2) + erp_polyfill (1).
-    assert_eq!(store.class_count(), 9);
+    // One classid per behaviour: nine classes carry them (patient, diagnosis,
+    // lab_value, medication, treatment, vital_sign, osm_node, osm_way,
+    // erp_polyfill), 33 behaviours in all.
+    assert_eq!(store.class_count(), 33);
 }
 
 /// Every registered method carries an effect class, the 33 are all
@@ -255,7 +451,8 @@ fn every_registered_method_resolves_under_its_class() {
 #[test]
 fn every_registered_method_carries_an_effect_class_and_only_folds_may_carry_f000() {
     let (store, outcomes) = census();
-    let view = OgarClassView::new();
+    let data = OgarClassView::new();
+    let view = BehaviourView::from_outcomes(&data, &outcomes);
     let mut by_class: std::collections::BTreeMap<&str, usize> = Default::default();
     for o in &outcomes {
         for reg in o.registered() {
@@ -271,7 +468,7 @@ fn every_registered_method_carries_an_effect_class_and_only_folds_may_carry_f000
             .expect("identity finds the def");
             assert_eq!(reg.effect, classify(&def), "{}", reg.capability);
 
-            let resolved = store.resolve(&view, reg.class, REV).unwrap();
+            let resolved = store.resolve(&view, reg.behaviour, REV).unwrap();
             let m = resolved.methods.iter().find(|m| m.id == reg.id).unwrap();
             assert!(
                 reg.effect.is_f000_admissible() || m.effects.is_empty(),
@@ -345,51 +542,93 @@ fn a_write_def_registers_as_a_lifecycle_write_with_no_f000_effects() {
             EffectClass::Unresolved
         ]
     );
-    let r = store
-        .resolve(&view, render_classid(APP, class_ids::TEXTLINE), REV)
-        .unwrap();
-    for (reg, m) in out.registered().zip(r.methods.iter()) {
+    let bview = BehaviourView::from_outcomes(&view, [&out]);
+    assert_eq!(out.registered().count(), 3);
+    for reg in out.registered() {
+        let r = store.resolve(&bview, reg.behaviour, REV).unwrap();
         assert!(reg.effect.requires_gate());
-        assert!(m.effects.is_empty(), "{}", reg.capability);
+        assert!(
+            r.methods.iter().all(|m| m.effects.is_empty()),
+            "{}",
+            reg.capability
+        );
     }
 }
 
-/// A method registered under one class is not found under another.
+/// A behaviour is found at its own classid only: not under another
+/// behaviour, and not at the class's data classid. An unregistered classid is
+/// UNKNOWN, never "no methods".
 #[test]
 fn a_method_is_found_only_under_its_own_class() {
-    let (store, _) = census();
-    let view = OgarClassView::new();
-    let patient = render_classid(APP, class_ids::PATIENT);
-    let diagnosis = render_classid(APP, class_ids::DIAGNOSIS);
-    let on_patient = store.resolve(&view, patient, REV).unwrap();
-    let on_diagnosis = store.resolve(&view, diagnosis, REV).unwrap();
-    assert!(
-        on_patient
-            .methods
-            .iter()
-            .any(|m| m.name == "register_patient")
-    );
-    assert!(
-        !on_diagnosis
-            .methods
-            .iter()
-            .any(|m| m.name == "register_patient")
-    );
-    assert_eq!(on_patient.methods.len(), 4);
-    assert_eq!(on_diagnosis.methods.len(), 4);
-    // An unregistered classid is UNKNOWN, never "no methods".
-    let ocr = render_classid(APP, class_ids::TEXTLINE);
+    let (store, outcomes) = census();
+    let data = OgarClassView::new();
+    let view = BehaviourView::from_outcomes(&data, &outcomes);
+    let healthcare = &outcomes[2];
+    let by_name = |n: &str| healthcare.registered().find(|r| r.capability == n).unwrap();
+    let register = by_name("register_patient");
+    let add_dx = by_name("add_diagnosis");
+    assert_eq!(register.on, class_ids::PATIENT);
+    assert_eq!(add_dx.on, class_ids::DIAGNOSIS);
+    let on_patient = store.resolve(&view, register.behaviour, REV).unwrap();
+    assert_eq!(on_patient.methods.len(), 1);
+    assert_eq!(on_patient.methods[0].name, "register_patient");
+    // add_diagnosis's classid is a different one, holding a different method.
+    let on_dx = store.resolve(&view, add_dx.behaviour, REV).unwrap();
+    assert_eq!(on_dx.methods[0].name, "add_diagnosis");
+    // The method is not at the other behaviour's classid.
     assert_eq!(
-        store.resolve(&view, ocr, REV).unwrap_err(),
-        Refusal::UnknownClass(ocr)
+        store.method_ref(add_dx.behaviour, register.id).unwrap_err(),
+        Refusal::UnknownMethod {
+            class: add_dx.behaviour,
+            method: register.id
+        }
+    );
+    // Nothing is registered at the data classid.
+    assert_eq!(
+        store.resolve(&view, register.class, REV).unwrap_err(),
+        Refusal::UnknownClass(register.class)
     );
 }
 
-/// The registered table is idempotent: the same table over the same basis
-/// again is accepted (DT64's D5), and a different binding of a bound class is
-/// refused as `BehaviourImmutable`, surfaced as `TableRefusal::Dt64`.
+/// O9, adapted red-first: a behaviour classid does not read its data class's
+/// basis by accident. Through the plain data view it is `UnknownLensBasis`;
+/// through a behaviour view that did not declare it, the same; declared, it
+/// reads exactly its class's fields.
 #[test]
-fn re_registering_is_idempotent_and_a_changed_binding_is_refused() {
+fn a_behaviour_id_never_reads_the_data_classs_basis_by_accident() {
+    let (store, outcomes) = census();
+    let data = OgarClassView::new();
+    let reg = outcomes[2].registered().next().unwrap();
+    assert!(
+        !data.fields(reg.on).is_empty(),
+        "the data class has a basis"
+    );
+    assert_eq!(
+        store.resolve(&data, reg.behaviour, REV).unwrap_err(),
+        Refusal::UnknownLensBasis(reg.behaviour)
+    );
+    let undeclared = BehaviourView::new(&data);
+    assert_eq!(
+        store.resolve(&undeclared, reg.behaviour, REV).unwrap_err(),
+        Refusal::UnknownLensBasis(reg.behaviour)
+    );
+    let declared = BehaviourView::from_outcomes(&data, &outcomes);
+    assert_eq!(
+        store.resolve(&declared, reg.behaviour, REV).unwrap().fields,
+        data.fields(reg.on)
+    );
+    // Declaring something that is not a behaviour is refused.
+    let mut v = BehaviourView::new(&data);
+    assert!(!v.declare(reg.class));
+    assert!(v.declare(reg.behaviour));
+}
+
+/// The registered table is idempotent: the same table again is accepted
+/// (DT64's D5); the same def with another guard is a changed behaviour and is
+/// refused as `BehaviourImmutable` at its own classid, surfaced as
+/// `TableRefusal::Dt64`.
+#[test]
+fn re_registering_is_idempotent_and_a_changed_guard_is_refused() {
     let view = OgarClassView::new();
     let tables = domain_tables();
     let erp = tables.iter().find(|t| t.domain == "erp").unwrap();
@@ -397,25 +636,42 @@ fn re_registering_is_idempotent_and_a_changed_binding_is_refused() {
     let first = register_domain_table(&mut store, &view, erp, APP, REV).unwrap();
     let again = register_domain_table(&mut store, &view, erp, APP, REV).unwrap();
     assert_eq!(first, again);
-    assert_eq!(store.class_count(), 1);
+    assert_eq!(store.class_count(), 7);
 
-    fn erp_without_the_last() -> Vec<ActionDef> {
-        let mut defs = ogar_vocab::erp_actions::erp_actions();
-        defs.pop();
-        defs
+    // A changed guard needs a field to guard on: the textline probe class.
+    let view = textline_view();
+    fn plain() -> Vec<ActionDef> {
+        vec![ActionDef::new(
+            "ogit-ocr/textline::action_def::confirm",
+            "confirm",
+            "ogit-ocr/textline",
+        )]
     }
-    let shorter = DomainTable {
-        domain: "erp",
-        expected_executors: erp.expected_executors,
-        entries: erp.entries,
-        actions: erp_without_the_last,
+    fn guarded() -> Vec<ActionDef> {
+        let mut d = plain().remove(0);
+        d.kausal = Some(KausalSpec::StateGuard {
+            guard_field: "state".into(),
+            guard_values: vec!["1".into()],
+        });
+        vec![d]
+    }
+    fn none() -> Vec<(String, u16)> {
+        Vec::new()
+    }
+    let t = |actions: fn() -> Vec<ActionDef>| DomainTable {
+        domain: "probe",
+        expected_executors: &[],
+        entries: none,
+        actions,
     };
-    let class = render_classid(APP, class_ids::ERP_POLYFILL);
+    let mut store = BindStore::new();
+    let out = register_domain_table(&mut store, &view, &t(plain), APP, REV).unwrap();
+    let behaviour = out.registered().next().unwrap().behaviour;
     assert_eq!(
-        register_domain_table(&mut store, &view, &shorter, APP, REV),
+        register_domain_table(&mut store, &view, &t(guarded), APP, REV),
         Err(TableRefusal::Dt64 {
-            class,
-            refusal: Refusal::BehaviourImmutable(class)
+            class: behaviour,
+            refusal: Refusal::BehaviourImmutable(behaviour)
         })
     );
 }
@@ -468,7 +724,7 @@ fn registration_is_gated_on_the_hot_plug_activation() {
         register_domain_table_activated(&mut store, &view, table, "medcare-rs", covered, APP, REV)
             .expect("green");
     assert_eq!(green.registered().count(), 20);
-    assert_eq!(store.class_count(), 6);
+    assert_eq!(store.class_count(), 20);
 }
 
 // ── method_of: the mapping and the named refusals ───────────────────────────
@@ -640,9 +896,11 @@ fn depends_paths_become_on_and_methods_on_finds_them() {
     };
     let mut store = BindStore::new();
     let out = register_domain_table(&mut store, &view, &table, APP, REV).unwrap();
-    let class = render_classid(APP, class_ids::TEXTLINE);
-    assert_eq!(out.method_ids(), vec![MethodId(0)]);
-    let r = store.resolve(&view, class, REV).unwrap();
+    let reg = out.registered().next().unwrap();
+    assert_eq!(out.method_ids(), vec![MethodId(u32::from(reg.arm))]);
+    assert_eq!(reg.on, class_ids::TEXTLINE);
+    let bview = BehaviourView::from_outcomes(&view, [&out]);
+    let r = store.resolve(&bview, reg.behaviour, REV).unwrap();
     assert_eq!(r.methods_on(1).count(), 1);
     assert_eq!(r.methods_on(0).count(), 0);
 }
@@ -665,4 +923,240 @@ fn an_on_enter_effect_and_an_unminted_concept_are_refused() {
             concept: "totally_not_a_concept".into()
         })
     );
+}
+
+// ── the consumer supplies the left side ─────────────────────────────────────
+
+/// A consumer's view: its own classes, each with the same two-field basis.
+struct Consumer {
+    classes: std::collections::BTreeMap<u16, Vec<FieldRef>>,
+    none: Vec<FieldRef>,
+}
+
+impl Consumer {
+    fn of(classes: &[u16]) -> Consumer {
+        let basis = vec![
+            FieldRef::new("id".to_string(), "id".to_string()),
+            FieldRef::new("state".to_string(), "state".to_string()),
+        ];
+        Consumer {
+            classes: classes.iter().map(|c| (*c, basis.clone())).collect(),
+            none: Vec::new(),
+        }
+    }
+}
+
+impl ClassView for Consumer {
+    fn fields(&self, class: ClassId) -> &[FieldRef] {
+        self.classes.get(&class).unwrap_or(&self.none)
+    }
+    fn template(&self, _class: ClassId) -> DisplayTemplate {
+        DisplayTemplate::Detail
+    }
+    fn dolce_category_id(&self, _class: ClassId) -> u8 {
+        0
+    }
+}
+
+const HEALTH_CONCEPTS: [&str; 6] = [
+    "patient",
+    "diagnosis",
+    "lab_value",
+    "medication",
+    "treatment",
+    "vital_sign",
+];
+
+fn consumer_map(base: u16) -> ClassMap {
+    HEALTH_CONCEPTS
+        .iter()
+        .enumerate()
+        .fold(ClassMap::new(), |m, (i, c)| m.with(c, base + i as u16))
+}
+
+fn healthcare() -> DomainTable {
+    domain_tables()
+        .into_iter()
+        .find(|t| t.domain == "healthcare")
+        .unwrap()
+}
+
+/// Two consumers register the same domain table under their own classes: the
+/// class ids (left halves) differ, the F### arms (right halves) are identical.
+#[test]
+fn two_consumers_get_different_class_ids_and_identical_arms() {
+    let table = healthcare();
+    let register = |base: u16| {
+        let view = Consumer::of(&(0..6).map(|i| base + i).collect::<Vec<_>>());
+        let mut store = BindStore::new();
+        let out = register_domain_table_for(&mut store, &view, &consumer_map(base), &table, REV)
+            .expect("registers");
+        (store, view, out)
+    };
+    let (store_a, view_a, a) = register(0x7F01);
+    let (_, _, b) = register(0x7E01);
+    assert_eq!(a.registered().count(), 20);
+    assert_eq!(b.registered().count(), 20);
+    for (ra, rb) in a.registered().zip(b.registered()) {
+        assert_eq!(ra.identity, rb.identity);
+        assert_eq!(
+            ra.arm, rb.arm,
+            "{}: same arm for both consumers",
+            ra.capability
+        );
+        assert_ne!(ra.on, rb.on);
+        assert_ne!(ra.behaviour, rb.behaviour);
+        assert_eq!(ra.on >> 8, 0x7F);
+        assert_eq!(rb.on >> 8, 0x7E);
+    }
+    // Consumer A's behaviours resolve through A's own view, with A's basis.
+    let bview = BehaviourView::from_outcomes(&view_a, [&a]);
+    let reg = a.registered().next().unwrap();
+    assert_eq!(reg.behaviour, 0x7F01_0000 | u32::from(reg.arm));
+    let r = store_a.resolve(&bview, reg.behaviour, REV).unwrap();
+    assert_eq!(r.fields.len(), 2);
+}
+
+/// A def whose class the consumer's mapping lacks is refused by name; it is
+/// never read as the canonical concept, and the rest still register.
+#[test]
+fn a_def_whose_class_the_consumer_lacks_is_refused_by_name() {
+    let table = healthcare();
+    let view = Consumer::of(&[0x7F01]);
+    let only_patient = ClassMap::new().with("patient", 0x7F01);
+    let mut store = BindStore::new();
+    let out = register_domain_table_for(&mut store, &view, &only_patient, &table, REV).unwrap();
+    assert_eq!(out.registered().count(), 4);
+    let refused: Vec<_> = out.refused().collect();
+    assert_eq!(refused.len(), 16);
+    for (row, why) in &refused {
+        assert!(
+            matches!(why, ConvertRefusal::ConsumerClassMissing { concept } if concept != "patient"),
+            "{}: {why:?}",
+            row.predicate
+        );
+    }
+    assert!(refused.iter().any(|(_, w)| **w
+        == ConvertRefusal::ConsumerClassMissing {
+            concept: "diagnosis".into()
+        }));
+    assert_eq!(store.class_count(), 4);
+    // The canonical consumer, by contrast, does have `diagnosis`.
+    let mut canon = BindStore::new();
+    let ok = register_domain_table_for(
+        &mut canon,
+        &OgarClassView::new(),
+        &CanonicalClasses,
+        &table,
+        REV,
+    )
+    .unwrap();
+    assert_eq!(ok.registered().count(), 20);
+}
+
+/// The migration leaves the reading-only concepts without capabilities: no
+/// method lands on `commercial_document` (0x0202) or `billable_work_entry`
+/// (0x0103) (the ERP defs sit on the `erp_polyfill` seat, 0x020C), and the
+/// hot-plug join still answers `NoCapabilitiesFor` for them.
+#[test]
+fn the_reading_only_concepts_still_answer_no_capabilities() {
+    let (_, outcomes) = census();
+    let lefts: std::collections::BTreeSet<u16> = outcomes
+        .iter()
+        .flat_map(|o| o.registered())
+        .map(|r| r.on)
+        .collect();
+    assert!(lefts.contains(&class_ids::ERP_POLYFILL));
+    assert!(!lefts.contains(&class_ids::COMMERCIAL_DOCUMENT));
+    assert!(!lefts.contains(&class_ids::BILLABLE_WORK_ENTRY));
+    assert_eq!(
+        resolve_hotplug("erp-ledger", &[class_ids::COMMERCIAL_DOCUMENT], &[]),
+        Err(HotplugDrift::NoCapabilitiesFor(
+            class_ids::COMMERCIAL_DOCUMENT
+        ))
+    );
+    assert_eq!(
+        resolve_hotplug("erp-ledger", &[class_ids::BILLABLE_WORK_ENTRY], &[]),
+        Err(HotplugDrift::NoCapabilitiesFor(
+            class_ids::BILLABLE_WORK_ENTRY
+        ))
+    );
+    // Neither is a registered classid: no behaviour sits on either.
+    let erp = outcomes.iter().find(|o| o.domain == "erp").unwrap();
+    assert!(erp.registered().all(|r| r.on == class_ids::ERP_POLYFILL));
+}
+
+/// Two defs on one class that would take one arm, and a class with more defs
+/// than arms, are refused by name; nothing is registered.
+#[test]
+fn a_colliding_arm_and_an_overfull_class_are_refused_by_name() {
+    fn none() -> Vec<(String, u16)> {
+        Vec::new()
+    }
+    fn dup() -> Vec<ActionDef> {
+        let d = |i: &str| {
+            ActionDef::new(
+                format!("ogit-ocr/textline::action_def::{i}"),
+                i,
+                "ogit-ocr/textline",
+            )
+        };
+        // Find two distinct identities with one arm (4095 arms: a few dozen
+        // names suffice, deterministically).
+        let mut seen: std::collections::BTreeMap<u16, String> = Default::default();
+        for n in 0.. {
+            let name = format!("m{n}");
+            let arm = behaviour_arm(&d(&name).identity);
+            if let Some(prev) = seen.insert(arm, name.clone()) {
+                return vec![d(&prev), d(&name)];
+            }
+        }
+        unreachable!()
+    }
+    fn same_twice() -> Vec<ActionDef> {
+        let d = ActionDef::new("ogit-ocr/textline::action_def::x", "x", "ogit-ocr/textline");
+        vec![d.clone(), d]
+    }
+    fn overfull() -> Vec<ActionDef> {
+        (0..=ARMS_PER_CLASS)
+            .map(|i| {
+                ActionDef::new(
+                    format!("ogit-ocr/textline::action_def::n{i}"),
+                    format!("n{i}"),
+                    "ogit-ocr/textline",
+                )
+            })
+            .collect()
+    }
+    let t = |actions: fn() -> Vec<ActionDef>| DomainTable {
+        domain: "probe",
+        expected_executors: &[],
+        entries: none,
+        actions,
+    };
+    let view = textline_view();
+    let mut store = BindStore::new();
+    for table in [t(dup), t(same_twice)] {
+        match register_domain_table(&mut store, &view, &table, APP, REV) {
+            Err(TableRefusal::Arm(BehaviourArmRefusal::Collision {
+                on,
+                arm,
+                first,
+                second,
+            })) => {
+                assert_eq!(on, class_ids::TEXTLINE);
+                assert_eq!(behaviour_arm(&first), arm);
+                assert_eq!(behaviour_arm(&second), arm);
+            }
+            other => panic!("{other:?}"),
+        }
+    }
+    assert_eq!(
+        register_domain_table(&mut store, &view, &t(overfull), APP, REV),
+        Err(TableRefusal::Arm(BehaviourArmRefusal::Overflow {
+            on: class_ids::TEXTLINE,
+            defs: ARMS_PER_CLASS + 1
+        }))
+    );
+    assert_eq!(store.class_count(), 0);
 }
