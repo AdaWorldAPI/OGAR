@@ -378,10 +378,14 @@ impl ConsumerClasses for ClassMap {
     }
 }
 
-/// OGAR's own canon as the consumer: a concept is its minted canonical id
-/// (`erp_polyfill` is `0x020C`, the ERP seat the def declares). The identity
-/// mapping the pre-ruling entry points ([`register_domain_table`]) use; a
-/// consumer with its own classes passes its own.
+/// OGAR's canon as the left side: a concept is its minted canonical id. This
+/// is a first-class choice, not a fallback. A generic concept (`crm_ticket`,
+/// `patient`) is shared on purpose by several consumers, so their data and its
+/// behaviours are one thing and nothing is migrated when a second consumer
+/// plugs in: each registers the same def at the same `concept :: F###`. A
+/// consumer-specific left side (a seat such as `erp_polyfill`, or the
+/// consumer's own class through [`ClassMap`]) is for behaviour that is not
+/// meant to be shared. [`register_domain_table`] is this choice.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct CanonicalClasses;
 
@@ -622,12 +626,13 @@ fn extent_for(fields: usize, methods: usize) -> Extent {
     }
 }
 
-/// [`register_domain_table_for`] with OGAR's canon as the consumer
-/// ([`CanonicalClasses`]): the left half of each def is the canonical id of
+/// [`register_domain_table_for`] with the shared canonical concepts as the
+/// left side ([`CanonicalClasses`]): the left half of each def is the canonical id of
 /// the subject it declares (`erp_polyfill`, `patient`, ...). `app` is no
 /// longer part of any classid (the right half is the behaviour arm) and is
-/// ignored; the parameter is kept so existing callers compile. A consumer
-/// with its own classes calls [`register_domain_table_for`].
+/// ignored; the parameter is kept so existing callers compile. A behaviour
+/// that is not shared registers under the consumer's own class through
+/// [`register_domain_table_for`].
 ///
 /// # Errors
 ///
