@@ -4,6 +4,10 @@
 > OGIT ontology + arago's published sources) + the runtime executor as
 > a specced, NOT-yet-built brick (`[H]`, gated on `PROBE-OGAR-ACTIONHANDLER-RUN`).
 >
+> **Correction 2026-11-18:** several `[G]`/SHIPPED claims below overclaim what the
+> code does. See §8 (the list, with the evidence). Superseded lines are marked
+> inline and kept for history.
+>
 > **Goal (operator):** reach parity with arago's HIRO ActionHandler such that one
 > "could basically switch from [arago's] Python to OGAR running it here." This
 > doc scores exactly how far that is true today and names the remaining runtime.
@@ -55,9 +59,9 @@ OGIT `provides` graph — **proven by `assembles_the_full_action_handler_contrac
 | `Capability.Name` | `ActionCapability` | `ActionDef.predicate` | `[G]` |
 | `Capability.Description` | `ogit:description` | (class description) | `[G]` |
 | `Capability.Parameter[]{Name,Mandatory,Default}` | `mandatoryParameters` / `optionalParameters` | `CapabilitySlot.declares_{mandatory,optional}_params` + `ActionParam{name,mandatory,default}` | `[G]` shape / `[H]` values¹ |
-| `Capability.resultParameters` (**the output**) | `resultParameters` | `CapabilitySlot.declares_result_params` | `[G]` shape / `[H]` values¹ |
-| `Capability.Command` / `Interpreter` | `knowledgeItemFormalRepresentation` (the body) | `ActionDef.body_source` — **pointed-to, never inlined** (lossless-DO §1) | `[G]` |
-| `Applicability.ModelFilter{Var,Mode,Value}` | `environmentFilter` | **`KausalSpec::StateGuard{guard_field,guard_values}`** | `[G]` |
+| `Capability.resultParameters` (**the output**) | `resultParameters` | `CapabilitySlot.declares_result_params` | `[G]` shape / `[H]` values¹ (2026-11-18: the REST DTO now keeps it, `RegisteredCapability::result_parameters`; before, it was dropped silently) |
+| `Capability.Command` / `Interpreter` | `knowledgeItemFormalRepresentation` (the body) | `ActionDef.body_source` — **pointed-to, never inlined** (lossless-DO §1) | ~~`[G]`~~ NOT DONE in code (2026-11-18): `body_source` is always `None` (`do_arm.rs` `into_action_def`); no code stores a command text, the command is whatever the submit carries |
+| `Applicability.ModelFilter{Var,Mode,Value}` | `environmentFilter` | **`KausalSpec::StateGuard{guard_field,guard_values}`** | ~~`[G]`~~ UNCONFIRMED (2026-11-18): `ModelFilter` and `Priority` are not found in any HIRO client repository (graph_conn, hiro-client-python, hiro-client-java, python-arago-actors). The legacy guard reading; the applicability is the ON, see §8 |
 | `Applicability.Priority` | — | (gap — no priority field) | `[H]`² |
 | `ActionHandler` (the registration) | `ActionHandler` `--provides-->` | `ActionHandlerSpec{identity, applicabilities[]}` | `[G]` |
 
@@ -86,15 +90,15 @@ the daemon's *insides* become OGAR.
 | `action-ws` message / field | direction | OGAR mapping | status |
 |---|---|---|---|
 | `submitAction.capability` | engine → handler | resolve the `ActionDef` whose `predicate` == capability | `[G]` |
-| `submitAction.parameters{…}` | engine → handler | bind to the capability's `ActionParam[]` → `ActionInvocation` inputs | `[H]` (needs the param-bind step) |
-| `submitAction.handler` / `scope` | engine → handler | `ActionInvocation.lokal{actor,tenant}` | `[G]` type / `[H]` wiring |
-| `submitAction.timeout` (ms) | engine → handler | `ActionDef.state_timeout_millis` (`ogar:StateTimeout`) | `[G]` |
-| `submitAction.id` (`$appId:$requestId`) | engine → handler | `ActionInvocation.idempotency_key` (OLD↔NEW correlation) | `[G]` |
+| `submitAction.parameters{…}` | engine → handler | bind to the capability's `ActionParam[]` → `ActionInvocation` inputs | `[H]` (needs the param-bind step) — 2026-11-18: stale, `bind_parameters` exists and `handle_submit` calls it |
+| `submitAction.handler` / `scope` | engine → handler | `ActionInvocation.lokal{actor,tenant}` | `[G]` type / `[H]` wiring — 2026-11-18: only set inside `submit_to_invocation`, which `handle_submit` never calls; `scope` is not a HIRO wire field |
+| `submitAction.timeout` (ms) | engine → handler | `ActionDef.state_timeout_millis` (`ogar:StateTimeout`) | ~~`[G]`~~ NOT DONE in code (2026-11-18): `timeout_millis` is carried but never read, and no executor has a deadline. Timeouts: in progress, not merged (another slice) |
+| `submitAction.id` (`$appId:$requestId`) | engine → handler | `ActionInvocation.idempotency_key` (OLD↔NEW correlation) | ~~`[G]`~~ type only (2026-11-18): set in `submit_to_invocation`, which `handle_submit` never calls |
 | **handler** `acknowledged{id,code:200}` | handler → engine | `ActionInvocation.state = Pending` (received, not yet committed) | `[G]` type / `[H]` emit |
 | *execute* | (internal) | `commit_via<ClassRbac>`: RBAC verb-gate ∧ `StateGuard` (the ModelFilter) ∧ MUL impact | `[G]` gate / `[H]` body-exec |
 | `sendActionResult{id, result{…}}` | handler → engine | `state = Committed`; `result` = the `resultParameters` output payload | `[G]` lifecycle / `[H]` result-build |
 | **engine** `acknowledged` (result received) | engine → handler | the **Lance commit** (`CommitHook::on_commit`) — "state history IS the version log" | `[G]` |
-| retry-on-no-ack | engine | at-least-once → `idempotency_key` dedup (`ModalSpec::Idempotent`) | `[G]` |
+| retry-on-no-ack | engine | at-least-once → `idempotency_key` dedup (`ModalSpec::Idempotent`) | ~~`[G]`~~ NOT DONE in code (2026-11-18): `handle_submit` is stateless, a repeated id executes twice. Dedup: in progress, not merged (another slice) |
 
 **The lifecycle is already OGAR's lifecycle.** `submitAction → acknowledged →
 execute → sendActionResult → acknowledged` IS `Pending → (RBAC∧guard∧MUL) →
@@ -116,7 +120,7 @@ object framing from the tutorial is superseded by the spec's `result: string`).
 WebSocket subprotocol `sec-websocket-protocol: token-$TOKEN`. (`action_ws::{ACTION_WS_PATH,
 auth_subprotocol}`.)
 
-**The six message types** (✓ = modelled in `action_ws`):
+**The six message types** (✓ = modelled in `action_ws`; 2026-11-18: the serde derives on those types are NOT HIRO's wire, the codec is `ogar_action_handler::wire`, see §8):
 
 | type | dir | fields | OGAR type |
 |---|---|---|---|
@@ -167,7 +171,7 @@ Steps 1–4 and 6 are OGAR types/logic that **exist today** — **the protocol c
 is shipped** in `ogar-from-schema::action_ws` (the testable, socket-free binding):
 
 - `SubmitAction` / `Acknowledged` / `SendActionResult` — the typed `action-ws`
-  messages (serde-gated for the wire).
+  messages (serde-gated for the wire; 2026-11-18: that derive is not HIRO's JSON shape, the codec is `ogar_action_handler::wire`).
 - `acknowledge(submit)` — step 3 (the 200 receipt).
 - `bind_parameters(supplied, signature)` — validates the engine's `parameters`
   against the capability's `ActionParam[]` (mandatory present, defaults filled) —
@@ -243,6 +247,9 @@ downstream. The remaining bricks:
   The only residual is cosmetic: the inner filter-list field name is alias-flexible
   (`modelFilters` / `model` / `filters`) pending confirmation against a live
   response — the lift itself is exact.
+  *(Superseded 2026-11-18: this is the legacy guard reading of an UNCONFIRMED shape,
+  not found in HIRO's client repositories; the readable shape is graph_conn's `on
+  <expr>` form, read as `AppliesOn`. See §8.)*
 
 What remains is **glue over existing types** (a socket loop + a JSON codec + a
 registration parser) plus the non-native executor targets — not new IR. The
@@ -257,11 +264,11 @@ transport over them.
 | Layer | Parity | Evidence / remaining |
 |---|---|---|
 | **Config + ontology contract** | ✅ `[G]` | `assemble_action_handler` over the OGIT graph; `ActionHandlerSpec` / `CapabilitySlot` / `ApplicabilitySlot` / `ActionParam` |
-| **ModelFilter → guard** | ✅ `[G]` | `environmentFilter` → `KausalSpec::StateGuard` (test) |
+| **ModelFilter → guard** | ~~✅ `[G]`~~ legacy, UNCONFIRMED (2026-11-18) | `environmentFilter` → `KausalSpec::StateGuard` (test). The shape is not found in HIRO's client repositories; the applicability is the ON, not a WHEN guard (§8) |
 | **Action lifecycle (protocol)** | ✅ `[G]` (type-level) | `action-ws` ⟷ `ActionInvocation` Pending→Committed; `commit_via` is the gate |
 | **RBAC at execute** | ✅ `[G]` | `commit_via<ClassRbac>` (verb-gate ∧ guard ∧ MUL) — shipped in `lance-graph-contract` |
 | **action-ws protocol core (B2-core)** | ✅ `[G]` SHIPPED | `action_ws`: all 6 message types + `submit_to_invocation` / `bind_parameters` / `invocation_to_result` (socket-free, `full_action_ws_roundtrip` proven) |
-| **Reactive dispatch + B1 seam** | ✅ `[G]` SHIPPED | `action_ws::handle_submit` + the `CapabilityExecutor` trait (validate→ack→bind→execute→result; tested with a mock) |
+| **Reactive dispatch + B1 seam** | ✅ `[G]` SHIPPED (2026-11-18: stateless, no dedup, no timeout, no resend: §8) | `action_ws::handle_submit` + the `CapabilityExecutor` trait (validate→ack→bind→execute→result; tested with a mock) |
 | **Executor — native target (B1)** | ✅ `[G]` SHIPPED | `ogar-action-handler::NativeCommandExecutor` runs `ExecuteCommand` for real; `full_dispatch_runs_a_real_command` |
 | **Hard gate before executor (B1-uplink)** | ✅ `[G]` SHIPPED | rs-graph-llm `graph-flow-action-ogar::GatedOgarHandler` — `commit_via` (RBAC ∧ guard ∧ MUL) lands before `handle`; `take_result()` is `None` iff the gate refused (3 tests) |
 | **Executor — REST target (B1)** | ✅ `[G]` SHIPPED | rs-graph-llm `graph-flow-action-ogar::rest::RestExecutor` (`feature = "rest"`, ureq) POSTs bound params → resultParameters; runs only behind the gate (`rest_executor_runs_only_behind_the_gate`) |
@@ -271,7 +278,7 @@ transport over them.
 | **Live transport — Kafka edge (B2-transport)** | ⛔ `[H]` | `rdkafka` over the same `Transport` trait (action topic → result topic); core ready, needs the topic/record shape pinned |
 | **Class-late-bound dispatch (the grail)** | ✅ `[G]` SHIPPED | rs-graph-llm `graph-flow-action-ogar::daemon::ResolvingDaemon` — class resolved from the target's **classid** per action (`ClassResolver`), executor from the resolved `RunnerKind` (`ExecutorRegistry`). `OgarResolver` is the production resolver over the canonical `actions_for(&[ClassActions], classid)` manifest. Proven: one `ExecuteCommand`, `mars_machine` → native / `mars_resource` → REST, zero daemon change; gate still rules |
 | **Instance config lift — capabilities (B2-lift)** | ✅ `[G]` SHIPPED | `registration::lift_registration` + `ogar-action-handler::parse_capabilities`: real `GET /capabilities` JSON → `ConcreteCapability` (`ActionParam[]`); `rest_registration_lifts_binds_and_runs` (JSON → lift → bind → run) |
-| **Instance config lift — applicabilities (B2-lift)** | ✅ `[G]` SHIPPED | `registration::lift_applicabilities` + `ogar-action-handler::parse_applicabilities`: real `GET /applicabilities` JSON → per-handler `StateGuard` sets; `rest_applicabilities_lift_to_per_handler_guards`. Residual: inner filter-list field name is alias-flexible pending a live response |
+| **Instance config lift — applicabilities (B2-lift)** | 🟡 (2026-11-18, was ✅ `[G]` SHIPPED) | `registration::lift_applicabilities` + `parse_applicabilities`: legacy `ModelFilter` shape → per-handler `StateGuard` sets (UNCONFIRMED shape). `parse_applies_on` reads graph_conn's `on <expr>` shape into `AppliesOn`. The applicability → capability path is not done: nothing evaluates applicabilities when a submit arrives, and resolving `on <expr>` to a class id is not built (intake). |
 
 **Verdict:** OGAR is at **full contract + lifecycle + protocol-binding +
 reactive-dispatch parity**, and **a working native executor runs real commands
@@ -398,3 +405,48 @@ Tests grounding this addendum on the verbatim `ssh_based_actions` values
 `ssh_stanza_lifts_priority_guards_and_scoped_params`,
 `lift_preserves_per_param_descriptions`,
 `rest_applicabilities_full_lift_carries_priority_and_scoped_params`.
+
+---
+
+## 8. Correction (2026-11-18) — what the code does, against what this doc claimed
+
+Checked against the code at `1948a7b` and the HIRO client sources (graph_conn, the
+Elixir reference handler/invoker; hiro-client-python; hiro-client-java). Earlier text
+is kept, with the overclaiming marker struck through where it appears.
+
+**Not done in code (stated as `[G]` above):**
+
+| Claim | State |
+|---|---|
+| dedup of a repeated `id` (`idempotency_key`, `ModalSpec::Idempotent`) | not done: `handle_submit` holds no state, a repeated id executes twice. In progress in another slice, not merged |
+| `submitAction.timeout` to a deadline | not done: `timeout_millis` is never read and the executors have no deadline. In progress in another slice, not merged |
+| result resend until acknowledged | not done: nothing reads an inbound `acknowledged`. HIRO's Elixir handler resends every 3000 ms until acked or nacked |
+| `body_source` for `Capability.Command` | not done: always `None`; the command is whatever the submit carries |
+| applicability → capability path | not done: `RegisteredApplicability` names no capability, nothing evaluates applicabilities on a submit, and resolving `on <expr>` to a class id is not built (it belongs at intake) |
+| `handler`/`scope`/`id` mapping onto `ActionInvocation` | only inside `submit_to_invocation`, which `handle_submit` does not call |
+
+**Not found in HIRO's client repositories:** `ModelFilter` (`Var`, `Mode`, `Value`) and
+`Priority`, searched in graph_conn, hiro-client-python, hiro-client-java and
+python-arago-actors. They come from the arago handler YAML and the earlier harvest
+(section 7). They are still accepted, as the legacy guard reading, and labelled
+UNCONFIRMED in `registration.rs`. The readable wire shape is graph_conn's: per handler
+id, per capability, `{"on <expr>": {param: template}}`, plus the list form
+`["on <expr>"]` in a definition (`lib/graph_conn/mock.ex`,
+`convert_applicabilities_from_json`; `test/graph_conn/mock_test.exs`). HIRO's library
+never expands the `${...}` templates, and neither does OGAR.
+
+**The applicability is the ON.** An applicability names the class a behaviour applies
+on, not a WHEN guard. `AppliesOn { handler, capability, on, parameters }` is the
+primary reading (`ogar_action_handler::parse_applies_on`,
+`parse_applies_on_definitions`, `parse_applicabilities_typed`). The
+`ModelFilter → KausalSpec::StateGuard` lift stays, as the legacy guard reading, because
+existing tests use it.
+
+**Wire.** The serde derives on the `action_ws` types are not HIRO's JSON (no `type`,
+parameters as an array of pairs, `timeout_millis`). The HIRO shapes are encoded and
+decoded by `ogar_action_handler::wire` (`type` envelope, parameters as an object,
+`timeout` in milliseconds, the typeless in-band 429 and 503), pinned by
+`tests/hiro_wire.rs` against fixtures from graph_conn, hiro-client-java and
+hiro-client-python. `capabilities` bodies now keep `resultParameters` and accept numeric
+defaults (graph_conn registers `"timeout": {"default": 60000}`); tests are in
+`tests/hiro_registration.rs`.
