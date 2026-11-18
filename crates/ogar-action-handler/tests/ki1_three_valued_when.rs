@@ -18,21 +18,39 @@
 //! stored value of an absent row carries no meaning, and a present 0 is a
 //! value.
 //!
-//! The file has two halves. The oracle is green today: a scalar Kleene
-//! evaluator over presence words and `i32` lanes. The seam test is red-pinned:
-//! no MethodBinding seam evaluates a `Logic::Kleene` guard yet.
+//! The file has two halves. The oracle is a scalar Kleene evaluator over
+//! presence words and `i32` lanes. The seam half registers the real
+//! `MethodBinding`, computes the guard's TRUE rows THROUGH THE CLASS BINDING
+//! (the guard read from the bound method, its fields requested as a
+//! `WideFieldMask`, lanes and presence planes lent by
+//! `LaneBinding::borrow_all_present` from a source that maps the resolved
+//! `FieldRef`, then `where_true` over what was lent), runs the gated r2il plan,
+//! and compares with the oracle. It requires lance-graph #2132 (EXO-326), which
+//! lets `prepare_gated` admit a Kleene guard. What is still refused is pinned
+//! beside it, each with its blocker.
 #![cfg(feature = "ki1")]
 
 use lance_graph_contract::class_view::{ClassId, ClassView, WideFieldMask};
 use lance_graph_contract::ontology::{DisplayTemplate, FieldRef};
 use lance_graph_contract::set_algebra::{Cmp, Logic, SetExpr};
 use lance_graph_contract::set_rules::{Population, Truth};
-use lance_graph_dt64::dr::{Focus, FrameRevisions, FrameStore, Guards, Scope};
+use lance_graph_dt64::dr::{Focus, Frame, FrameRevisions, FrameStore, Guards, Scope};
 use lance_graph_dt64::{
-    AlgebraRef, Arg, BindStore, ClassSchema, Effect, Extent, Guard, MethodBinding, MethodId,
-    SchemaRev, SigRev, ValueDemand,
+    AlgebraRef, Arg, BindStore, ClassSchema, CoordSpace, Effect, Extent, Guard, LaneAddr,
+    LaneRefusal, LaneRequest, LaneSource, MethodBinding, MethodId, PresenceSource, Refusal,
+    RouteAt, RouteVersion, SchemaRev, SigRev, ValueDemand,
 };
-use lance_graph_r2il::binding::{ExecRefusal, R2ilLens, Resolution, prepare, prepare_gated};
+use lance_graph_mask_risc::{
+    Foreign, LaneRef, Out, Planes as ResidentPlanes, Scratch, execute_into,
+};
+use lance_graph_quack::set::{SetLowered, lower_set};
+use lance_graph_quack::{Agg, Mask, Query, lower};
+use lance_graph_r2il::FoldDialect;
+use lance_graph_r2il::binding::{
+    ExecPermit, ExecRefusal, FieldLanes, Gate, Prepared, R2ilLens, Receipt, Resolution, prepare,
+    prepare_gated, run_gated,
+};
+use lance_graph_r2il::binding_native::prepare_native;
 use ogar_r2il::CONCEPT_R2IL_FOLD;
 
 // ---------------------------------------------------------------------------
@@ -225,7 +243,7 @@ fn absent_iff_presence_bit_is_zero() {
 }
 
 // ---------------------------------------------------------------------------
-// The seam: r2il's MethodBinding preparation, red-pinned.
+// The seam: r2il's MethodBinding preparation, run under a Kleene gate.
 // ---------------------------------------------------------------------------
 
 const CLASS: u32 = 0x7F0B_0001;
@@ -238,9 +256,54 @@ const R2IL: R2ilLens = R2ilLens {
 };
 const FOCUS: Focus = Focus { revision: 1 };
 const SCOPE: Scope = Scope { id: 1 };
+const NOW: (Focus, Scope) = (FOCUS, SCOPE);
 const POSITION: u16 = 3;
-const FIELDS: [&str; 3] = ["a", "b", "m"];
-const WORDS: [&str; 1] = ["IntSLess"];
+/// The class's own order of fields: two `i32` lanes, the predicate mask `m`,
+/// and the count `s`. A layout may reorder these and add a field `c`.
+const FIELDS: [&str; 4] = ["a", "b", "m", "s"];
+/// The lens words, by label: `IntSLess` (arity 2) and `PopCount` (arity 1).
+const WORDS: [&str; 2] = ["IntSLess", "PopCount"];
+const W_LESS: u8 = 0;
+const W_COUNT: u8 = 1;
+/// The rows of the source: one population in one row order.
+const ROWS: CoordSpace = CoordSpace {
+    population: 1,
+    coordinates: 1,
+};
+
+/// The Kleene guard, gated: WHEN `a < 5 AND b < 5`.
+const KLEENE: u32 = 1;
+/// A two-valued guard of another shape (`a < 5`): the source of a foreign gate.
+const OTHER_GUARD: u32 = 2;
+/// The Kleene guard again, with a three-valued RESULT.
+const THREE_VALUED: u32 = 3;
+
+/// The class view's order of fields. The guard and the effects are written
+/// against the positions this layout resolves, never against fixed numbers.
+#[derive(Clone)]
+struct Layout {
+    fields: Vec<&'static str>,
+}
+
+impl Layout {
+    fn pos(&self, label: &str) -> u8 {
+        let i = self.fields.iter().position(|f| *f == label).unwrap();
+        u8::try_from(i).unwrap()
+    }
+
+    /// Field to resident lane of the plan's planes: `a` is lane 0, `b` is
+    /// lane 1; every other field has none.
+    fn plan_lanes(&self) -> Vec<Option<u16>> {
+        self.fields
+            .iter()
+            .map(|f| match *f {
+                "a" => Some(0),
+                "b" => Some(1),
+                _ => None,
+            })
+            .collect()
+    }
+}
 
 struct Views {
     class: Vec<FieldRef>,
@@ -270,120 +333,663 @@ impl ClassView for Views {
     }
 }
 
-/// ON a, b; WHEN `a < 5 AND b < 5` under `logic`; DO `m = a < 5`.
-fn binding(logic: Logic, truth: Truth) -> MethodBinding {
+/// `a < 5 AND b < 5`, over the positions of `a` and `b` in `layout`.
+fn kleene_guard(layout: &Layout) -> SetExpr {
+    SetExpr::And(vec![
+        SetExpr::i32(u16::from(layout.pos("a")), Cmp::Lt, THRESHOLD),
+        SetExpr::i32(u16::from(layout.pos("b")), Cmp::Lt, THRESHOLD),
+    ])
+}
+
+/// ON a, b; WHEN `when`; DO `m = a < 5; s = PopCount(m)`.
+fn binding(layout: &Layout, id: u32, when: (SetExpr, Logic), truth: Truth) -> MethodBinding {
+    let (a, b, m, s) = (
+        layout.pos("a"),
+        layout.pos("b"),
+        layout.pos("m"),
+        layout.pos("s"),
+    );
     MethodBinding {
-        id: MethodId(1),
+        id: MethodId(id),
         sig_rev: SigRev(1),
-        name: "ki1_dry_run".into(),
-        on: WideFieldMask::from_positions(&[0, 1]),
-        when: Some(Guard::new(
-            SetExpr::And(vec![
-                SetExpr::i32(0, Cmp::Lt, THRESHOLD),
-                SetExpr::i32(1, Cmp::Lt, THRESHOLD),
-            ]),
-            logic,
-        )),
-        reads: WideFieldMask::from_positions(&[0, 1]),
-        effects: vec![Effect {
-            target: 2,
-            algebra: AlgebraRef {
-                lens: LENS,
-                word: 0,
+        name: format!("ki1_dry_run_{id}"),
+        on: WideFieldMask::from_positions(&[a, b]),
+        when: Some(Guard::new(when.0, when.1)),
+        reads: WideFieldMask::from_positions(&[a, b]),
+        effects: vec![
+            Effect {
+                target: m,
+                algebra: AlgebraRef {
+                    lens: LENS,
+                    word: W_LESS,
+                },
+                args: vec![Arg::Field(a), Arg::Const(i64::from(THRESHOLD))],
             },
-            args: vec![Arg::Field(0), Arg::Const(i64::from(THRESHOLD))],
-        }],
+            Effect {
+                target: s,
+                algebra: AlgebraRef {
+                    lens: LENS,
+                    word: W_COUNT,
+                },
+                args: vec![Arg::Field(m)],
+            },
+        ],
         population: Population::Distinct,
         truth,
         demand: ValueDemand::Values,
     }
 }
 
-/// `prepare` / `prepare_gated` over the registered binding, as the refusal each
-/// returns.
-fn prepared(logic: Logic, truth: Truth) -> (Result<(), ExecRefusal>, Result<(), ExecRefusal>) {
-    let views = Views {
-        class: refs(&FIELDS, "class"),
-        lens: refs(&WORDS, "r2il"),
-    };
-    let mut store = BindStore::new();
-    store
-        .declare_algebra(LENS, REV, Extent::DR64_CUBE, vec![2])
-        .unwrap();
-    store
-        .register(
-            &views,
-            CLASS,
-            ClassSchema {
-                schema_rev: REV,
-                field_count: FIELDS.len(),
-                extent: Extent::DR64_CUBE,
-            },
-            vec![binding(logic, truth)],
-        )
-        .expect("DT64 registers a Kleene-guarded binding");
-    let version = store.route(POSITION, CLASS).unwrap();
-    let r = store.method_ref(CLASS, MethodId(1)).unwrap();
-    let frames = FrameStore::new(FrameRevisions {
-        source: 1,
-        relation_map: 1,
-        coordinates: 1,
-    });
-    let g = Guards {
-        frame: frames.seal(),
-        focus: FOCUS,
-        scope: SCOPE,
-    };
-    let res = Resolution {
-        method: &r,
-        schema_rev: REV,
-        route: (version, POSITION),
-        guards: &g,
-    };
-    let now = (FOCUS, SCOPE);
-    (
-        prepare(&store, &views, R2IL, &res, &frames, now).map(|_| ()),
-        prepare_gated(&store, &views, R2IL, &res, &frames, now).map(|_| ()),
-    )
+/// The three methods of the class, bound together.
+fn bindings(layout: &Layout) -> Vec<MethodBinding> {
+    vec![
+        binding(
+            layout,
+            KLEENE,
+            (kleene_guard(layout), Logic::Kleene),
+            Truth::TwoValued,
+        ),
+        binding(
+            layout,
+            OTHER_GUARD,
+            (
+                SetExpr::i32(u16::from(layout.pos("a")), Cmp::Lt, THRESHOLD),
+                Logic::TwoValued,
+            ),
+            Truth::TwoValued,
+        ),
+        binding(
+            layout,
+            THREE_VALUED,
+            (kleene_guard(layout), Logic::Kleene),
+            Truth::ThreeValued,
+        ),
+    ]
 }
 
-/// RED-PINNED BLOCKER. No MethodBinding seam evaluates a `Logic::Kleene` WHEN
-/// yet, so the KI-1 case cannot be run through DT64 and compared with the
-/// oracle above.
+fn schema(layout: &Layout) -> ClassSchema {
+    ClassSchema {
+        schema_rev: REV,
+        field_count: layout.fields.len(),
+        extent: Extent::DR64_CUBE,
+    }
+}
+
+struct Fixture {
+    layout: Layout,
+    views: Views,
+    store: BindStore,
+    version: RouteVersion,
+    frames: FrameStore,
+}
+
+impl Fixture {
+    fn new() -> Self {
+        Self::with_order(&FIELDS)
+    }
+
+    /// The class bound over a view that orders its fields as `order`.
+    fn with_order(order: &[&'static str]) -> Self {
+        let layout = Layout {
+            fields: order.to_vec(),
+        };
+        let views = Views {
+            class: refs(order, "class"),
+            lens: refs(&WORDS, "r2il"),
+        };
+        let mut store = BindStore::new();
+        store
+            .declare_algebra(LENS, REV, Extent::DR64_CUBE, vec![2, 1])
+            .unwrap();
+        store
+            .register(&views, CLASS, schema(&layout), bindings(&layout))
+            .expect("DT64 registers a Kleene-guarded binding");
+        let version = store.route(POSITION, CLASS).unwrap();
+        Self {
+            layout,
+            views,
+            store,
+            version,
+            frames: FrameStore::new(FrameRevisions {
+                source: 1,
+                relation_map: 1,
+                coordinates: 1,
+            }),
+        }
+    }
+
+    /// `prepare` (`gated == false`) or `prepare_gated` (`true`) for method `id`.
+    fn prepare(&self, id: u32, gated: bool) -> Result<Prepared, ExecRefusal> {
+        let r = self.store.method_ref(CLASS, MethodId(id)).unwrap();
+        let g = Guards {
+            frame: self.frames.seal(),
+            focus: FOCUS,
+            scope: SCOPE,
+        };
+        let res = Resolution {
+            method: &r,
+            schema_rev: REV,
+            route: (self.version, POSITION),
+            guards: &g,
+        };
+        let f = if gated { prepare_gated } else { prepare };
+        f(&self.store, &self.views, R2IL, &res, &self.frames, NOW)
+    }
+
+    /// The gate a caller hands over for method `id`: plane 0, with the witness
+    /// of the guard that method's reference carries.
+    fn gate(&self, id: u32) -> Gate {
+        Gate {
+            plane: 0,
+            guard: self
+                .store
+                .method_ref(CLASS, MethodId(id))
+                .unwrap()
+                .guard
+                .expect("the method is guarded"),
+        }
+    }
+
+    fn permit(&self, ids: &[u32]) -> ExecPermit {
+        ExecPermit {
+            methods: ids
+                .iter()
+                .map(|&i| self.store.method_ref(CLASS, MethodId(i)).unwrap())
+                .collect(),
+        }
+    }
+
+    /// `run_gated` over the lanes of `a` and `b`, with `gate_plane` as plane 0.
+    fn run(
+        &self,
+        plan: &Prepared,
+        a: &Lane,
+        b: &Lane,
+        gate_plane: &[u64],
+        gate: &Gate,
+    ) -> Result<Receipt, ExecRefusal> {
+        let lanes = [LaneRef::I32(&a.values), LaneRef::I32(&b.values)];
+        let masks = [gate_plane];
+        let planes = ResidentPlanes {
+            n_rows: a.values.len(),
+            masks: &masks,
+            lanes: &lanes,
+        };
+        let mut dialect = FoldDialect::new(&planes, &Foreign::NONE);
+        run_gated(
+            plan,
+            &self.store,
+            &self.frames,
+            NOW,
+            &self.permit(&[KLEENE, OTHER_GUARD, THREE_VALUED]),
+            FieldLanes {
+                lanes: &self.layout.plan_lanes(),
+            },
+            &mut dialect,
+            gate,
+        )
+    }
+}
+
+// ---------------------------------------------------------------------------
+// The source: the owner of the stored lanes and their presence planes.
+// ---------------------------------------------------------------------------
+
+/// A lane whose every row is present, with value 0: a field of the source
+/// that no guard here reads.
+fn full_lane(n: usize) -> Lane {
+    let mut presence = vec![0u64; words(n)];
+    for i in 0..n {
+        presence[i / 64] |= 1 << (i % 64);
+    }
+    Lane {
+        values: vec![0; n],
+        presence,
+    }
+}
+
+/// The source's own lane numbers, by the field's label.
+const SRC_A: u16 = 0;
+const SRC_B: u16 = 1;
+const SRC_C: u16 = 2;
+
+/// Three stored lanes (`a`, `b`, `c`) and the presence plane of each that the
+/// source states. It maps the field the class view resolved, by label: a
+/// layout may order the class's fields as it likes, and it still holds.
+struct Source<'a> {
+    frames: &'a FrameStore,
+    values: [&'a [i32]; 3],
+    present: [Option<&'a [u64]>; 3],
+}
+
+impl<'a> Source<'a> {
+    fn new(frames: &'a FrameStore, a: &'a Lane, b: &'a Lane, c: &'a Lane) -> Self {
+        Source {
+            frames,
+            values: [&a.values, &b.values, &c.values],
+            present: [
+                Some(&a.presence[..]),
+                Some(&b.presence[..]),
+                Some(&c.presence[..]),
+            ],
+        }
+    }
+
+    /// The same source stating no presence plane for source lane `lane`.
+    fn without_presence(mut self, lane: u16) -> Self {
+        self.present[usize::from(lane)] = None;
+        self
+    }
+}
+
+impl LaneSource for Source<'_> {
+    type Lane<'s>
+        = LaneRef<'s>
+    where
+        Self: 's;
+
+    fn lane_of(
+        &self,
+        class: u32,
+        rev: SchemaRev,
+        _field: u8,
+        basis: &FieldRef,
+        frame: &Frame,
+    ) -> Option<LaneAddr> {
+        self.frames.check(frame).ok()?;
+        // By the field the class view resolved, never by its position.
+        let lane = match basis.label.as_str() {
+            "a" => SRC_A,
+            "b" => SRC_B,
+            "c" => SRC_C,
+            _ => return None,
+        };
+        (class == CLASS && rev == REV).then_some(LaneAddr {
+            space: ROWS,
+            lane,
+            scope: SCOPE,
+        })
+    }
+
+    fn borrow(&self, addr: &LaneAddr) -> Option<LaneRef<'_>> {
+        Some(LaneRef::I32(self.values.get(usize::from(addr.lane))?))
+    }
+
+    fn frames(&self) -> &FrameStore {
+        self.frames
+    }
+}
+
+impl PresenceSource for Source<'_> {
+    fn borrow_presence(&self, addr: &LaneAddr) -> Option<&[u64]> {
+        *self.present.get(usize::from(addr.lane))?
+    }
+}
+
+/// The rows where the guard of method `id` is TRUE, computed through the class
+/// binding. The caller names the method and the route and nothing else:
 ///
-/// Refusal site: `lance-graph-r2il/src/binding.rs`, `prepare_with`: a guard
-/// whose logic is not `TwoValued` returns
-/// `ExecRefusal::ThreeValuedNotExecutable` from `prepare_gated`, and a binding
-/// with `truth == Truth::ThreeValued` is refused the same way by both
-/// `prepare` and `prepare_gated`. The ungated `prepare` refuses any guard as
-/// `GuardNotExecutable`.
+/// 1. the guard and its logic are read from the bound method, not re-stated;
+/// 2. its fields are requested as a `WideFieldMask`;
+/// 3. their lanes and presence planes are lent by
+///    `LaneBinding::borrow_all_present`, which asks the source for each
+///    RESOLVED `FieldRef`;
+/// 4. the TRUE rows are `where_true` over what was lent.
 ///
-/// Decision B (Linear EXO-294) already gives the data side: dt64 has
-/// `PresenceSource`, `LaneBinding::borrow_all_present` and `Arg::Present`, and
-/// r2il has `FieldPresence` / `prepare_native_present`. What is missing is the
-/// evaluation of the guard over presence planes.
+/// With `validity == false` the lent planes are not named nullable, so every
+/// row is read as present: the two-valued reading, which is wrong here.
+fn gate_through_binding(
+    fx: &Fixture,
+    source: &Source<'_>,
+    id: u32,
+    validity: bool,
+) -> Result<Vec<u64>, LaneRefusal> {
+    let bound = fx
+        .store
+        .admit(&fx.store.method_ref(CLASS, MethodId(id)).unwrap())
+        .unwrap();
+    let guard = bound.when.as_ref().expect("the method is guarded");
+    assert_eq!(guard.logic, Logic::Kleene);
+    let SetLowered::Filter(set) = lower_set(&guard.expr, guard.logic).unwrap() else {
+        panic!("a filter")
+    };
+    let fields: Vec<u8> = set
+        .lanes()
+        .iter()
+        .map(|&l| u8::try_from(l).expect("a field position"))
+        .collect();
+    let frame = fx.frames.seal();
+    let lane_binding = fx.store.bind_lanes(
+        &fx.views,
+        &fx.frames,
+        source,
+        LaneRequest {
+            route: RouteAt {
+                position: POSITION,
+                version: fx.version,
+            },
+            rev: REV,
+            fields: &WideFieldMask::from_positions(&fields),
+            frame: &frame,
+            scope: SCOPE,
+            selection: ROWS,
+        },
+    )?;
+    let (mut lanes, mut masks, mut nullable) = (Vec::new(), Vec::new(), Vec::new());
+    for lent in lane_binding.borrow_all_present(&fx.store, &fx.views, &fx.frames, source)? {
+        let (field, lane, plane) = lent?;
+        nullable.push((u16::from(field), Mask(masks.len() as u16)));
+        lanes.push(lane);
+        masks.push(plane);
+    }
+    // Column `i` reads `set.lanes()[i]`: both are in ascending field order.
+    let filter = set
+        .where_true(set.lanes(), if validity { &nullable } else { &[] })
+        .unwrap();
+    let rows = source.values[0].len();
+    let planes = ResidentPlanes {
+        n_rows: rows,
+        masks: &masks,
+        lanes: &lanes,
+    };
+    let program = lower(&Query {
+        filter,
+        agg: Agg::Rows,
+    })
+    .unwrap();
+    let mut scratch = Scratch::for_program(&program, rows).unwrap();
+    let mut out = vec![0u64; words(rows)];
+    execute_into(
+        &program,
+        &planes,
+        &Foreign::NONE,
+        &mut scratch,
+        Out::Mask(&mut out),
+    )
+    .unwrap();
+    Ok(out)
+}
+
+/// [`gate_through_binding`] over a source that states every presence plane.
+fn gate_of(
+    fx: &Fixture,
+    a: &Lane,
+    b: &Lane,
+    id: u32,
+    validity: bool,
+) -> Result<Vec<u64>, LaneRefusal> {
+    let c = full_lane(a.values.len());
+    gate_through_binding(fx, &Source::new(&fx.frames, a, b, &c), id, validity)
+}
+
+fn count(plane: &[u64]) -> i64 {
+    plane.iter().map(|w| i64::from(w.count_ones())).sum()
+}
+
+/// The registered binding, run through DT64 and r2il, fires on exactly the rows
+/// the scalar Kleene oracle fires on.
 ///
-/// HIRO source: "A typed 3-valued guard must not collapse UNKNOWN to FALSE";
-/// D3: "`A AND B` with A true and B unknown does not fire".
-///
-/// WHEN lance-graph adds Kleene evaluation over presence planes, this test
-/// turns RED. Replace it with one that prepares and runs the binding over
-/// presence-tagged lanes (`lanes_for`) and compares the fired rows with
-/// `fire` in the oracle half of this file at the same widths.
+/// The gate is computed through the class binding (`gate_through_binding`):
+/// the guard is read from the bound method, its fields are requested as a
+/// `WideFieldMask`, `LaneBinding::borrow_all_present` lends the lanes and
+/// presence planes the source maps by the resolved `FieldRef`, and `where_true`
+/// runs over what was lent. The guard `a < 5 AND b < 5` needs no equality form.
+/// The plan is `prepare_gated`, the run is `run_gated`, and its `PopCount`
+/// folds the mask `m = a < 5` restricted to the gate. Because the guard implies
+/// `a < 5`, that count is the number of fired rows. The fired rows themselves
+/// are the gate plane, which the r2il receipt does not return, so they are
+/// compared directly.
 #[test]
-fn ki1_methodbinding_seam_refuses_kleene_until_lance_graph_evaluates_it() {
-    // A Kleene guard: gated prepare refuses it as three-valued.
-    let (ungated, gated) = prepared(Logic::Kleene, Truth::TwoValued);
-    assert_eq!(ungated, Err(ExecRefusal::GuardNotExecutable));
-    assert_eq!(gated, Err(ExecRefusal::ThreeValuedNotExecutable));
+fn ki1_methodbinding_fires_only_on_true_rows_through_the_kleene_gate() {
+    let fx = Fixture::new();
+    let plan = fx
+        .prepare(KLEENE, true)
+        .expect("lance-graph #2132 (EXO-326): a gated plan admits a Kleene guard");
+    let count_field = fx.layout.pos("s");
+    let m_field = fx.layout.pos("m");
+    for n in [1usize, 63, 64, 65, 1000] {
+        let (a, b) = lanes_for(n);
+        let oracle = fire(&a, &b);
 
-    // A three-valued binding is refused by both, whatever the guard's logic.
-    let (ungated, gated) = prepared(Logic::Kleene, Truth::ThreeValued);
-    assert_eq!(ungated, Err(ExecRefusal::GuardNotExecutable));
-    assert_eq!(gated, Err(ExecRefusal::ThreeValuedNotExecutable));
+        // The gate holds exactly the oracle's rows, row by row.
+        let gate = gate_of(&fx, &a, &b, KLEENE, true).expect("the class binding lends the guard");
+        for i in 0..n {
+            let (ta, tb) = COMBOS[i % COMBOS.len()];
+            assert_eq!(
+                bit(&gate, i),
+                bit(&oracle, i),
+                "width {n} row {i}: A={ta:?} B={tb:?} gate must keep the row iff the guard is TRUE"
+            );
+        }
+        assert_eq!(gate, oracle, "width {n}: gate plane differs (stray bits)");
 
-    // Control: the same guard under two-valued logic IS accepted by the gated
-    // seam, so the refusal above is the logic and nothing else.
-    let (_, gated) = prepared(Logic::TwoValued, Truth::TwoValued);
-    assert_eq!(gated, Ok(()));
+        // The plan, run under that gate, counts the fired rows.
+        let want = count(&oracle);
+        let receipt = fx
+            .run(&plan, &a, &b, &gate, &fx.gate(KLEENE))
+            .expect("the gated plan runs");
+        assert_eq!(
+            receipt.output.values,
+            vec![(count_field, want)],
+            "width {n}: fired count"
+        );
+        assert_eq!(
+            receipt.output.intermediates,
+            vec![m_field],
+            "m is no answer"
+        );
+
+        // The two-valued reading of the same lanes: an absent row's stored value
+        // is read as a value. It fires on UNKNOWN rows, so it fires more, as soon
+        // as the width holds one (width 1 is a lone (T, T) row).
+        let two_valued = (0..n)
+            .filter(|&i| a.values[i] < THRESHOLD && b.values[i] < THRESHOLD)
+            .count() as i64;
+        if n >= COMBOS.len() {
+            assert!(
+                want < two_valued,
+                "width {n}: {want} must be < {two_valued}"
+            );
+        } else {
+            assert_eq!(want, two_valued, "width {n}");
+        }
+        // And that reading is what Quack gives with no validity planes named.
+        assert_eq!(
+            count(&gate_of(&fx, &a, &b, KLEENE, false).unwrap()),
+            two_valued,
+            "width {n}"
+        );
+    }
+}
+
+/// The source maps the field the class view resolved, so the gate does not
+/// depend on where the view puts the field: appended, prepended (every
+/// position shifts) or reordered, it is the oracle's gate, and the plan counts
+/// the same fired rows.
+///
+/// FAILS IF: the source answers by position. In the prepended layout `a` sits
+/// at position 1 and `b` at 2, where a positional source holds `b` and `c`.
+#[test]
+fn ki1_gate_does_not_depend_on_where_the_view_puts_the_fields() {
+    let layouts: [&[&'static str]; 4] = [
+        &["a", "b", "m", "s"],
+        &["a", "b", "m", "s", "c"],
+        &["c", "a", "b", "m", "s"],
+        &["s", "b", "m", "a", "c"],
+    ];
+    for order in layouts {
+        let fx = Fixture::with_order(order);
+        let plan = fx.prepare(KLEENE, true).unwrap();
+        for n in [64usize, 65, 1000] {
+            let (a, b) = lanes_for(n);
+            let oracle = fire(&a, &b);
+            let gate = gate_of(&fx, &a, &b, KLEENE, true).unwrap();
+            assert_eq!(gate, oracle, "{order:?} width {n}: gate");
+            let receipt = fx.run(&plan, &a, &b, &gate, &fx.gate(KLEENE)).unwrap();
+            assert_eq!(
+                receipt.output.values,
+                vec![(fx.layout.pos("s"), count(&oracle))],
+                "{order:?} width {n}: fired count"
+            );
+        }
+    }
+}
+
+/// A guard field whose source states no presence plane is refused by name,
+/// never read as all present. The refusal names the class view's field
+/// position, and a field the guard does not read may stay unstated.
+#[test]
+fn ki1_a_guard_field_without_a_presence_plane_is_refused_by_name() {
+    let fx = Fixture::new();
+    let (a, b) = lanes_for(64);
+    let c = full_lane(64);
+    let pos = |l: &str| fx.layout.pos(l);
+
+    // Silence twin: every plane stated, and one the guard does not read left
+    // unstated, is fine.
+    let ok = Source::new(&fx.frames, &a, &b, &c).without_presence(SRC_C);
+    assert_eq!(
+        gate_through_binding(&fx, &ok, KLEENE, true),
+        Ok(fire(&a, &b))
+    );
+
+    let no_a = Source::new(&fx.frames, &a, &b, &c).without_presence(SRC_A);
+    assert_eq!(
+        gate_through_binding(&fx, &no_a, KLEENE, true),
+        Err(LaneRefusal::PresenceUnbound { field: pos("a") })
+    );
+    assert_eq!(pos("a"), 0);
+
+    let no_b = Source::new(&fx.frames, &a, &b, &c).without_presence(SRC_B);
+    assert_eq!(
+        gate_through_binding(&fx, &no_b, KLEENE, true),
+        Err(LaneRefusal::PresenceUnbound { field: pos("b") })
+    );
+    assert_eq!(pos("b"), 1);
+
+    // By the view's field, not the source's lane: in a view that puts `c` and
+    // `a` in front, `b` sits at position 2 while the source holds it at lane 1.
+    let moved = Fixture::with_order(&["c", "a", "b", "m", "s"]);
+    let no_b = Source::new(&moved.frames, &a, &b, &c).without_presence(SRC_B);
+    assert_eq!(
+        gate_through_binding(&moved, &no_b, KLEENE, true),
+        Err(LaneRefusal::PresenceUnbound { field: 2 })
+    );
+}
+
+/// The guard's logic is fixed when the class is bound. Binding the same class
+/// again with the same guard under `Logic::TwoValued` is
+/// `Refusal::BehaviourImmutable(class)`; binding it again unchanged is idempotent;
+/// and the registered guard is still Kleene afterwards.
+#[test]
+fn ki1_the_guard_logic_is_fixed_at_binding() {
+    let mut fx = Fixture::new();
+    let layout = fx.layout.clone();
+    let mut methods = bindings(&layout);
+    methods[0] = binding(
+        &layout,
+        KLEENE,
+        (kleene_guard(&layout), Logic::TwoValued),
+        Truth::TwoValued,
+    );
+    assert_eq!(
+        fx.store
+            .register(&fx.views, CLASS, schema(&layout), methods),
+        Err(Refusal::BehaviourImmutable(CLASS))
+    );
+    // Silence twin: the original binding is accepted again.
+    assert_eq!(
+        fx.store
+            .register(&fx.views, CLASS, schema(&layout), bindings(&layout)),
+        Ok(())
+    );
+    // And the bound method still carries its Kleene guard.
+    let bound = fx
+        .store
+        .admit(&fx.store.method_ref(CLASS, MethodId(KLEENE)).unwrap())
+        .unwrap();
+    assert_eq!(bound.when.as_ref().unwrap().logic, Logic::Kleene);
+}
+
+/// Still refused, blocker: the ungated r2il seam never evaluates a WHEN. A
+/// guarded binding runs only under a gate (`prepare_gated`); `prepare` gives
+/// `GuardNotExecutable`. This is the design of the seam, not a gap #2132 closes.
+#[test]
+fn ki1_ungated_prepare_still_refuses_a_guard() {
+    let fx = Fixture::new();
+    assert_eq!(
+        fx.prepare(KLEENE, false).map(|_| ()),
+        Err(ExecRefusal::GuardNotExecutable)
+    );
+}
+
+/// Still refused, blocker: the seam checks the gate's witness, not its bits. A
+/// gate evaluated for another guard than the plan's is `GateMismatch`.
+#[test]
+fn ki1_a_foreign_gate_is_refused() {
+    let fx = Fixture::new();
+    let plan = fx.prepare(KLEENE, true).unwrap();
+    let (a, b) = lanes_for(64);
+    let bits = gate_of(&fx, &a, &b, KLEENE, true).unwrap();
+    assert_eq!(
+        fx.run(&plan, &a, &b, &bits, &fx.gate(OTHER_GUARD))
+            .map(|_| ()),
+        Err(ExecRefusal::GateMismatch)
+    );
+    // Silence twin: the plan's own gate runs.
+    assert!(fx.run(&plan, &a, &b, &bits, &fx.gate(KLEENE)).is_ok());
+}
+
+/// Still refused, blocker: the dialect has no UNKNOWN rows, so a method whose
+/// RESULT is three-valued (`Truth::ThreeValued`) cannot be executed: gated it is
+/// `ThreeValuedNotExecutable` (ungated, the guard refuses first). #2132 admits
+/// a three-valued GUARD, not a three-valued result.
+#[test]
+fn ki1_a_three_valued_result_is_refused() {
+    let fx = Fixture::new();
+    assert_eq!(
+        fx.prepare(THREE_VALUED, true).map(|_| ()),
+        Err(ExecRefusal::ThreeValuedNotExecutable)
+    );
+    assert_eq!(
+        fx.prepare(THREE_VALUED, false).map(|_| ()),
+        Err(ExecRefusal::GuardNotExecutable)
+    );
+}
+
+/// Still refused, blocker: native gated plans (the literal ask of EXO-326).
+/// `prepare_native` freezes its programs and has no gate operand, so it refuses
+/// every gated plan with `GuardNotExecutable`, two-valued guards included.
+///
+/// TURNS RED WHEN NATIVE GATED PLANS LAND in lance-graph. Then replace it with
+/// a test that prepares the native plan and runs it against the oracle.
+#[test]
+fn ki1_native_gated_plan_is_refused_until_native_gates_land() {
+    let fx = Fixture::new();
+    let (a, b) = lanes_for(64);
+    let gate = gate_of(&fx, &a, &b, KLEENE, true).unwrap();
+    let lanes = [LaneRef::I32(&a.values), LaneRef::I32(&b.values)];
+    let masks = [&gate[..]];
+    let planes = ResidentPlanes {
+        n_rows: 64,
+        masks: &masks,
+        lanes: &lanes,
+    };
+    let plan_lanes = fx.layout.plan_lanes();
+    for id in [KLEENE, OTHER_GUARD] {
+        let plan = fx.prepare(id, true).unwrap();
+        assert_eq!(
+            prepare_native(
+                &plan,
+                &fx.store,
+                &fx.frames,
+                NOW,
+                FieldLanes { lanes: &plan_lanes },
+                &planes,
+            )
+            .map(|_| ()),
+            Err(ExecRefusal::GuardNotExecutable),
+            "method {id}"
+        );
+    }
 }

@@ -351,7 +351,12 @@ mod tests {
     /// Three types and a `type_attr` table whose `type` lane is `keys`, built
     /// field by field so that an order `load` never writes can be tried.
     fn fixture(keys: &[u32]) -> OgitTables {
-        let root = std::env::temp_dir().join(format!("ogar-rows-unit-{}", std::process::id()));
+        // One directory per call: the tests of this module run in parallel in
+        // one process, and a directory named by the process id alone was
+        // removed by one test while another was loading it.
+        static NEXT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+        let n = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let root = std::env::temp_dir().join(format!("ogar-rows-unit-{}-{n}", std::process::id()));
         std::fs::create_dir_all(&root).unwrap();
         let mut t = OgitTables::load(&root).unwrap();
         let _ = std::fs::remove_dir_all(&root);
