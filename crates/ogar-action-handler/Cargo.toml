@@ -25,9 +25,19 @@ quack = ["dep:lance-graph-quack", "dep:lance-graph-mask-risc"]
 # reason as `ontology-cache`: it brings lance-graph by git.
 dt64 = ["dep:lance-graph-dt64", "dep:lance-graph-contract"]
 
+# The KI-1 falsifier (`tests/ki1_three_valued_when.rs`): pins that r2il's
+# MethodBinding seam refuses a three-valued (Kleene) WHEN, beside a scalar
+# oracle of the acceptance truth table. A feature, not a dev-dependency, so the
+# default build and `--features dt64` never fetch lance-graph-r2il.
+ki1 = ["dt64", "quack", "dep:lance-graph-r2il", "dep:ogar-r2il"]
+
 [[example]]
 name = "ogit_validator_bench"
 required-features = ["quack"]
+
+[[test]]
+name = "ki1_three_valued_when"
+required-features = ["ki1"]
 
 [dependencies]
 ogar-from-schema = { path = "../ogar-from-schema", features = ["serde"] }
@@ -42,6 +52,9 @@ lance-graph-quack = { git = "https://github.com/AdaWorldAPI/lance-graph", branch
 lance-graph-mask-risc = { git = "https://github.com/AdaWorldAPI/lance-graph", branch = "main", optional = true }
 lance-graph-dt64 = { git = "https://github.com/AdaWorldAPI/lance-graph", branch = "main", optional = true }
 lance-graph-contract = { git = "https://github.com/AdaWorldAPI/lance-graph", branch = "main", optional = true }
+lance-graph-r2il = { git = "https://github.com/AdaWorldAPI/lance-graph", branch = "main", optional = true }
+# Only for the concept half of the R2IL fold lens (`CONCEPT_R2IL_FOLD`).
+ogar-r2il = { path = "../ogar-r2il", optional = true }
 
 [dev-dependencies]
 # The ClassView the `dt64` tests resolve fields through (OGAR's promoted
