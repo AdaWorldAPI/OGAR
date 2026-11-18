@@ -31,7 +31,7 @@
 //!
 //! A bound literal is a row ordinal of one OGIT tree, and the same ordinal
 //! means another row in another tree. [`OgitBinder`] therefore implements
-//! [`CodeWitness`] with an [`OgitWitness`]: the tables' [`TreeId`] and their
+//! [`CodeWitness`] with an [`OgitWitness`]: the tables' [`TreeId`](super::TreeId) and their
 //! [`OgitTables::codes_digest`]. [`Draft::bind_typed`] holds both and
 //! [`TypedQuery::admit`] refuses the query against tables of any other tree,
 //! or of the same commit with a different name-to-id mapping, with
@@ -39,7 +39,7 @@
 //! separates trees, but ignores uncommitted edits to the checkout, which
 //! renumber ids under an unchanged commit; the digest sees exactly that.
 //!
-//! A tree whose commit could not be read ([`TreeId::commit`] is `None`)
+//! A tree whose commit could not be read ([`TreeId::commit`](super::TreeId::commit) is `None`)
 //! cannot be vouched for, so it fails closed: [`OgitBinder::code_witness`]
 //! gives no witness and `bind_typed` is [`BindError::Unwitnessed`]; a held
 //! witness without a commit is never admitted. Plain [`Draft::bind`] does not
@@ -55,7 +55,7 @@
 use lance_graph_quack::bind::{BindError, Binder, BoundField, CodeWitness, FieldKind, TableId};
 use lance_graph_quack::{Col, Mask};
 
-use super::{Flag, Lane, OgitTables, Table, TreeId};
+use super::{Flag, Lane, OgitTables, OgitWitness, Table};
 
 /// Table names, in [`TableId`] order.
 const TABLES: [(&str, Table); 5] = [
@@ -161,37 +161,18 @@ impl Binder for OgitBinder<'_> {
     }
 }
 
-/// What a bound literal code is an ordinal of: the checkout's commit and the
-/// name-to-id mapping the tables were loaded with.
-///
-/// The commit alone does not do: [`TreeId`] ignores uncommitted edits, yet
-/// ids are row ordinals of the files as read, so an edit that adds a name
-/// shifts ids under an unchanged commit. The digest is
-/// [`OgitTables::codes_digest`].
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct OgitWitness {
-    tree: TreeId,
-    codes: u64,
-}
-
 impl CodeWitness for OgitBinder<'_> {
     /// The OGIT tree and the name-to-id mapping the codes are ordinals of.
     type Witness = OgitWitness;
 
     fn code_witness(&self, table: TableId, col: Col) -> Option<OgitWitness> {
         Self::lane_of(table, col)?;
-        let tree = self.tables.tree();
-        tree.commit().is_some().then(|| OgitWitness {
-            tree: tree.clone(),
-            codes: self.tables.codes_digest(),
-        })
+        self.tables.witness()
     }
 
     fn admit_code(&self, table: TableId, col: Col, held: &OgitWitness) -> Result<(), BindError> {
         Self::lane_of(table, col).ok_or(BindError::StaleCodeSpace)?;
-        let tree = self.tables.tree();
-        if tree.commit().is_some() && *tree == held.tree && self.tables.codes_digest() == held.codes
-        {
+        if held.admits(self.tables) {
             Ok(())
         } else {
             Err(BindError::StaleCodeSpace)

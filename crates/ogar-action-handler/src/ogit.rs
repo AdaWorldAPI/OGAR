@@ -36,6 +36,10 @@
 //! under one OGIT tree is refused against another. `Validator` is the Java
 //! OGIT validator's structural checks over the same tables.
 //!
+//! `OgitEdges` (always built) answers whether one `(src, verb, dst)` is an
+//! allowed edge by binary search over the sorted `allowed` lanes, allocating
+//! nothing, and only against the tree it was built from.
+//!
 //! The plan is bardioc's `ONTOLOGY_CACHE_INTEGRATION_PLAN.md`.
 
 use std::collections::BTreeSet;
@@ -50,10 +54,12 @@ use ogar_from_schema::{EntityDecl, TtlDeclaration};
 
 #[cfg(feature = "quack")]
 mod binder;
+mod edges;
 #[cfg(feature = "quack")]
 mod validator;
 #[cfg(feature = "quack")]
-pub use binder::{OgitBinder, OgitWitness};
+pub use binder::OgitBinder;
+pub use edges::{EdgeError, OgitEdges};
 #[cfg(feature = "quack")]
 pub use validator::{SYSTEM_KEYS, Validator, ValidatorError, Violation, is_system_key};
 
@@ -171,6 +177,31 @@ impl TreeId {
     #[must_use]
     pub fn commit(&self) -> Option<&str> {
         self.commit.as_deref()
+    }
+}
+
+/// What an id or a literal code is an ordinal of: the checkout's commit and
+/// the name-to-id mapping the tables were loaded with.
+///
+/// The commit alone does not do: [`TreeId`] ignores uncommitted edits, yet
+/// ids are row ordinals of the files as read, so an edit that adds a name
+/// shifts ids under an unchanged commit. The digest is
+/// [`OgitTables::codes_digest`]. A tree whose commit could not be read cannot
+/// be vouched for: it has no witness ([`OgitTables::witness`]), and a held
+/// witness is never admitted against it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct OgitWitness {
+    tree: TreeId,
+    codes: u64,
+}
+
+impl OgitWitness {
+    /// Whether `tables` are the tree and name-to-id mapping this witness was
+    /// taken from. Allocation-free.
+    #[must_use]
+    pub fn admits(&self, tables: &OgitTables) -> bool {
+        let tree = tables.tree();
+        tree.commit().is_some() && *tree == self.tree && tables.codes_digest() == self.codes
     }
 }
 
@@ -454,6 +485,16 @@ impl OgitTables {
     #[must_use]
     pub fn codes_digest(&self) -> u64 {
         self.codes
+    }
+
+    /// The witness of these tables' code space, or `None` when their tree's
+    /// commit could not be read and they cannot be vouched for.
+    #[must_use]
+    pub fn witness(&self) -> Option<OgitWitness> {
+        self.tree.commit().is_some().then(|| OgitWitness {
+            tree: self.tree.clone(),
+            codes: self.codes,
+        })
     }
 
     /// The tree these tables were read from. Ids are row ordinals of that
