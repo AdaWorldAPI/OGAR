@@ -206,9 +206,23 @@ const LEGACY_KEYS: [&str; 7] = [
     "parameter",
 ];
 
+/// True when every value is an object whose keys are all `on <expr>` keys: the
+/// ON shape, whatever the capabilities are called.
+fn is_on_shaped(obj: &Map<String, Value>) -> bool {
+    obj.values().all(|v| match v {
+        Value::Object(ons) => ons.keys().all(|k| k.starts_with("on ")),
+        _ => false,
+    })
+}
+
+/// The shape is decided by structure first: a capability may be named `model`,
+/// `priority` or any other legacy key, so a key name alone never selects the
+/// legacy reader.
 fn is_legacy_handler(obj: &Map<String, Value>) -> bool {
-    obj.keys()
-        .any(|k| LEGACY_KEYS.contains(&k.as_str()) || k == "Parameter")
+    !is_on_shaped(obj)
+        && obj
+            .keys()
+            .any(|k| LEGACY_KEYS.contains(&k.as_str()) || k == "Parameter")
 }
 
 fn parse_object(json: &str) -> Result<Map<String, Value>, ApplicabilityError> {
