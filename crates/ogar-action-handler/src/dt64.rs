@@ -25,11 +25,28 @@
 //!
 //! # The mapping
 //!
+//! A behaviour is a method addressed as `class :: F###` (owner ruling
+//! 2026-11-18, D-DT64-7 D11''-D15''): the classid's LEFT 16 bits are the class
+//! it applies on (ON), the RIGHT 16 bits in `0xF000..=0xFFFF` name the
+//! behaviour (DO), and WHEN is what the `register` call supplies. Every
+//! [`ActionDef`] registers at its own classid. The two halves have two owners:
+//!
+//! - the **arm** (right half) belongs to the behaviour: ogar-vocab supplies the
+//!   [`ActionDef`]s, and [`behaviour_arm`] gives each its number from the def's
+//!   own `identity`. It is the SAME whichever consumer registers the def.
+//! - the **left half** belongs to the registering consumer (D14'': a consumer
+//!   registers behaviour under its own class). It comes from the caller's
+//!   [`ConsumerClasses`], resolved per def from `object_class`; a def whose
+//!   class the consumer does not have is refused by name
+//!   ([`ConvertRefusal::ConsumerClassMissing`]), never read as the canonical
+//!   concept. The basis is the consumer's own [`ClassView`] (O10).
+//!
 //! | `ActionDef` | `MethodBinding` / store |
 //! |---|---|
-//! | `object_class` (last `/` segment, a minted concept) | the class: `render_classid(app, concept)`, one `BindStore::register` per class |
+//! | `object_class` (last `/` segment) | the consumer class (left half), through [`ConsumerClasses`] |
+//! | `identity` | the arm, see [Behaviour arms](#behaviour-arms) |
 //! | `predicate` | `name`, carried and never identity |
-//! | table position | `id`, see [Method ids](#method-ids) |
+//! | the arm | `id`: `MethodId(arm)`; one method per behaviour classid |
 //! | `kausal: External` | `when: None` |
 //! | `kausal: StateGuard` over a field of the class with decimal-literal values | `when: Some(Guard)`, an `Or` of `eq_u32` lanes under `Logic::Kleene` |
 //! | `kausal: Depends` over fields of the class | `on` (the positions whose change triggers it) |
@@ -44,14 +61,30 @@
 //! `demand` is `Values` when the method reads a field or has a guard, else
 //! `MapOnly`.
 //!
-//! ## Method ids
+//! ## Behaviour arms
 //!
-//! A [`MethodId`] is the def's position in its table's declared order, counted
-//! from 0, and a refused def keeps its number (so refusing or un-refusing a row
-//! never renumbers the others). The ids are append-only by construction only if
-//! the table is: **a reorder, an insertion in the middle or a removal renumbers
-//! every later def.** `tests/dt64_methods.rs` pins today's ids so that is
-//! visible.
+//! `arm = 0xF001 + fnv1a32(identity) % 4095`. The arm is a pure function of the
+//! def's own `identity`: not of its position in a table, of which other defs
+//! exist, of whether a def converts, or of the consumer. So it is stable and
+//! append-only by construction: adding, removing, reordering or refusing other
+//! defs never renumbers one, and a changed behaviour is a new def (a new
+//! identity, a new arm) or a derived classid, never a renumbered one (D5).
+//! `0xF000` is never assigned: it is the class's own polyfill lens (the
+//! `0x020C_F000` precedent, D-DT64-7 §1g). A hash can collide, and a class has
+//! at most 4095 arms, so two defs that would take one arm on one left class
+//! are refused by name ([`BehaviourArmRefusal::Collision`]), as is a left
+//! class with more defs than arms ([`BehaviourArmRefusal::Overflow`]); neither
+//! is resolved by picking a winner. `tests/dt64_methods.rs` pins every arm of
+//! today's 50 defs.
+//!
+//! ## The view of a behaviour
+//!
+//! DT64 reads the basis of a behaviour lens (right half `0xF###`) by its FULL
+//! classid ([`ClassView::lens_fields`], O9), never from the left half's data
+//! basis. [`BehaviourView`] is the consumer's view with each registered
+//! behaviour declared as a reading of its class: the lens basis IS the class's
+//! field basis, answered explicitly per declared classid, so an undeclared
+//! behaviour classid is `UnknownLensBasis`, not an inherited data basis.
 //!
 //! ## Effects
 //!
@@ -94,9 +127,11 @@
 //!
 //! ## Immutability
 //!
-//! DT64 never rebinds a class (D5). A class is registered once with the
-//! methods that converted; a later run that converts more of its defs is
-//! refused as `BehaviourImmutable` (a derived classid is the override path).
+//! DT64 never rebinds a classid (D5). Each behaviour classid is registered
+//! once; the same def again is accepted, a def with the same identity and
+//! another binding (a changed guard, reads) is refused as `BehaviourImmutable`
+//! (a derived classid is the override path). Adding defs never touches the
+//! earlier classids.
 //!
 //! # Not migrated yet
 //!
@@ -109,15 +144,15 @@
 
 use std::collections::BTreeMap;
 
-use lance_graph_contract::class_view::{ClassView, WideFieldMask};
-use lance_graph_contract::ontology::FieldRef;
+use lance_graph_contract::class_view::{ClassId, ClassView, WideFieldMask, is_behaviour_lens};
+use lance_graph_contract::ogar_codebook::{classid_concept, compose_classid};
+use lance_graph_contract::ontology::{DisplayTemplate, FieldRef};
 use lance_graph_contract::set_algebra::{Logic, SetExpr};
 use lance_graph_contract::set_rules::{Population, Truth};
 use lance_graph_dt64::{
     Axis, BindStore, ClassSchema, Extent, Guard, MethodBinding, MethodId, Refusal, SchemaRev,
     SigRev, ValueDemand, Width,
 };
-use ogar_vocab::app::render_classid;
 use ogar_vocab::capability_registry::{DomainTable, HotplugDrift, resolve_hotplug};
 use ogar_vocab::effect_class::{EffectClass, classify};
 use ogar_vocab::{ActionDef, KausalSpec, canonical_concept_id};
@@ -164,6 +199,13 @@ pub enum ConvertRefusal {
         /// Which effect carrier.
         what: &'static str,
     },
+    /// The consumer's class view has no class for the def's `object_class`
+    /// (its last `/` segment): there is no left side to register the behaviour
+    /// under. Never read as the canonical concept.
+    ConsumerClassMissing {
+        /// The last `/` segment of `object_class`.
+        concept: String,
+    },
     /// An external command with no Frozen word AND an effect list DT64
     /// requires to be non-empty. DT64 accepts an empty list, so this is never
     /// produced today; it is here so the day that changes, the refusal has a
@@ -176,10 +218,18 @@ pub enum ConvertRefusal {
 /// carry.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Registered {
-    /// The method's identity in its class.
+    /// The method's identity in its behaviour classid: `MethodId(arm)`.
     pub id: MethodId,
-    /// The classid it was registered under.
+    /// The consumer class the behaviour applies on, as a data classid
+    /// (`compose_classid(on, 0)`): the class DT64 reads fields through.
     pub class: u32,
+    /// ON: the consumer's class id, the LEFT half of [`Registered::behaviour`].
+    pub on: u16,
+    /// DO: the behaviour arm, the RIGHT half (`0xF001..=0xFFFF`). The same
+    /// for this def whichever consumer registers it.
+    pub arm: u16,
+    /// The classid the method is registered under: `on :: arm`.
+    pub behaviour: u32,
     /// The capability name (`ActionDef::predicate`), the executor's key.
     pub capability: String,
     /// `ActionDef::identity`, which finds the def (its `writes`, `calls`,
@@ -244,17 +294,185 @@ pub enum TableRefusal {
         /// DT64's refusal.
         refusal: Refusal,
     },
+    /// Two defs would take one arm on one class, or a class has more defs than
+    /// arms. DT64 was not called.
+    Arm(BehaviourArmRefusal),
 }
 
-/// The concept id of a def's `object_class` (`<prefix>/<concept>`, the concept
-/// the last `/` segment, as `capability_registry` resolves it).
-fn concept_of(def: &ActionDef) -> Result<(String, u16), ConvertRefusal> {
-    let concept = def
-        .object_class
+/// Why the arms of a table's defs could not be assigned (see
+/// [`behaviour_arm`]). Neither case picks a winner.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum BehaviourArmRefusal {
+    /// Two defs take the same arm on the same consumer class (the two
+    /// identities are the same string if a table lists a def twice).
+    Collision {
+        /// The consumer class (left half).
+        on: u16,
+        /// The arm both defs would take.
+        arm: u16,
+        /// The first def's `identity`.
+        first: String,
+        /// The second def's `identity`.
+        second: String,
+    },
+    /// More defs on one consumer class than it has arms ([`ARMS_PER_CLASS`]).
+    Overflow {
+        /// The consumer class (left half).
+        on: u16,
+        /// How many defs target it.
+        defs: usize,
+    },
+}
+
+/// How many behaviour arms one class has: `0xF001..=0xFFFF`. `0xF000` is the
+/// class's polyfill lens and is never assigned.
+pub const ARMS_PER_CLASS: usize = 4095;
+
+/// The behaviour arm (right half of the classid, in `0xF001..=0xFFFF`) of the
+/// def with this `identity` ([`ActionDef::identity`]): `0xF001 +
+/// fnv1a32(identity) % 4095`. A function of the identity alone, so it is the
+/// same under every consumer and never moves when other defs are added,
+/// removed, reordered or refused.
+#[must_use]
+pub fn behaviour_arm(identity: &str) -> u16 {
+    let mut h: u32 = 0x811c_9dc5;
+    for b in identity.bytes() {
+        h ^= u32::from(b);
+        h = h.wrapping_mul(0x0100_0193);
+    }
+    // 0xF001 + (0..4095) <= 0xFFFF; the modulus keeps it in u16.
+    0xF001 + (h % 4095) as u16
+}
+
+/// How a registering consumer names the class a def applies on: the left half
+/// of its behaviour classids (D14''). ogar-vocab supplies the behaviours; the
+/// consumer supplies this.
+pub trait ConsumerClasses {
+    /// The consumer's class id for the concept named by the last `/` segment
+    /// of a def's `object_class`, or `None` if the consumer has no such class.
+    fn class_of(&self, concept: &str) -> Option<u16>;
+}
+
+/// An explicit consumer mapping: concept name to the consumer's class id.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ClassMap(BTreeMap<String, u16>);
+
+impl ClassMap {
+    /// An empty mapping: every def is refused until classes are added.
+    #[must_use]
+    pub fn new() -> ClassMap {
+        ClassMap::default()
+    }
+
+    /// Map `concept` to the consumer's `class`.
+    #[must_use]
+    pub fn with(mut self, concept: &str, class: u16) -> ClassMap {
+        self.0.insert(concept.to_string(), class);
+        self
+    }
+}
+
+impl ConsumerClasses for ClassMap {
+    fn class_of(&self, concept: &str) -> Option<u16> {
+        self.0.get(concept).copied()
+    }
+}
+
+/// OGAR's own canon as the consumer: a concept is its minted canonical id
+/// (`erp_polyfill` is `0x020C`, the ERP seat the def declares). The identity
+/// mapping the pre-ruling entry points ([`register_domain_table`]) use; a
+/// consumer with its own classes passes its own.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct CanonicalClasses;
+
+impl ConsumerClasses for CanonicalClasses {
+    fn class_of(&self, concept: &str) -> Option<u16> {
+        canonical_concept_id(concept)
+    }
+}
+
+/// A consumer's [`ClassView`] with its registered behaviours declared as
+/// readings of their classes. DT64 reads a behaviour lens (right half
+/// `0xF###`) by its FULL classid (O9); this view answers
+/// [`ClassView::lens_fields`] (and `lens_fields_at`) only for a declared
+/// behaviour, with the field basis of the consumer class it applies on. An
+/// undeclared behaviour classid is unknown: it never reads the data class's
+/// basis by accident.
+#[derive(Debug)]
+pub struct BehaviourView<'v, V: ClassView + ?Sized> {
+    inner: &'v V,
+    readings: BTreeMap<u32, ClassId>,
+}
+
+impl<'v, V: ClassView + ?Sized> BehaviourView<'v, V> {
+    /// The consumer's view with no behaviour declared.
+    pub fn new(inner: &'v V) -> Self {
+        BehaviourView {
+            inner,
+            readings: BTreeMap::new(),
+        }
+    }
+
+    /// Declare `behaviour` (`on :: 0xF###`) as a reading of consumer class
+    /// `on`. A classid whose right half is not in `0xF000..=0xFFFF` is not a
+    /// behaviour and is not declared; returns whether it was.
+    pub fn declare(&mut self, behaviour: u32) -> bool {
+        if !is_behaviour_lens(behaviour) {
+            return false;
+        }
+        self.readings.insert(behaviour, classid_concept(behaviour));
+        true
+    }
+
+    /// The view with every registered row of `outcomes` declared.
+    pub fn from_outcomes<'o>(
+        inner: &'v V,
+        outcomes: impl IntoIterator<Item = &'o TableOutcome>,
+    ) -> Self {
+        let mut view = BehaviourView::new(inner);
+        for o in outcomes {
+            for r in o.registered() {
+                view.declare(r.behaviour);
+            }
+        }
+        view
+    }
+}
+
+impl<V: ClassView + ?Sized> ClassView for BehaviourView<'_, V> {
+    fn fields(&self, class: ClassId) -> &[FieldRef] {
+        self.inner.fields(class)
+    }
+    fn template(&self, class: ClassId) -> DisplayTemplate {
+        self.inner.template(class)
+    }
+    fn dolce_category_id(&self, class: ClassId) -> u8 {
+        self.inner.dolce_category_id(class)
+    }
+    fn lens_fields(&self, lens: u32) -> Option<&[FieldRef]> {
+        self.readings.get(&lens).map(|&c| self.inner.fields(c))
+    }
+    fn fields_at(&self, class: ClassId, schema_rev: u32) -> Option<&[FieldRef]> {
+        self.inner.fields_at(class, schema_rev)
+    }
+    fn lens_fields_at(&self, lens: u32, schema_rev: u32) -> Option<&[FieldRef]> {
+        let &c = self.readings.get(&lens)?;
+        self.inner.fields_at(c, schema_rev)
+    }
+}
+
+/// The last `/` segment of a def's `object_class`: the concept name.
+fn concept_name(def: &ActionDef) -> String {
+    def.object_class
         .rsplit('/')
         .next()
         .unwrap_or_default()
-        .to_string();
+        .to_string()
+}
+
+/// The concept id of a def's `object_class` in OGAR's canon codebook.
+fn concept_of(def: &ActionDef) -> Result<(String, u16), ConvertRefusal> {
+    let concept = concept_name(def);
     match canonical_concept_id(&concept) {
         Some(id) => Ok((concept, id)),
         None => Err(ConvertRefusal::UnmintedConcept { concept }),
@@ -353,7 +571,16 @@ pub fn method_of<V: ClassView + ?Sized>(
     view: &V,
 ) -> Result<MethodBinding, ConvertRefusal> {
     let (_, concept) = concept_of(def)?;
-    let fields = view.fields(concept);
+    method_over(def, id, view.fields(concept))
+}
+
+/// [`method_of`] over an explicit field basis: the reading the behaviour
+/// uses ([`BehaviourView`] answers it for a behaviour classid).
+fn method_over(
+    def: &ActionDef,
+    id: MethodId,
+    fields: &[FieldRef],
+) -> Result<MethodBinding, ConvertRefusal> {
     if def.on_enter.is_some() {
         return Err(ConvertRefusal::UnportedEffect { what: "on_enter" });
     }
@@ -395,19 +622,16 @@ fn extent_for(fields: usize, methods: usize) -> Extent {
     }
 }
 
-/// Convert every def of `table` (ids are table positions) and register each
-/// class once, with the methods that converted, under
-/// `render_classid(app, concept)` at `schema_rev`. Every def is either
-/// registered or refused by name in the returned [`TableOutcome`]; a def that
-/// does not convert never stops the others.
-///
-/// A class none of whose defs converted is not registered at all (DT64 would
-/// bind it with no behaviour, which reads as "no methods" rather than the
-/// refusals it is).
+/// [`register_domain_table_for`] with OGAR's canon as the consumer
+/// ([`CanonicalClasses`]): the left half of each def is the canonical id of
+/// the subject it declares (`erp_polyfill`, `patient`, ...). `app` is no
+/// longer part of any classid (the right half is the behaviour arm) and is
+/// ignored; the parameter is kept so existing callers compile. A consumer
+/// with its own classes calls [`register_domain_table_for`].
 ///
 /// # Errors
 ///
-/// [`TableRefusal::Dt64`] if DT64 refuses a class's registration.
+/// As [`register_domain_table_for`].
 pub fn register_domain_table<V: ClassView + ?Sized>(
     store: &mut BindStore,
     view: &V,
@@ -415,43 +639,112 @@ pub fn register_domain_table<V: ClassView + ?Sized>(
     app: u16,
     schema_rev: SchemaRev,
 ) -> Result<TableOutcome, TableRefusal> {
+    let _ = app;
+    register_domain_table_for(store, view, &CanonicalClasses, table, schema_rev)
+}
+
+/// Convert every def of `table` and register each one at its own classid
+/// `on :: arm` at `schema_rev`: `on` is `classes`' id for the def's declared
+/// subject (the consumer's, resolved per def), `arm` is [`behaviour_arm`] of
+/// its identity. Each def's field basis is read from `view`, the consumer's
+/// [`ClassView`], through the behaviour lens ([`BehaviourView`]). Every def is
+/// either registered or refused by name in the returned [`TableOutcome`]; a def
+/// that does not convert never stops the others. A refused row keeps its arm
+/// as its `id`.
+///
+/// # Errors
+///
+/// [`TableRefusal::Arm`] if two defs would take one arm on one class (nothing
+/// is registered), else [`TableRefusal::Dt64`] if DT64 refuses a behaviour's
+/// registration (earlier ones stay registered; the store never rebinds, D5).
+pub fn register_domain_table_for<V: ClassView + ?Sized, C: ConsumerClasses + ?Sized>(
+    store: &mut BindStore,
+    view: &V,
+    classes: &C,
+    table: &DomainTable,
+    schema_rev: SchemaRev,
+) -> Result<TableOutcome, TableRefusal> {
     let defs = (table.actions)();
+    let lefts: Vec<Result<u16, ConvertRefusal>> = defs
+        .iter()
+        .map(|d| {
+            let concept = concept_name(d);
+            classes
+                .class_of(&concept)
+                .ok_or(ConvertRefusal::ConsumerClassMissing { concept })
+        })
+        .collect();
+    let arms: Vec<u16> = defs.iter().map(|d| behaviour_arm(&d.identity)).collect();
+    // One arm per def per class, whether or not the def later converts, so
+    // that refusing or un-refusing one never decides another's fate.
+    let mut per_class: BTreeMap<u16, usize> = BTreeMap::new();
+    for on in lefts.iter().flatten() {
+        *per_class.entry(*on).or_default() += 1;
+    }
+    if let Some((&on, &defs)) = per_class.iter().find(|&(_, &n)| n > ARMS_PER_CLASS) {
+        return Err(TableRefusal::Arm(BehaviourArmRefusal::Overflow {
+            on,
+            defs,
+        }));
+    }
+    let mut taken: BTreeMap<(u16, u16), &str> = BTreeMap::new();
+    for (i, left) in lefts.iter().enumerate() {
+        let Ok(on) = *left else { continue };
+        if let Some(first) = taken.insert((on, arms[i]), &defs[i].identity) {
+            return Err(TableRefusal::Arm(BehaviourArmRefusal::Collision {
+                on,
+                arm: arms[i],
+                first: first.to_string(),
+                second: defs[i].identity.clone(),
+            }));
+        }
+    }
+    let mut bview = BehaviourView::new(view);
+    for (left, arm) in lefts.iter().zip(&arms) {
+        if let Ok(on) = left {
+            bview.declare(compose_classid(*on, *arm));
+        }
+    }
     let mut rows = Vec::with_capacity(defs.len());
-    // concept id -> the methods that converted, in table order.
-    let mut by_class: BTreeMap<u16, Vec<MethodBinding>> = BTreeMap::new();
-    for (i, def) in defs.iter().enumerate() {
-        let id = MethodId(u32::try_from(i).expect("a table has fewer than 2^32 defs"));
-        let result = match method_of(def, id, view) {
-            Ok(binding) => {
-                let (_, concept) = concept_of(def).expect("method_of resolved it");
-                by_class.entry(concept).or_default().push(binding);
-                Ok(Registered {
-                    id,
-                    class: render_classid(app, concept),
-                    capability: def.predicate.clone(),
-                    identity: def.identity.clone(),
-                    effect: classify(def),
-                })
-            }
-            Err(refusal) => Err(refusal),
-        };
+    let mut to_register: Vec<(u32, ClassSchema, MethodBinding)> = Vec::new();
+    for ((def, left), &arm) in defs.iter().zip(lefts).zip(&arms) {
+        let id = MethodId(u32::from(arm));
+        let result = left.and_then(|on| {
+            let behaviour = compose_classid(on, arm);
+            let fields = bview
+                .lens_fields(behaviour)
+                .expect("the behaviour was declared above");
+            let binding = method_over(def, id, fields)?;
+            let schema = ClassSchema {
+                schema_rev,
+                field_count: fields.len(),
+                extent: extent_for(fields.len(), 1),
+            };
+            to_register.push((behaviour, schema, binding));
+            Ok(Registered {
+                id,
+                class: compose_classid(on, 0),
+                on,
+                arm,
+                behaviour,
+                capability: def.predicate.clone(),
+                identity: def.identity.clone(),
+                effect: classify(def),
+            })
+        });
         rows.push(RowOutcome {
             id,
             predicate: def.predicate.clone(),
             result,
         });
     }
-    for (concept, methods) in by_class {
-        let class = render_classid(app, concept);
-        let fields = view.fields(concept).len();
-        let schema = ClassSchema {
-            schema_rev,
-            field_count: fields,
-            extent: extent_for(fields, methods.len()),
-        };
+    for (behaviour, schema, binding) in to_register {
         store
-            .register(view, class, schema, methods)
-            .map_err(|refusal| TableRefusal::Dt64 { class, refusal })?;
+            .register(&bview, behaviour, schema, vec![binding])
+            .map_err(|refusal| TableRefusal::Dt64 {
+                class: behaviour,
+                refusal,
+            })?;
     }
     Ok(TableOutcome {
         domain: table.domain,
@@ -463,7 +756,8 @@ pub fn register_domain_table<V: ClassView + ?Sized>(
 /// `consumer`: [`resolve_hotplug`] over the table's subject classids and the
 /// `covered` capability names. The activation runs BEFORE DT64, as
 /// `dt64-hotplug-probe::register_activated` does; on
-/// [`TableRefusal::NotActivated`] the store is unchanged.
+/// [`TableRefusal::NotActivated`] the store is unchanged. `app` is ignored as
+/// in [`register_domain_table`].
 ///
 /// # Errors
 ///
@@ -478,9 +772,38 @@ pub fn register_domain_table_activated<V: ClassView + ?Sized>(
     app: u16,
     schema_rev: SchemaRev,
 ) -> Result<TableOutcome, TableRefusal> {
+    let _ = app;
+    register_domain_table_activated_for(
+        store,
+        view,
+        &CanonicalClasses,
+        table,
+        consumer,
+        covered,
+        schema_rev,
+    )
+}
+
+/// [`register_domain_table_for`] only if OGAR's hot-plug resolution is green
+/// for `consumer` (the hot-plug consumer name, as in
+/// [`register_domain_table_activated`]).
+///
+/// # Errors
+///
+/// [`TableRefusal::NotActivated`] with the [`HotplugDrift`], else as
+/// [`register_domain_table_for`].
+pub fn register_domain_table_activated_for<V: ClassView + ?Sized, C: ConsumerClasses + ?Sized>(
+    store: &mut BindStore,
+    view: &V,
+    classes: &C,
+    table: &DomainTable,
+    consumer: &str,
+    covered: &[&str],
+    schema_rev: SchemaRev,
+) -> Result<TableOutcome, TableRefusal> {
     let mut subjects: Vec<u16> = (table.entries)().into_iter().map(|(_, id)| id).collect();
     subjects.sort_unstable();
     subjects.dedup();
     resolve_hotplug(consumer, &subjects, covered).map_err(TableRefusal::NotActivated)?;
-    register_domain_table(store, view, table, app, schema_rev)
+    register_domain_table_for(store, view, classes, table, schema_rev)
 }
