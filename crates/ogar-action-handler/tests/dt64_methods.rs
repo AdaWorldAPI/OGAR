@@ -1160,3 +1160,268 @@ fn a_colliding_arm_and_an_overfull_class_are_refused_by_name() {
     );
     assert_eq!(store.class_count(), 0);
 }
+
+// ── a generic concept shared by two consumers ───────────────────────────────
+
+/// A name-only def on the shared ticket concept that reads a real field.
+fn ticket_def(name: &str) -> ActionDef {
+    let mut d = ActionDef::new(
+        format!("ogit-crm/crm_ticket::action_def::{name}"),
+        name,
+        "ogit-crm/crm_ticket",
+    );
+    d.kausal = Some(KausalSpec::External);
+    d.reads = vec!["state".into()];
+    d
+}
+
+fn ticket_close() -> Vec<ActionDef> {
+    vec![ticket_def("close_ticket")]
+}
+
+/// The same identity as `ticket_close`, other behaviour: a state guard.
+fn ticket_close_guarded() -> Vec<ActionDef> {
+    let mut d = ticket_def("close_ticket");
+    d.kausal = Some(KausalSpec::StateGuard {
+        guard_field: "state".into(),
+        guard_values: vec!["1".into()],
+    });
+    vec![d]
+}
+
+fn ticket_close_and_reopen() -> Vec<ActionDef> {
+    vec![ticket_def("close_ticket"), ticket_def("reopen_ticket")]
+}
+
+/// A shared behaviour plus one that lives on the consumer's own seat.
+fn ticket_close_and_seat() -> Vec<ActionDef> {
+    let mut seat = ActionDef::new(
+        "ogit-zammad/zammad_seat::action_def::escalate_to_group",
+        "escalate_to_group",
+        "ogit-zammad/zammad_seat",
+    );
+    seat.kausal = Some(KausalSpec::External);
+    vec![ticket_def("close_ticket"), seat]
+}
+
+fn ticket_table(actions: fn() -> Vec<ActionDef>) -> DomainTable {
+    fn none() -> Vec<(String, u16)> {
+        Vec::new()
+    }
+    DomainTable {
+        domain: "ticket-probe",
+        expected_executors: &[],
+        entries: none,
+        actions,
+    }
+}
+
+const SEAT: u16 = 0x7F01;
+
+/// Both consumers read the ticket concept as the shared canonical class.
+fn shared_ticket() -> (Consumer, ClassMap) {
+    (
+        Consumer::of(&[class_ids::CRM_TICKET, SEAT]),
+        ClassMap::new()
+            .with("crm_ticket", class_ids::CRM_TICKET)
+            .with("zammad_seat", SEAT),
+    )
+}
+
+/// Case 1: Two consumers sharing the ticket concept register the same def into one
+/// store: one behaviour class id for both, the second registration is
+/// idempotent.
+#[test]
+fn two_consumers_sharing_a_concept_register_one_behaviour() {
+    let (view_a, map_a) = shared_ticket();
+    let (view_b, map_b) = shared_ticket();
+    let mut store = BindStore::new();
+    let a = register_domain_table_for(
+        &mut store,
+        &view_a,
+        &map_a,
+        &ticket_table(ticket_close),
+        REV,
+    )
+    .unwrap();
+    let b = register_domain_table_for(
+        &mut store,
+        &view_b,
+        &map_b,
+        &ticket_table(ticket_close),
+        REV,
+    )
+    .unwrap();
+    let (ra, rb) = (
+        a.registered().next().unwrap(),
+        b.registered().next().unwrap(),
+    );
+    assert_eq!(ra.on, class_ids::CRM_TICKET);
+    assert_eq!(
+        ra.behaviour, rb.behaviour,
+        "one class id for both consumers"
+    );
+    assert_eq!(
+        ra.behaviour,
+        u32::from(class_ids::CRM_TICKET) << 16 | u32::from(ra.arm)
+    );
+    assert_eq!(store.class_count(), 1);
+    let bview = BehaviourView::from_outcomes(&view_a, [&a]);
+    let r = store.resolve(&bview, ra.behaviour, REV).unwrap();
+    assert_eq!(r.methods.len(), 1, "one method, not two");
+    // The canonical entry point is the same choice and agrees.
+    let mut via_canon = BindStore::new();
+    let c = register_domain_table(
+        &mut via_canon,
+        &view_a,
+        &ticket_table(ticket_close),
+        APP,
+        REV,
+    )
+    .unwrap();
+    assert_eq!(c.registered().next().unwrap().behaviour, ra.behaviour);
+}
+
+/// Case 2: The same identity with another guard from the second consumer is a
+/// changed behaviour: refused `BehaviourImmutable` at that class id, the first
+/// registration untouched.
+#[test]
+fn a_second_consumer_cannot_change_a_shared_behaviour() {
+    let (view_a, map_a) = shared_ticket();
+    let (view_b, map_b) = shared_ticket();
+    let mut store = BindStore::new();
+    let a = register_domain_table_for(
+        &mut store,
+        &view_a,
+        &map_a,
+        &ticket_table(ticket_close),
+        REV,
+    )
+    .unwrap();
+    let ra = a.registered().next().unwrap();
+    let refused = register_domain_table_for(
+        &mut store,
+        &view_b,
+        &map_b,
+        &ticket_table(ticket_close_guarded),
+        REV,
+    );
+    assert_eq!(
+        refused,
+        Err(TableRefusal::Dt64 {
+            class: ra.behaviour,
+            refusal: Refusal::BehaviourImmutable(ra.behaviour)
+        })
+    );
+    let bview = BehaviourView::from_outcomes(&view_a, [&a]);
+    let r = store.resolve(&bview, ra.behaviour, REV).unwrap();
+    assert_eq!(r.methods.len(), 1);
+    assert!(
+        r.methods[0].when.is_none(),
+        "the first binding is untouched"
+    );
+    let mref = store.method_ref(ra.behaviour, ra.id).unwrap();
+    assert!(store.admit(&mref).is_ok());
+}
+
+/// Case 3: The second consumer adds a def with a new identity on the shared class:
+/// it gets its own arm, the first consumer's id is unchanged, both resolve.
+#[test]
+fn a_second_consumer_adds_a_behaviour_beside_the_shared_one() {
+    let (view_a, map_a) = shared_ticket();
+    let (view_b, map_b) = shared_ticket();
+    let mut store = BindStore::new();
+    let a = register_domain_table_for(
+        &mut store,
+        &view_a,
+        &map_a,
+        &ticket_table(ticket_close),
+        REV,
+    )
+    .unwrap();
+    let b = register_domain_table_for(
+        &mut store,
+        &view_b,
+        &map_b,
+        &ticket_table(ticket_close_and_reopen),
+        REV,
+    )
+    .unwrap();
+    let close_a = a.registered().next().unwrap();
+    let close_b = b
+        .registered()
+        .find(|r| r.capability == "close_ticket")
+        .unwrap();
+    let reopen = b
+        .registered()
+        .find(|r| r.capability == "reopen_ticket")
+        .unwrap();
+    assert_eq!(
+        close_a.behaviour, close_b.behaviour,
+        "the first id did not move"
+    );
+    assert_ne!(reopen.arm, close_a.arm, "the new def has its own arm");
+    assert_eq!(reopen.on, class_ids::CRM_TICKET);
+    assert_eq!(store.class_count(), 2);
+    let bview = BehaviourView::from_outcomes(&view_b, [&a, &b]);
+    for reg in [close_a, reopen] {
+        let r = store.resolve(&bview, reg.behaviour, REV).unwrap();
+        assert_eq!(r.methods[0].name, reg.capability);
+    }
+}
+
+/// Case 4: A consumer-specific behaviour on its own seat does not appear under the
+/// shared class, while the common one does.
+#[test]
+fn a_seat_behaviour_does_not_appear_under_the_shared_class() {
+    let (view, map) = shared_ticket();
+    let mut store = BindStore::new();
+    let out = register_domain_table_for(
+        &mut store,
+        &view,
+        &map,
+        &ticket_table(ticket_close_and_seat),
+        REV,
+    )
+    .unwrap();
+    let shared = out
+        .registered()
+        .find(|r| r.capability == "close_ticket")
+        .unwrap();
+    let seat = out
+        .registered()
+        .find(|r| r.capability == "escalate_to_group")
+        .unwrap();
+    assert_eq!(shared.on, class_ids::CRM_TICKET);
+    assert_eq!(seat.on, SEAT);
+    assert_eq!(
+        seat.arm,
+        behaviour_arm("ogit-zammad/zammad_seat::action_def::escalate_to_group")
+    );
+    // Nothing of the seat is registered under the shared concept.
+    let bview = BehaviourView::from_outcomes(&view, [&out]);
+    let under_shared = (u32::from(class_ids::CRM_TICKET) << 16) | u32::from(seat.arm);
+    assert_eq!(
+        store.resolve(&bview, under_shared, REV).unwrap_err(),
+        Refusal::UnknownClass(under_shared)
+    );
+    assert!(
+        out.registered()
+            .filter(|r| r.on == class_ids::CRM_TICKET)
+            .all(|r| r.capability != "escalate_to_group")
+    );
+    // The seat behaviour resolves under the seat; the shared one under the
+    // shared class.
+    assert_eq!(
+        store.resolve(&bview, seat.behaviour, REV).unwrap().methods[0].name,
+        "escalate_to_group"
+    );
+    assert_eq!(
+        store
+            .resolve(&bview, shared.behaviour, REV)
+            .unwrap()
+            .methods[0]
+            .name,
+        "close_ticket"
+    );
+}
