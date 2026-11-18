@@ -36,6 +36,10 @@
 //! under one OGIT tree is refused against another. `Validator` is the Java
 //! OGIT validator's structural checks over the same tables.
 //!
+//! `TypeRows` (also `quack`) counts the rows per type of `type_attr` and
+//! `allowed` with Quack's `count_by` and keeps them as `[start, end)` ranges;
+//! the validator reads only the written type's rows through it.
+//!
 //! `OgitEdges` (always built) answers whether one `(src, verb, dst)` is an
 //! allowed edge by binary search over the sorted `allowed` lanes, allocating
 //! nothing, and only against the tree it was built from.
@@ -56,10 +60,14 @@ use ogar_from_schema::{EntityDecl, TtlDeclaration};
 mod binder;
 mod edges;
 #[cfg(feature = "quack")]
+mod rows;
+#[cfg(feature = "quack")]
 mod validator;
 #[cfg(feature = "quack")]
 pub use binder::OgitBinder;
 pub use edges::{EdgeError, OgitEdges};
+#[cfg(feature = "quack")]
+pub use rows::{TypeRows, TypeRowsError};
 #[cfg(feature = "quack")]
 pub use validator::{SYSTEM_KEYS, Validator, ValidatorError, Violation, is_system_key};
 
