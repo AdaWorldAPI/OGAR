@@ -233,27 +233,57 @@ fn nack_400_sendactionresult_rejected_stops_the_resend_and_is_not_retried() {
     assert!(ep.nacked && !ep.acknowledged);
 }
 
-/// A NACK that carries neither `code` nor `message` is refused by the codec, where
-/// the Elixir handler would take it (`handler.ex:112-116` matches `type` and `id`
-/// only). No client sends one: Java's 3-argument constructor and Python's
-/// constructor both set `code` and `message` (`ActionHandlerNack.java:170-174`,
-/// `actionwebsocket.py:205-219`). The pinned `hiro_wire` test
-/// `nack_missing_code_or_message_is_refused_by_name` keeps the refusal, so this
-/// frame is an error to the caller and the resend continues.
+/// A NACK that carries neither `code` nor `message` (or only one of them): the
+/// Elixir handler matches `type` and `id` only (`handler.ex:112-119`), stops the
+/// resend, and so does OGAR. No client sends one (Java's 3-argument constructor and
+/// Python's constructor both set `code` and `message`,
+/// `ActionHandlerNack.java:170-174`, `actionwebsocket.py:205-219`), but the Elixir
+/// handler would take it. This test used to pin the opposite (a `WireError` and the
+/// resend continuing, named `a_nack_without_code_or_message_is_a_wire_error_and_the_resend_continues`);
+/// it was changed on purpose when the codec made both fields optional.
 #[test]
-fn a_nack_without_code_or_message_is_a_wire_error_and_the_resend_continues() {
-    let mut s = session_with_pending_result("id-m");
-    let err = s
-        .on_text(100, r#"{"type":"negativeAcknowledged","id":"id-m"}"#)
-        .expect_err("refused");
-    assert!(matches!(
-        err,
-        WireError::MissingField {
-            frame: "negativeAcknowledged",
-            ..
-        }
-    ));
-    resend_due(&mut s, 3_010, "id-m");
+fn a_nack_without_code_or_message_stops_the_resend() {
+    for frame in [
+        r#"{"type":"negativeAcknowledged","id":"id-m"}"#,
+        r#"{"type":"negativeAcknowledged","id":"id-m","code":null,"message":null}"#,
+        r#"{"type":"negativeAcknowledged","id":"id-m","code":400}"#,
+        r#"{"type":"negativeAcknowledged","id":"id-m","message":"m"}"#,
+    ] {
+        let mut s = session_with_pending_result("id-m");
+        assert!(s.on_text(100, frame).unwrap().is_empty(), "{frame}");
+        assert!(s.on_tick(3_010).is_empty(), "{frame}");
+        assert!(s.on_tick(60_000).is_empty(), "{frame}");
+        let ep = s.state().episode("id-m").expect("kept for dedupe");
+        assert!(ep.nacked && !ep.acknowledged, "{frame}");
+    }
+}
+
+/// A NACK with no `id` (or a `null` one) belongs to no result: the Elixir handler
+/// has no clause for the missing key and only warns (`handler.ex:152-159`); with a
+/// `null` id the clause matches and finds nothing pending (`responder.ex:124-139`).
+/// Either way nothing changes. OGAR returns the codec's error for it and steps no
+/// state, so the resend of the pending result continues.
+#[test]
+fn a_nack_without_an_id_changes_nothing() {
+    for frame in [
+        r#"{"type":"negativeAcknowledged","code":400,"message":"m"}"#,
+        r#"{"type":"negativeAcknowledged","id":null,"code":400,"message":"m"}"#,
+        r#"{"type":"negativeAcknowledged"}"#,
+    ] {
+        let mut s = session_with_pending_result("id-i");
+        let err = s.on_text(100, frame).expect_err("refused");
+        assert!(
+            matches!(
+                err,
+                WireError::MissingField {
+                    frame: "negativeAcknowledged",
+                    field: "id"
+                }
+            ),
+            "{frame}"
+        );
+        resend_due(&mut s, 3_010, "id-i");
+    }
 }
 
 /// Oracle 56 and 51. Java stops after 4 retries (`ActionWebSocket.java:44`) and

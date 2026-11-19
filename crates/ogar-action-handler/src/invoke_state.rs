@@ -326,14 +326,15 @@ pub enum Input {
         /// The request id.
         id: String,
     },
-    /// `negativeAcknowledged` for `id` (`I:201-212`).
+    /// `negativeAcknowledged` for `id` (`I:201-212`). HIRO passes `msg["code"]`
+    /// and `msg["message"]` on as they are, `nil` when the frame had none.
     Nack {
         /// The request id.
         id: String,
-        /// The code.
-        code: u16,
-        /// The message.
-        message: String,
+        /// The code, when the frame carried one.
+        code: Option<u16>,
+        /// The message, when the frame carried one.
+        message: Option<String>,
     },
     /// `sendActionResult` (`I:214-237`). `result` is the wire string, decoded
     /// once; `None` is a missing or `null` result.
@@ -417,12 +418,13 @@ pub enum InvokeError {
     /// `{:action_api_returned_timeout, last_status}`: the result was
     /// `{"error":"request_timed_out","last_status":S}` (`I:727-728`).
     ActionApiReturnedTimeout(Value),
-    /// `{:nack, %{code, message}}` (`I:659-664`).
+    /// `{:nack, %{code, message}}` (`I:659-664`); either is `nil` in HIRO when
+    /// the frame had none (`I:210`).
     Nack {
-        /// The NACK code.
-        code: u16,
-        /// The NACK message.
-        message: String,
+        /// The NACK code, when the frame carried one.
+        code: Option<u16>,
+        /// The NACK message, when the frame carried one.
+        message: Option<String>,
     },
     /// A 503's `error` object, as the frame carried it (`I:260-268`, `:676-679`).
     Refused(Map<String, Value>),
@@ -452,7 +454,16 @@ impl fmt::Display for InvokeError {
             Self::ExecTimeout(ms) => write!(f, "no response within {ms}ms"),
             Self::HandlerReturnedTimeout(ms) => write!(f, "handler timed out after {ms}ms"),
             Self::ActionApiReturnedTimeout(s) => write!(f, "action api timed out, last status {s}"),
-            Self::Nack { code, message } => write!(f, "nacked {code}: {message}"),
+            Self::Nack { code, message } => {
+                write!(f, "nacked")?;
+                if let Some(c) = code {
+                    write!(f, " {c}")?;
+                }
+                if let Some(m) = message {
+                    write!(f, ": {m}")?;
+                }
+                Ok(())
+            }
             Self::Refused(e) => write!(f, "refused: {}", Value::Object(e.clone())),
             Self::Handler(e) => write!(f, "handler error: {e}"),
         }
@@ -511,12 +522,12 @@ pub enum Log {
         request_id: String,
     },
     /// A NACK with a code other than 404 (error, `I:662-664`; a 404 is not
-    /// logged, `I:659-660`).
+    /// logged, `I:659-660`). A NACK with no code is not 404, so it is logged.
     MessageNacked {
         /// The request id.
         request_id: String,
-        /// The code.
-        code: u16,
+        /// The code, when the frame carried one.
+        code: Option<u16>,
     },
     /// A refusal found no waiting caller (warning, `I:290-302`; assertion 40).
     RefusalNoCaller {
@@ -839,7 +850,7 @@ impl InvokeState {
                         Some(Phase::AwaitAck { .. })
                     ) {
                         // `%{code: 404}` is not logged; any other code is.
-                        if code != 404 {
+                        if code != Some(404) {
                             out.push(Output::Log(Log::MessageNacked {
                                 request_id: id.clone(),
                                 code,

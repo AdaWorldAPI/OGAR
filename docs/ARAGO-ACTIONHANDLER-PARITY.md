@@ -489,8 +489,9 @@ Limits, true after this change:
   logs sets its own hook.
 * `Jason.EncodeError` (status 54 for an unencodable result) has no Rust counterpart: a result
   is a list of string pairs.
-* A `negativeAcknowledged` without `code` or `message` is a `WireError` (a pinned test), where
-  the Elixir handler would accept it and stop the resend. No client sends one.
+* A `negativeAcknowledged` without `code` or `message` is accepted (the codec keeps both
+  optional) and stops the resend, as the Elixir handler's does. A NACK with no `id` is still a
+  `WireError`, which steps nothing; HIRO finds nothing pending for it either.
 * In-band 429 and 503 frames, `configChanged` and the typed `error` are decoded and ignored,
   as the Elixir handler ignores them. Python's resend after `retryAfterMs` is not built.
 * Not an invoker: submitting, waiting and the invoker's own inbound path (a result wrapped with
@@ -580,7 +581,7 @@ Further differences of section 8 of the oracle that reach the handler's inbound 
 | `configChanged`, typed `error` | not handled, warning | Python and Java call a listener or log | decoded and ignored | `config_changed_and_a_typed_error_are_ignored` |
 | unknown fields in a frame | the keys it needs are matched, the rest ignored (`handler.ex:121-130`) | `dict.get` / Jackson | ignored, in a submit, an ack and a `hello` | `submit_with_unknown_fields_is_accepted_and_they_are_ignored`, `an_ack_with_unknown_fields_is_an_ack`, `hello_with_unknown_fields_is_accepted` |
 | `parameters` values that are not strings | any term | `dict` (`P:101`), `Map<String, Object>` (`J:30`) | a string verbatim, any other value as compact JSON text | `submit_parameters_that_are_not_strings_are_kept_as_compact_json` |
-| a NACK with neither `code` nor `message` | accepted: `type` and `id` are matched (`handler.ex:112-116`) | not sent by either client | **refused** by the codec (a pinned test), so it is a `WireError` and the resend continues. A known gap; nothing sends such a frame | `a_nack_without_code_or_message_is_a_wire_error_and_the_resend_continues` |
+| a NACK with neither `code` nor `message` | accepted: `type` and `id` are matched (`handler.ex:112-119`) | not sent by either client | accepted (`code` and `message` are optional in the codec); it stops the resend like any NACK. It used to be a `WireError` (a known gap, closed 2026-11-19). A NACK with no `id` is still a `WireError`: nothing is pending for it in HIRO either | `a_nack_without_code_or_message_stops_the_resend`, `a_nack_without_an_id_changes_nothing` |
 
 Frame limit and the oracle. The oracle's assertion 10 names `GraphConn.max_frame_bytes` without its
 default. The source (`connection_manager.ex:61`, `:201-221`; `README.md:174-182`) returns
@@ -597,6 +598,13 @@ are sans-IO: time is an argument and the things to send or fetch are returned as
 |---|---|
 | `invoke_state` | one invoker, many concurrent calls: ack wait 3000 ms and three sends, response wait = request timeout + 1000 ms with one last call, in-band 429/503 with and without an id, timeout validation before any send, NACK, result acked before delivery and decoded once, request ids shared by identical calls, late refusals (oracle assertions 20-41) |
 | `invoke_session` | the text-frame adapter: `acknowledged`, `negativeAcknowledged`, `sendActionResult`, the typeless 429/503, `configChanged`; `submitAction` written with typed parameters |
+
+The three codec gaps this section once listed are closed in `wire`: a `negativeAcknowledged` with no
+`code` or `message` (`NackFrame`, both optional; the invoker completes with `{:nack, %{code: nil, message:
+nil}}` as HIRO does), a `sendActionResult` with a missing or `null` `result` (`ResultFrame`, `None`; the caller
+gets `nil`), and the in-band 503's whole `error` object (`UpstreamUnavailable::error`). `invoke_session` no
+longer re-reads the raw text for any of them. A NACK, an ack or a result with no `id` is still a
+`WireError` (HIRO acks a result with no id using `null`; this does not send that ack).
 | `discovery` | the pure parsers of `GET /api/version` (malformed entries skipped), the auth answer and the path prefix; `capability_defaults`; and `FetchState`, the capabilities-then-applicabilities fetch with HIRO's backoff curve (1000 ms seed, cap 10000 ms, jitter, a 429's retry-after as the floor) and the refetch on `configChanged` |
 
 `tests/invoke_tolerance.rs` pins what the invoker completes with when the handler is a Python or
@@ -612,3 +620,64 @@ comparable to one HIRO computed. A 200 capabilities body that is not a JSON obje
 failed fetch here; HIRO accepts it and fails later. The real gateway's behaviour is
 unverified (the oracle's section 9 applies: the reference is the mock). Choices where the
 source is silent are listed in the module documentation of each.
+
+## 12. The closed loop (2026-11-19) — `mock_gateway` and `tests/closed_loop.rs`
+
+Sections 8 to 11 check each machine against the Elixir source on its own. This section joins them: the OGAR
+invoker (`invoke_session`), a double of graph_conn's mock gateway (`mock_gateway`) and the OGAR handler
+(`session`) run in one process, with a virtual clock, and are driven through whole scenarios. Everything between
+the machines is a JSON text frame; the invoker and the handler never see each other's typed values.
+
+**What is the double.** `mock_gateway::MockGateway` mirrors `mock_socket.ex` and `mock.ex`, each rule with its
+source line in the module documentation. The rules that matter for a pair of peers:
+
+| frame | the mock |
+|---|---|
+| a `submitAction`, unknown capability | NACK 404 `"capability X not found"` to the invoker, nothing forwarded (oracle 44, `mock_socket.ex:277-288`) |
+| a `submitAction`, known capability | after a delay, `acknowledged` (`type` and `id` only) to the invoker, then the request to the handler (oracle 45, `:257-298`). The delay is a setting, 1 ms by default (the source's is a random 1 to 5 ms) |
+| a handler's `acknowledged` | recorded, **not relayed** to the invoker (`:171-172`) |
+| a handler's `sendActionResult` | the mock **acks it itself**, at once, and forwards it to the invoker once per registration of the id (`:220-246`) |
+| an invoker's `acknowledged` of a result | recorded, **not relayed** to the handler (`:171-172`) |
+| a handler's `negativeAcknowledged`, or any frame it has no clause for | a typed `error` 400 to the sender (`:248-255`) |
+
+Three consequences the oracle does not state and the scenarios pin. The invoker's ack of a submit is the mock's,
+so losing the handler's ack changes nothing. The handler's resend is stopped by the mock's ack, so losing the
+invoker's ack of a result changes nothing either; to make the handler resend, the mock's ack to the handler has to
+be lost. And the mock's registry is a `:duplicate` registry (`mock_server.ex:78`) that registers the invoker under
+the id again for every known submit, so an invoker that resends a submit is sent the handler's result twice; it acks
+both and completes once.
+
+Fault injection (`Faults`, `inject_*`, `restart_handler`) is separate from the mirrored behaviour: drop, duplicate or
+delay the next frames in a direction, inject an in-band 429 or 503 with, without or with a `null` id, restart the
+handler connection. The armed refusals (`deny_next_request`, `fail_next_request_unavailable`,
+`ignore_next_request`, `drop_next_submit`) are the mock's own arming functions (`mock.ex:303-350`).
+
+**What the loop proves.** 25 scenarios in `tests/closed_loop.rs`, each with the final answer to the caller, the
+number of runs of the capability, the frame trace with times, that all three machines end with nothing tracked once
+HIRO's 60 minute cache has passed, and the handler's episode:
+
+* the plain round trip; the gateway's ack lost (resend at 3000 ms, one run); the handler's result lost (resent at
+  3000 ms, delivered once); the result ack lost either way; a duplicated submit while executing and after completion;
+* unknown capability (NACK 404, the handler never involved); the mock's forbidden capability;
+* an execution longer than the request timeout (status 13); nothing answering (three sends, `ack_timeout` 9000);
+  acked and never answered (response wait timeout + 1000, one last call, `exec_timeout`);
+* a failing and a panicking capability (status 54) and the repeat answered from the cache; a result over the
+  announced `max_frame_bytes` (status 59);
+* in-band 429 and 503 with an id (the caller completes at once; when the mock armed the refusal the handler never
+  sees the request; when the refusal is injected after the request was forwarded the handler runs it once and its
+  result goes to nobody) and without an id (nobody is answered);
+* a handler restart (the fresh handler runs the same request again: count 2; parity, HIRO's cache does not survive a
+  restart); two concurrent identical calls (one run, both complete);
+* the registration path: the fetch machine reads the mock's two bodies and a capability default `timeout` of 60000
+  reaches the wire as 60 000 000 ms, because the invoker reads it as seconds;
+* a seeded random run (8 seeds, 24 calls each, drops, duplicates and delays in every direction, a handler restart in
+  some): every call completes once with the result and no request ran more often than its restarts allow.
+
+**What it cannot prove.** The double is graph_conn's mock, not a gateway. Nothing here says how the real gateway
+orders frames, whether it relays the handler's ack, or whether it acks a result itself; if it does not, the handler's
+resend loop (3000 ms until an ack) is the only thing that gets a lost result through. Time is virtual and frame
+delivery is instant and ordered except where a fault says otherwise, so real races between a frame and a timer at
+the same millisecond are not explored (HIRO says frame order is not guaranteed, oracle section 6). The loop is one
+invoker and one handler; several of either are not modelled. The executor is a test double, so a long-running
+capability's cost, a killed task and the handler's own supervisor are not exercised. The equivalence run against a
+live gateway stays WP8.

@@ -970,7 +970,7 @@ fn fit_payload(
             } else {
                 outcome
             };
-            (fitted.result, outcome)
+            (fitted.result.unwrap_or_default(), outcome)
         }
         _ => unreachable!("a sendActionResult frame fits to a sendActionResult frame"),
     }

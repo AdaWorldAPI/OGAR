@@ -38,7 +38,7 @@ fn result_text(frame: &ActionWsFrame) -> Value {
     let ActionWsFrame::SendActionResult(r) = frame else {
         panic!("not a result frame");
     };
-    parse(&r.result)
+    parse(r.result.as_deref().expect("a result"))
 }
 
 // ─────────────────────────────────────────────────────── the pure fit ──
@@ -69,7 +69,7 @@ fn fit_replaces_a_result_over_the_limit_with_the_status_59_error() {
     };
     assert_eq!(r.id, "req-big");
     assert_eq!(
-        parse(&r.result),
+        parse(r.result.as_deref().expect("a result")),
         json!({"error": {
             "req_id": "req-big",
             "action_status": 59,

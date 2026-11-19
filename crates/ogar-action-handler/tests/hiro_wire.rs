@@ -13,8 +13,8 @@
 //! was "Received the action" until 2026-11-19).
 
 use ogar_action_handler::wire::{
-    AckFrame, ActionWsFrame, ClientHello, Hello, MAX_RETRY_AFTER_MS, RateLimited,
-    UpstreamUnavailable, WireError, decode, encode,
+    AckFrame, ActionWsFrame, ClientHello, Hello, MAX_RETRY_AFTER_MS, NackFrame, RateLimited,
+    ResultFrame, UpstreamUnavailable, WireError, decode, encode,
 };
 use ogar_from_schema::action_ws::{
     Acknowledged, InboundError, NegativeAcknowledged, SendActionResult, SubmitAction,
@@ -308,23 +308,35 @@ fn nack_java_javadoc_verbatim_typo_is_not_json() {
     assert!(matches!(decode(verbatim), Err(WireError::NotJson(_))));
 }
 
-/// A nack needs `code` and `message` (oracle section 1 lists both as required).
+/// A NACK may lack `code` and/or `message`: the Elixir handler matches `type` and
+/// `id` only (`handler.ex:112-119`) and the invoker passes `msg["code"]` and
+/// `msg["message"]` on, `nil` when absent (`invoker.ex:201-212`). The codec keeps
+/// them optional and invents no value. (Until the closed-loop change this was
+/// refused by name; the pin was changed on purpose.) A code out of range is still
+/// refused, and so is a NACK with no `id`.
 #[test]
-fn nack_missing_code_or_message_is_refused_by_name() {
+fn nack_without_code_or_message_is_accepted_with_none() {
+    let nack = |code, message: Option<&str>| {
+        Ok(ActionWsFrame::NegativeAcknowledged(NackFrame {
+            id: "i".to_owned(),
+            code,
+            message: message.map(str::to_owned),
+        }))
+    };
     assert_eq!(
         decode(r#"{"type":"negativeAcknowledged","id":"i","message":"m"}"#),
-        Err(WireError::MissingField {
-            frame: "negativeAcknowledged",
-            field: "code"
-        })
+        nack(None, Some("m"))
     );
     assert_eq!(
         decode(r#"{"type":"negativeAcknowledged","id":"i","code":400}"#),
-        Err(WireError::MissingField {
-            frame: "negativeAcknowledged",
-            field: "message"
-        })
+        nack(Some(400), None)
     );
+    for wire in [
+        r#"{"type":"negativeAcknowledged","id":"i"}"#,
+        r#"{"type":"negativeAcknowledged","id":"i","code":null,"message":null}"#,
+    ] {
+        assert_eq!(decode(wire), nack(None, None), "{wire}");
+    }
     assert_eq!(
         decode(r#"{"type":"negativeAcknowledged","id":"i","code":70000,"message":"m"}"#),
         Err(WireError::WrongType {
@@ -333,6 +345,36 @@ fn nack_missing_code_or_message_is_refused_by_name() {
             expected: "an integer in 0..=65535"
         })
     );
+    assert_eq!(
+        decode(r#"{"type":"negativeAcknowledged","code":400,"message":"m"}"#),
+        Err(WireError::MissingField {
+            frame: "negativeAcknowledged",
+            field: "id"
+        })
+    );
+    // Absent fields stay absent when written.
+    let bare = ActionWsFrame::NegativeAcknowledged(NackFrame {
+        id: "i".to_owned(),
+        code: None,
+        message: None,
+    });
+    assert_eq!(
+        json(&encode(&bare)),
+        json(r#"{"type":"negativeAcknowledged","id":"i"}"#)
+    );
+    // The typed form exists only when both were given.
+    let ActionWsFrame::NegativeAcknowledged(full) =
+        decode(r#"{"type":"negativeAcknowledged","id":"i","code":404,"message":"m"}"#).unwrap()
+    else {
+        panic!("not a nack");
+    };
+    assert!(full.into_negative_acknowledged().is_some());
+    let ActionWsFrame::NegativeAcknowledged(part) =
+        decode(r#"{"type":"negativeAcknowledged","id":"i","code":404}"#).unwrap()
+    else {
+        panic!("not a nack");
+    };
+    assert_eq!(part.into_negative_acknowledged(), None);
 }
 
 // ───────────────────────────────────────────── sendActionResult ──
@@ -391,28 +433,54 @@ fn send_action_result_accepts_the_invoker_result_forms() {
             panic!("not a result");
         };
         assert_eq!(r.id, "X");
-        assert_eq!(r.result, expected, "{wire}");
+        assert_eq!(r.result.as_deref(), Some(expected), "{wire}");
     }
 }
 
 /// Oracle 35, the missing-result case: graph_conn hands the caller `nil`
-/// (`invoker_result_test.exs:42-48`); a `String` result cannot say nil, so the
-/// codec refuses it by name instead of inventing an empty result.
+/// (`invoker_result_test.exs:42-48`). The codec represents it as `result: None`
+/// and invents nothing; an `id` is still required. (Until the closed-loop change
+/// this was refused by name, `MissingField { field: "result" }`, and the invoker
+/// session repaired it; the pin was changed on purpose.)
 #[test]
-fn send_action_result_without_result_is_refused_by_name() {
+fn send_action_result_without_result_is_none() {
+    for wire in [
+        r#"{"type":"sendActionResult","id":"X"}"#,
+        r#"{"type":"sendActionResult","id":"X","result":null}"#,
+    ] {
+        assert_eq!(
+            decode(wire),
+            Ok(ActionWsFrame::SendActionResult(ResultFrame {
+                id: "X".to_owned(),
+                result: None
+            })),
+            "{wire}"
+        );
+    }
+    // An empty string is a result, not a missing one.
     assert_eq!(
-        decode(r#"{"type":"sendActionResult","id":"X"}"#),
+        decode(r#"{"type":"sendActionResult","id":"X","result":""}"#),
+        Ok(ActionWsFrame::SendActionResult(ResultFrame {
+            id: "X".to_owned(),
+            result: Some(String::new())
+        }))
+    );
+    // The id is still needed to be usable.
+    assert_eq!(
+        decode(r#"{"type":"sendActionResult","result":"{}"}"#),
         Err(WireError::MissingField {
             frame: "sendActionResult",
-            field: "result"
+            field: "id"
         })
     );
+    // A missing result is written back as no `result` key.
+    let frame = ActionWsFrame::SendActionResult(ResultFrame {
+        id: "X".to_owned(),
+        result: None,
+    });
     assert_eq!(
-        decode(r#"{"type":"sendActionResult","id":"X","result":null}"#),
-        Err(WireError::MissingField {
-            frame: "sendActionResult",
-            field: "result"
-        })
+        json(&encode(&frame)),
+        json(r#"{"type":"sendActionResult","id":"X"}"#)
     );
 }
 
@@ -579,11 +647,11 @@ fn in_band_429_retry_after_is_sanitised() {
 fn in_band_503_elixir_mock_fixture() {
     let wire =
         r#"{"error":{"code":503,"message":"Upstream unavailable","upstream":"action"},"id":"ID"}"#;
-    let frame = ActionWsFrame::UpstreamUnavailable(UpstreamUnavailable {
-        id: Some("ID".to_owned()),
-        message: Some("Upstream unavailable".to_owned()),
-        upstream: Some("action".to_owned()),
-    });
+    let frame = ActionWsFrame::UpstreamUnavailable(UpstreamUnavailable::new(
+        Some("ID".to_owned()),
+        Some("Upstream unavailable".to_owned()),
+        Some("action".to_owned()),
+    ));
     pin(&frame, wire);
     assert!(json(&encode(&frame)).get("type").is_none(), "no type");
 }
@@ -603,6 +671,30 @@ fn in_band_503_without_a_usable_id() {
         assert_eq!(u.id, None, "{wire}");
         assert_eq!(u.message.as_deref(), Some("Upstream unavailable"));
     }
+}
+
+/// Pins oracle 25 and the third codec gap: the invoker hands the caller the
+/// frame's own `error` map (`invoker.ex:267`), so the codec keeps all of it, the
+/// fields it does not type included, and writes it back.
+#[test]
+fn in_band_503_keeps_the_whole_error_object() {
+    let wire = r#"{"error":{"code":503,"message":"down","upstream":"action","retryable":true,"detail":{"a":[1,2]}},"id":"ID"}"#;
+    let ActionWsFrame::UpstreamUnavailable(u) = decode(wire).expect("decodes") else {
+        panic!("not a 503");
+    };
+    assert_eq!(u.id.as_deref(), Some("ID"));
+    assert_eq!(u.message.as_deref(), Some("down"));
+    assert_eq!(u.upstream.as_deref(), Some("action"));
+    assert_eq!(
+        Value::Object(u.error.clone()),
+        json(
+            r#"{"code":503,"message":"down","upstream":"action","retryable":true,"detail":{"a":[1,2]}}"#
+        )
+    );
+    assert_eq!(
+        json(&encode(&ActionWsFrame::UpstreamUnavailable(u))),
+        json(wire)
+    );
 }
 
 // ──────────────────────────────────────────── refusals ──
@@ -685,14 +777,29 @@ fn every_frame_roundtrips_through_text() {
             code: Some(200),
             message: Some(String::new()),
         }),
-        ActionWsFrame::NegativeAcknowledged(NegativeAcknowledged {
-            id: "x".to_owned(),
-            code: 404,
-            message: "m".to_owned(),
+        ActionWsFrame::NegativeAcknowledged(
+            NegativeAcknowledged {
+                id: "x".to_owned(),
+                code: 404,
+                message: "m".to_owned(),
+            }
+            .into(),
+        ),
+        ActionWsFrame::NegativeAcknowledged(NackFrame {
+            id: "y".to_owned(),
+            code: None,
+            message: None,
         }),
-        ActionWsFrame::SendActionResult(SendActionResult {
-            id: "x".to_owned(),
-            result: r#"{"output":"hi","exitcode":"0"}"#.to_owned(),
+        ActionWsFrame::SendActionResult(
+            SendActionResult {
+                id: "x".to_owned(),
+                result: r#"{"output":"hi","exitcode":"0"}"#.to_owned(),
+            }
+            .into(),
+        ),
+        ActionWsFrame::SendActionResult(ResultFrame {
+            id: "z".to_owned(),
+            result: None,
         }),
         ActionWsFrame::ConfigChanged,
         ActionWsFrame::Error(InboundError {
@@ -704,11 +811,11 @@ fn every_frame_roundtrips_through_text() {
             message: None,
             retry_after_ms: Some(10),
         }),
-        ActionWsFrame::UpstreamUnavailable(UpstreamUnavailable {
-            id: None,
-            message: None,
-            upstream: Some("action".to_owned()),
-        }),
+        ActionWsFrame::UpstreamUnavailable(UpstreamUnavailable::new(
+            None,
+            None,
+            Some("action".to_owned()),
+        )),
     ];
     for f in frames {
         let text = encode(&f);

@@ -16,7 +16,7 @@
 //! | inbound frame | input |
 //! |---|---|
 //! | `acknowledged` | [`Input::Ack`] |
-//! | `negativeAcknowledged` | [`Input::Nack`] |
+//! | `negativeAcknowledged` | [`Input::Nack`]; `code` and `message` are optional (`nil` in HIRO) |
 //! | `sendActionResult` | [`Input::Result`]; a missing or `null` `result` is `None` (HIRO hands over `nil`, `invoker_result_test.exs:42-48`) |
 //! | `configChanged` | [`Input::ConfigChanged`] |
 //! | in-band 429 | [`Input::RateLimited`] |
@@ -25,8 +25,11 @@
 //! | `error`, `submitAction`, `clientHello` | [`Input::Unexpected`] |
 //!
 //! A frame that does not decode is a [`WireError`] and does nothing else, as for
-//! the handler session. A `sendActionResult` whose `result` is missing is the one
-//! decode error this adapter repairs, because HIRO accepts it.
+//! the handler session. The codec represents what HIRO accepts: a
+//! `sendActionResult` with no `result`, a `negativeAcknowledged` with no `code` or
+//! `message`, and the whole `error` object of an in-band 503. A NACK, an ack or a
+//! result with no `id` is a [`WireError`]: HIRO finds no caller for it
+//! (`request_registry.ex:126-134`), so nobody is answered either way.
 //!
 //! ```
 //! use ogar_action_handler::invoke_session::{Effect, InvokeSession};
@@ -49,7 +52,7 @@
 //! # let _ = InvokeError::AckTimeout(0);
 //! ```
 
-use serde_json::{Map, Value, json};
+use serde_json::{Value, json};
 
 use crate::invoke_state::{
     CallId, CallRequest, Completion, Frame, Input, InvokeState, Log, Output, RESULT_ACK_CODE,
@@ -102,20 +105,7 @@ impl InvokeSession {
     /// The [`WireError`] of a frame that does not decode. Nothing else happens
     /// for it, and the state machine is not stepped.
     pub fn on_text(&mut self, now: Millis, text: &str) -> Result<Vec<Effect>, WireError> {
-        let input = match wire::decode(text) {
-            Ok(frame) => input_of(frame, text),
-            Err(WireError::MissingField {
-                frame: "sendActionResult",
-                field: "result",
-            }) => Input::Result {
-                id: peek_id(text).ok_or(WireError::MissingField {
-                    frame: "sendActionResult",
-                    field: "id",
-                })?,
-                result: None,
-            },
-            Err(e) => return Err(e),
-        };
+        let input = input_of(wire::decode(text)?);
         Ok(self.step(now, input))
     }
 
@@ -160,7 +150,7 @@ impl InvokeSession {
     }
 }
 
-fn input_of(frame: ActionWsFrame, text: &str) -> Input {
+fn input_of(frame: ActionWsFrame) -> Input {
     match frame {
         ActionWsFrame::Acknowledged(AckFrame { id, .. }) => Input::Ack { id },
         ActionWsFrame::NegativeAcknowledged(n) => Input::Nack {
@@ -170,25 +160,15 @@ fn input_of(frame: ActionWsFrame, text: &str) -> Input {
         },
         ActionWsFrame::SendActionResult(r) => Input::Result {
             id: r.id,
-            result: Some(r.result),
+            result: r.result,
         },
         ActionWsFrame::ConfigChanged => Input::ConfigChanged,
         ActionWsFrame::RateLimited(r) => Input::RateLimited(r),
-        ActionWsFrame::UpstreamUnavailable(u) => {
-            // The frame's own error object, whatever fields it carries (`I:267`).
-            let error = raw_error(text).unwrap_or_else(|| {
-                let mut m = Map::new();
-                m.insert("code".to_owned(), Value::from(503));
-                if let Some(msg) = &u.message {
-                    m.insert("message".to_owned(), Value::from(msg.as_str()));
-                }
-                if let Some(up) = &u.upstream {
-                    m.insert("upstream".to_owned(), Value::from(up.as_str()));
-                }
-                m
-            });
-            Input::Unavailable { id: u.id, error }
-        }
+        // The frame's own error object, whatever fields it carries (`I:267`).
+        ActionWsFrame::UpstreamUnavailable(u) => Input::Unavailable {
+            id: u.id,
+            error: u.error,
+        },
         ActionWsFrame::Hello(_) => Input::Tick,
         ActionWsFrame::Error(_) => Input::Unexpected {
             kind: "error".to_owned(),
@@ -199,23 +179,6 @@ fn input_of(frame: ActionWsFrame, text: &str) -> Input {
         ActionWsFrame::ClientHello(_) => Input::Unexpected {
             kind: "clientHello".to_owned(),
         },
-    }
-}
-
-fn raw_error(text: &str) -> Option<Map<String, Value>> {
-    match serde_json::from_str::<Value>(text).ok()? {
-        Value::Object(mut o) => match o.remove("error")? {
-            Value::Object(e) => Some(e),
-            _ => None,
-        },
-        _ => None,
-    }
-}
-
-fn peek_id(text: &str) -> Option<String> {
-    match serde_json::from_str::<Value>(text).ok()? {
-        Value::Object(o) => o.get("id")?.as_str().map(str::to_owned),
-        _ => None,
     }
 }
 

@@ -520,8 +520,8 @@ fn a33_nack_404_is_terminal() {
         10,
         Input::Nack {
             id: id.clone(),
-            code: 404,
-            message: "capability invalid_capability not found".into(),
+            code: Some(404),
+            message: Some("capability invalid_capability not found".into()),
         },
     );
     assert_eq!(
@@ -530,11 +530,44 @@ fn a33_nack_404_is_terminal() {
             call: 1,
             request_id: id,
             result: Err(InvokeError::Nack {
-                code: 404,
-                message: "capability invalid_capability not found".into()
+                code: Some(404),
+                message: Some("capability invalid_capability not found".into())
             }),
         })]
     );
+    assert!(tick(&mut st, 100_000).is_empty(), "no resend");
+}
+
+/// A NACK with neither `code` nor `message` (`I:201-212` passes `nil` for each):
+/// terminal like any other, and logged, because `nil` is not 404 (`I:659-664`).
+/// The codec used to refuse such a frame, so this state was unreachable.
+#[test]
+fn a33_nack_without_code_or_message_is_terminal_and_logged() {
+    let mut st = InvokeState::new();
+    let (id, _) = start(&mut st, 0, req(1));
+    let out = st.step(
+        10,
+        Input::Nack {
+            id: id.clone(),
+            code: None,
+            message: None,
+        },
+    );
+    assert_eq!(
+        logs(&out),
+        vec![&Log::MessageNacked {
+            request_id: id,
+            code: None
+        }]
+    );
+    assert_eq!(
+        only_completion(&out).result,
+        Err(InvokeError::Nack {
+            code: None,
+            message: None
+        })
+    );
+    assert_eq!(st.tracked(), 0);
     assert!(tick(&mut st, 100_000).is_empty(), "no resend");
 }
 
@@ -549,22 +582,22 @@ fn a33_other_nack_codes_are_terminal_and_logged() {
             10,
             Input::Nack {
                 id: id.clone(),
-                code,
-                message: "Forbidden".into(),
+                code: Some(code),
+                message: Some("Forbidden".into()),
             },
         );
         assert_eq!(
             logs(&out),
             vec![&Log::MessageNacked {
                 request_id: id,
-                code
+                code: Some(code)
             }]
         );
         assert_eq!(
             only_completion(&out).result,
             Err(InvokeError::Nack {
-                code,
-                message: "Forbidden".into()
+                code: Some(code),
+                message: Some("Forbidden".into())
             })
         );
         assert_eq!(st.tracked(), 0);
@@ -864,8 +897,8 @@ fn a39_ack_for_an_unknown_id_is_a_no_op() {
             1,
             Input::Nack {
                 id: "someone-else".into(),
-                code: 404,
-                message: String::new()
+                code: Some(404),
+                message: Some(String::new())
             }
         )
         .is_empty()
@@ -1106,8 +1139,8 @@ fn a_finished_request_leaves_no_entry() {
                     now,
                     Input::Nack {
                         id,
-                        code: 404,
-                        message: String::new(),
+                        code: Some(404),
+                        message: Some(String::new()),
                     },
                 );
             }
@@ -1201,7 +1234,7 @@ mod model {
     #[derive(Clone, Debug)]
     pub enum Mail {
         Ack,
-        Nack(u16, String),
+        Nack(Option<u16>, Option<String>),
         Refused(Map<String, Value>),
         Limited(u64),
         Response(Value),
@@ -1352,7 +1385,7 @@ mod model {
                                 return self.complete(call, Err(InvokeError::Refused(e)), out);
                             }
                             Mail::Nack(code, message) => {
-                                if code != 404 {
+                                if code != Some(404) {
                                     out.push(Output::Log(Log::MessageNacked {
                                         request_id: c.id.clone(),
                                         code,
@@ -1663,8 +1696,8 @@ fn random_input(rng: &mut Rng, handles: &mut u64, known: &[String], live: &[Call
         5..=8 => Input::Ack { id },
         9 => Input::Nack {
             id,
-            code: [404, 403, 500][rng.below(3) as usize],
-            message: "nack".to_owned(),
+            code: Some([404, 403, 500][rng.below(3) as usize]),
+            message: Some("nack".to_owned()),
         },
         10..=12 => Input::Result {
             id,
