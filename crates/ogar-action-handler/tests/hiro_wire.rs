@@ -9,7 +9,8 @@
 //!
 //! Not pinned here (they are handler or invoker behaviour, not wire shape): 2-3,
 //! 5-23, 28, 31-32, 36-43, 47-52, 55-58. Assertion 1 is pinned for the wire shape
-//! only: `acknowledge()` still words its message "Received the action".
+//! only; `acknowledge()` now words its message `""` as the handler does (the text
+//! was "Received the action" until 2026-11-19).
 
 use ogar_action_handler::wire::{
     AckFrame, ActionWsFrame, ClientHello, Hello, MAX_RETRY_AFTER_MS, RateLimited,

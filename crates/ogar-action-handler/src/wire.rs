@@ -55,6 +55,69 @@ use ogar_from_schema::action_ws::{
 /// Upper bound of a usable `retryAfterMs`, one day (graph_conn `retry_after.ex`).
 pub const MAX_RETRY_AFTER_MS: u64 = 86_400_000;
 
+/// The frame limit a server is assumed to accept when its `hello` advertised
+/// none: `1_000_000` bytes (graph_conn `connection_manager.ex:61`, `:201-221`;
+/// `README.md:174-182`).
+pub const DEFAULT_MAX_FRAME_BYTES: u64 = 1_000_000;
+
+/// The `action_status` of a result replaced because its frame was too big
+/// (graph_conn `result_frame.ex:7`).
+pub const TOO_BIG_STATUS: u32 = 59;
+
+/// The size in bytes of `frame` as [`encode`] writes it, which is what a server's
+/// frame limit counts.
+#[must_use]
+pub fn frame_bytes(frame: &ActionWsFrame) -> u64 {
+    encode(frame).len() as u64
+}
+
+/// Keeps a frame within `max_frame_bytes`: graph_conn `ResultFrame.fit/2`
+/// (`result_frame.ex:15-38`; Elixir also logs a warning, which this crate does not: it does no logging).
+///
+/// A [`ActionWsFrame::SendActionResult`] whose encoded frame is larger than the
+/// limit comes back with its `result` replaced by
+/// `{"error":{"req_id":ID,"action_status":59,"action_error":"Response was too big
+/// (X.XX MB, limit Y.YY MB)"}}`, where the sizes are bytes over 1,000,000 with two
+/// decimals. A frame exactly at the limit is left alone
+/// (`result_frame_test.exs:25-30`). **Any other frame is returned unchanged,
+/// whatever its size** (`result_frame.ex:24-25`, `result_frame_test.exs:58-62`).
+///
+/// The replacement is not fitted again. Elixir has the same shape: the
+/// replacement fits whenever the limit leaves room for it (about 150 bytes and
+/// the id; the test at `result_frame_test.exs:47-56` shows a limit of 1000), and
+/// below that the server's limit is smaller than any error this can send.
+#[must_use]
+pub fn fit(frame: ActionWsFrame, max_frame_bytes: u64) -> ActionWsFrame {
+    fit_checked(frame, max_frame_bytes).0
+}
+
+/// [`fit`], and whether the result was replaced.
+pub(crate) fn fit_checked(frame: ActionWsFrame, max_frame_bytes: u64) -> (ActionWsFrame, bool) {
+    let ActionWsFrame::SendActionResult(result) = &frame else {
+        return (frame, false);
+    };
+    let bytes = frame_bytes(&frame);
+    if bytes <= max_frame_bytes {
+        return (frame, false);
+    }
+    let message = format!(
+        "Response was too big ({} MB, limit {} MB)",
+        megabytes(bytes),
+        megabytes(max_frame_bytes)
+    );
+    let replaced = SendActionResult {
+        id: result.id.clone(),
+        result: crate::submit_state::error_result(&result.id, TOO_BIG_STATUS, &message),
+    };
+    (replaced.into(), true)
+}
+
+/// `bytes / 1_000_000` with two decimals (`result_frame.ex:41-45`).
+#[allow(clippy::cast_precision_loss)]
+fn megabytes(bytes: u64) -> String {
+    format!("{:.2}", bytes as f64 / 1_000_000.0)
+}
+
 /// Why a frame could not be decoded. Every variant names what was wrong.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]

@@ -18,7 +18,22 @@
 //! | `submitAction` | [`Input::Submit`]: ack, then run once per request id |
 //! | `acknowledged` | [`Input::Acked`]: stops the resend of that id's result |
 //! | `negativeAcknowledged` | [`Input::Nacked`]: stops the resend as well |
+//! | `hello` | remembers its `max_frame_bytes`; a result frame over it is sent as the status 59 error (`handler.ex:255-264`) |
 //! | any other decoded frame | ignored (time still advances) |
+//!
+//! The frame limit is the one the latest `hello` advertised. A `hello` that
+//! advertised none, and a session that has seen no `hello`, use
+//! [`wire::DEFAULT_MAX_FRAME_BYTES`], 1,000,000 bytes, as graph_conn does
+//! (`connection_manager.ex:201-221`). A caller that wants no fitting at all can
+//! call `session.set_max_frame_bytes(Some(u64::MAX))`.
+//!
+//! # A failed execution
+//!
+//! [`run_capability`] and [`Session::on_text_sync`] turn an executor that returns
+//! `Err(message)` and one that panics into the `action_status` 54 result of
+//! graph_conn's `crash.ex`; see [`crate::crash`] for the exact text and the
+//! mapping. A caller that runs capabilities itself and reports with
+//! [`Session::on_finished`] builds the same result with [`ExecResult::crashed`].
 //!
 //! `submitAction.timeout` is milliseconds and becomes the execution deadline;
 //! absent selects [`Config::default_timeout_ms`]. A negative `timeout` cannot be a
@@ -51,6 +66,8 @@
 //! assert!(matches!(fx[0], Effect::Send(_)));
 //! ```
 
+use std::panic::{AssertUnwindSafe, catch_unwind};
+
 use ogar_from_schema::action_ws::{
     CapabilityExecutor, NegativeAcknowledged, SendActionResult, SubmitAction, bind_parameters,
     json_object,
@@ -58,13 +75,19 @@ use ogar_from_schema::action_ws::{
 use ogar_from_schema::do_arm::ActionParam;
 use ogar_vocab::ActionDef;
 
+use crate::crash::Crash;
 use crate::submit_state::{
-    Config, ConfigError, Episode, ExecResult, HandlerState, Input, Millis, Output, Submit,
+    Config, ConfigError, Episode, ExecResult, HandlerState, Input, Millis, Output, Redacted, Submit,
 };
 use crate::wire::{self, AckFrame, ActionWsFrame, WireError};
 
 /// What the caller must do after a call to the [`Session`].
-#[derive(Debug, Clone, PartialEq, Eq)]
+///
+/// `Debug` prints the length of a frame, not its text, and the names of the
+/// parameters, not their values: a frame carries results, and a request carries
+/// parameters (oracle 42). The frame text itself, as [`Effect::Send`] holds it, is
+/// not altered.
+#[derive(Clone, PartialEq, Eq)]
 pub enum Effect {
     /// Send this JSON text frame on the socket.
     Send(String),
@@ -77,6 +100,24 @@ pub enum Effect {
         /// The submit's parameters, in the order [`wire::decode`] produced them.
         parameters: Vec<(String, String)>,
     },
+}
+
+impl core::fmt::Debug for Effect {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Self::Send(text) => f.debug_tuple("Send").field(&Redacted(text.len())).finish(),
+            Self::Run {
+                id,
+                capability,
+                parameters,
+            } => f
+                .debug_struct("Run")
+                .field("id", id)
+                .field("capability", capability)
+                .field("parameters", &crate::submit_state::ParamNames(parameters))
+                .finish(),
+        }
+    }
 }
 
 /// One `action-ws` session: a [`HandlerState`] behind a text-frame interface.
@@ -106,6 +147,10 @@ impl Session {
             ActionWsFrame::SubmitAction(s) => Input::Submit(submit_of(s)),
             ActionWsFrame::Acknowledged(AckFrame { id, .. }) => Input::Acked { id },
             ActionWsFrame::NegativeAcknowledged(n) => Input::Nacked { id: n.id },
+            ActionWsFrame::Hello(h) => {
+                self.state.set_max_frame_bytes(h.max_frame_bytes);
+                Input::Tick
+            }
             _ => Input::Tick,
         };
         Ok(self.step(now, input))
@@ -133,6 +178,12 @@ impl Session {
         self.state.next_wakeup()
     }
 
+    /// Sets the frame limit by hand, as a `hello` does: `None` is the default of
+    /// [`wire::DEFAULT_MAX_FRAME_BYTES`]. See [`HandlerState::set_max_frame_bytes`].
+    pub fn set_max_frame_bytes(&mut self, max_frame_bytes: Option<u64>) {
+        self.state.set_max_frame_bytes(max_frame_bytes);
+    }
+
     /// The state machine, for its episodes and counts.
     #[must_use]
     pub fn state(&self) -> &HandlerState {
@@ -151,8 +202,10 @@ impl Session {
     /// id to run once.
     ///
     /// The execution path is that of `handle_submit`: the parameters are bound
-    /// against `signature`, the executor runs, and a bind or executor error is the
-    /// one-field `{"error":"<message>"}` result. Two differences, because the
+    /// against `signature`, the executor runs, and a bind error is the one-field
+    /// `{"error":"<message>"}` result. An executor that returns `Err` or panics is
+    /// the `action_status` 54 result of [`run_capability`]; the panic is caught and
+    /// does not unwind through the session. Two further differences, because the
     /// state machine owns the request lifecycle: a capability other than
     /// `def.predicate` is the result `{"error":{"code":404,"message":"Unhandled
     /// capability \"X\""}}` (`handler.ex:369-371`) and not a NACK, and the id is
@@ -197,6 +250,29 @@ impl Session {
 
 /// Run `capability` the way `handle_submit` does, and report it as an
 /// [`ExecResult`] for the state machine.
+///
+/// * A capability other than `def.predicate`: the 404 result of `handler.ex:369-371`.
+/// * Parameters that do not bind: the one-field `{"error":"<message>"}` result of
+///   `handle_submit`. This is not an execution failure; nothing ran.
+/// * An executor that returns `Err(message)`: the `action_status` 54 result
+///   `Execution failed: ** (RuntimeError) <message>` ([`Crash::RuntimeError`]).
+///   This differs from `handle_submit`, which reports it as `{"error":"<message>"}`.
+/// * An executor that **panics**: the `action_status` 54 result
+///   `Execution failed: ** (exit)` ([`Crash::panicked`]). The panic is caught here
+///   and does not unwind through the session. See [`crate::crash`] for why the
+///   message is dropped.
+///
+/// The panic is caught with [`std::panic::catch_unwind`] around
+/// [`AssertUnwindSafe`]. A `&dyn CapabilityExecutor` is not `UnwindSafe`, since an
+/// executor may hold interior mutability. Asserting it is sound here because the
+/// closure holds only shared borrows of the executor and of the inputs, and
+/// nothing of the session: after a panic the closure is dropped and the only
+/// thing used again is the executor, which the caller owns. If an executor is left
+/// inconsistent by its own panic, that is the executor's to guard (a poisoned lock,
+/// say), as it would be for any caller of it. A build with `panic = "abort"` cannot
+/// catch a panic. This crate installs no panic hook, so the default hook still
+/// writes the panic message to stderr: a host that must keep it out of its logs sets
+/// its own hook.
 #[must_use]
 pub fn run_capability(
     capability: &str,
@@ -219,10 +295,13 @@ pub fn run_capability(
     }
     match bind_parameters(parameters, signature) {
         Err(e) => error_field(&e.to_string()),
-        Ok(bound) => match executor.execute(capability, &bound) {
-            Ok(params) => ExecResult::Success(json_object(&params)),
-            Err(e) => error_field(&e),
-        },
+        Ok(bound) => {
+            match catch_unwind(AssertUnwindSafe(|| executor.execute(capability, &bound))) {
+                Ok(Ok(params)) => ExecResult::Success(json_object(&params)),
+                Ok(Err(message)) => ExecResult::crashed(&Crash::RuntimeError(message)),
+                Err(_panic_payload) => ExecResult::crashed(&Crash::panicked()),
+            }
+        }
     }
 }
 

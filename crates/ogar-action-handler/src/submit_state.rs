@@ -5,9 +5,10 @@
 //! the [`Output`]s the caller must carry out. It reads no clock, starts no
 //! thread, and performs no I/O: the caller owns the socket, the executor and
 //! the timer, and calls [`HandlerState::step`] again at
-//! [`HandlerState::next_wakeup`]. It does not depend on the wire types of
-//! `ogar-from-schema::action_ws`; a later slice adapts wire messages to
-//! [`Input`] and [`Output`].
+//! [`HandlerState::next_wakeup`]. It takes no wire frames: the
+//! [`Session`](crate::session::Session) adapts them to [`Input`] and [`Output`].
+//! It uses the wire encoder in one place only, to measure a result frame against
+//! the peer's frame limit.
 //!
 //! The reference is the Elixir handler, `graph_conn`
 //! `lib/action_api/handler.ex` and `lib/action_api/responder.ex`. The oracle
@@ -31,6 +32,15 @@
 //!   60000 (`handler.ex:133`, `:361-362`). On expiry the result is the error
 //!   `{"error":{"req_id":ID,"action_status":13,"action_error":"Execution timed
 //!   out after <N>ms"}}` (`handler.ex:311-313`, `:335-339`).
+//! * **A crashed execution is status 54** (`handler.ex:343-358`,
+//!   `crash.ex`): [`ExecResult::crashed`], built from a [`Crash`](crate::crash::Crash).
+//!   It is cached like any result (oracle 43).
+//! * **A result over the frame limit becomes status 59** before it is cached
+//!   (`handler.ex:178`, `:255-264`, `result_frame.ex:27-38`). The limit is set
+//!   with [`HandlerState::set_max_frame_bytes`]; unset, it is 1,000,000 bytes.
+//!   Every result is fitted, a timeout and a failure included, as in Elixir.
+//! * **`Debug` redacts.** No type here prints a parameter value or a result text:
+//!   names, lengths and counts only (oracle 42).
 //! * **The handler sends no NACK for a submit.** Every failure is a result
 //!   (oracle section 5c). [`Output::SendNack`] exists for the adapter's own
 //!   wire-level refusals; this machine never emits it.
@@ -62,7 +72,11 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
+use ogar_from_schema::action_ws::SendActionResult;
 use ogar_vocab::effect_class::EffectClass;
+
+use crate::crash::{CRASH_STATUS, Crash};
+use crate::wire::{self, ActionWsFrame, DEFAULT_MAX_FRAME_BYTES, TOO_BIG_STATUS};
 
 /// Milliseconds on the caller's clock. Only differences matter; the caller must
 /// pass a non-decreasing value (an earlier value is treated as the latest one
@@ -134,7 +148,10 @@ impl fmt::Display for ConfigError {
 impl std::error::Error for ConfigError {}
 
 /// One `submitAction`, in the machine's own terms.
-#[derive(Debug, Clone, PartialEq, Eq)]
+///
+/// `Debug` prints the names of the parameters and how many there are, never their
+/// values (oracle 42: parameters are never logged; `params_log_test.exs`).
+#[derive(Clone, PartialEq, Eq)]
 pub struct Submit {
     /// The request id: opaque, the dedupe key.
     pub id: String,
@@ -154,6 +171,42 @@ pub struct Submit {
     pub target: Option<String>,
     /// The effect class, if the caller knows it. Recorded in the episode only.
     pub effect_class: Option<EffectClass>,
+}
+
+impl fmt::Debug for Submit {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Submit")
+            .field("id", &self.id)
+            .field("handler", &self.handler)
+            .field("capability", &self.capability)
+            .field("parameters", &ParamNames(&self.parameters))
+            .field("timeout_ms", &self.timeout_ms)
+            .field("class_id", &self.class_id)
+            .field("target", &self.target)
+            .field("effect_class", &self.effect_class)
+            .finish()
+    }
+}
+
+/// `Debug` for a parameter list: the names and the count, not the values.
+pub(crate) struct ParamNames<'a>(pub(crate) &'a [(String, String)]);
+
+impl fmt::Debug for ParamNames<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{} parameters ", self.0.len())?;
+        f.debug_list()
+            .entries(self.0.iter().map(|(k, _)| k))
+            .finish()
+    }
+}
+
+/// `Debug` for text that must not be printed: only its length.
+pub(crate) struct Redacted(pub(crate) usize);
+
+impl fmt::Debug for Redacted {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "<{} bytes redacted>", self.0)
+    }
 }
 
 impl Submit {
@@ -180,7 +233,10 @@ impl Submit {
 }
 
 /// How an execution ended, as the caller reports it.
-#[derive(Debug, Clone, PartialEq, Eq)]
+///
+/// `Debug` prints the variant, the codes and the lengths of the texts, never the
+/// texts: a result or an error text can carry what the action worked on.
+#[derive(Clone, PartialEq, Eq)]
 pub enum ExecResult {
     /// The execution returned; `0` is the encoded result string, sent as is.
     Success(String),
@@ -204,6 +260,38 @@ pub enum ExecResult {
         /// The encoded result string.
         payload: String,
     },
+}
+
+impl ExecResult {
+    /// The result of a crashed execution: `action_status` 54 and the text
+    /// `Execution failed: <banner>` (`handler.ex:309`, `:327`, `:356-357`). See
+    /// [`crate::crash`] for the banner and for how a Rust executor's `Err` and
+    /// panic map to it.
+    #[must_use]
+    pub fn crashed(crash: &Crash) -> Self {
+        Self::Failure {
+            code: CRASH_STATUS,
+            message: crash.failure_message(),
+        }
+    }
+}
+
+impl fmt::Debug for ExecResult {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Success(s) => f.debug_tuple("Success").field(&Redacted(s.len())).finish(),
+            Self::Failure { code, message } => f
+                .debug_struct("Failure")
+                .field("code", code)
+                .field("message", &Redacted(message.len()))
+                .finish(),
+            Self::Error { code, payload } => f
+                .debug_struct("Error")
+                .field("code", code)
+                .field("payload", &Redacted(payload.len()))
+                .finish(),
+        }
+    }
 }
 
 /// What the caller feeds the machine.
@@ -235,7 +323,9 @@ pub enum Input {
 }
 
 /// What the machine asks the caller to do.
-#[derive(Debug, Clone, PartialEq, Eq)]
+///
+/// `Debug` prints names and lengths, never parameter or result values.
+#[derive(Clone, PartialEq, Eq)]
 pub enum Output {
     /// Send `acknowledged` for the submit `id` (`code` 200, `message` `""`).
     SendAck {
@@ -275,6 +365,45 @@ pub enum Output {
         /// 1 for the first delivery of this result, then 2, 3, and so on.
         attempt: u32,
     },
+}
+
+impl fmt::Debug for Output {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::SendAck { id, code, message } => f
+                .debug_struct("SendAck")
+                .field("id", id)
+                .field("code", code)
+                .field("message", message)
+                .finish(),
+            Self::SendNack { id, code, message } => f
+                .debug_struct("SendNack")
+                .field("id", id)
+                .field("code", code)
+                .field("message", message)
+                .finish(),
+            Self::StartExecution {
+                id,
+                capability,
+                parameters,
+            } => f
+                .debug_struct("StartExecution")
+                .field("id", id)
+                .field("capability", capability)
+                .field("parameters", &ParamNames(parameters))
+                .finish(),
+            Self::SendResult {
+                id,
+                payload,
+                attempt,
+            } => f
+                .debug_struct("SendResult")
+                .field("id", id)
+                .field("payload", &Redacted(payload.len()))
+                .field("attempt", attempt)
+                .finish(),
+        }
+    }
 }
 
 /// What one [`Attempt`] delivered.
@@ -387,7 +516,6 @@ impl Episode {
     }
 }
 
-#[derive(Debug)]
 enum Phase {
     Executing {
         deadline_at: Millis,
@@ -400,6 +528,33 @@ enum Phase {
         /// `Some` while the result is unacked; the time of the next resend.
         next_resend: Option<Millis>,
     },
+}
+
+impl fmt::Debug for Phase {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Executing {
+                deadline_at,
+                timeout_ms,
+                waiters,
+            } => f
+                .debug_struct("Executing")
+                .field("deadline_at", deadline_at)
+                .field("timeout_ms", timeout_ms)
+                .field("waiters", waiters)
+                .finish(),
+            Self::Done {
+                payload,
+                completed_at,
+                next_resend,
+            } => f
+                .debug_struct("Done")
+                .field("payload", &Redacted(payload.len()))
+                .field("completed_at", completed_at)
+                .field("next_resend", next_resend)
+                .finish(),
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -425,6 +580,8 @@ pub struct HandlerState {
     /// resend of an unacked one, else the end of the dedupe window.
     timers: BTreeSet<(Millis, String)>,
     finished: Vec<Episode>,
+    /// The frame limit a result is fitted to.
+    max_frame_bytes: u64,
 }
 
 impl Default for HandlerState {
@@ -444,6 +601,7 @@ impl HandlerState {
             entries: BTreeMap::new(),
             timers: BTreeSet::new(),
             finished: Vec::new(),
+            max_frame_bytes: DEFAULT_MAX_FRAME_BYTES,
         }
     }
 
@@ -459,6 +617,24 @@ impl HandlerState {
             config,
             ..Self::new()
         })
+    }
+
+    /// Sets the frame limit of the peer, from its `hello`. A result whose
+    /// `sendActionResult` frame is larger is replaced by the `action_status` 59
+    /// error before it is cached or sent (`handler.ex:178`, `:255-264`, see
+    /// [`wire::fit`]). `None` is a `hello` that advertised no limit, which is
+    /// [`DEFAULT_MAX_FRAME_BYTES`] (`connection_manager.ex:201-221`). A result
+    /// already finished keeps the frame it was fitted to.
+    pub fn set_max_frame_bytes(&mut self, max_frame_bytes: Option<u64>) {
+        self.max_frame_bytes = max_frame_bytes
+            .filter(|n| *n > 0)
+            .unwrap_or(DEFAULT_MAX_FRAME_BYTES);
+    }
+
+    /// The frame limit results are fitted to.
+    #[must_use]
+    pub fn max_frame_bytes(&self) -> u64 {
+        self.max_frame_bytes
     }
 
     /// Advance to `now`, apply `input`, and return what to do, in order.
@@ -753,6 +929,9 @@ impl HandlerState {
                 Outcome::TimedOut,
             ),
         };
+        // Fitted before it is cached, so a repeat answered from the cache, and
+        // every resend, carries the frame the peer accepts (`handler.ex:253-264`).
+        let (payload, outcome) = fit_payload(id, payload, outcome, self.max_frame_bytes);
         entry.episode.finished_at = Some(now);
         entry.episode.outcome = Some(outcome);
         // The waiters, if any, are not sent a result of their own: only the
@@ -772,10 +951,35 @@ impl HandlerState {
     }
 }
 
+/// The result swapped for the status 59 error when its `sendActionResult` frame
+/// is over `max_frame_bytes`; the outcome then is a failure with that status.
+fn fit_payload(
+    id: &str,
+    payload: String,
+    outcome: Outcome,
+    max_frame_bytes: u64,
+) -> (String, Outcome) {
+    let frame = ActionWsFrame::from(SendActionResult {
+        id: id.to_owned(),
+        result: payload,
+    });
+    match wire::fit_checked(frame, max_frame_bytes) {
+        (ActionWsFrame::SendActionResult(fitted), replaced) => {
+            let outcome = if replaced {
+                Outcome::Failed(Some(TOO_BIG_STATUS))
+            } else {
+                outcome
+            };
+            (fitted.result, outcome)
+        }
+        _ => unreachable!("a sendActionResult frame fits to a sendActionResult frame"),
+    }
+}
+
 /// `{"error":{"req_id":ID,"action_status":CODE,"action_error":MESSAGE}}`
 /// (`handler.ex:335-339`). The key order is fixed here, not left to the JSON
 /// library's map type.
-fn error_result(req_id: &str, action_status: u32, action_error: &str) -> String {
+pub(crate) fn error_result(req_id: &str, action_status: u32, action_error: &str) -> String {
     let quote = |s: &str| serde_json::Value::String(s.to_owned()).to_string();
     format!(
         r#"{{"error":{{"req_id":{},"action_status":{action_status},"action_error":{}}}}}"#,

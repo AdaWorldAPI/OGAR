@@ -61,7 +61,11 @@ pub const ID_MAX_LEN: usize = 256;
 
 /// A `submitAction` message (engine → handler). The engine asks the handler to
 /// run `capability` on a target with the supplied `parameters`.
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+///
+/// `Debug` prints the names of the parameters and their count, never their
+/// values: parameters are never logged (oracle assertion 42, graph_conn
+/// `params_log_test.exs`).
+#[derive(Clone, PartialEq, Eq, Default)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct SubmitAction {
     /// Correlation id — `"$appId:$requestId"`. Carried through to the result.
@@ -77,6 +81,21 @@ pub struct SubmitAction {
     pub parameters: Vec<(String, String)>,
     /// Per-action SLA in milliseconds.
     pub timeout_millis: Option<i64>,
+}
+
+impl core::fmt::Debug for SubmitAction {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        let names: Vec<&str> = self.parameters.iter().map(|(k, _)| k.as_str()).collect();
+        f.debug_struct("SubmitAction")
+            .field("id", &self.id)
+            .field("capability", &self.capability)
+            .field("handler", &self.handler)
+            .field("scope", &self.scope)
+            .field("parameter_count", &names.len())
+            .field("parameter_names", &names)
+            .field("timeout_millis", &self.timeout_millis)
+            .finish()
+    }
 }
 
 /// An `acknowledged` message (either direction): receipt confirmation.
@@ -97,7 +116,10 @@ pub struct Acknowledged {
 /// `1048576` chars) — the capability's `resultParameters` JSON-encoded into one
 /// field (build it with [`json_object`]). The engine replies `acknowledged` /
 /// `negativeAcknowledged`.
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+///
+/// `Debug` prints the length of the result, never its text: a result can carry
+/// what the action worked on (oracle assertion 42).
+#[derive(Clone, PartialEq, Eq, Default)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct SendActionResult {
     /// The same correlation id as the originating [`SubmitAction`].
@@ -105,6 +127,15 @@ pub struct SendActionResult {
     /// The result value — a JSON object string of the bound `resultParameters`
     /// (spec: `string`, max 1 MiB).
     pub result: String,
+}
+
+impl core::fmt::Debug for SendActionResult {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("SendActionResult")
+            .field("id", &self.id)
+            .field("result_len", &self.result.len())
+            .finish()
+    }
 }
 
 /// Max length of the [`SendActionResult::result`] string (spec: `1048576`).
@@ -189,12 +220,20 @@ impl std::error::Error for ActionWsError {}
 /// The handler's immediate receipt acknowledgement (code 200), echoing the
 /// action's `id`. Sent before execution; the engine re-sends `submitAction`
 /// until this arrives (at-least-once → idempotency).
+///
+/// The `message` is `""`, as the Elixir handler sends it
+/// (`graph_conn` `handler.ex:168-172`, oracle assertion 1) and as the stateful
+/// `ogar-action-handler` session sends it. Until 2026-11-19 it read "Received the
+/// action"; nothing in OGAR, `rs-graph-llm` or `bardioc-rs` reads the text (the
+/// only caller is [`handle_submit`], and `bardioc-rs` discards its receipt). The
+/// Python client words it "submitAction acknowledged" (`actionwebsocket.py:605`)
+/// and the Java client sends none; a peer must not depend on the text.
 #[must_use]
 pub fn acknowledge(msg: &SubmitAction) -> Acknowledged {
     Acknowledged {
         id: msg.id.clone(),
         code: 200,
-        message: "Received the action".to_owned(),
+        message: String::new(),
     }
 }
 
@@ -438,6 +477,12 @@ fn error_result(id: &str, message: &str) -> SendActionResult {
 ///
 /// Pure given `executor`; the same flow arago's Python daemon runs, minus the
 /// socket (B2-transport) and the real command (the `executor` impl, B1).
+///
+/// This is the single-request building block. It is stateless: it holds no record
+/// of earlier requests, so the same request id delivered twice runs twice. For
+/// HIRO's run-once behaviour per request id (a repeat is acked and answered from the
+/// cached result), use `ogar_action_handler::session::Session`, whose
+/// `on_text_sync` takes the JSON text frame and returns the frames to send.
 #[must_use]
 pub fn handle_submit(
     msg: &SubmitAction,
@@ -538,6 +583,8 @@ mod tests {
         let ack = acknowledge(&submit());
         assert_eq!(ack.id, "app1:req42");
         assert_eq!(ack.code, 200);
+        // The Elixir handler sends `message: ""` (handler.ex:170).
+        assert_eq!(ack.message, "");
     }
 
     #[test]
