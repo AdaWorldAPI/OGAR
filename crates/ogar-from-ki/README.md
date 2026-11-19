@@ -99,8 +99,12 @@ expr      = operand [ ARITH operand ]
 operand   = STRING | NUMBER | VAR | "[" operand { "," operand } "]"
 ```
 
-Layout. Conditions and statements end at a newline. Inside a call's
-parentheses newlines are free, and after a `,` in a tag list too. A line that
+Layout. Conditions and statements end at a newline. Inside the
+parentheses of any call (`set`, `add`, `delete`, `log` and generic calls alike)
+newlines are free after `(`, around `,` and before `)`, and after a `,` in a
+tag list too. No guide page limits this. Nesting of `not`, parentheses, list
+literals and `begin` blocks is bounded by `MAX_NESTING` (64); deeper text is
+refused as `NestingTooDeep`. A line that
 starts at column 1 must be a clause keyword. Strings use `"` or `'`, may span
 lines and keep `${...}` and backslashes as written. `and` and `or` do not mix
 on one level without parentheses.

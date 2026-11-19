@@ -13,6 +13,16 @@ use crate::lexer::{Tok, Token, lex};
 
 type Res<T> = Result<T, ParseError>;
 
+/// The deepest nesting the reader descends into: `not`, parentheses, list
+/// literals and `begin ... end` blocks together. The parser is recursive, so
+/// without a bound a short text (10,000 times `not `) would overflow the stack
+/// and abort the process. 64 is far beyond anything in the guide (its deepest
+/// item nests twice) and keeps the recursion shallow enough for a 2 MB thread
+/// stack in an unoptimised build, where each level costs several frames.
+/// Nesting of `if` is bounded separately (the guide shows none inside an
+/// `if`), nested calls are refused, and keys do not recurse.
+pub const MAX_NESTING: usize = 64;
+
 const CLAUSES: [&str; 4] = ["ki", "on", "when", "do"];
 const RESERVED: [&str; 14] = [
     "ki", "on", "when", "do", "if", "then", "else", "end", "not", "and", "or", "as", "with",
@@ -30,6 +40,7 @@ pub fn parse(src: &str) -> Res<KnowledgeItem> {
     let mut p = Parser {
         toks: lex(src),
         i: 0,
+        depth: 0,
     };
     let mut item = p.item()?;
     item.source = src.to_string();
@@ -39,6 +50,8 @@ pub fn parse(src: &str) -> Res<KnowledgeItem> {
 struct Parser {
     toks: Vec<Token>,
     i: usize,
+    /// Current nesting of `not`, parentheses, list literals and `begin` blocks.
+    depth: usize,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -769,6 +782,7 @@ impl Parser {
             Tok::LBracket => {
                 self.bump();
                 let mut items = Vec::new();
+                self.enter(&t)?;
                 loop {
                     items.push(self.operand(in_arg)?);
                     let n = self.peek()?.clone();
@@ -778,6 +792,7 @@ impl Parser {
                         }
                         Tok::RBracket => {
                             self.bump();
+                            self.depth -= 1;
                             let span = Span::join(t.span, n.span);
                             return Ok(Expr::List { items, span });
                         }
@@ -875,8 +890,32 @@ impl Parser {
         })
     }
 
+    fn enter(&mut self, t: &Token) -> Res<()> {
+        if self.depth >= MAX_NESTING {
+            return self.fail(
+                t,
+                ErrorKind::NestingTooDeep { limit: MAX_NESTING },
+                "a shallower item",
+            );
+        }
+        self.depth += 1;
+        Ok(())
+    }
+
     fn not_expr(&mut self, ctx: CondCtx) -> Res<Cond> {
         let t = self.peek()?.clone();
+        let nests = word(&t) == Some("not") || matches!(t.tok, Tok::LParen);
+        if nests {
+            self.enter(&t)?;
+        }
+        let r = self.not_expr_inner(ctx, t);
+        if nests {
+            self.depth -= 1;
+        }
+        r
+    }
+
+    fn not_expr_inner(&mut self, ctx: CondCtx, t: Token) -> Res<Cond> {
         if word(&t) == Some("not") {
             self.bump();
             let inner = self.not_expr(ctx)?;
@@ -1242,6 +1281,7 @@ impl Parser {
     }
 
     fn close_paren(&mut self, what: &str) -> Res<Token> {
+        self.skip_nl();
         let c = self.peek()?.clone();
         if !matches!(c.tok, Tok::RParen) {
             return self.unexpected(&c, what);
@@ -1250,6 +1290,7 @@ impl Parser {
     }
 
     fn log_rest(&mut self, level: LogLevel, head: &Token) -> Res<Stmt> {
+        self.skip_nl();
         let message = self.expr(true)?;
         let c = self.close_paren("`)` (`log` takes exactly one argument)")?;
         Ok(Stmt::Log {
@@ -1260,6 +1301,7 @@ impl Parser {
     }
 
     fn delete_rest(&mut self, head: &Token) -> Res<Stmt> {
+        self.skip_nl();
         let v = self.peek()?.clone();
         if let Tok::Name(n) = &v.tok
             && matches!(self.kind_at(1), Tok::LParen)
@@ -1272,8 +1314,10 @@ impl Parser {
         }
         let target = self.var_ref()?;
         let mut created_on = None;
+        self.skip_nl();
         if matches!(self.peek()?.tok, Tok::Comma) {
             self.bump();
+            self.skip_nl();
             let k = self.peek()?.clone();
             if word(&k) != Some("created_on") || !matches!(self.kind_at(1), Tok::Colon) {
                 return self.unexpected(&k, "`created_on: <node id>`");
@@ -1291,6 +1335,7 @@ impl Parser {
     }
 
     fn set_add_rest(&mut self, head: &Token, is_set: bool) -> Res<Stmt> {
+        self.skip_nl();
         let target = self.var_ref()?;
         let eq = self.peek()?.clone();
         if !matches!(&eq.tok, Tok::Op(o) if o == "=") {
@@ -1375,6 +1420,18 @@ impl Parser {
 
     fn arg_value(&mut self, in_branch: bool) -> Res<ArgValue> {
         let t = self.peek()?.clone();
+        let nests = word(&t) == Some("begin");
+        if nests {
+            self.enter(&t)?;
+        }
+        let r = self.arg_value_inner(in_branch, t);
+        if nests {
+            self.depth -= 1;
+        }
+        r
+    }
+
+    fn arg_value_inner(&mut self, in_branch: bool, t: Token) -> Res<ArgValue> {
         if word(&t) == Some("begin") {
             self.bump();
             let mut stmts: Vec<Stmt> = Vec::new();

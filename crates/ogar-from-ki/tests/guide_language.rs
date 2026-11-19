@@ -1201,3 +1201,119 @@ fn values_page_examples_parse() {
     parse("on\n  list VarA\n  count(VarA) > 3\nwhen\n  X\ndo\n  log(\"x\")\n")
         .expect_err("`count(` is documented but not read");
 }
+
+// ── nesting bound ────────────────────────────────────────────────────
+
+fn too_deep(e: &ParseError) -> bool {
+    e.kind
+        == ErrorKind::NestingTooDeep {
+            limit: ogar_from_ki::MAX_NESTING,
+        }
+}
+
+#[test]
+fn ten_thousand_nots_are_refused_not_a_stack_overflow() {
+    let e = when_item(&format!("{}A", "not ".repeat(10_000))).expect_err("refused");
+    assert!(too_deep(&e), "{e}");
+    assert_eq!(e.pos.line, 4);
+    // the refusal is at the first `not` past the limit
+    assert_eq!(e.pos.col, 3 + 4 * ogar_from_ki::MAX_NESTING);
+}
+
+#[test]
+fn deep_parentheses_and_lists_are_refused() {
+    let n = 5_000;
+    let e = when_item(&format!("{}A{}", "(".repeat(n), ")".repeat(n))).expect_err("refused");
+    assert!(too_deep(&e), "{e}");
+    let e = do_item(&format!("X = {}1{}", "[".repeat(n), "]".repeat(n))).expect_err("refused");
+    assert!(too_deep(&e), "{e}");
+}
+
+#[test]
+fn deep_begin_chain_is_refused() {
+    let n = 2_000;
+    let src = format!(
+        "{}log(\"x\"){}",
+        "f(each: begin ".repeat(n),
+        " end)".repeat(n)
+    );
+    let e = do_item(&src).expect_err("refused");
+    assert!(too_deep(&e), "{e}");
+}
+
+#[test]
+fn nested_if_and_nested_calls_are_refused_by_their_own_names() {
+    let mut s = String::new();
+    for _ in 0..1_000 {
+        s.push_str("if A then\n");
+    }
+    s.push_str("log(\"x\")\n");
+    for _ in 0..1_000 {
+        s.push_str("end\n");
+    }
+    assert_eq!(do_item(&s).expect_err("refused").kind, ErrorKind::NestedIf);
+    let call = format!("{}1{}", "f(".repeat(5_000), ")".repeat(5_000));
+    assert!(matches!(
+        do_item(&call).expect_err("refused").kind,
+        ErrorKind::NestedCall { .. }
+    ));
+}
+
+#[test]
+fn exactly_the_limit_still_parses_and_the_walkers_cope() {
+    let n = ogar_from_ki::MAX_NESTING;
+    let it = when_item(&format!("{}A", "not ".repeat(n))).expect("parses at the limit");
+    let _ = ogar_from_ki::outline(&it);
+    let _ = it.condition_refs();
+    assert_eq!(
+        it.condition_refs()[1].negated,
+        n % 2 == 1,
+        "negation parity over {n} nots"
+    );
+    let _ = it.clone();
+    let it = when_item(&format!("{}A{}", "(".repeat(n), ")".repeat(n))).expect("parses");
+    let _ = it.condition_refs();
+    let src = format!(
+        "{}log(\"x\"){}",
+        "f(each: begin ".repeat(n),
+        " end)".repeat(n)
+    );
+    let it = do_item(&src).expect("parses at the limit");
+    let l = lift_source(
+        &format!("on\n  ogit/_id\nwhen\n  X\ndo\n  {src}\n"),
+        &LiftOptions {
+            item_id: Some("deep".into()),
+        },
+    )
+    .unwrap();
+    assert_eq!(l.item.other_calls.len(), n);
+    drop(it);
+    // one more is refused
+    assert!(when_item(&format!("{}A", "not ".repeat(n + 1))).is_err());
+}
+
+// ── newlines inside the parentheses of specialised calls ─────────────
+
+/// The guide pages show calls over several lines (`if` page's `execute(`,
+/// `action` and `query` pages). No page limits where a newline may appear
+/// inside the parentheses, so every call, specialised or generic, accepts
+/// one after `(`, around `,` and before `)`.
+#[test]
+fn newlines_are_free_inside_every_call_form() {
+    for (src, kind) in [
+        ("set(\n  Foo = 1\n)", "set"),
+        ("add(\n  Foo[\"k\"] = \"v\"\n)", "add"),
+        ("delete(\n  Foo\n)", "delete"),
+        ("delete(\n  Foo,\n  created_on: Node1\n)", "delete"),
+        ("delete(Foo\n)", "delete"),
+        ("log(\n  \"m\"\n)", "log"),
+        ("log.warn(\n  \"m\"\n)", "log.warn"),
+        ("log(\"m\"\n)", "log"),
+        ("sleep(\n  5\n)", "call:sleep"),
+        ("action(\n  \"C\",\n  a: \"1\"\n)", "action"),
+        ("x: Y = execute(\n  \"c\"\n)", "call:execute"),
+    ] {
+        let it = do_item(src).unwrap_or_else(|e| panic!("{src:?}: {e}"));
+        assert_eq!(stmt_kinds(&it.do_.stmts), vec![kind.to_string()], "{src:?}");
+    }
+}

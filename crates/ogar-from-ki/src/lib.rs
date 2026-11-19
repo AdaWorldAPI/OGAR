@@ -41,5 +41,5 @@ pub use lift::{
     KiOtherCall, KiResultBinding, LiftError, LiftOptions, Lifted, LiftedItem, NoteKind, OnTarget,
     OtherCallKind, SourceError, lift, lift_source,
 };
-pub use parser::parse;
+pub use parser::{MAX_NESTING, parse};
 pub use scope::{ConditionRef, Section};

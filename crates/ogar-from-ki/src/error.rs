@@ -169,6 +169,12 @@ pub enum ErrorKind {
         /// The form.
         form: &'static str,
     },
+    /// `not`, parentheses, list literals and `begin` blocks nested deeper
+    /// than [`crate::MAX_NESTING`] allows (see `MAX_NESTING`).
+    NestingTooDeep {
+        /// The limit.
+        limit: usize,
+    },
     /// A positional argument after a keyword argument.
     PositionalAfterKeyword,
     /// A namespace written wrongly, or a malformed qualified name.
@@ -270,6 +276,9 @@ impl fmt::Display for ErrorKind {
             ErrorKind::ChainedArithmetic => write!(f, "more than one arithmetic operator"),
             ErrorKind::MatchFormInIf { form } => {
                 write!(f, "match form `{form}` in an `if` condition")
+            }
+            ErrorKind::NestingTooDeep { limit } => {
+                write!(f, "nesting deeper than {limit}")
             }
             ErrorKind::PositionalAfterKeyword => {
                 write!(f, "positional argument after a keyword argument")
