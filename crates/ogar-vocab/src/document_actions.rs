@@ -49,7 +49,7 @@
 //! future `persist_document` body would write, not part of this table's
 //! public capability surface.
 
-use crate::{ActionDef, ActionSubject, KausalSpec};
+use crate::{ActionDef, ActionSubject, CallParam, KausalSpec};
 
 /// Every document capability name, in table order — the `const`-evaluable
 /// fingerprint of [`document_actions`] (same role as
@@ -60,13 +60,28 @@ pub const DOCUMENT_ACTION_NAMES: &[&str] =
 
 const _: () = assert!(DOCUMENT_ACTION_NAMES.len() == 3);
 
-/// Build one [`ActionDef`] for a document capability. `reads`/`writes`
-/// carry the mandatory + optional field names from
-/// `OGAR-DOC-W4-BUILD-SPEC.md` §W4-4's param table (name-level effect
-/// facts, matching [`crate::ocr_actions::ocr_action_def`]'s convention —
-/// richer than [`crate::healthcare_actions`]'s deliberately-empty rows,
-/// since §W4-4 explicitly enumerates the signature).
-fn document_action_def(capability: &'static str, reads: &[&str], writes: &[&str]) -> ActionDef {
+const PERSIST_DOCUMENT_PARAMS: &[CallParam] = &[
+    CallParam::required("doc_ir"),
+    CallParam::required("raw_sha256"),
+    CallParam::required("raw_kv_key"),
+];
+const READ_DOCUMENT_PARAMS: &[CallParam] = &[CallParam::required("document_guid")];
+const RECONSTRUCT_DOCUMENT_PARAMS: &[CallParam] = &[
+    CallParam::required("document_guid"),
+    CallParam::optional("template"),
+];
+
+/// Build one [`ActionDef`] for a document capability. `params` and `results`
+/// carry the mandatory + optional call inputs and the outputs from
+/// `OGAR-DOC-W4-BUILD-SPEC.md` §W4-4's param table. They are the CALL's
+/// signature, not stored fields of `document`, so they are declared as
+/// [`ActionDef::params`] / [`ActionDef::results`] and `reads` / `writes` stay
+/// empty (the same convention as [`crate::ocr_actions`]).
+fn document_action_def(
+    capability: &'static str,
+    params: &[CallParam],
+    results: &[&str],
+) -> ActionDef {
     let object_class = "ogit-ocr/document".to_string();
     let identity = format!("{object_class}::action_def::{capability}");
     ActionDef {
@@ -79,8 +94,8 @@ fn document_action_def(capability: &'static str, reads: &[&str], writes: &[&str]
         // precondition to guard on, matching `KausalSpec::External`'s doc
         // and the identical convention `ocr_actions::ocr_action_def` uses.
         kausal: Some(KausalSpec::External),
-        reads: reads.iter().map(|s| (*s).to_owned()).collect(),
-        writes: writes.iter().map(|s| (*s).to_owned()).collect(),
+        params: params.to_vec(),
+        results: results.iter().map(|s| (*s).to_owned()).collect(),
         ..ActionDef::default()
     }
 }
@@ -100,13 +115,13 @@ pub fn document_actions() -> Vec<ActionDef> {
     vec![
         document_action_def(
             "persist_document",
-            &["doc_ir", "raw_sha256", "raw_kv_key"],
+            PERSIST_DOCUMENT_PARAMS,
             &["document_guid"],
         ),
-        document_action_def("read_document", &["document_guid"], &["doc_ir"]),
+        document_action_def("read_document", READ_DOCUMENT_PARAMS, &["doc_ir"]),
         document_action_def(
             "reconstruct_document",
-            &["document_guid", "template"],
+            RECONSTRUCT_DOCUMENT_PARAMS,
             &["pdf_bytes"],
         ),
     ]
@@ -168,7 +183,7 @@ mod tests {
         }
     }
 
-    /// `reconstruct_document`'s mandatory reads must be a SUBSET of
+    /// `reconstruct_document`'s mandatory params must be a SUBSET of
     /// `read_document`'s + the produced `document_guid` chain — cannot
     /// need less than resolving a document requires (mirrors
     /// `ocr_actions`'s `recognize_document_reads_cover_the_word_stage`
@@ -177,16 +192,18 @@ mod tests {
     fn reconstruct_document_requires_a_document_guid_like_read_document() {
         let actions = document_actions();
         let get = |name: &str| actions.iter().find(|d| d.predicate == name).unwrap();
-        assert!(
-            get("read_document")
-                .reads
-                .contains(&"document_guid".to_string())
-        );
-        assert!(
-            get("reconstruct_document")
-                .reads
-                .contains(&"document_guid".to_string())
-        );
+        let takes = |name: &str| {
+            get(name)
+                .params
+                .iter()
+                .any(|p| p.name == "document_guid" && p.mandatory)
+        };
+        assert!(takes("read_document"));
+        assert!(takes("reconstruct_document"));
+        // The call's signature is not a stored-field read.
+        for def in &actions {
+            assert!(def.reads.is_empty() && def.writes.is_empty());
+        }
     }
 
     /// This table's own registration roundtrip, mirroring

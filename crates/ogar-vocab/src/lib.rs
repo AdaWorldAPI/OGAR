@@ -44,6 +44,9 @@ pub mod recipe;
 /// `extract_text_layer` / `extract_page_image` / `render_text` /
 /// `render_tsv` / `render_hocr` / `render_searchable_pdf`, each targeting a
 /// minted `0x08XX` [`class_ids`] concept.
+/// The explicit, append-only ledger of behaviour arms (`class :: F###`): the
+/// canonical ledger for OGAR's own defs and the rules for a consumer's.
+pub mod arm_ledger;
 pub mod capability_registry;
 pub mod document_actions;
 /// The shared effect classification ([`effect_class::EffectClass`],
@@ -392,6 +395,57 @@ pub enum RecordSemantics {
 // B2 fix: ActionState lifecycle (Pending / Committed / Failed) carved.
 // ─────────────────────────────────────────────────────────────────────
 
+/// One call parameter of an [`ActionDef`]: a named input of the call, with the
+/// mandatory/optional split arago's `Parameter.Mandatory` carries. A call
+/// parameter is NOT a stored field of the action's class: it is declared here,
+/// with the action, and never added to the class (`docs/SHARED-DO-DESIGN.md`
+/// section 9). `ogar_vocab::ocr_actions::OcrActionParam` is this type.
+///
+/// `ogar_from_schema::do_arm::ActionParam` (the parameter of a schema-lifted
+/// capability, `{ name, mandatory }` too) is a separate type: `ogar-from-schema`
+/// depends on `ogar-vocab`, so this type cannot be that one, and the two are
+/// not merged. A consumer maps one onto the other field by field.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[non_exhaustive]
+pub struct CallParam {
+    /// Parameter name (arago `Parameter.Name`).
+    pub name: std::borrow::Cow<'static, str>,
+    /// Whether the parameter is required (arago `Parameter.Mandatory`).
+    pub mandatory: bool,
+}
+
+impl CallParam {
+    /// Build a required parameter slot from a static name (const-constructible,
+    /// for hand-authored tables).
+    #[must_use]
+    pub const fn required(name: &'static str) -> Self {
+        Self {
+            name: std::borrow::Cow::Borrowed(name),
+            mandatory: true,
+        }
+    }
+
+    /// Build an optional parameter slot from a static name.
+    #[must_use]
+    pub const fn optional(name: &'static str) -> Self {
+        Self {
+            name: std::borrow::Cow::Borrowed(name),
+            mandatory: false,
+        }
+    }
+
+    /// Build a parameter slot from a name known at run time (a lifted
+    /// declaration).
+    #[must_use]
+    pub fn owned(name: impl Into<String>, mandatory: bool) -> Self {
+        Self {
+            name: std::borrow::Cow::Owned(name.into()),
+            mandatory,
+        }
+    }
+}
+
 /// An action declaration — the AST-extracted shape of a business
 /// operation (a method-decorator combo, a callback declaration, a
 /// workflow transition). One per source-level method/callback decl.
@@ -428,6 +482,7 @@ pub struct ActionDef {
     /// frontend — `ruff_spo_triplet::Function::reads`). Effect annotation
     /// per OGAR-AS-IR §3 test 2; NOT a reactive `@api.depends` claim (a plain
     /// method read is not a recomputation trigger — see `lift_actions`).
+    /// A call INPUT is not a field read: it is declared in [`ActionDef::params`].
     pub reads: Vec<String>,
     /// Fields this action WRITES (`Function::writes` — `self.<field> = …`
     /// setter targets, Authoritative). Effect annotation; the *value* written
@@ -444,6 +499,19 @@ pub struct ActionDef {
     /// `serde(default)`: additive field, pre-`raises` material deserializes.
     #[cfg_attr(feature = "serde", serde(default))]
     pub raises: Vec<String>,
+    /// The call's typed INPUTS: parameters of the call, each with a
+    /// mandatory/optional flag. NOT stored fields of the class: `reads` and
+    /// `writes` name stored fields only, and a call parameter is declared here
+    /// instead (`docs/SHARED-DO-DESIGN.md` section 9). The DT64 method
+    /// registers with class fields only; this list stays with the declaration.
+    /// `serde(default)`: additive field, earlier material deserializes.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub params: Vec<CallParam>,
+    /// The call's RESULTS: the names of what the call returns (output names;
+    /// no mandatory flag, because no table states one). Not stored fields of
+    /// the class. `serde(default)`: additive field.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub results: Vec<String>,
 
     // ── Rubicon statem carriers (OGAR-AST-CONTRACT §6) ──
     // The three semantics that don't survive Action-flattening; each lowers
@@ -7556,6 +7624,48 @@ mod tests {
         json.as_object_mut().unwrap().remove("raises");
         let back: ActionDef = serde_json::from_value(json).unwrap();
         assert!(back.raises.is_empty());
+    }
+
+    /// `params` / `results` are additive slots: an `ActionDef::new` or a
+    /// struct-update literal keeps compiling with both empty, and they hold the
+    /// call signature without touching `reads` / `writes`.
+    #[test]
+    fn action_def_call_signature_slots_are_additive_and_default_empty() {
+        let mut a = ActionDef::new("id", "predicate", "object_class");
+        assert!(a.params.is_empty() && a.results.is_empty());
+        let b = ActionDef {
+            identity: "x".into(),
+            ..ActionDef::default()
+        };
+        assert!(b.params.is_empty() && b.results.is_empty());
+        a.params = vec![
+            CallParam::required("grey_line"),
+            CallParam::optional("with_dict"),
+        ];
+        a.results = vec!["text".into()];
+        assert!(a.reads.is_empty() && a.writes.is_empty());
+        assert!(a.params[0].mandatory && !a.params[1].mandatory);
+        assert_eq!(a.params[0].name, "grey_line");
+        assert_eq!(CallParam::owned("n", true), CallParam::required("n"));
+    }
+
+    /// `serde(default)` guard: material from before `params` / `results` (no
+    /// such keys) still deserializes, and a signature round-trips.
+    #[cfg(feature = "serde")]
+    #[test]
+    fn action_def_call_signature_missing_keys_deserialize_and_round_trip() {
+        let mut a = ActionDef::new("id", "predicate", "object_class");
+        a.params = vec![CallParam::required("p"), CallParam::optional("q")];
+        a.results = vec!["r".into()];
+        let json = serde_json::to_value(&a).unwrap();
+        let back: ActionDef = serde_json::from_value(json.clone()).unwrap();
+        assert_eq!(back, a);
+        let mut old = json;
+        let o = old.as_object_mut().unwrap();
+        o.remove("params");
+        o.remove("results");
+        let back: ActionDef = serde_json::from_value(old).unwrap();
+        assert!(back.params.is_empty() && back.results.is_empty());
     }
 
     #[test]

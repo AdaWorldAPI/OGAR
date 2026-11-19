@@ -32,8 +32,9 @@
 //! [`ActionDef`] registers at its own classid. The two halves have two owners:
 //!
 //! - the **arm** (right half) belongs to the behaviour: ogar-vocab supplies the
-//!   [`ActionDef`]s, and [`behaviour_arm`] gives each its number from the def's
-//!   own `identity`. It is the SAME whichever consumer registers the def.
+//!   [`ActionDef`]s, and the arm ledger ([`ogar_vocab::arm_ledger`]) gives each
+//!   its number from the def's own `identity`. It is the SAME whichever
+//!   consumer registers the def.
 //! - the **left half** belongs to the registering consumer (D14'': a consumer
 //!   registers behaviour under its own class). It comes from the caller's
 //!   [`ConsumerClasses`], resolved per def from `object_class`; a def whose
@@ -51,6 +52,7 @@
 //! | `kausal: StateGuard` over a field of the class with decimal-literal values | `when: Some(Guard)`, an `Or` of `eq_u32` lanes under `Logic::Kleene` |
 //! | `kausal: Depends` over fields of the class | `on` (the positions whose change triggers it) |
 //! | `reads` | `reads`: each name must be a field label of the class |
+//! | `params`, `results` | not in the binding: the call's parameter list stays with the declaration, carried on [`Registered`] (see [Call parameters](#call-parameters)) |
 //! | `writes`, `calls`, `raises` | not in the binding, see [Effects](#effects) |
 //! | everything else | refused by name, see [`ConvertRefusal`] |
 //! | `required_role` (a const on the gate, not on this `ActionDef`) | not part of the method: it stays on the gate |
@@ -63,19 +65,32 @@
 //!
 //! ## Behaviour arms
 //!
-//! `arm = 0xF001 + fnv1a32(identity) % 4095`. The arm is a pure function of the
-//! def's own `identity`: not of its position in a table, of which other defs
-//! exist, of whether a def converts, or of the consumer. So it is stable and
-//! append-only by construction: adding, removing, reordering or refusing other
-//! defs never renumbers one, and a changed behaviour is a new def (a new
-//! identity, a new arm) or a derived classid, never a renumbered one (D5).
-//! `0xF000` is never assigned: it is the class's own polyfill lens (the
-//! `0x020C_F000` precedent, D-DT64-7 §1g). A hash can collide, and a class has
-//! at most 4095 arms, so two defs that would take one arm on one left class
-//! are refused by name ([`BehaviourArmRefusal::Collision`]), as is a left
-//! class with more defs than arms ([`BehaviourArmRefusal::Overflow`]); neither
-//! is resolved by picking a winner. `tests/dt64_methods.rs` pins every arm of
-//! today's 50 defs.
+//! An arm is assigned by a ledger entry, `identity -> arm`, never computed.
+//! OGAR ships the canonical ledger for all 50 of its own defs
+//! ([`ogar_vocab::arm_ledger::CANONICAL`], `0xF001` upward in table order,
+//! append-only, pinned literally by tests). A consumer that registers
+//! behaviours OGAR does not know supplies its own entries as [`ConsumerArms`]
+//! through [`register_domain_table_with_arms`]; every other entry point uses the
+//! canonical ledger alone. The arm is a function of the identity and the ledger
+//! only: not of the position in a table, of which other defs exist, of whether
+//! a def converts, or of the consumer. A changed behaviour is a new def (a new
+//! identity, a new ledger line, a new arm) or a derived classid, never a
+//! renumbered one (D5). `0xF000` is never assigned: it is the class's own
+//! polyfill lens (the `0x020C_F000` precedent, D-DT64-7 §1g).
+//!
+//! Consumer arms are kept apart from OGAR's by range: OGAR assigns only
+//! `0xF001..=0xF7FF`, a consumer only `0xF800..=0xFFFF`. A consumer entry that
+//! reuses a canonical arm, rebinds a canonical identity to another arm, or takes
+//! an arm in OGAR's range is refused by name ([`BehaviourArmRefusal::Ledger`],
+//! [`ogar_vocab::arm_ledger::LedgerRefusal`]), as is an identity with no ledger
+//! entry at all ([`BehaviourArmRefusal::NoLedgerEntry`]): there is no fallback
+//! number. A table that lists one identity twice is refused
+//! ([`BehaviourArmRefusal::DuplicateDef`]). All of these refuse the whole table
+//! before DT64 is called, so a refused def never decides another's fate. There
+//! is no collision case and no overflow case: the ledger is unique in both
+//! columns by validation, so two identities never share an arm and a class never
+//! has more defs than arms. `tests/dt64_methods.rs` pins today's 50 arms
+//! through the ledger.
 //!
 //! ## The view of a behaviour
 //!
@@ -113,17 +128,27 @@
 //! allows it.
 //!
 //! The classes of OGAR's 50 `ActionDef`s (`classify` over the five
-//! authoritative tables): all 33 that register (geo 6, healthcare 20, erp 7)
-//! are `ExternalHost`: each is `kausal: External` and name-only (no `reads`,
-//! `writes`, `calls`, `raises` or `on_enter`), so the one thing the def
-//! evidences is an external cause with a body outside OGAR. The 17 refused
-//! defs (ocr 14, document 3) are `LifecycleWrite`: they are also
-//! `kausal: External`, but they name `writes`, which `classify` ranks above an
-//! external cause (caveat: for those two tables `writes` lists the
-//! capability's declared output names, not setter targets, so the class
-//! overstates a write; it still requires the gate, which is the safe side).
-//! Several of the 33 are in fact reads (`get_*`, `list_*`, `locate_*`); the
-//! def does not say so, so none is admitted as an F000 query.
+//! authoritative tables): all 50 are `ExternalHost`: each is `kausal: External`
+//! and names no `reads`, `writes`, `calls`, `raises` or `on_enter`, so the one
+//! thing the def evidences is an external cause with a body outside OGAR. (The
+//! ocr and document defs were `LifecycleWrite` while their output names sat in
+//! `writes`; those names are call results and now live in `results`.) Several
+//! of the defs are in fact reads (`get_*`, `list_*`, `locate_*`); the def does
+//! not say so, so none is admitted as an F000 query.
+//!
+//! ## Call parameters
+//!
+//! A call parameter (`grey_line`, `width`, the inputs of `recognize_line`) is an
+//! input of the call, not a stored field of the class. It is declared on the
+//! [`ActionDef`] (`params`, with a mandatory/optional flag, and `results`) and
+//! never added to the class. The converter resolves `reads`, a guard field and
+//! a `Depends` path against the class's field basis only. A call parameter in
+//! `reads` is refused as `UnknownField`, and a guard or `Depends` path over a
+//! call parameter that is not also a field is refused as
+//! [`ConvertRefusal::CallParameterInGuard`]. A def is never refused because it
+//! HAS call parameters. The registered method carries class fields only; the
+//! parameter list travels on the [`Registered`] row beside the registration, for
+//! the executor and the later invocation contract.
 //!
 //! ## Immutability
 //!
@@ -142,7 +167,7 @@
 //! def, they need a table-shaped caller and a `ClassView` over the harvested
 //! class.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use lance_graph_contract::class_view::{ClassId, ClassView, WideFieldMask, is_behaviour_lens};
 use lance_graph_contract::ogar_codebook::{classid_concept, compose_classid};
@@ -153,9 +178,11 @@ use lance_graph_dt64::{
     Axis, BindStore, ClassSchema, Extent, Guard, MethodBinding, MethodId, Refusal, SchemaRev,
     SigRev, ValueDemand, Width,
 };
+use ogar_vocab::arm_ledger::ConsumerArms;
+pub use ogar_vocab::arm_ledger::LedgerRefusal;
 use ogar_vocab::capability_registry::{DomainTable, HotplugDrift, resolve_hotplug};
 use ogar_vocab::effect_class::{EffectClass, classify};
-use ogar_vocab::{ActionDef, KausalSpec, canonical_concept_id};
+use ogar_vocab::{ActionDef, CallParam, KausalSpec, canonical_concept_id};
 
 /// Which `ActionDef` field named a field the class does not have.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -185,6 +212,15 @@ pub enum ConvertRefusal {
         /// Where the name came from.
         role: FieldRole,
         /// The name as written on the def.
+        name: String,
+    },
+    /// A guard field or a `Depends` path names a call parameter of the def
+    /// (`ActionDef::params`) that is not a stored field of the class. A guard
+    /// is over stored fields only.
+    CallParameterInGuard {
+        /// Where the name came from.
+        role: FieldRole,
+        /// The call parameter's name.
         name: String,
     },
     /// The def's `kausal` is not an equality over the class's fields that a
@@ -235,6 +271,11 @@ pub struct Registered {
     /// `ActionDef::identity`, which finds the def (its `writes`, `calls`,
     /// `raises`, statem carriers).
     pub identity: String,
+    /// The def's call parameters (`ActionDef::params`), in declared order. Not
+    /// part of the registered method, which has class fields only.
+    pub params: Vec<CallParam>,
+    /// The def's call results (`ActionDef::results`), in declared order.
+    pub results: Vec<String>,
     /// What the def is known to do, from [`ogar_vocab::effect_class::classify`].
     /// A class for which [`EffectClass::requires_gate`] holds is never an F000
     /// method and goes to the gate (`commit_via`) as an `ActionInvocation`.
@@ -294,54 +335,28 @@ pub enum TableRefusal {
         /// DT64's refusal.
         refusal: Refusal,
     },
-    /// Two defs would take one arm on one class, or a class has more defs than
-    /// arms. DT64 was not called.
+    /// The arms of the table's defs could not be assigned. DT64 was not called.
     Arm(BehaviourArmRefusal),
 }
 
-/// Why the arms of a table's defs could not be assigned (see
-/// [`behaviour_arm`]). Neither case picks a winner.
+/// Why the arms of a table's defs could not be assigned (see the module doc).
+/// None picks a winner or invents a number.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum BehaviourArmRefusal {
-    /// Two defs take the same arm on the same consumer class (the two
-    /// identities are the same string if a table lists a def twice).
-    Collision {
+    /// The consumer's ledger entries were refused.
+    Ledger(LedgerRefusal),
+    /// A def's identity has no entry in the canonical ledger or the consumer's.
+    NoLedgerEntry {
+        /// The def's `identity`.
+        identity: String,
+    },
+    /// A table lists one identity twice on one consumer class.
+    DuplicateDef {
         /// The consumer class (left half).
         on: u16,
-        /// The arm both defs would take.
-        arm: u16,
-        /// The first def's `identity`.
-        first: String,
-        /// The second def's `identity`.
-        second: String,
+        /// The identity listed twice.
+        identity: String,
     },
-    /// More defs on one consumer class than it has arms ([`ARMS_PER_CLASS`]).
-    Overflow {
-        /// The consumer class (left half).
-        on: u16,
-        /// How many defs target it.
-        defs: usize,
-    },
-}
-
-/// How many behaviour arms one class has: `0xF001..=0xFFFF`. `0xF000` is the
-/// class's polyfill lens and is never assigned.
-pub const ARMS_PER_CLASS: usize = 4095;
-
-/// The behaviour arm (right half of the classid, in `0xF001..=0xFFFF`) of the
-/// def with this `identity` ([`ActionDef::identity`]): `0xF001 +
-/// fnv1a32(identity) % 4095`. A function of the identity alone, so it is the
-/// same under every consumer and never moves when other defs are added,
-/// removed, reordered or refused.
-#[must_use]
-pub fn behaviour_arm(identity: &str) -> u16 {
-    let mut h: u32 = 0x811c_9dc5;
-    for b in identity.bytes() {
-        h ^= u32::from(b);
-        h = h.wrapping_mul(0x0100_0193);
-    }
-    // 0xF001 + (0..4095) <= 0xFFFF; the modulus keeps it in u16.
-    0xF001 + (h % 4095) as u16
 }
 
 /// How a registering consumer names the class a def applies on: the left half
@@ -499,6 +514,27 @@ fn field_at(fields: &[FieldRef], name: &str, role: FieldRole) -> Result<u8, Conv
     })
 }
 
+/// [`field_at`] for a guard field or a `Depends` path: a name that is a call
+/// parameter of the def and not a field of the class is refused as
+/// [`ConvertRefusal::CallParameterInGuard`], not as an unknown field.
+fn guard_field_at(
+    def: &ActionDef,
+    fields: &[FieldRef],
+    name: &str,
+    role: FieldRole,
+) -> Result<u8, ConvertRefusal> {
+    match position_of(fields, name) {
+        Some(p) => Ok(p),
+        None if def.params.iter().any(|p| p.name == name) => {
+            Err(ConvertRefusal::CallParameterInGuard {
+                role,
+                name: name.to_string(),
+            })
+        }
+        None => field_at(fields, name, role),
+    }
+}
+
 fn variant_name(k: &KausalSpec) -> &'static str {
     match k {
         KausalSpec::StateGuard { .. } => "StateGuard",
@@ -514,9 +550,10 @@ fn variant_name(k: &KausalSpec) -> &'static str {
 
 /// `(ON, WHEN)` from a def's `kausal`. `None` is an unconditional method.
 fn when_and_on(
-    kausal: Option<&KausalSpec>,
+    def: &ActionDef,
     fields: &[FieldRef],
 ) -> Result<(WideFieldMask, Option<Guard>), ConvertRefusal> {
+    let kausal = def.kausal.as_ref();
     let unported = |why: &str| {
         let name = kausal.map_or("None", variant_name);
         ConvertRefusal::UnportedGuard {
@@ -528,7 +565,7 @@ fn when_and_on(
         Some(KausalSpec::Depends { paths }) => {
             let mut on = WideFieldMask::EMPTY;
             for path in paths {
-                on = on.with(field_at(fields, path, FieldRole::DependsPath)?);
+                on = on.with(guard_field_at(def, fields, path, FieldRole::DependsPath)?);
             }
             Ok((on, None))
         }
@@ -536,7 +573,12 @@ fn when_and_on(
             guard_field,
             guard_values,
         }) => {
-            let lane = u16::from(field_at(fields, guard_field, FieldRole::GuardField)?);
+            let lane = u16::from(guard_field_at(
+                def,
+                fields,
+                guard_field,
+                FieldRole::GuardField,
+            )?);
             if guard_values.is_empty() {
                 return Err(unported("an empty value set"));
             }
@@ -588,7 +630,7 @@ fn method_over(
     if def.on_enter.is_some() {
         return Err(ConvertRefusal::UnportedEffect { what: "on_enter" });
     }
-    let (on, when) = when_and_on(def.kausal.as_ref(), fields)?;
+    let (on, when) = when_and_on(def, fields)?;
     let mut reads = WideFieldMask::EMPTY;
     for name in &def.reads {
         reads = reads.with(field_at(fields, name, FieldRole::Reads)?);
@@ -648,20 +690,12 @@ pub fn register_domain_table<V: ClassView + ?Sized>(
     register_domain_table_for(store, view, &CanonicalClasses, table, schema_rev)
 }
 
-/// Convert every def of `table` and register each one at its own classid
-/// `on :: arm` at `schema_rev`: `on` is `classes`' id for the def's declared
-/// subject (the consumer's, resolved per def), `arm` is [`behaviour_arm`] of
-/// its identity. Each def's field basis is read from `view`, the consumer's
-/// [`ClassView`], through the behaviour lens ([`BehaviourView`]). Every def is
-/// either registered or refused by name in the returned [`TableOutcome`]; a def
-/// that does not convert never stops the others. A refused row keeps its arm
-/// as its `id`.
+/// [`register_domain_table_with_arms`] over the canonical ledger alone: every
+/// def's identity must be one OGAR has assigned an arm.
 ///
 /// # Errors
 ///
-/// [`TableRefusal::Arm`] if two defs would take one arm on one class (nothing
-/// is registered), else [`TableRefusal::Dt64`] if DT64 refuses a behaviour's
-/// registration (earlier ones stay registered; the store never rebinds, D5).
+/// As [`register_domain_table_with_arms`].
 pub fn register_domain_table_for<V: ClassView + ?Sized, C: ConsumerClasses + ?Sized>(
     store: &mut BindStore,
     view: &V,
@@ -669,6 +703,42 @@ pub fn register_domain_table_for<V: ClassView + ?Sized, C: ConsumerClasses + ?Si
     table: &DomainTable,
     schema_rev: SchemaRev,
 ) -> Result<TableOutcome, TableRefusal> {
+    register_domain_table_with_arms(
+        store,
+        view,
+        classes,
+        &ConsumerArms::new(),
+        table,
+        schema_rev,
+    )
+}
+
+/// Convert every def of `table` and register each one at its own classid
+/// `on :: arm` at `schema_rev`: `on` is `classes`' id for the def's declared
+/// subject (the consumer's, resolved per def), `arm` is the def's identity
+/// looked up in the canonical ledger and then in `arms`, the consumer's own
+/// entries for behaviours OGAR does not know. Each def's field basis is read
+/// from `view`, the consumer's [`ClassView`], through the behaviour lens
+/// ([`BehaviourView`]). Every def is either registered or refused by name in the
+/// returned [`TableOutcome`]; a def that does not convert never stops the
+/// others.
+///
+/// # Errors
+///
+/// [`TableRefusal::Arm`] if the consumer's ledger is refused, a def's identity
+/// has no ledger entry, or the table lists one identity twice (nothing is
+/// registered), else [`TableRefusal::Dt64`] if DT64 refuses a behaviour's
+/// registration (earlier ones stay registered; the store never rebinds, D5).
+pub fn register_domain_table_with_arms<V: ClassView + ?Sized, C: ConsumerClasses + ?Sized>(
+    store: &mut BindStore,
+    view: &V,
+    classes: &C,
+    arms: &ConsumerArms,
+    table: &DomainTable,
+    schema_rev: SchemaRev,
+) -> Result<TableOutcome, TableRefusal> {
+    arms.validate()
+        .map_err(|e| TableRefusal::Arm(BehaviourArmRefusal::Ledger(e)))?;
     let defs = (table.actions)();
     let lefts: Vec<Result<u16, ConvertRefusal>> = defs
         .iter()
@@ -679,31 +749,30 @@ pub fn register_domain_table_for<V: ClassView + ?Sized, C: ConsumerClasses + ?Si
                 .ok_or(ConvertRefusal::ConsumerClassMissing { concept })
         })
         .collect();
-    let arms: Vec<u16> = defs.iter().map(|d| behaviour_arm(&d.identity)).collect();
-    // One arm per def per class, whether or not the def later converts, so
-    // that refusing or un-refusing one never decides another's fate.
-    let mut per_class: BTreeMap<u16, usize> = BTreeMap::new();
-    for on in lefts.iter().flatten() {
-        *per_class.entry(*on).or_default() += 1;
+    // One arm per def, whether or not the def later converts, so that refusing
+    // or un-refusing one never decides another's fate.
+    let mut ledger_arms: Vec<u16> = Vec::with_capacity(defs.len());
+    for d in &defs {
+        match arms.arm_of(&d.identity) {
+            Some(arm) => ledger_arms.push(arm),
+            None => {
+                return Err(TableRefusal::Arm(BehaviourArmRefusal::NoLedgerEntry {
+                    identity: d.identity.clone(),
+                }));
+            }
+        }
     }
-    if let Some((&on, &defs)) = per_class.iter().find(|&(_, &n)| n > ARMS_PER_CLASS) {
-        return Err(TableRefusal::Arm(BehaviourArmRefusal::Overflow {
-            on,
-            defs,
-        }));
-    }
-    let mut taken: BTreeMap<(u16, u16), &str> = BTreeMap::new();
-    for (i, left) in lefts.iter().enumerate() {
+    let mut listed: BTreeSet<(u16, &str)> = BTreeSet::new();
+    for (def, left) in defs.iter().zip(&lefts) {
         let Ok(on) = *left else { continue };
-        if let Some(first) = taken.insert((on, arms[i]), &defs[i].identity) {
-            return Err(TableRefusal::Arm(BehaviourArmRefusal::Collision {
+        if !listed.insert((on, def.identity.as_str())) {
+            return Err(TableRefusal::Arm(BehaviourArmRefusal::DuplicateDef {
                 on,
-                arm: arms[i],
-                first: first.to_string(),
-                second: defs[i].identity.clone(),
+                identity: def.identity.clone(),
             }));
         }
     }
+    let arms = ledger_arms;
     let mut bview = BehaviourView::new(view);
     for (left, arm) in lefts.iter().zip(&arms) {
         if let Ok(on) = left {
@@ -734,6 +803,8 @@ pub fn register_domain_table_for<V: ClassView + ?Sized, C: ConsumerClasses + ?Si
                 behaviour,
                 capability: def.predicate.clone(),
                 identity: def.identity.clone(),
+                params: def.params.clone(),
+                results: def.results.clone(),
                 effect: classify(def),
             })
         });
@@ -806,9 +877,42 @@ pub fn register_domain_table_activated_for<V: ClassView + ?Sized, C: ConsumerCla
     covered: &[&str],
     schema_rev: SchemaRev,
 ) -> Result<TableOutcome, TableRefusal> {
+    register_domain_table_activated_with_arms(
+        store,
+        view,
+        classes,
+        &ConsumerArms::new(),
+        table,
+        consumer,
+        covered,
+        schema_rev,
+    )
+}
+
+/// [`register_domain_table_with_arms`] only if OGAR's hot-plug resolution is
+/// green for `consumer`.
+///
+/// # Errors
+///
+/// [`TableRefusal::NotActivated`] with the [`HotplugDrift`], else as
+/// [`register_domain_table_with_arms`].
+#[allow(clippy::too_many_arguments)]
+pub fn register_domain_table_activated_with_arms<
+    V: ClassView + ?Sized,
+    C: ConsumerClasses + ?Sized,
+>(
+    store: &mut BindStore,
+    view: &V,
+    classes: &C,
+    arms: &ConsumerArms,
+    table: &DomainTable,
+    consumer: &str,
+    covered: &[&str],
+    schema_rev: SchemaRev,
+) -> Result<TableOutcome, TableRefusal> {
     let mut subjects: Vec<u16> = (table.entries)().into_iter().map(|(_, id)| id).collect();
     subjects.sort_unstable();
     subjects.dedup();
     resolve_hotplug(consumer, &subjects, covered).map_err(TableRefusal::NotActivated)?;
-    register_domain_table_for(store, view, classes, table, schema_rev)
+    register_domain_table_with_arms(store, view, classes, arms, table, schema_rev)
 }

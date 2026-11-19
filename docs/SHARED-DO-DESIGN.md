@@ -18,7 +18,7 @@ step, or commits a transaction. The design below keeps that true.
 | Behaviour | Form |
 |---|---|
 | Queries and derived values (Rails scopes, Odoo `_compute_`, HIRO read-only conditions) | DT64 `MethodBinding` with F000 effects (lens `0xFFFF::0xF000`); the result is the target of the last effect |
-| Writes, lifecycle steps, transactions, external calls (all 33 registered OGAR capabilities, Odoo button actions, Rails callbacks, HIRO `ActionHandler` calls) | NEVER F000. Classified by one shared `EffectClass` and handed to the gate (`commit_via`) as an `ActionInvocation` |
+| Writes, lifecycle steps, transactions, external calls (all 50 registered OGAR capabilities, Odoo button actions, Rails callbacks, HIRO `ActionHandler` calls) | NEVER F000. Classified by one shared `EffectClass` and handed to the gate (`commit_via`) as an `ActionInvocation` |
 | Field mapping between apps | lance-graph #2116 VRL recipe aliases, bound through `LaneBinding::borrow_all` (#1988). Read-only; refuses computation |
 
 The rule, from zammad-rs (`crates/rails-f000/src/effects.rs:3-9`):
@@ -73,19 +73,19 @@ classified without zammad-rs, and so that odoo-rs and HIRO use the same answer.
 
 ### OGAR
 
-- The 33 registered capabilities (geo 6, healthcare 20, erp 7; #385
-  `register_domain_table`) are name-only `kausal: External` defs with no
-  `reads`, `writes`, `calls`, `raises` or `on_enter`. Each registers with empty
-  `effects` and a `Registered { id, class, capability, identity, effect }` row.
-  `capability` is the name a `commit_via` bridge dispatches on to a
-  `CapabilityExecutor`.
+- All 50 capabilities register (ocr 14, geo 6, healthcare 20, document 3, erp 7;
+  #385 `register_domain_table`). Each is a `kausal: External` def with no
+  `writes`, `calls`, `raises` or `on_enter`, and no `reads` of a stored field.
+  Each registers with empty `effects` and a `Registered { id, class, on, arm,
+  behaviour, capability, identity, params, results, effect }` row. `capability`
+  is the name a `commit_via` bridge dispatches on to a `CapabilityExecutor`.
+  `params` and `results` are the def's call signature (section 9, item 3).
 - `effect` is `ogar_vocab::effect_class::classify(def)`. Distribution over
-  OGAR's 50 `ActionDef`s: the 33 that register are all `ExternalHost`; the 17
-  refused by the converter (ocr 14, document 3) are `LifecycleWrite`, because
-  they name `writes` (for those two tables `writes` lists the capability's
-  declared output names, so the class overstates a write; it still requires the
-  gate). Nothing is F000-admissible and nothing is `Unresolved`.
-- Several of the 33 are reads in fact (`get_*`, `list_*`, `locate_*`,
+  OGAR's 50 `ActionDef`s: all 50 are `ExternalHost`. The 17 ocr and document
+  defs were `LifecycleWrite` while their output names sat in `writes`; those
+  names are call results, now `ActionDef::results`, so they classify with the
+  name-only tables. Nothing is F000-admissible and nothing is `Unresolved`.
+- Several of the 50 are reads in fact (`get_*`, `list_*`, `locate_*`,
   `polyline_length`). The def does not say so, so none is admitted as an F000
   query: classifying from evidence means a read is not promoted on its name.
 - Invariant (checked in `tests/dt64_methods.rs`): a method whose class is not
@@ -186,12 +186,17 @@ marker that the framework generated the callback). `raises` alone and
    three-valued binding, `polyfill.rs` module doc). OGAR's `method_of` sets
    `truth: ThreeValued` exactly when a guard is Kleene; no Kleene guard can
    execute until that decision lands.
-2. Call-parameter channel: the 17 `ActionDef`s refused by the converter
-   (ocr, document) are refused as `UnknownField(Reads, ...)` because a call
-   parameter such as `grey_line` is not a field of the class. DT64 has no
-   channel for a call parameter, and `ActionDef` has no parameter list
-   (`ActionParam` exists only for schema-lifted capabilities). These stay
-   refused, by name, until a channel exists.
+2. Call-parameter channel (resolved for registration, open for invocation):
+   the 17 ocr and document `ActionDef`s were refused as `UnknownField(Reads,
+   ...)` because a call parameter such as `grey_line` is not a field of the
+   class. Call parameters are now declared on the `ActionDef`
+   (`ActionDef::params`, typed with a mandatory flag, and `ActionDef::results`),
+   `reads` / `writes` keep stored fields only, and all 17 register; the list is
+   exposed on `Registered`. DT64 still has no channel to carry a parameter in an
+   invocation; the invocation contract on the lance-graph side is where that
+   would land. `ogar_from_schema::do_arm::ActionParam` (schema-lifted
+   capabilities) stays a separate type from `ogar_vocab::CallParam` (the crates
+   depend one way).
 3. odoo-rs findings (read-only census of odoo-rs at its HEAD `0e4456c`):
    - No `writes` anywhere: no production code assigns `reads`, `writes`,
      `calls`, `body_source` or `on_enter` on an `ActionDef`
@@ -207,7 +212,7 @@ marker that the framework generated the callback). `raises` alone and
      Form-view button names (`button_draft`, `button_cancel`, ...) occur in
      the view XML and in neither corpus, and no code links a button to a
      method.
-4. The 33 registered capabilities declare no outputs and their executors
+4. The registered capabilities declare outputs only in the ocr and document tables (`results`), and their executors
    (`osm-soa-bake`, `medcare-rs`, `erp-ledger`) are not in OGAR or
    rs-graph-llm: the hand-off row is a dispatch key, not a tested path.
 
@@ -285,10 +290,12 @@ mode, or why.
 2. The converter stays one-way and lossy on purpose: `ActionDef` -> method.
    Nothing reads a method back into an `ActionDef`.
 3. Blocker 2 in section 5 (the 17 defs refused for call parameters) is resolved
-   in this direction: call parameters are declared on the `ActionDef`, not added
-   to the class as fields. The method registers with class fields only; the
-   parameter list stays with the declaration until the invocation contract on
-   the lance-graph side can carry it. Not built yet.
+   in this direction: call parameters are declared on the `ActionDef`
+   (`params`, `results`), not added to the class as fields. The method registers
+   with class fields only; the parameter list stays with the declaration and is
+   exposed on `Registered` until the invocation contract on the lance-graph side
+   can carry it. A guard over a call parameter is refused by name
+   (`ConvertRefusal::CallParameterInGuard`): a guard is over stored fields only.
 4. Consumers register through the `ActionDef` tables (`register_domain_table`,
    `register_domain_table_for`), not by writing `MethodBinding`s directly, so
    the upper layer stays complete.
