@@ -16,7 +16,7 @@ use ogar_class_view::OgarClassView;
 use ogar_vocab::arm_ledger::{CANONICAL, ConsumerArms, canonical_arm};
 use ogar_vocab::capability_registry::{DomainTable, HotplugDrift, domain_tables, resolve_hotplug};
 use ogar_vocab::effect_class::{EffectClass, classify};
-use ogar_vocab::{ActionDef, KausalSpec, class_ids};
+use ogar_vocab::{ActionDef, CallParam, KausalSpec, class_ids};
 
 /// Ignored by the converter (the right half of a classid is the behaviour arm);
 /// kept because the entry points still take it.
@@ -134,9 +134,9 @@ fn render(outcomes: &[TableOutcome]) -> String {
 }
 
 /// Every def of every table is registered or refused by name: 50 rows, and
-/// 14 / 6 / 20 / 3 / 7 per domain. Today geo, healthcare and erp (33) register
-/// and ocr and document (17) are refused, each for the first parameter that is
-/// not a field of the class.
+/// 14 / 6 / 20 / 3 / 7 per domain. All 50 register: the ocr and document defs
+/// (17) were refused while their call parameters sat in `reads`, and are
+/// registered now that call parameters are declared on the def (`params`).
 #[test]
 fn every_one_of_the_fifty_defs_is_registered_or_refused_by_name() {
     let (_, outcomes) = census();
@@ -157,47 +157,214 @@ fn every_one_of_the_fifty_defs_is_registered_or_refused_by_name() {
     assert_eq!(
         per_domain,
         vec![
-            ("ocr", 14, 0, 14),
+            ("ocr", 14, 14, 0),
             ("geo", 6, 6, 0),
             ("healthcare", 20, 20, 0),
-            ("document", 3, 0, 3),
+            ("document", 3, 3, 0),
             ("erp", 7, 7, 0),
         ]
     );
     let registered: usize = outcomes.iter().map(|o| o.registered().count()).sum();
     let refused: usize = outcomes.iter().map(|o| o.refused().count()).sum();
-    assert_eq!((registered, refused), (33, 17));
+    assert_eq!((registered, refused), (50, 0));
     assert_eq!(registered + refused, 50);
+}
 
-    // Every refusal is the named UnknownField over `reads`, and the name is
-    // the def's first call parameter that the class does not have.
-    for o in &outcomes {
-        for (row, refusal) in o.refused() {
+/// `reads` and `writes` of every def name stored fields of the def's class
+/// only: the call's inputs and outputs are on the def as `params` and
+/// `results`, and the class has no field for any of them.
+#[test]
+fn reads_and_writes_are_stored_fields_and_call_parameters_are_not_class_fields() {
+    let data = OgarClassView::new();
+    let mut with_params = 0;
+    for def in all_defs() {
+        let concept = def.object_class.rsplit('/').next().unwrap();
+        let class = ogar_vocab::canonical_concept_id(concept).expect("minted");
+        let labels: Vec<&str> = data
+            .fields(class)
+            .iter()
+            .map(|f| f.label.as_ref())
+            .collect();
+        for name in def.reads.iter().chain(&def.writes) {
             assert!(
-                matches!(
-                    refusal,
-                    ConvertRefusal::UnknownField {
-                        role: FieldRole::Reads,
-                        ..
-                    }
-                ),
-                "{} {}: {refusal:?}",
-                o.domain,
-                row.predicate
+                labels.contains(&name.as_str()),
+                "{}: `{name}` is not a stored field of {concept}",
+                def.identity
             );
         }
+        if !def.params.is_empty() || !def.results.is_empty() {
+            with_params += 1;
+            // The 17 ocr/document defs: no stored field is read or written.
+            assert!(
+                def.reads.is_empty() && def.writes.is_empty(),
+                "{}",
+                def.identity
+            );
+            // Declaring a parameter did not add a field to the class: none of
+            // the call's names is a field of it.
+            for name in def
+                .params
+                .iter()
+                .map(|p| &*p.name)
+                .chain(def.results.iter().map(String::as_str))
+            {
+                assert!(
+                    !labels.contains(&name),
+                    "{}: `{name}` appeared as a field of {concept}",
+                    def.identity
+                );
+            }
+        }
     }
-    let ocr_first = |p: &str| {
-        outcomes[0]
-            .rows
-            .iter()
-            .find(|r| r.predicate == p)
-            .and_then(|r| r.result.as_ref().err().cloned())
+    assert_eq!(
+        with_params, 17,
+        "ocr 14 + document 3 declare a call signature"
+    );
+}
+
+/// The registration exposes the def's parameter list beside the method, and the
+/// method itself stays class-fields-only: the class's field basis is unchanged
+/// and the read mask is empty.
+#[test]
+fn the_registration_carries_the_call_parameters_beside_a_class_fields_only_method() {
+    let (store, outcomes) = census();
+    let data = OgarClassView::new();
+    let view = BehaviourView::from_outcomes(&data, &outcomes);
+    let ocr = &outcomes[0];
+    let rl = ocr
+        .registered()
+        .find(|r| r.capability == "recognize_line")
+        .expect("recognize_line registers");
+    assert_eq!(
+        rl.params,
+        vec![
+            CallParam::required("grey_line"),
+            CallParam::required("width"),
+            CallParam::required("height"),
+            CallParam::optional("with_dict"),
+        ]
+    );
+    assert_eq!(
+        rl.results,
+        vec!["text".to_string(), "unichar_ids".to_string()]
+    );
+    let resolved = store.resolve(&view, rl.behaviour, REV).unwrap();
+    assert_eq!(resolved.fields, data.fields(class_ids::TEXTLINE));
+    assert!(resolved.fields.iter().all(|f| f.label != "grey_line"));
+    let m = &resolved.methods[0];
+    assert!(m.reads.is_empty() && m.on.is_empty() && m.when.is_none());
+    // Every registered row carries exactly its def's lists.
+    for o in &outcomes {
+        for reg in o.registered() {
+            let def = all_defs()
+                .into_iter()
+                .find(|d| d.identity == reg.identity)
+                .unwrap();
+            assert_eq!(reg.params, def.params, "{}", reg.capability);
+            assert_eq!(reg.results, def.results, "{}", reg.capability);
+        }
+    }
+    // The optional/required split survives (reconstruct_document).
+    let rec = outcomes[3]
+        .registered()
+        .find(|r| r.capability == "reconstruct_document")
+        .unwrap();
+    assert_eq!(
+        rec.params,
+        vec![
+            CallParam::required("document_guid"),
+            CallParam::optional("template")
+        ]
+    );
+}
+
+/// A def is never refused because it HAS call parameters, whatever they are
+/// called; and a call parameter in `reads` is refused by name, as an unknown
+/// field, even on a real OCR def.
+#[test]
+fn call_parameters_never_refuse_a_def_but_a_call_parameter_in_reads_does() {
+    let view = textline_view();
+    let mut d = def("recognize_line");
+    d.kausal = Some(KausalSpec::External);
+    d.params = vec![
+        CallParam::required("grey_line"),
+        CallParam::optional("with_dict"),
+    ];
+    d.results = vec!["text".into()];
+    let m = method_of(&d, MethodId(0), &view).expect("params are not fields, and not refused");
+    assert!(m.reads.is_empty());
+
+    // The same def with a parameter name moved back into `reads`.
+    d.reads = vec!["grey_line".into()];
+    assert_eq!(
+        method_of(&d, MethodId(0), &view),
+        Err(ConvertRefusal::UnknownField {
+            role: FieldRole::Reads,
+            name: "grey_line".into()
+        })
+    );
+    // On the real table row (through OGAR's class view).
+    let data = OgarClassView::new();
+    let mut real = all_defs()
+        .into_iter()
+        .find(|d| d.predicate == "recognize_line")
+        .unwrap();
+    assert!(method_of(&real, MethodId(0), &data).is_ok());
+    real.reads.push("grey_line".into());
+    assert_eq!(
+        method_of(&real, MethodId(0), &data),
+        Err(ConvertRefusal::UnknownField {
+            role: FieldRole::Reads,
+            name: "grey_line".into()
+        })
+    );
+}
+
+/// A guard is over stored fields only: a guard field or `Depends` path that is
+/// a call parameter (and not a field) is refused by name. A name that is both a
+/// call parameter and a stored field is the field, and a name that is neither
+/// stays an unknown field.
+#[test]
+fn a_guard_over_a_call_parameter_is_refused_by_name() {
+    let view = textline_view(); // fields: state, text, width
+    let mut d = def("confirm");
+    d.params = vec![
+        CallParam::required("grey_line"),
+        CallParam::required("width"),
+    ];
+    let guard = |field: &str| {
+        let mut g = d.clone();
+        g.kausal = Some(KausalSpec::StateGuard {
+            guard_field: field.into(),
+            guard_values: vec!["1".into()],
+        });
+        method_of(&g, MethodId(0), &view)
     };
     assert_eq!(
-        ocr_first("recognize_line"),
-        Some(ConvertRefusal::UnknownField {
-            role: FieldRole::Reads,
+        guard("grey_line"),
+        Err(ConvertRefusal::CallParameterInGuard {
+            role: FieldRole::GuardField,
+            name: "grey_line".into()
+        })
+    );
+    // `width` is a call parameter AND a stored field: the guard is over the field.
+    assert!(guard("width").is_ok());
+    // Neither: unknown field, as before.
+    assert_eq!(
+        guard("nothing"),
+        Err(ConvertRefusal::UnknownField {
+            role: FieldRole::GuardField,
+            name: "nothing".into()
+        })
+    );
+    let mut dep = d.clone();
+    dep.kausal = Some(KausalSpec::Depends {
+        paths: vec!["text".into(), "grey_line".into()],
+    });
+    assert_eq!(
+        method_of(&dep, MethodId(0), &view),
+        Err(ConvertRefusal::CallParameterInGuard {
+            role: FieldRole::DependsPath,
             name: "grey_line".into()
         })
     );
@@ -362,7 +529,7 @@ fn every_registered_id_is_class_over_an_f_arm_and_unique() {
             assert!(seen.insert(reg.behaviour), "{:#x} twice", reg.behaviour);
         }
     }
-    assert_eq!(seen.len(), 33);
+    assert_eq!(seen.len(), 50);
 }
 
 /// One consumer's full ids, pinned: OGAR's canon as the consumer (erp seat,
@@ -484,15 +651,16 @@ fn every_registered_method_resolves_under_its_class() {
             found += 1;
         }
     }
-    assert_eq!(found, 33);
-    // One classid per behaviour: nine classes carry them (patient, diagnosis,
+    assert_eq!(found, 50);
+    // One classid per behaviour: fourteen classes carry them (textline,
+    // page_image, page_layout, ocr_renderer, document, patient, diagnosis,
     // lab_value, medication, treatment, vital_sign, osm_node, osm_way,
-    // erp_polyfill), 33 behaviours in all.
-    assert_eq!(store.class_count(), 33);
+    // erp_polyfill), 50 behaviours in all.
+    assert_eq!(store.class_count(), 50);
 }
 
-/// Every registered method carries an effect class, the 33 are all
-/// `ExternalHost` (name-only `External` defs), and no method whose class is not
+/// Every registered method carries an effect class, the 50 are all
+/// `ExternalHost` (`External` defs naming no stored-field effect), and no method whose class is not
 /// F000-admissible carries F000 effects: a write, lifecycle step, transaction
 /// or external call is dispatched through the gate, never run as a fold.
 #[test]
@@ -528,18 +696,19 @@ fn every_registered_method_carries_an_effect_class_and_only_folds_may_carry_f000
     }
     assert_eq!(
         by_class,
-        std::collections::BTreeMap::from([("external_host", 33)])
+        std::collections::BTreeMap::from([("external_host", 50)])
     );
-    // The 17 refused defs are classified by the same function: they name
-    // `writes`, so they are LifecycleWrite, not ExternalHost.
-    let refused: Vec<_> = domain_tables()
+    // The 17 ocr and document defs were LifecycleWrite while their output
+    // names sat in `writes`; those are call results now, so they are
+    // ExternalHost like the rest.
+    let moved: Vec<_> = domain_tables()
         .iter()
         .filter(|t| t.domain == "ocr" || t.domain == "document")
         .flat_map(|t| (t.actions)())
         .map(|d| classify(&d))
         .collect();
-    assert_eq!(refused.len(), 17);
-    assert!(refused.iter().all(|c| *c == EffectClass::LifecycleWrite));
+    assert_eq!(moved.len(), 17);
+    assert!(moved.iter().all(|c| *c == EffectClass::ExternalHost));
 }
 
 /// A def that names a write registers with its class and empty F000 effects:

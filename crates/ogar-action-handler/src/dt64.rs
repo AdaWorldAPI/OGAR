@@ -52,6 +52,7 @@
 //! | `kausal: StateGuard` over a field of the class with decimal-literal values | `when: Some(Guard)`, an `Or` of `eq_u32` lanes under `Logic::Kleene` |
 //! | `kausal: Depends` over fields of the class | `on` (the positions whose change triggers it) |
 //! | `reads` | `reads`: each name must be a field label of the class |
+//! | `params`, `results` | not in the binding: the call's parameter list stays with the declaration, carried on [`Registered`] (see [Call parameters](#call-parameters)) |
 //! | `writes`, `calls`, `raises` | not in the binding, see [Effects](#effects) |
 //! | everything else | refused by name, see [`ConvertRefusal`] |
 //! | `required_role` (a const on the gate, not on this `ActionDef`) | not part of the method: it stays on the gate |
@@ -127,17 +128,27 @@
 //! allows it.
 //!
 //! The classes of OGAR's 50 `ActionDef`s (`classify` over the five
-//! authoritative tables): all 33 that register (geo 6, healthcare 20, erp 7)
-//! are `ExternalHost`: each is `kausal: External` and name-only (no `reads`,
-//! `writes`, `calls`, `raises` or `on_enter`), so the one thing the def
-//! evidences is an external cause with a body outside OGAR. The 17 refused
-//! defs (ocr 14, document 3) are `LifecycleWrite`: they are also
-//! `kausal: External`, but they name `writes`, which `classify` ranks above an
-//! external cause (caveat: for those two tables `writes` lists the
-//! capability's declared output names, not setter targets, so the class
-//! overstates a write; it still requires the gate, which is the safe side).
-//! Several of the 33 are in fact reads (`get_*`, `list_*`, `locate_*`); the
-//! def does not say so, so none is admitted as an F000 query.
+//! authoritative tables): all 50 are `ExternalHost`: each is `kausal: External`
+//! and names no `reads`, `writes`, `calls`, `raises` or `on_enter`, so the one
+//! thing the def evidences is an external cause with a body outside OGAR. (The
+//! ocr and document defs were `LifecycleWrite` while their output names sat in
+//! `writes`; those names are call results and now live in `results`.) Several
+//! of the defs are in fact reads (`get_*`, `list_*`, `locate_*`); the def does
+//! not say so, so none is admitted as an F000 query.
+//!
+//! ## Call parameters
+//!
+//! A call parameter (`grey_line`, `width`, the inputs of `recognize_line`) is an
+//! input of the call, not a stored field of the class. It is declared on the
+//! [`ActionDef`] (`params`, with a mandatory/optional flag, and `results`) and
+//! never added to the class. The converter resolves `reads`, a guard field and
+//! a `Depends` path against the class's field basis only. A call parameter in
+//! `reads` is refused as `UnknownField`, and a guard or `Depends` path over a
+//! call parameter that is not also a field is refused as
+//! [`ConvertRefusal::CallParameterInGuard`]. A def is never refused because it
+//! HAS call parameters. The registered method carries class fields only; the
+//! parameter list travels on the [`Registered`] row beside the registration, for
+//! the executor and the later invocation contract.
 //!
 //! ## Immutability
 //!
@@ -171,7 +182,7 @@ use ogar_vocab::arm_ledger::ConsumerArms;
 pub use ogar_vocab::arm_ledger::LedgerRefusal;
 use ogar_vocab::capability_registry::{DomainTable, HotplugDrift, resolve_hotplug};
 use ogar_vocab::effect_class::{EffectClass, classify};
-use ogar_vocab::{ActionDef, KausalSpec, canonical_concept_id};
+use ogar_vocab::{ActionDef, CallParam, KausalSpec, canonical_concept_id};
 
 /// Which `ActionDef` field named a field the class does not have.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -201,6 +212,15 @@ pub enum ConvertRefusal {
         /// Where the name came from.
         role: FieldRole,
         /// The name as written on the def.
+        name: String,
+    },
+    /// A guard field or a `Depends` path names a call parameter of the def
+    /// (`ActionDef::params`) that is not a stored field of the class. A guard
+    /// is over stored fields only.
+    CallParameterInGuard {
+        /// Where the name came from.
+        role: FieldRole,
+        /// The call parameter's name.
         name: String,
     },
     /// The def's `kausal` is not an equality over the class's fields that a
@@ -251,6 +271,11 @@ pub struct Registered {
     /// `ActionDef::identity`, which finds the def (its `writes`, `calls`,
     /// `raises`, statem carriers).
     pub identity: String,
+    /// The def's call parameters (`ActionDef::params`), in declared order. Not
+    /// part of the registered method, which has class fields only.
+    pub params: Vec<CallParam>,
+    /// The def's call results (`ActionDef::results`), in declared order.
+    pub results: Vec<String>,
     /// What the def is known to do, from [`ogar_vocab::effect_class::classify`].
     /// A class for which [`EffectClass::requires_gate`] holds is never an F000
     /// method and goes to the gate (`commit_via`) as an `ActionInvocation`.
@@ -489,6 +514,27 @@ fn field_at(fields: &[FieldRef], name: &str, role: FieldRole) -> Result<u8, Conv
     })
 }
 
+/// [`field_at`] for a guard field or a `Depends` path: a name that is a call
+/// parameter of the def and not a field of the class is refused as
+/// [`ConvertRefusal::CallParameterInGuard`], not as an unknown field.
+fn guard_field_at(
+    def: &ActionDef,
+    fields: &[FieldRef],
+    name: &str,
+    role: FieldRole,
+) -> Result<u8, ConvertRefusal> {
+    match position_of(fields, name) {
+        Some(p) => Ok(p),
+        None if def.params.iter().any(|p| p.name == name) => {
+            Err(ConvertRefusal::CallParameterInGuard {
+                role,
+                name: name.to_string(),
+            })
+        }
+        None => field_at(fields, name, role),
+    }
+}
+
 fn variant_name(k: &KausalSpec) -> &'static str {
     match k {
         KausalSpec::StateGuard { .. } => "StateGuard",
@@ -504,9 +550,10 @@ fn variant_name(k: &KausalSpec) -> &'static str {
 
 /// `(ON, WHEN)` from a def's `kausal`. `None` is an unconditional method.
 fn when_and_on(
-    kausal: Option<&KausalSpec>,
+    def: &ActionDef,
     fields: &[FieldRef],
 ) -> Result<(WideFieldMask, Option<Guard>), ConvertRefusal> {
+    let kausal = def.kausal.as_ref();
     let unported = |why: &str| {
         let name = kausal.map_or("None", variant_name);
         ConvertRefusal::UnportedGuard {
@@ -518,7 +565,7 @@ fn when_and_on(
         Some(KausalSpec::Depends { paths }) => {
             let mut on = WideFieldMask::EMPTY;
             for path in paths {
-                on = on.with(field_at(fields, path, FieldRole::DependsPath)?);
+                on = on.with(guard_field_at(def, fields, path, FieldRole::DependsPath)?);
             }
             Ok((on, None))
         }
@@ -526,7 +573,12 @@ fn when_and_on(
             guard_field,
             guard_values,
         }) => {
-            let lane = u16::from(field_at(fields, guard_field, FieldRole::GuardField)?);
+            let lane = u16::from(guard_field_at(
+                def,
+                fields,
+                guard_field,
+                FieldRole::GuardField,
+            )?);
             if guard_values.is_empty() {
                 return Err(unported("an empty value set"));
             }
@@ -578,7 +630,7 @@ fn method_over(
     if def.on_enter.is_some() {
         return Err(ConvertRefusal::UnportedEffect { what: "on_enter" });
     }
-    let (on, when) = when_and_on(def.kausal.as_ref(), fields)?;
+    let (on, when) = when_and_on(def, fields)?;
     let mut reads = WideFieldMask::EMPTY;
     for name in &def.reads {
         reads = reads.with(field_at(fields, name, FieldRole::Reads)?);
@@ -751,6 +803,8 @@ pub fn register_domain_table_with_arms<V: ClassView + ?Sized, C: ConsumerClasses
                 behaviour,
                 capability: def.predicate.clone(),
                 identity: def.identity.clone(),
+                params: def.params.clone(),
+                results: def.results.clone(),
                 effect: classify(def),
             })
         });

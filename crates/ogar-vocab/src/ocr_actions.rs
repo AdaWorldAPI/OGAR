@@ -22,38 +22,34 @@
 //! executor, or a future `graph-flow-action` binding) iterates against;
 //! there is no separate "real" source to drift from.
 //!
-//! # Effect facts vs the typed I/O signature
+//! # Call parameters are declared on the `ActionDef`
 //!
-//! Per `ogar-from-schema::do_arm`'s split (`ActionDef::reads`/`writes` are
-//! *effect annotations*; the concrete parameter *signature* — with a
-//! mandatory/optional flag per slot — is a **deployed capability** fact
-//! arago models as `Parameter { Name, Mandatory, Default }`
-//! (`ogar_from_schema::do_arm::ActionParam`)) this module mirrors that
-//! same split:
+//! The names a capability takes (`grey_line`, `width`, ...) and returns
+//! (`text`, `unichar_ids`, ...) are the CALL's inputs and outputs, not stored
+//! fields of the class the capability applies on. They are declared on the
+//! [`ActionDef`] itself, in [`ActionDef::params`] (typed, with the
+//! mandatory/optional split arago's `Parameter.Mandatory` needs) and
+//! [`ActionDef::results`], and are never added to the class. So `reads` and
+//! `writes` of every def here are empty: this table states no stored field that
+//! a capability reads or writes, and none is invented.
 //!
-//! - [`ActionDef::reads`] carries every input name (name-level effect
-//!   fact, mandatory + optional collapsed — matching how `reads` is
-//!   populated everywhere else in this crate).
-//! - [`ActionDef::writes`] carries every output name the capability
-//!   produces.
-//! - [`OcrActionSpec::params`] carries the **typed signature**
-//!   ([`OcrActionParam`], with the mandatory/optional split arago's
-//!   `Parameter.Mandatory` needs) and [`OcrActionSpec::produces`] carries
-//!   the output names as a plain slice for the same consumer.
+//! [`OcrActionSpec::params`] and [`OcrActionSpec::produces`] carry the same
+//! lists as `'static` slices, the form a hand-authored table is written in and
+//! a consumer iterates without allocating.
 //!
-//! [`OcrActionParam`] is a dependency-free mirror of
-//! `ogar_from_schema::do_arm::ActionParam`'s `{ name, mandatory }` shape.
-//! It cannot literally BE that type: `ogar-from-schema` already depends on
-//! `ogar-vocab` (see its `Cargo.toml`), so the reverse dependency would be
-//! cyclic. A consumer that needs the arago-parity type performs the
-//! trivial field map:
+//! [`OcrActionParam`] is [`crate::CallParam`], the type `ActionDef::params`
+//! holds. `ogar_from_schema::do_arm::ActionParam` (the same `{ name, mandatory }`
+//! shape, for schema-lifted capabilities) is a separate type: `ogar-from-schema`
+//! already depends on `ogar-vocab` (see its `Cargo.toml`), so the reverse
+//! dependency would be cyclic. A consumer that needs the arago-parity type
+//! performs the trivial field map:
 //!
 //! ```
 //! use ogar_vocab::ocr_actions::ocr_actions;
 //!
 //! for spec in ocr_actions() {
 //!     let _params: Vec<(&str, bool)> =
-//!         spec.params.iter().map(|p| (p.name, p.mandatory)).collect();
+//!         spec.params.iter().map(|p| (&*p.name, p.mandatory)).collect();
 //! }
 //! ```
 //!
@@ -70,42 +66,15 @@
 
 use crate::{ActionDef, ActionSubject, KausalSpec};
 
-/// One parameter of an OCR capability's typed I/O signature — a
-/// dependency-free mirror of `ogar_from_schema::do_arm::ActionParam`'s
-/// `{ name, mandatory }` shape. See the module doc for why this is a
-/// local type rather than a re-export.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct OcrActionParam {
-    /// Parameter name (arago `Parameter.Name`).
-    pub name: &'static str,
-    /// Whether the parameter is required (arago `Parameter.Mandatory`).
-    pub mandatory: bool,
-}
-
-impl OcrActionParam {
-    /// Build a required parameter slot.
-    #[must_use]
-    pub const fn required(name: &'static str) -> Self {
-        Self {
-            name,
-            mandatory: true,
-        }
-    }
-
-    /// Build an optional parameter slot.
-    #[must_use]
-    pub const fn optional(name: &'static str) -> Self {
-        Self {
-            name,
-            mandatory: false,
-        }
-    }
-}
+/// One parameter of an OCR capability's typed I/O signature: the type
+/// `ActionDef::params` holds ([`crate::CallParam`]), under the name this table
+/// has always used.
+pub type OcrActionParam = crate::CallParam;
 
 /// One OCR capability declaration — the [`ActionDef`] shape (identity /
-/// predicate / object_class / kausal) plus the concrete typed I/O
-/// signature `ActionDef` itself has no field for (see the module doc's
-/// "effect facts vs the typed I/O signature" section).
+/// predicate / object_class / kausal, and the call signature in
+/// [`ActionDef::params`] / [`ActionDef::results`]) beside the same signature as
+/// `'static` slices (see the module doc's "call parameters" section).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OcrActionSpec {
     /// The schema-level action declaration.
@@ -287,8 +256,11 @@ fn ocr_action_def(
         // `KausalSpec::External`'s doc: "External cause (RPC call, HTTP
         // request) — no precondition to check inside the system."
         kausal: Some(KausalSpec::External),
-        reads: params.iter().map(|p| p.name.to_owned()).collect(),
-        writes: produces.iter().map(|s| (*s).to_owned()).collect(),
+        // Call inputs and outputs are not stored fields of the class: they are
+        // declared as the call's parameters and results, and `reads` / `writes`
+        // stay empty (the table states no stored field read or written).
+        params: params.to_vec(),
+        results: produces.iter().map(|s| (*s).to_owned()).collect(),
         ..ActionDef::default()
     }
 }
@@ -515,6 +487,33 @@ mod tests {
         }
     }
 
+    /// The call signature is declared on the def, and the def carries no stored
+    /// field effect: `reads` / `writes` are empty, `params` / `results` are the
+    /// spec's lists, in order, with the mandatory flags.
+    #[test]
+    fn the_signature_is_on_the_def_and_reads_writes_are_empty() {
+        for spec in ocr_actions() {
+            let d = &spec.def;
+            assert!(d.reads.is_empty() && d.writes.is_empty(), "{}", d.predicate);
+            assert_eq!(d.params, spec.params.to_vec(), "{}", d.predicate);
+            let produced: Vec<String> = spec.produces.iter().map(|s| (*s).to_owned()).collect();
+            assert_eq!(d.results, produced, "{}", d.predicate);
+            assert!(!d.results.is_empty(), "{}", d.predicate);
+        }
+        let actions = ocr_actions();
+        let rl = &actions[0].def;
+        let sig: Vec<(&str, bool)> = rl.params.iter().map(|p| (&*p.name, p.mandatory)).collect();
+        assert_eq!(
+            sig,
+            vec![
+                ("grey_line", true),
+                ("width", true),
+                ("height", true),
+                ("with_dict", false)
+            ]
+        );
+    }
+
     #[test]
     fn capability_names_are_unique() {
         let actions = ocr_actions();
@@ -609,13 +608,13 @@ mod tests {
             .params
             .iter()
             .filter(|p| p.mandatory)
-            .map(|p| p.name)
+            .map(|p| &*p.name)
             .collect();
         let doc: BTreeSet<&str> = get("recognize_document")
             .params
             .iter()
             .filter(|p| p.mandatory)
-            .map(|p| p.name)
+            .map(|p| &*p.name)
             .collect();
         assert!(
             words.is_subset(&doc),

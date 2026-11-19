@@ -397,16 +397,17 @@ mod tests {
                     .or_insert(0usize) += 1;
             }
         }
-        // geo 6 + healthcare 20 + erp 7 are name-only External defs: no body
-        // evidence, so ExternalHost. ocr 14 + document 3 name `writes` (their
-        // declared output names), so LifecycleWrite. Nothing is
-        // F000-admissible and nothing is Unresolved.
+        // All 50 defs are `External` and name no stored-field effect, so they
+        // are ExternalHost. ocr 14 + document 3 were LifecycleWrite while their
+        // output names sat in `writes`; those are call results now
+        // (`ActionDef::results`), so they classify like the name-only tables.
+        // Nothing is F000-admissible and nothing is Unresolved.
         let want: std::collections::BTreeMap<(&str, &str), usize> = [
-            (("document", "lifecycle_write"), 3),
+            (("document", "external_host"), 3),
             (("erp", "external_host"), 7),
             (("geo", "external_host"), 6),
             (("healthcare", "external_host"), 20),
-            (("ocr", "lifecycle_write"), 14),
+            (("ocr", "external_host"), 14),
         ]
         .into_iter()
         .collect();
