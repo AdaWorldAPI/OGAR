@@ -899,7 +899,7 @@ impl Parser {
                 span: Span::join(t.span, c.span),
             });
         }
-        Ok(Cond::Leaf(self.leaf(ctx)?))
+        Ok(Cond::Leaf(Box::new(self.leaf(ctx)?)))
     }
 
     fn leaf(&mut self, ctx: CondCtx) -> Res<Leaf> {

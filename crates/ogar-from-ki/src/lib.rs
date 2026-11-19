@@ -1,17 +1,19 @@
-//! `ogar-from-ki`: a reader for HIRO Knowledge Items, for the documented
-//! subset only.
+//! `ogar-from-ki`: a reader for HIRO Knowledge Items, for the language the
+//! HIRO User Guides 7.0 ("KI Syntax") document.
 //!
-//! HIRO's public documentation shows a Knowledge Item as text in clauses
-//! (`ki`, `on`, `when`, `do`) and gives three short examples. It gives no
-//! grammar and no semantics beyond them. This crate reads exactly what those
-//! examples show, refuses everything else by name, and keeps every open
-//! question open. See the README.
+//! This is a reader. Nothing is evaluated, no condition is lowered to a guard
+//! or a query, and the `on` (node) and `when` (issue) scopes are recorded as
+//! data, not enforced. The guide has no formal grammar; a form that is not on
+//! one of its pages is refused by name, with line and column. Where the guide
+//! contradicts itself, both documented forms are read and the one written is
+//! recorded. See the README.
 //!
-//! One reader, two projections:
+//! One reader, three projections:
 //!
 //! 1. [`parse`] gives a typed tree ([`KnowledgeItem`]) with line and column
-//!    spans, or a named [`ParseError`].
-//! 2. [`lift`] gives `ogar_vocab::ActionDef`s (one per `action(...)` call)
+//!    spans, or a named [`ParseError`]. [`KnowledgeItem::condition_refs`] lists
+//!    the variables of the `on` and `when` conditions with their scope data.
+//! 2. [`lift()`] gives `ogar_vocab::ActionDef`s (one per `action(...)` call)
 //!    plus the item's facts and typed [`KiNote`]s for what could not be
 //!    stated. This is the execution view: the defs register as methods
 //!    through the existing converter.

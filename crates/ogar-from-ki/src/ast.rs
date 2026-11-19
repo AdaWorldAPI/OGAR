@@ -427,7 +427,7 @@ impl Leaf {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Cond {
     /// A leaf.
-    Leaf(Leaf),
+    Leaf(Box<Leaf>),
     /// `not <cond>`.
     Not {
         /// What is negated.
