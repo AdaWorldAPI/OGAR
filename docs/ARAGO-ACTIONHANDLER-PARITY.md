@@ -780,3 +780,30 @@ Nothing below is in the pages read; OGAR keeps graph_conn's value or behaviour f
 7. The `ogit/Automation/` capability keys: does the live endpoint serve them?
 8. The docs say `handler` is not sent to the handler yet show it in the sample; the code reads it if
    present and does not need it.
+
+## 14. The gateway's published specification (2026-11-19)
+
+The published specification and the catalog are the reference for the documented contract. graph_conn is the witness of what a client does. The YAML describes the action service (aapi) as deployed. It lists its own departures from an older graph specification, and that older specification was not read.
+
+The files are in `crates/ogar-action-handler/tests/fixtures/hiro_public_specs/`, unchanged. `tests/hiro_published_spec.rs` checks the crate against them. Close codes 1000, 1001 and 1009 belong to the transport, not to this crate.
+
+| Point | YAML lines | Result |
+|---|---|---|
+| Handler ack has `type`, `id`; sends `code`, `message` too | 373-382 | more lenient (extras pinned) |
+| Handler `sendActionResult`, `result` is a string | 277-281, 358-371 | agrees |
+| `clientHello` fields, `settings.redelivery` carried or omitted | 286-294, 403-424 | agrees |
+| Invoker `submitAction` has the inbound fields, `timeout` in ms | 282-285, 321-339 | agrees |
+| Invoker result ack: `type`, `id`; sends `code` too | 373-382 | more lenient (extra pinned) |
+| Encoded NACK has `type`, `id`, `code`, `message` | 384-401 | agrees |
+| Outbound `submitAction` without `handler` is claimed, acked, run once | 341-356 | agrees |
+| Submit without `timeout` is accepted (schema requires it) | 343 | more lenient |
+| `hello` with five fields sets the frame limit | 295-319 | agrees |
+| `hello` without `max_frame_bytes` means 1,000,000 | 297, 316-319 | agrees |
+| `acknowledged` with `type`, `id` only, to handler and invoker | 373-382 | agrees |
+| `negativeAcknowledged` with `code`, `message`, to handler and invoker | 384-401 | agrees |
+| `timeout: 30000` is a 30,000 ms deadline | 282-285 | agrees |
+| Post-ack re-delivery answered from the stored result | 290-293 | agrees |
+| `setSettings` (deprecated, client to aapi) is not sent | 243-258 | agrees (never sent) |
+| Mock `hello` has no `host`, `server_version`, `client_id` | 297 | gap of the test double |
+| Endpoint and subprotocol constants equal the catalog | catalog | agrees |
+| Capabilities and applicabilities keyed by real names | `action.yaml` 113, 126 | agrees (the YAML types only the placeholder keys) |

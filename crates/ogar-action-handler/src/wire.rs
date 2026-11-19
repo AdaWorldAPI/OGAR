@@ -19,6 +19,31 @@
 //! | in-band 429 | no `type`; `error {code: 429, message?, retryAfterMs?}`, `id?` |
 //! | in-band 503 | no `type`; `error {code: 503, message?, upstream?}`, `id?` |
 //!
+//! # The gateway's published specification
+//!
+//! The published specification and catalog are the reference for the documented
+//! contract. graph_conn is the witness of what a client does. The YAML describes
+//! the action service as deployed, and lists its own departures from an older
+//! specification that was not read.
+//!
+//! The files are in `tests/fixtures/hiro_public_specs/` and
+//! `tests/hiro_published_spec.rs` checks this codec against them.
+//!
+//! | point | result |
+//! |---|---|
+//! | required fields of every frame this crate sends | agrees |
+//! | `code` and `message` on the handler's ack, `code` on the invoker's result ack | more lenient, pinned |
+//! | `sendActionResult.result` is a string | agrees |
+//! | outbound `submitAction` without `handler` | agrees |
+//! | `submitAction` without `timeout` | more lenient, pinned |
+//! | `hello` without `max_frame_bytes` means 1,000,000 | agrees |
+//! | `acknowledged` with `type` and `id` only | agrees |
+//! | `timeout` in milliseconds | agrees |
+//! | `clientHello.settings.redelivery` | agrees |
+//! | `setSettings` (deprecated) | not sent, not decoded |
+//!
+//! Close codes 1000, 1001 and 1009 are the transport's, not this crate's.
+//!
 //! Decoding never panics. A frame that is not JSON, not an object, has an unknown
 //! or non-string `type`, no `type` and no gateway refusal, or a missing or
 //! ill-typed field is a [`WireError`] that names it. Nothing is dropped silently.

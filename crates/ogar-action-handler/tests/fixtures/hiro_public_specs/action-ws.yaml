@@ -1,0 +1,453 @@
+# http://swagger.io/specification/
+#
+# DIVERGENCES from hiro-graph's original action-ws spec (design §6). aapi
+# documents ONLY what it implements; each omission is breadcrumbed at its point
+# below. Consolidated list:
+#   * configChanged (server->client): DROPPED — aapi has no channel to be told
+#     configuration changed.
+#   * error / AsyncError (server->client): DROPPED — aapi never emits it.
+#   * field-value constraints (id length, result size, timeout format): DROPPED —
+#     aapi does not validate these.
+#   * acknowledged: {type, id} only — DROPPED code/message (no consumer reads
+#     them off a positive ack).
+#   * submitAction: DIRECTION-SPLIT — inbound (engine->aapi) keeps `handler`
+#     (aapi routes on it); outbound (aapi->handler) drops it.
+#   * ADDED setSettings and clientHello (inbound) and hello (outbound):
+#     implemented by aapi but absent from graph's original spec.
+#
+# Direction convention (unchanged from graph): a `post` operation is a
+# client->aapi message; a `put` operation is an aapi->client message.
+swagger: "2.0"
+info:
+  title: HIRO Action WebSocket API
+  description: |
+    The API for the HIRO Graph actions
+
+    <h2>Specification convention</h2>
+    <p>In that documentation client side calls are mentioned as POST, however they must be sent as WebSocket string messages. Documented responses would be send async from server.</p>
+    <p>Messages send from server are described as PUT, however they must be sent as WebSocket string messages. Documented responses are expected to be send async from client.</p>
+
+    <h2>Overview</h2>
+    <p>Websocket API requests are JSON strings, and have the following structure:</p>
+    <pre>
+    {
+      'id': 'mandatory id for matching the reply (provided by client, should be unique per session to avoid problems with matching response)',
+      'type': 'the type of the request, e.g. submitAction, sendActionResult, acknowledged, negativeAcknowledged, ...',
+      other request type specific params
+    };
+    </pre>
+
+    <h2>Close codes</h2>
+    <ul>
+      <li><b>1000</b> "missing pongs": the client stopped answering pings; reconnect.</li>
+      <li><b>1001</b> "quorum lost": the aapi node has lost its cluster quorum, or has none when the connection is made; reconnect.</li>
+      <li><b>1009</b>: an inbound frame exceeded <code>hello.max_frame_bytes</code>.</li>
+    </ul>
+
+  version: "1.0"
+
+schemes:
+  - wss
+basePath: /api/action-ws/1.0
+produces:
+  - application/json
+consumes:
+  - application/json
+
+securityDefinitions:
+  Bearer:
+    type: apiKey
+    name: Authorization
+    in: header
+
+security:
+  - Bearer: []
+
+paths:
+  /[connect]:
+    get:
+      description: "open WebSocket session"
+      parameters:
+        - name: sec-websocket-protocol
+          in: header
+          type: string
+          required: true
+          description: "Access token in the format 'token-$TOKEN'."
+      tags:
+        - "[Connect]"
+      responses:
+        200:
+          description: "Empty"
+        default:
+          description: "Unexpected error"
+          schema:
+            $ref: "#/definitions/Error"
+
+  # aapi->client greeting, sent right after the socket is accepted.
+  /[type=hello]:
+    put:
+      description: "greeting sent by aapi on connect"
+      parameters:
+        - name: body
+          in: body
+          schema:
+            $ref: "#/definitions/Hello"
+      tags:
+        - "[Action]"
+      responses:
+        default:
+          description: "None"
+
+  /[type=submitAction]:
+    # inbound (engine->aapi): keeps `handler` — aapi routes the action on it.
+    post:
+      description: "submit Action (engine -> aapi); carries the target handler"
+      parameters:
+        - name: body
+          in: body
+          schema:
+            $ref: "#/definitions/SubmitActionInbound"
+      tags:
+        - "[Action]"
+      responses:
+        200:
+          description: "Acknowledged"
+          schema:
+            $ref: "#/definitions/Acknowledged"
+        default:
+          description: "Negative Acknowledged"
+          schema:
+            $ref: "#/definitions/NegativeAcknowledged"
+    # outbound (aapi->handler): DROPS `handler` — the message is, by definition,
+    # already routed to that handler, so the field is redundant on this leg.
+    put:
+      description: "forward Action request to Handler (aapi -> handler); no `handler` field"
+      parameters:
+        - name: body
+          in: body
+          schema:
+            $ref: "#/definitions/SubmitActionOutbound"
+      tags:
+        - "[Action]"
+      responses:
+        200:
+          description: "Acknowledged"
+          schema:
+            $ref: "#/definitions/Acknowledged"
+        default:
+          description: "Negative Acknowledged"
+          schema:
+            $ref: "#/definitions/NegativeAcknowledged"
+
+  /[type=sendActionResult]:
+    # inbound (handler->aapi)
+    post:
+      description: "send Action result (handler -> aapi)"
+      parameters:
+        - name: body
+          in: body
+          schema:
+            $ref: "#/definitions/SendActionResult"
+      tags:
+        - "[Action]"
+      responses:
+        200:
+          description: "Acknowledged"
+          schema:
+            $ref: "#/definitions/Acknowledged"
+        default:
+          description: "Negative Acknowledged"
+          schema:
+            $ref: "#/definitions/NegativeAcknowledged"
+    # outbound (aapi->invoker)
+    put:
+      description: "forward Action result to app (aapi -> invoker)"
+      parameters:
+        - name: body
+          in: body
+          schema:
+            $ref: "#/definitions/SendActionResult"
+      tags:
+        - "[Action]"
+      responses:
+        200:
+          description: "Acknowledged"
+          schema:
+            $ref: "#/definitions/Acknowledged"
+        default:
+          description: "Negative Acknowledged"
+          schema:
+            $ref: "#/definitions/NegativeAcknowledged"
+
+  /[type=acknowledged]:
+    # aapi both receives (peer->aapi) and sends (aapi->peer) positive acks.
+    post:
+      description: "positive acknowledgment (peer -> aapi)"
+      parameters:
+        - name: body
+          in: body
+          schema:
+            $ref: "#/definitions/Acknowledged"
+      tags:
+        - "[Action]"
+      responses:
+        default:
+          description: "None"
+    put:
+      description: "positive acknowledgment (aapi -> peer)"
+      parameters:
+        - name: body
+          in: body
+          schema:
+            $ref: "#/definitions/Acknowledged"
+      tags:
+        - "[Action]"
+      responses:
+        default:
+          description: "None"
+
+  /[type=negativeAcknowledged]:
+    # aapi->peer only; aapi never consumes an inbound nack's fields.
+    put:
+      description: "negative acknowledgment (aapi -> peer)"
+      parameters:
+        - name: body
+          in: body
+          schema:
+            $ref: "#/definitions/NegativeAcknowledged"
+      tags:
+        - "[Action]"
+      responses:
+        default:
+          description: "None"
+
+  # ADDED (absent from graph's spec): the client's answer to `hello`, naming
+  # the app and version it runs and carrying its connection-scoped settings.
+  # No `id`; every field but `type` is optional.
+  /[type=clientHello]:
+    post:
+      description: "tell aapi which client app and version is connected (client -> aapi)"
+      parameters:
+        - name: body
+          in: body
+          schema:
+            $ref: "#/definitions/ClientHello"
+      tags:
+        - "[Action]"
+      responses:
+        default:
+          description: "None"
+
+  # ADDED (absent from graph's spec), DEPRECATED: send `settings` in
+  # `clientHello` instead. Still accepted. Connection-scoped (no `id`).
+  /[type=setSettings]:
+    post:
+      description: "DEPRECATED, use clientHello's settings: set connection-scoped settings (handler -> aapi)"
+      parameters:
+        - name: body
+          in: body
+          schema:
+            $ref: "#/definitions/SetSettings"
+      tags:
+        - "[Action]"
+      responses:
+        default:
+          description: "None"
+
+  # DROPPED /[type=configChanged] (server->client): aapi has no config-change channel.
+  # DROPPED /[type=error] (server->client, AsyncError): aapi never emits it.
+
+definitions:
+  capability:
+    type: string
+    description: "capability name"
+    example: "ExecuteCommand"
+  handler:
+    type: string
+    description: "handler id"
+    example: "handlerId"
+  # graph constrained id to 12..256 chars; aapi does not validate length (§6).
+  id:
+    type: string
+    description: "client provided unique request id"
+    example: "id1"
+  parameters:
+    type: object
+  # graph constrained result to maxLength 1048576; aapi does not validate size (§6).
+  result:
+    type: string
+    description: "action result"
+    example: "ok"
+  # graph documented `format: int64`; aapi does not validate the timeout format (§6).
+  timeout:
+    type: integer
+    description: "action timeout in ms"
+    example: 30000
+  settings:
+    type: object
+    description: "connection-scoped settings; a key left out keeps its current value"
+    properties:
+      redelivery:
+        type: boolean
+        description: "false opts the connection out of aapi's post-ack re-delivery; a non-boolean value is ignored"
+        example: false
+
+  Hello:
+    type: object
+    required: [type, host, server_version, client_id, max_frame_bytes]
+    properties:
+      type:
+        type: string
+        description: "the type of the message"
+        example: "hello"
+      host:
+        type: string
+        description: "hostname of the aapi node that accepted the connection"
+        example: "action-api-0"
+      server_version:
+        type: string
+        description: "aapi release version"
+        example: "1.0.18"
+      client_id:
+        type: string
+        description: "the authenticated client's id"
+        example: "ah_app_id_..."
+      max_frame_bytes:
+        type: integer
+        description: "largest inbound frame this aapi accepts, in bytes; a larger one is closed with 1009. Absent before aapi 1.0.20, whose limit is 1000000"
+        example: 4194304
+
+  # inbound submitAction (engine->aapi) — KEEPS `handler` (§6).
+  SubmitActionInbound:
+    type: object
+    required: [type, id, handler, capability, parameters, timeout]
+    properties:
+      type:
+        type: string
+        description: "the type of the request"
+        example: "submitAction"
+      id:
+        $ref: "#/definitions/id"
+      handler:
+        $ref: "#/definitions/handler"
+      capability:
+        $ref: "#/definitions/capability"
+      parameters:
+        $ref: "#/definitions/parameters"
+      timeout:
+        $ref: "#/definitions/timeout"
+
+  # outbound submitAction (aapi->handler) — DROPS `handler` (§6).
+  SubmitActionOutbound:
+    type: object
+    required: [type, id, capability, parameters, timeout]
+    properties:
+      type:
+        type: string
+        description: "the type of the request"
+        example: "submitAction"
+      id:
+        $ref: "#/definitions/id"
+      capability:
+        $ref: "#/definitions/capability"
+      parameters:
+        $ref: "#/definitions/parameters"
+      timeout:
+        $ref: "#/definitions/timeout"
+
+  SendActionResult:
+    type: object
+    required: [type, id, result]
+    properties:
+      type:
+        type: string
+        description: "the type of the request"
+        example: "sendActionResult"
+      id:
+        $ref: "#/definitions/id"
+      result:
+        $ref: "#/definitions/result"
+
+  # aapi sends/receives {type, id} only — DROPPED graph's code/message (§6):
+  # no consumer reads them off a positive ack.
+  Acknowledged:
+    type: object
+    required: [type, id]
+    properties:
+      type:
+        type: string
+        description: "the type of the request"
+        example: "acknowledged"
+      id:
+        $ref: "#/definitions/id"
+
+  NegativeAcknowledged:
+    type: object
+    required: [type, id, code, message]
+    properties:
+      type:
+        type: string
+        description: "the type of the request"
+        example: "negativeAcknowledged"
+      id:
+        $ref: "#/definitions/id"
+      code:
+        type: integer
+        description: "error response code"
+        example: 400
+      message:
+        type: string
+        description: "error message"
+        example: "bad request"
+
+  ClientHello:
+    type: object
+    required: [type]
+    properties:
+      type:
+        type: string
+        description: "the type of the message"
+        example: "clientHello"
+      client:
+        type: object
+        description: "the connected client app"
+        properties:
+          app:
+            type: string
+            description: "the app's product name, e.g. the actionhandler flavour; ignored when longer than 64 bytes"
+            example: "hiro-actionhandler"
+          version:
+            type: string
+            description: "the app's release version; ignored when longer than 64 bytes"
+            example: "2.5.3"
+      settings:
+        $ref: "#/definitions/settings"
+
+  SetSettings:
+    type: object
+    required: [type, settings]
+    properties:
+      type:
+        type: string
+        description: "the type of the request"
+        example: "setSettings"
+      settings:
+        $ref: "#/definitions/settings"
+
+  Error:
+    type: object
+    required: [error]
+    properties:
+      error:
+        type: object
+        required: [code, message]
+        properties:
+          code:
+            type: integer
+            format: int32
+            description: "the error code"
+            example: 400
+          message:
+            type: string
+            description: "the error message"
+            example: "bad request"
