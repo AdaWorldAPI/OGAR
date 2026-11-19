@@ -1,0 +1,1 @@
+  exit: LOCAL::SYSTEMRC = action("ExecuteCommand", command: "echo Hello World", host: "{ip of your target system}", user: "{user for your target system}", timeout: "20")

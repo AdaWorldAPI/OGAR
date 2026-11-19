@@ -1,0 +1,12 @@
+[package]
+name = "ogar-from-ki"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+description = "Reader for HIRO Knowledge Items (the documented subset of the public docs): a hand-written parser into a typed syntax tree with spans, a lift to ogar-vocab ActionDefs with typed notes for everything left open, and a name-level analysis projection (KiEdge rows, interference pairs)."
+
+[dependencies]
+ogar-vocab = { path = "../ogar-vocab" }

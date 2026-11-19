@@ -1,0 +1,18 @@
+on
+  ogit/_id
+when
+  ProcessIssue == "TestHTTPRequest"
+do
+  code: LOCAL::STATUS,
+  body: LOCAL::RESULT = action(
+	capability: "HTTPRequest",
+	params: "format=json",
+	url: "https://api64.ipify.org/",
+	timeout: "10"
+  )
+  if LOCAL::STATUS == "200" then
+    log("SUCCESS: Your IP adress is ${LOCAL::RESULT}")
+  else
+    log("ERROR ${LOCAL::STATUS}: ${LOCAL::RESULT}")
+  end
+  delete(ProcessIssue)

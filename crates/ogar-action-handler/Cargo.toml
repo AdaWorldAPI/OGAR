@@ -57,6 +57,9 @@ lance-graph-r2il = { git = "https://github.com/AdaWorldAPI/lance-graph", branch 
 ogar-r2il = { path = "../ogar-r2il", optional = true }
 
 [dev-dependencies]
+# The Knowledge Item reader: `tests/ki_lift_dt64.rs` runs its lifted ActionDefs
+# through the dt64 converter. ogar-from-ki depends on ogar-vocab only: no cycle.
+ogar-from-ki = { path = "../ogar-from-ki" }
 # The ClassView the `dt64` tests resolve fields through (OGAR's promoted
 # canonical concepts). A path crate; it takes lance-graph-contract from the
 # same git source as above, so the tree holds one contract.
