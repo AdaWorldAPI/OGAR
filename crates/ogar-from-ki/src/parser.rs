@@ -373,7 +373,12 @@ impl Parser {
             "count" => BlockKind::Count,
             _ => return None,
         };
-        matches!(self.kind_at(1), Tok::Name(_)).then_some(kind)
+        // `count` is also a plain variable name, so it starts a block only as
+        // `count <type>@<direction>`; `count and Ready` is a condition. `with`
+        // is reserved, so it always starts a block when a name follows.
+        (matches!(self.kind_at(1), Tok::Name(n) if !RESERVED.contains(&n.as_str()))
+            && (kind == BlockKind::With || matches!(self.kind_at(2), Tok::At)))
+        .then_some(kind)
     }
 
     fn on_clause(&mut self) -> Res<OnClause> {
@@ -776,6 +781,14 @@ impl Parser {
                 self.bump();
                 Ok(Expr::Number(Number {
                     text: n.clone(),
+                    span: t.span,
+                }))
+            }
+            Tok::Regex(pattern, flags) => {
+                self.bump();
+                Ok(Expr::Regex(RegexLit {
+                    pattern: pattern.clone(),
+                    flags: flags.clone(),
                     span: t.span,
                 }))
             }

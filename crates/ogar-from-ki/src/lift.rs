@@ -463,9 +463,10 @@ fn on_target(item: &KnowledgeItem) -> OnTarget {
             return OnTarget::Class(s.value.clone());
         }
     }
+    let lone = item.on.items.len() == 1;
     match first {
         Some(OnItem::Cond(Cond::Leaf(l))) if l.is_plain() => match &l.test {
-            None if l.subject.name.text == ID_ATTRIBUTE => OnTarget::AnyVertex,
+            None if lone && l.subject.name.text == ID_ATTRIBUTE => OnTarget::AnyVertex,
             None => OnTarget::Unresolved {
                 attribute: l.subject.name.text.clone(),
                 value: None,
@@ -782,7 +783,7 @@ pub fn lift(item: &KnowledgeItem, opts: &LiftOptions) -> Result<Lifted, LiftErro
 
     // The one truthful precondition: exactly one equality over a stored name.
     let kausal = match when.as_slice() {
-        [KiCondition::Equals { name, value, .. }] if kind_of(name) != NameKind::Local => {
+        [KiCondition::Equals { name, value, .. }] if !name.contains("::") => {
             Some(KausalSpec::state_guard(name.clone(), vec![value.clone()]))
         }
         _ => None,

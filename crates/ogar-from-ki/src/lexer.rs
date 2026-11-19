@@ -135,7 +135,7 @@ pub(crate) fn lex(src: &str) -> Vec<Token> {
                 continue;
             }
             '"' | '\'' => lex_string(&mut lx, start, c),
-            '-' if !prev_value && lx.at(1).is_some_and(|d| d.is_ascii_digit()) => {
+            '-' | '+' if !prev_value && lx.at(1).is_some_and(|d| d.is_ascii_digit()) => {
                 lex_number(&mut lx, start)
             }
             c if c.is_ascii_digit() => lex_number(&mut lx, start),
@@ -177,7 +177,14 @@ pub(crate) fn lex(src: &str) -> Vec<Token> {
                 lx.bump();
                 Tok::At
             }
-            '/' if matches!(out.last().map(|t| &t.tok), Some(Tok::Op(o)) if o == "=~" || o == "!~") => {
+            '/' if matches!(
+                out.last().map(|t| &t.tok),
+                Some(Tok::Op(o)) if o == "=~" || o == "!~"
+            ) || matches!(
+                out.last().map(|t| &t.tok),
+                Some(Tok::Colon | Tok::Comma | Tok::LParen)
+            ) =>
+            {
                 lex_regex(&mut lx, start)
             }
             c if CMP_CHARS.contains(c) => {
@@ -309,8 +316,8 @@ fn lex_regex(lx: &mut Lexer, start: Pos) -> Tok {
 
 fn lex_number(lx: &mut Lexer, start: Pos) -> Tok {
     let mut text = String::new();
-    if lx.at(0) == Some('-') {
-        text.push('-');
+    if let Some(sign @ ('-' | '+')) = lx.at(0) {
+        text.push(sign);
         lx.bump();
     }
     while let Some(d) = lx.at(0).filter(char::is_ascii_digit) {

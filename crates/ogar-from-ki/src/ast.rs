@@ -797,9 +797,15 @@ impl Stmt {
 pub enum Tier {
     /// `"default"`: the normal priority; also what an absent tier means.
     Default,
-    /// `"policy"`: runs before KIs of the other tiers.
+    /// `"policy"`: runs before KIs of the other tiers. The ordering applies
+    /// only among items on the same vertex: "KI tiers are only applied on a
+    /// vertex local scope" (structure page), so a matching `fallback` item
+    /// on the current vertex runs before the issue is routed to a `policy`
+    /// item on a connected remote vertex.
     Policy,
-    /// `"fallback"`: runs only when no default or policy KI matches.
+    /// `"fallback"`: runs only when no default or policy KI matches. Like
+    /// `policy`, this holds only among items on the same vertex (structure
+    /// page, "KI tiers are only applied on a vertex local scope").
     Fallback,
 }
 

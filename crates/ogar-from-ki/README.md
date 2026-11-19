@@ -199,6 +199,14 @@ Known facts about the ten, from the guide's own notes:
 | any other function | `KiOtherCall` with the name and the result tags; no def, no meaning |
 | ordering, priority, tier selection, several items applicable at once | not modelled; `tier` is carried as a typed fact |
 
+What becomes a guard: only a `when` of exactly one line `Name == "string"`
+where `Name` is plain (no `NODE::`, `ISSUE::`, `LOCAL::`, `Node::` or alias
+prefix, no key, no `@` limiter, no `list`, `?` or alias). Everything else,
+including a prefixed equality, is not lowered: the `PreconditionNotStated`
+note says so, and `KnowledgeItem::condition_refs` still shows the prefix.
+`OnTarget::AnyVertex` is a lone bare `ogit/_id`; an `on` with more lines or a
+block and no `ogit/_type == "X"` is `OnTarget::Unresolved`.
+
 A def with `kausal: None` from this crate does NOT mean "fires
 unconditionally": the item's `when` is on `LiftedItem::when`, and the note
 `PreconditionNotStated` says so.
