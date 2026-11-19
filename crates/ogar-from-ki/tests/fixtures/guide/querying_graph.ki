@@ -1,0 +1,28 @@
+ki
+  name: "TestKi"
+  version: "0@NoName"
+  description: "example on how to query the graph"
+on
+  ogit/name == "default_issue_node"
+
+when
+  GraphQuery == "Graph Query 1"
+do
+  # Graph Query
+  # LOCAL::NODEID contains the list of found ogit/_id
+  LOCAL::NODEID = ""
+  exit: LOCAL::EXIT,
+  output: LOCAL::OUTPUT = query('vertices', 'ogit\/_type:ogit\/MARS\/Machine ',
+    fields: "ogit/_id",
+    each: begin
+     LOCAL::NODEID = "${ogit/_id}"
+     log(LOCAL::NODEID)
+    end
+   )
+
+  # result interpretation
+  if LOCAL::EXIT == "0" then
+    delete(GraphQuery)
+  else
+    log("Failed to complete the query")
+  end

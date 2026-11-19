@@ -1,0 +1,27 @@
+ki
+  name: "TestKi"
+  version: "0@NoName"
+  description: "example on how to manipulate dates"
+on
+  ogit/name == "default_issue_node"
+
+when
+  ProcessIssue
+
+do
+
+  # Displays current date into a given date format
+  result: LOCAL::DATE = dateprint(format: "%A, %Oe, %B, %Y %H:%M:%S")
+  log("Current date formatted as: Weekday, Day of the Month, Month, Year Time: ${LOCAL::DATE}")
+
+  # Converts date into timestamp
+ LOCAL::DATE1 = "2024-11-05T18:00"
+ result: LOCAL::DATEMS = javascript("
+    let date = new Date(`${DATE1}`).getTime();
+    date;
+  ")
+ log("Date as a timestamp: ${LOCAL::DATEMS}")
+
+  # Convert timestamp to a given date format
+  result: date = dateprint(timestamp: LOCAL::DATEMS, format: "%d.%m.%Y")
+  log("Date formatted as: Day.Month.Year ${date}")

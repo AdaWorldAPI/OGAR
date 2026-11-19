@@ -1,0 +1,39 @@
+ki
+  name: "TestKi"
+  version: "0@NoName"
+  description: "Before start any further steps you have to check if the first and last name contains special letter like ä,ö,ü or accent mark\. If so you have to remove or correct it"
+  tier: "fallback"
+on
+  ogit/name == "default_issue_node"
+
+when
+  CheckSpelling
+  vorname
+
+do
+
+  exit: LOCAL::EXIT, result: LOCAL::vor = javascript('
+    spechrs = {    "ä" : "ae", "ö" : "oe", "ü" : "ue", "ß" : "ss",
+                   "Ä" : "Ae", "Ö" : "Oe", "Ü" : "Ue",
+                   "á" : "a", "â" : "a", "Á" : "A", "Â" : "A",
+                   "é" : "e", "ê" : "e", "É" : "E", "Ê" : "E",
+                   "í" : "i", "î" : "i", "Í" : "I", "Î" : "I",
+                   "ó" : "o", "ô" : "o", "Ó" : "O", "Ô" : "O",
+                   "ú" : "u", "û" : "u", "Ú" : "U", "Û" : "U",
+              }
+    str = "${vorname}"
+    for(chr in spechrs)
+    {
+        str = str.replace(new RegExp(chr,"g"),spechrs[chr])
+    }
+    str
+')
+
+  # result interpretation
+  if LOCAL::EXIT == "0" then
+    vorname = LOCAL::vor
+    log("Name has been reviewed")
+    delete(CheckSpelling)
+  else
+    log("Failed to check Name spelling")
+  end

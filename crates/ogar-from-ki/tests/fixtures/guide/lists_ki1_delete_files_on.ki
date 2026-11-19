@@ -1,0 +1,14 @@
+ki
+  name: "KI 1"
+  version: "0@NoName"
+  description: "handling list"
+
+on
+ ogit/name == "default_issue_node"
+
+when
+ DeleteFilesOn
+
+do
+ log("Here is what the KI sees as Value of DeleteFilesOn variable ${DeleteFilesOn}")
+ delete(DeleteFilesOn)

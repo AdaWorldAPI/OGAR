@@ -1,0 +1,19 @@
+ki
+  id: "HN3_R1"
+  version: "0@rs"
+  description: "Move disc 3 to position 1."
+on
+  ogit/_id
+when
+  MakeMove == "Hanoi 6.2"
+  DiskPos[1] as DP1
+  DiskPos[2] as DP2
+  DiskPos[3] != 1
+  StepCounter < 1000
+  ogit/RL/totalReward
+  ogit/RL/state
+do
+  DiskPos[3] = 1
+  ogit/RL/state = "HanoiPos_${DP1}_${DP2}_1"
+  ogit/RL/totalReward = ogit/RL/totalReward - 1
+  StepCounter = StepCounter + 1
