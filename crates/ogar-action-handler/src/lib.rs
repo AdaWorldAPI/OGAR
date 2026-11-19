@@ -66,6 +66,7 @@ pub mod invoke_state;
 pub mod mock_gateway;
 pub mod ogit;
 pub mod session;
+pub mod status;
 pub mod submit_state;
 pub mod wire;
 
