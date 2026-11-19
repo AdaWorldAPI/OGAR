@@ -303,6 +303,34 @@ mode, or why.
 **Not decided.** What the actor or agent layer looks like, and which of
 `ActionDef`'s fields it reads first. This section only keeps the door open.
 
+### 9a. HIRO's ActionHandler is this layer (owner, 2026-11-19)
+
+**Ruling.** HIRO's ActionHandler is the `ActionDef` layer in OGAR: a polyfill
+over the class methods, on Bardioc's HIRO class view. It is not the route.
+
+| HIRO | Here |
+|---|---|
+| ActionHandler (what provides applicability and capability) | the class `action_handler` (`0x0C07`, HIRO domain `0x0C`) in Bardioc's class view, with its `ActionDef`s |
+| ActionCapability | one `ActionDef` on that class, registering as a method `0x0C07 :: F###` |
+| ActionApplicability | the ON: the class a capability applies on |
+| a running handler instance | the Actor: the route |
+
+This corrects an earlier reading in the proposal and in the listings, which
+mapped the ActionHandler as a whole to the Actor. Only the instance is routing.
+
+**What exists.** `action_handler` is minted in `ogar-vocab` (`0x0C07`).
+Bardioc-rs `bardioc-do-arm` builds the `ActionDef` set from OGIT's Automation
+schema plus a handler's `GET /capabilities` and resolves each class through the
+ontology cache.
+
+**What does not, and needs a decision.** In `bardioc-do-arm` a capability is
+still addressed by `(class, ordinal)`, its position within the class, which
+shifts when a capability is added. It is not yet registered as a method with a
+ledger arm. A handler's capabilities arrive at run time, so the arm ledger
+needs a rule for them: who assigns a number in the consumer range
+(`0xF800..=0xFFFF`) to a capability name that first appears in a registration,
+and where that assignment is kept so that it never changes. Not built.
+
 ## 10. The actor layer has no mailboxes; time is versioning (ruling, 2026-11-19)
 
 **Rulings (owner).**
