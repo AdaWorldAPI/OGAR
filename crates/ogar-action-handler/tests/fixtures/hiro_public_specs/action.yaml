@@ -1,0 +1,145 @@
+# http://swagger.io/specification/
+swagger: "2.0"
+info:
+  title: HIRO Graph Action API
+  description: |
+    The API for the HIRO Graph Action
+  version: "1.0"
+
+schemes:
+  - https
+basePath: /api/action/1.0/
+produces:
+  - application/json
+consumes:
+  - application/json
+
+securityDefinitions:
+  Bearer:
+    type: apiKey
+    name: Authorization
+    in: header
+
+security:
+  - Bearer: []
+
+paths:
+  /applicabilities:
+    get:
+      summary: get a list of applicabilities for application
+      description: "get a list of applicabilities for application"
+      tags:
+        - "[Action] Applicability"
+      responses:
+        200:
+          description: "Applicabilities retrieved"
+          schema:
+            $ref: "#/definitions/MapOfApplicabilities"
+        401:
+          description: "The graph rejected the token, or refused aapi's own lookup"
+          schema:
+            $ref: "#/definitions/Error"
+        503:
+          description: "The graph could not answer; retry"
+          schema:
+            $ref: "#/definitions/Error"
+        default:
+          description: "Unexpected error"
+          schema:
+            $ref: "#/definitions/Error"
+
+  /capabilities:
+    get:
+      summary: get a list of capabilities
+      description: "gets a list of all capabilities"
+      parameters:
+        - $ref: "#/parameters/limit20"
+        - $ref: "#/parameters/offset"
+      tags:
+        - "[Action] Capability"
+      responses:
+        200:
+          description: "Capabilities retrieved"
+          schema:
+            $ref: "#/definitions/MapOfCapabilities"
+        401:
+          description: "The graph rejected the token, or refused aapi's own lookup"
+          schema:
+            $ref: "#/definitions/Error"
+        503:
+          description: "The graph could not answer; retry"
+          schema:
+            $ref: "#/definitions/Error"
+        default:
+          description: "Unexpected error"
+          schema:
+            $ref: "#/definitions/Error"
+
+parameters:
+  limit20:
+    name: limit
+    in: query
+    description: "limit of entries to return"
+    type: integer
+    format: int64
+    default: 20
+  offset:
+    name: offset
+    in: query
+    description: "offset where to start returning entries"
+    type: integer
+    format: int64
+    default: 0
+
+definitions:
+  Capability:
+    type: object
+    required: [description, mandatoryParameters]
+    properties:
+      description:
+        type: string
+        description: "description"
+        example: "capabilityDescription"
+      mandatoryParameters:
+        type: object
+        description: "Mandatory parameters"
+      optionalParameters:
+        type: object
+        description: "Optional parameters"
+
+  MapOfCapabilities:
+    type: object
+    properties:
+      capabilityName1:
+        $ref: "#/definitions/Capability"
+
+  Applicability:
+    type: object
+    properties:
+      capabilityName1:
+        type: object
+        description: "Applicability definition"
+
+  MapOfApplicabilities:
+    type: object
+    properties:
+      handlerId1:
+        $ref: "#/definitions/Applicability"
+
+  Error:
+    type: object
+    required: [error]
+    properties:
+      error:
+        type: object
+        required: [code, message]
+        properties:
+          code:
+            type: integer
+            format: int32
+            description: "the error code"
+            example: 400
+          message:
+            type: string
+            description: "the error message"
+            example: "bad request"
