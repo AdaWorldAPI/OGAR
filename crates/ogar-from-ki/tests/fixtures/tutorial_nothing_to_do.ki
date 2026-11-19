@@ -1,0 +1,11 @@
+ki
+  name: "I decide that nothing should be done."
+  description: "I decide that nothing should be done, and finish the task."
+on
+  ogit/_type == "ogit/Schedule/Calendar"
+when
+  ogit/Automation/issueType == "RescheduleMeetings"
+  ProcessIssue
+do
+  NumberOfMeetingsRescheduled = 0
+  delete(ProcessIssue)

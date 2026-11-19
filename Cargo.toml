@@ -15,6 +15,7 @@ members = [
     "crates/ogar-from-ruff",
     "crates/ogar-from-rails",
     "crates/ogar-from-schema",
+    "crates/ogar-from-ki",
     "crates/ogar-action-handler",
     "crates/ogar-class-view",
     "crates/ogar-render-askama",
