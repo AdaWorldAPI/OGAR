@@ -254,3 +254,44 @@ calls only through the gate; no DO effect type is added to VRL.
   calls; call parameters; effect class on the binding), EXO-292 (R7: Quack
   `Draft` ranges and grouped folds).
 - Decision B (validity plane) is posted by the #2116 session.
+
+## 9. `ActionDef` stays (ruling, 2026-11-19)
+
+**Ruling.** `ActionDef` is kept in OGAR as a layer of its own. Registering every
+behaviour as a method at `class :: F###` (section 1, OGAR #394) does not replace
+it. The method is what an `ActionDef` registers as; the `ActionDef` is the
+declaration it was registered from.
+
+**Why.** Two layers, both polyfill:
+
+| layer | what it is | where it lives |
+|---|---|---|
+| lower: the HIRO polyfill | what HIRO's handler does for one request: claim the id, ack, bind, run, resend the result, deadline | `ogar-action-handler`: `wire`, `submit_state`, `session`; the method at `class :: F###` |
+| upper: `ActionDef` | the declaration of the behaviour as an actor or agent would hold it: identity, subject, temporal and modal defaults, causal precondition, effect facts | `ogar-vocab` |
+
+Keeping the upper layer lets HIRO's behaviour itself be modelled later as
+polyfill, on top of the lower one, instead of being fixed in handler code: an
+actor or agent that owns a queue, decides, retries or recalls (see
+`ARAGO-ACTIONHANDLER-PARITY.md` section 9) needs a declaration to reason over,
+and a registered method is too small for that. A method carries a guard, an
+effect and a field basis; it does not carry who acts by default, when, in what
+mode, or why.
+
+**What follows.**
+
+1. Do not delete or hollow out `ActionDef` fields because DT64 does not consume
+   them. A field with no reader in the converter is not dead; it belongs to the
+   upper layer.
+2. The converter stays one-way and lossy on purpose: `ActionDef` -> method.
+   Nothing reads a method back into an `ActionDef`.
+3. Blocker 2 in section 5 (the 17 defs refused for call parameters) is resolved
+   in this direction: call parameters are declared on the `ActionDef`, not added
+   to the class as fields. The method registers with class fields only; the
+   parameter list stays with the declaration until the invocation contract on
+   the lance-graph side can carry it. Not built yet.
+4. Consumers register through the `ActionDef` tables (`register_domain_table`,
+   `register_domain_table_for`), not by writing `MethodBinding`s directly, so
+   the upper layer stays complete.
+
+**Not decided.** What the actor or agent layer looks like, and which of
+`ActionDef`'s fields it reads first. This section only keeps the door open.
