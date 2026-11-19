@@ -26,6 +26,7 @@ pub mod error;
 mod lexer;
 pub mod lift;
 mod parser;
+pub mod scope;
 
 pub use analysis::{
     Contact, Interference, KiEdge, KiEdgeKind, SharedName, can_share_vertex, edges,
@@ -34,7 +35,9 @@ pub use analysis::{
 pub use ast::{KnowledgeItem, NameKind, Pos, Span, outline};
 pub use error::{ErrorKind, ParseError};
 pub use lift::{
-    Branch, CallCondition, ConditionSite, KiArg, KiCall, KiCondition, KiNote, KiResultBinding,
-    LiftError, LiftOptions, Lifted, LiftedItem, NoteKind, OnTarget, SourceError, lift, lift_source,
+    Branch, CallCondition, ConditionSite, KiArg, KiArgKind, KiCall, KiCondition, KiNote,
+    KiOtherCall, KiResultBinding, LiftError, LiftOptions, Lifted, LiftedItem, NoteKind, OnTarget,
+    OtherCallKind, SourceError, lift, lift_source,
 };
 pub use parser::parse;
+pub use scope::{ConditionRef, Section};

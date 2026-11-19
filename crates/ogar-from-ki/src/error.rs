@@ -1,4 +1,4 @@
-//! Named refusals. Every construct outside the documented subset is refused
+//! Named refusals. Every construct outside the documented language is refused
 //! with its line and column and what was expected; nothing is skipped or
 //! guessed.
 
@@ -9,49 +9,55 @@ use crate::ast::Pos;
 /// What was refused.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ErrorKind {
-    /// A character that starts no documented token (`#`, `.`, `{`, `'`, ...).
+    /// A character that starts no token (`{`, `}`, `;`, `$`, ...).
     UnexpectedChar {
         /// The character.
         ch: char,
     },
-    /// A string literal with no closing quote on its line.
+    /// A string literal with no closing quote.
     UnterminatedString,
-    /// A backslash inside a string: escape sequences are not documented.
+    /// A regex literal `/.../` with no closing slash on its line.
+    UnterminatedRegex,
+    /// A backslash directly before the closing quote character of a string:
+    /// whether it escapes the quote is not documented.
     EscapeInString,
     /// A number followed directly by letters.
     MalformedNumber {
         /// The text read.
         text: String,
     },
-    /// An operator other than `==` where a comparison was expected.
+    /// An operator the guide does not list, where a comparison or an
+    /// assignment was expected.
     UnsupportedOperator {
         /// The operator as written.
         op: String,
     },
-    /// `and`, `or` or `not` after a condition: no combination is documented.
-    UnsupportedConnective {
-        /// The word.
-        word: String,
-    },
-    /// A number where a condition is expected or compared (numbers in `when`).
+    /// A number where a condition must start (a condition names a variable).
     NumberInCondition {
         /// The literal.
         text: String,
-    },
-    /// A call to a function other than `action`, `log`, `delete`.
-    UnknownFunction {
-        /// The function name.
-        name: String,
     },
     /// A call inside the arguments of a call.
     NestedCall {
         /// The inner function name.
         name: String,
     },
-    /// A call where a condition or assignment value is expected.
+    /// A call where a condition or an assignment value is expected.
     CallInExpression {
         /// The function name.
         name: String,
+    },
+    /// A function name with no argument list, as in the guide's `action`
+    /// reference page (`exit: LOCAL::RESULT = action` and then a new line).
+    CallWithoutArguments {
+        /// The function name.
+        function: String,
+    },
+    /// Result tags in front of a call that returns nothing (`log`, `delete`,
+    /// `set`, `add`).
+    BindingsOnCall {
+        /// The function name.
+        function: String,
     },
     /// A word at a clause position that is not `ki`, `on`, `when`, `do`.
     UnknownClauseKeyword {
@@ -71,12 +77,13 @@ pub enum ErrorKind {
         /// The clause that was due.
         wanted: &'static str,
     },
-    /// A clause with no body.
+    /// A clause or block with no body.
     EmptyClause {
-        /// The clause.
+        /// The clause or block word.
         clause: &'static str,
     },
-    /// A header key other than `name` and `description`.
+    /// A header key other than `name`, `description`, `version`, `tier` and
+    /// `id`.
     UnknownHeaderKey {
         /// The key.
         key: String,
@@ -86,20 +93,85 @@ pub enum ErrorKind {
         /// The key.
         key: String,
     },
+    /// A `tier` other than `default`, `policy`, `fallback`.
+    UnknownTier {
+        /// The value as written.
+        value: String,
+    },
     /// An `if` with no closing `end`.
     UnterminatedIf,
-    /// An `if` with no `else` (the documented form always has one).
-    MissingElse,
+    /// A `with`, `count` or `begin` block with no closing `end`.
+    UnterminatedBlock {
+        /// `with`, `count` or `begin`.
+        word: &'static str,
+    },
+    /// A `with` or `count` block inside another: the guide shows no nesting.
+    NestedBlock {
+        /// The enclosing block word.
+        outer: &'static str,
+        /// The inner block word.
+        inner: &'static str,
+    },
+    /// A `with` or `count` block in `when`: the guide shows them in `on`.
+    BlockOutsideOn {
+        /// `with` or `count`.
+        word: &'static str,
+    },
+    /// An edge direction other than `in`, `out`, `connected` (and the
+    /// example-only `parent`, `child`).
+    UnknownDirection {
+        /// The direction as written.
+        found: String,
+    },
+    /// A `count` block without `as <Name>`.
+    CountWithoutAlias,
+    /// A graph scope limiter other than `@any`, `@self` (and the
+    /// example-only `@in`).
+    UnknownGraphScope {
+        /// The suffix as written.
+        found: String,
+    },
+    /// A log level other than `debug`, `info`, `warn`, `error`.
+    UnknownLogLevel {
+        /// The level as written.
+        level: String,
+    },
     /// A branch with no statement.
     EmptyBranch,
-    /// An `if` inside an `if` branch: not documented.
+    /// An `if` inside an `if` branch: not shown in the guide.
     NestedIf,
-    /// `then`, `else` or `end` where no `if` is open.
+    /// `then`, `else` or `end` where no block is open.
     StrayBlockWord {
         /// The word.
         word: String,
     },
-    /// A namespace other than `LOCAL::`, or a malformed local name.
+    /// `and` and `or` on one level with no parentheses: the guide states
+    /// "not" over "or" but no order between "and" and "or".
+    AmbiguousConnectives {
+        /// The connective seen first.
+        first: String,
+        /// The other one.
+        second: String,
+    },
+    /// A construct the guide documents that this reader does not read yet.
+    DocumentedNotRead {
+        /// What it is.
+        construct: String,
+    },
+    /// An optional match (`? X`) with no `:= default` (only `?list` may omit
+    /// it).
+    OptionalWithoutDefault,
+    /// Two arithmetic operators in one expression: the guide shows one.
+    ChainedArithmetic,
+    /// A form that only a match line has (`?`, `list`, `as`) inside an `if`
+    /// condition.
+    MatchFormInIf {
+        /// The form.
+        form: &'static str,
+    },
+    /// A positional argument after a keyword argument.
+    PositionalAfterKeyword,
+    /// A namespace written wrongly, or a malformed qualified name.
     UnknownNamespace {
         /// The name as written.
         name: String,
@@ -132,21 +204,27 @@ impl fmt::Display for ErrorKind {
         match self {
             ErrorKind::UnexpectedChar { ch } => write!(f, "unexpected character {ch:?}"),
             ErrorKind::UnterminatedString => write!(f, "unterminated string"),
+            ErrorKind::UnterminatedRegex => write!(f, "unterminated regex literal"),
             ErrorKind::EscapeInString => {
-                write!(f, "escape sequence in string (not documented)")
+                write!(f, "escaped quote in string (not documented)")
             }
             ErrorKind::MalformedNumber { text } => write!(f, "malformed number `{text}`"),
             ErrorKind::UnsupportedOperator { op } => write!(f, "unsupported operator `{op}`"),
-            ErrorKind::UnsupportedConnective { word } => {
-                write!(f, "unsupported connective `{word}`")
-            }
             ErrorKind::NumberInCondition { text } => {
-                write!(f, "number `{text}` in a condition")
+                write!(f, "number `{text}` where a condition must start")
             }
-            ErrorKind::UnknownFunction { name } => write!(f, "unknown function `{name}`"),
             ErrorKind::NestedCall { name } => write!(f, "nested call `{name}(`"),
             ErrorKind::CallInExpression { name } => {
                 write!(f, "call `{name}(` in a condition or value")
+            }
+            ErrorKind::CallWithoutArguments { function } => {
+                write!(f, "`{function}` with no argument list")
+            }
+            ErrorKind::BindingsOnCall { function } => {
+                write!(
+                    f,
+                    "result tags in front of `{function}`, which returns none"
+                )
             }
             ErrorKind::UnknownClauseKeyword { word } => {
                 write!(f, "unknown clause keyword `{word}`")
@@ -155,18 +233,49 @@ impl fmt::Display for ErrorKind {
             ErrorKind::UnexpectedClause { found, wanted } => {
                 write!(f, "unexpected clause `{found}` (`{wanted}` was due)")
             }
-            ErrorKind::EmptyClause { clause } => write!(f, "empty `{clause}` clause"),
+            ErrorKind::EmptyClause { clause } => write!(f, "empty `{clause}` body"),
             ErrorKind::UnknownHeaderKey { key } => write!(f, "unknown header key `{key}`"),
             ErrorKind::DuplicateHeaderKey { key } => {
                 write!(f, "header key `{key}` written twice")
             }
+            ErrorKind::UnknownTier { value } => write!(f, "unknown tier \"{value}\""),
             ErrorKind::UnterminatedIf => write!(f, "`if` without `end`"),
-            ErrorKind::MissingElse => write!(f, "`if` without `else`"),
+            ErrorKind::UnterminatedBlock { word } => write!(f, "`{word}` without `end`"),
+            ErrorKind::NestedBlock { outer, inner } => {
+                write!(f, "`{inner}` block inside a `{outer}` block")
+            }
+            ErrorKind::BlockOutsideOn { word } => {
+                write!(f, "`{word}` block outside the `on` section")
+            }
+            ErrorKind::UnknownDirection { found } => {
+                write!(f, "unknown edge direction `{found}`")
+            }
+            ErrorKind::CountWithoutAlias => write!(f, "`count` block without `as <Name>`"),
+            ErrorKind::UnknownGraphScope { found } => {
+                write!(f, "unknown graph scope `@{found}`")
+            }
+            ErrorKind::UnknownLogLevel { level } => write!(f, "unknown log level `{level}`"),
             ErrorKind::EmptyBranch => write!(f, "empty `if` branch"),
             ErrorKind::NestedIf => write!(f, "nested `if`"),
             ErrorKind::StrayBlockWord { word } => write!(f, "stray `{word}`"),
+            ErrorKind::AmbiguousConnectives { first, second } => {
+                write!(f, "`{first}` and `{second}` mixed without parentheses")
+            }
+            ErrorKind::DocumentedNotRead { construct } => {
+                write!(f, "documented but not read: {construct}")
+            }
+            ErrorKind::OptionalWithoutDefault => {
+                write!(f, "optional match without `:= default`")
+            }
+            ErrorKind::ChainedArithmetic => write!(f, "more than one arithmetic operator"),
+            ErrorKind::MatchFormInIf { form } => {
+                write!(f, "match form `{form}` in an `if` condition")
+            }
+            ErrorKind::PositionalAfterKeyword => {
+                write!(f, "positional argument after a keyword argument")
+            }
             ErrorKind::UnknownNamespace { name } => {
-                write!(f, "unknown namespace or malformed local name `{name}`")
+                write!(f, "unknown namespace or malformed qualified name `{name}`")
             }
             ErrorKind::ReservedWord { word } => write!(f, "keyword `{word}` used as a name"),
             ErrorKind::DuplicateArgument { name } => {

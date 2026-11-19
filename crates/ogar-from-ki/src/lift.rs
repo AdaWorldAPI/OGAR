@@ -3,13 +3,16 @@
 //! not state.
 //!
 //! What is stated and what is left open is the whole point of this module:
-//! the public docs give no grammar and no semantics beyond three examples, so
-//! a form whose meaning is not documented is carried as a named, unresolved
-//! fact, never turned into something it might mean.
+//! the guide gives no formal grammar and says little about what a form means
+//! at run time, so a form whose meaning is not documented is carried as a
+//! named, unresolved fact, never turned into something it might mean.
 
 use ogar_vocab::{ActionDef, CallParam, KausalSpec};
 
-use crate::ast::{ActionCall, CapabilityForm, Cond, KnowledgeItem, NameKind, Pos, Stmt, kind_of};
+use crate::ast::{
+    ActionCall, ArgValue, CapabilityForm, Comparison, Cond, Expr, Key, KnowledgeItem, NameKind,
+    OnItem, Pos, Stmt, Tier, VarRef, expr_text, kind_of,
+};
 
 /// The attribute that names an `on` clause's vertex in the documented
 /// `on ogit/_id` form.
@@ -83,14 +86,39 @@ pub enum KiCondition {
         /// Where it was written.
         pos: Pos,
     },
+    /// Any other condition: another operator, `not`, `and`, `or`,
+    /// parentheses, a key, `list`, `?`, an alias, a graph limiter, a number or
+    /// a variable on the right. The tree has all of it
+    /// ([`crate::KnowledgeItem`]); the lift states none of it and carries only
+    /// the variables the condition names.
+    Other {
+        /// The variables the condition names, in order of first appearance
+        /// (aliases are not variables and are not listed).
+        names: Vec<String>,
+        /// Where it was written.
+        pos: Pos,
+    },
 }
 
 impl KiCondition {
-    /// The name the condition tests.
+    /// The name the condition tests: for [`KiCondition::Other`], the first
+    /// variable it names (empty if it names none).
     #[must_use]
     pub fn name(&self) -> &str {
         match self {
             KiCondition::Equals { name, .. } | KiCondition::BareName { name, .. } => name,
+            KiCondition::Other { names, .. } => names.first().map_or("", String::as_str),
+        }
+    }
+
+    /// Every variable the condition names.
+    #[must_use]
+    pub fn names(&self) -> Vec<&str> {
+        match self {
+            KiCondition::Equals { name, .. } | KiCondition::BareName { name, .. } => {
+                vec![name.as_str()]
+            }
+            KiCondition::Other { names, .. } => names.iter().map(String::as_str).collect(),
         }
     }
 }
@@ -113,14 +141,32 @@ pub struct CallCondition {
     pub branch: Branch,
 }
 
+/// What kind of value a [`KiArg`] carries.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum KiArgKind {
+    /// A string literal (the text between the quotes).
+    Str,
+    /// A number literal, as written.
+    Number,
+    /// A variable, as written.
+    Name,
+    /// A list, an arithmetic expression or a regex, rendered in the tree's
+    /// outline form.
+    Other,
+    /// A `begin ... end` block: the value is the word `begin`.
+    Block,
+}
+
 /// A named argument as written at a call site: a BINDING (a value), not a
 /// declaration. The matching declaration is the [`CallParam`] on the def.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct KiArg {
     /// The argument name.
     pub name: String,
-    /// The literal value, verbatim.
+    /// The value: a string's text, or a number or variable as written.
     pub value: String,
+    /// What the value is.
+    pub kind: KiArgKind,
 }
 
 /// `field: LOCAL::NAME` in front of a call.
@@ -155,6 +201,31 @@ pub struct KiCall {
     pub condition: Option<CallCondition>,
 }
 
+/// What an other call is.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OtherCallKind {
+    /// `execute(...)`. The guide calls it a simpler front end to `action`
+    /// capabilities, chosen by `host` and `scriptmode`. Reported as its own
+    /// kind; not lifted to a def.
+    Execute,
+    /// Any other function (`javascript`, `query`, `dateprint`, ...). Only the
+    /// name is recorded.
+    Generic,
+}
+
+/// A call that is not `action(...)`: recorded, not lifted, no meaning given.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct KiOtherCall {
+    /// The function name.
+    pub function: String,
+    /// `execute` or another function.
+    pub kind: OtherCallKind,
+    /// Where the call starts.
+    pub pos: Pos,
+    /// The result tags in front of the call.
+    pub results: Vec<KiResultBinding>,
+}
+
 /// The facts of one item, independent of whether it calls anything.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LiftedItem {
@@ -164,6 +235,10 @@ pub struct LiftedItem {
     pub name: Option<String>,
     /// The header `description:`.
     pub description: Option<String>,
+    /// The header `version:`.
+    pub version: Option<String>,
+    /// The header `tier:`, typed.
+    pub tier: Option<Tier>,
     /// What the `on` clause names.
     pub on: OnTarget,
     /// Where the `on` clause starts.
@@ -184,6 +259,9 @@ pub struct LiftedItem {
     pub locals_written: Vec<String>,
     /// The `action` calls, in text order.
     pub calls: Vec<KiCall>,
+    /// Every other call (`execute`, `javascript`, `query`, ...), in text
+    /// order. Not lifted.
+    pub other_calls: Vec<KiOtherCall>,
     /// The item's text.
     pub source: String,
 }
@@ -216,8 +294,10 @@ pub enum NoteKind {
         /// Where it was written.
         site: ConditionSite,
     },
-    /// More than one `when` condition: how they combine is not documented, so
-    /// no `kausal` is stated.
+    /// More than one `when` condition. The matching page says lines are
+    /// joined by an implicit `and`; the lift states a `kausal` only for one
+    /// equality, so it states none here. (The variant keeps its original
+    /// name.)
     WhenConjunctionUndocumented {
         /// The number of conditions.
         count: usize,
@@ -251,6 +331,16 @@ pub enum NoteKind {
     },
     /// The item has no `action(...)` call: it lifts to no def.
     NoActionCall,
+    /// A condition more complex than a name or `name == "string"`. The lift
+    /// states none of it; the variables it names are in `reads`.
+    ConditionBeyondLift {
+        /// Where it was written.
+        site: ConditionSite,
+    },
+    /// An `execute(...)` call. The guide calls it a front end to `action`
+    /// capabilities chosen by `host` and `scriptmode`; the lift does not
+    /// choose one and states no def for it.
+    ExecuteNotLifted,
 }
 
 /// A note, with where it came from.
@@ -283,6 +373,7 @@ struct Acc {
     locals_written: Vec<String>,
     if_conditions: Vec<KiCondition>,
     calls: Vec<KiCall>,
+    other_calls: Vec<KiOtherCall>,
     notes: Vec<KiNote>,
 }
 
@@ -292,33 +383,116 @@ fn push_unique(v: &mut Vec<String>, s: &str) {
     }
 }
 
-fn condition_of(c: &Cond) -> KiCondition {
-    match c {
-        Cond::Eq { left, right, span } => KiCondition::Equals {
-            name: left.text.clone(),
-            value: right.value.clone(),
-            pos: span.start,
-        },
-        Cond::Bare { name, span } => KiCondition::BareName {
-            name: name.text.clone(),
-            pos: span.start,
-        },
+fn push_expr_names(e: &Expr, out: &mut Vec<String>) {
+    match e {
+        Expr::Var(v) => push_var_names(v, out),
+        Expr::List { items, .. } => {
+            for i in items {
+                push_expr_names(i, out);
+            }
+        }
+        Expr::Binary { left, right, .. } => {
+            push_expr_names(left, out);
+            push_expr_names(right, out);
+        }
+        Expr::Str(_) | Expr::Number(_) | Expr::Regex(_) => {}
     }
 }
 
-fn on_target(c: &Cond) -> OnTarget {
-    match c {
-        Cond::Bare { name, .. } if name.text == ID_ATTRIBUTE => OnTarget::AnyVertex,
-        Cond::Bare { name, .. } => OnTarget::Unresolved {
-            attribute: name.text.clone(),
+fn push_var_names(v: &VarRef, out: &mut Vec<String>) {
+    push_unique(out, &v.name.text);
+    if let Some(Key::Var(k)) = &v.key {
+        push_unique(out, &k.text);
+    }
+}
+
+fn cond_names(c: &Cond) -> Vec<String> {
+    let mut out = Vec::new();
+    for l in c.leaves() {
+        push_var_names(&l.subject, &mut out);
+        if let Some(t) = &l.test {
+            push_expr_names(&t.right, &mut out);
+        }
+        if let Some(d) = &l.default {
+            push_expr_names(d, &mut out);
+        }
+    }
+    out
+}
+
+fn condition_of(c: &Cond) -> KiCondition {
+    if let Cond::Leaf(l) = c
+        && l.is_plain()
+    {
+        let pos = l.span.start;
+        let name = l.subject.name.text.clone();
+        match &l.test {
+            None => return KiCondition::BareName { name, pos },
+            Some(Comparison {
+                right: Expr::Str(s),
+                ..
+            }) => {
+                return KiCondition::Equals {
+                    name,
+                    value: s.value.clone(),
+                    pos,
+                };
+            }
+            Some(_) => {}
+        }
+    }
+    KiCondition::Other {
+        names: cond_names(c),
+        pos: c.span().start,
+    }
+}
+
+fn on_target(item: &KnowledgeItem) -> OnTarget {
+    let first = item.on.items.first();
+    let conds: Vec<&Cond> = item.on.conds().collect();
+    for c in &conds {
+        if let Cond::Leaf(l) = c
+            && l.is_plain()
+            && l.subject.name.text == TYPE_ATTRIBUTE
+            && let Some(Comparison {
+                right: Expr::Str(s),
+                ..
+            }) = &l.test
+            && !s.value.is_empty()
+        {
+            return OnTarget::Class(s.value.clone());
+        }
+    }
+    match first {
+        Some(OnItem::Cond(Cond::Leaf(l))) if l.is_plain() => match &l.test {
+            None if l.subject.name.text == ID_ATTRIBUTE => OnTarget::AnyVertex,
+            None => OnTarget::Unresolved {
+                attribute: l.subject.name.text.clone(),
+                value: None,
+            },
+            Some(Comparison {
+                right: Expr::Str(s),
+                ..
+            }) => OnTarget::Unresolved {
+                attribute: l.subject.name.text.clone(),
+                value: Some(s.value.clone()),
+            },
+            Some(_) => OnTarget::Unresolved {
+                attribute: l.subject.name.text.clone(),
+                value: None,
+            },
+        },
+        Some(OnItem::Cond(c)) => OnTarget::Unresolved {
+            attribute: cond_names(c).into_iter().next().unwrap_or_default(),
             value: None,
         },
-        Cond::Eq { left, right, .. } if left.text == TYPE_ATTRIBUTE && !right.value.is_empty() => {
-            OnTarget::Class(right.value.clone())
-        }
-        Cond::Eq { left, right, .. } => OnTarget::Unresolved {
-            attribute: left.text.clone(),
-            value: Some(right.value.clone()),
+        Some(OnItem::Block(b)) => OnTarget::Unresolved {
+            attribute: format!("{} {}", b.kind.word(), b.vertex_type.text),
+            value: None,
+        },
+        None => OnTarget::Unresolved {
+            attribute: String::new(),
+            value: None,
         },
     }
 }
@@ -328,6 +502,22 @@ fn read_name(acc: &mut Acc, name: &str) {
         push_unique(&mut acc.locals_read, name);
     } else {
         push_unique(&mut acc.reads, name);
+    }
+}
+
+fn read_condition(acc: &mut Acc, c: &KiCondition) {
+    for n in c.names() {
+        read_name(acc, n);
+    }
+}
+
+fn note_beyond(acc: &mut Acc, c: &KiCondition, site: ConditionSite) {
+    if let KiCondition::Other { pos, .. } = c {
+        acc.notes.push(KiNote {
+            kind: NoteKind::ConditionBeyondLift { site },
+            pos: Some(*pos),
+            call: None,
+        });
     }
 }
 
@@ -352,17 +542,74 @@ fn note_bare(acc: &mut Acc, c: &KiCondition, site: ConditionSite) {
     }
 }
 
+fn arg_of(name: &str, v: &ArgValue) -> KiArg {
+    let (value, kind) = match v {
+        ArgValue::Expr(Expr::Str(s)) => (s.value.clone(), KiArgKind::Str),
+        ArgValue::Expr(Expr::Number(n)) => (n.text.clone(), KiArgKind::Number),
+        ArgValue::Expr(Expr::Var(var)) if var.key.is_none() && var.graph.is_none() => {
+            (var.name.text.clone(), KiArgKind::Name)
+        }
+        ArgValue::Expr(e) => (expr_text(e), KiArgKind::Other),
+        ArgValue::Block(_) => ("begin".to_string(), KiArgKind::Block),
+    };
+    KiArg {
+        name: name.to_string(),
+        value,
+        kind,
+    }
+}
+
+fn walk_value(v: &ArgValue, ctx: Option<CallCondition>, id: &str, acc: &mut Acc) {
+    if let ArgValue::Block(b) = v {
+        walk(&b.stmts, ctx, id, acc);
+    }
+}
+
 fn walk(stmts: &[Stmt], ctx: Option<CallCondition>, id: &str, acc: &mut Acc) {
     for s in stmts {
         match s {
-            Stmt::Assign { target, .. } => write_name(acc, &target.text),
-            Stmt::Delete { target, .. } => write_name(acc, &target.text),
+            Stmt::Assign { target, .. }
+            | Stmt::Set { target, .. }
+            | Stmt::Add { target, .. }
+            | Stmt::Delete { target, .. } => write_name(acc, &target.name.text),
             Stmt::Log { .. } => {}
             Stmt::Action(a) => call(a, ctx, id, acc),
+            Stmt::Call(c) => {
+                for b in &c.bindings {
+                    write_name(acc, &b.target.text);
+                }
+                let kind = if c.function.text == "execute" {
+                    acc.notes.push(KiNote {
+                        kind: NoteKind::ExecuteNotLifted,
+                        pos: Some(c.span.start),
+                        call: None,
+                    });
+                    OtherCallKind::Execute
+                } else {
+                    OtherCallKind::Generic
+                };
+                acc.other_calls.push(KiOtherCall {
+                    function: c.function.text.clone(),
+                    kind,
+                    pos: c.span.start,
+                    results: c
+                        .bindings
+                        .iter()
+                        .map(|b| KiResultBinding {
+                            field: b.field.text.clone(),
+                            local: b.target.text.clone(),
+                        })
+                        .collect(),
+                });
+                for a in &c.args {
+                    walk_value(&a.value, ctx, id, acc);
+                }
+            }
             Stmt::If(i) => {
                 let c = condition_of(&i.cond);
-                read_name(acc, c.name());
+                read_condition(acc, &c);
                 note_bare(acc, &c, ConditionSite::If);
+                note_beyond(acc, &c, ConditionSite::If);
                 acc.if_conditions.push(c);
                 let at = i.span.start;
                 walk(
@@ -374,15 +621,17 @@ fn walk(stmts: &[Stmt], ctx: Option<CallCondition>, id: &str, acc: &mut Acc) {
                     id,
                     acc,
                 );
-                walk(
-                    &i.else_branch,
-                    Some(CallCondition {
-                        if_pos: at,
-                        branch: Branch::Else,
-                    }),
-                    id,
-                    acc,
-                );
+                if let Some(e) = &i.else_branch {
+                    walk(
+                        e,
+                        Some(CallCondition {
+                            if_pos: at,
+                            branch: Branch::Else,
+                        }),
+                        id,
+                        acc,
+                    );
+                }
             }
         }
     }
@@ -392,7 +641,7 @@ fn call(a: &ActionCall, ctx: Option<CallCondition>, id: &str, acc: &mut Acc) {
     let ordinal = acc.calls.len() + 1;
     let capability = a.capability.value.clone();
     for b in &a.bindings {
-        write_name(acc, &b.local.text);
+        write_name(acc, &b.target.text);
     }
     if let Some(c) = ctx {
         acc.notes.push(KiNote {
@@ -423,21 +672,21 @@ fn call(a: &ActionCall, ctx: Option<CallCondition>, id: &str, acc: &mut Acc) {
         args: a
             .args
             .iter()
-            .map(|g| KiArg {
-                name: g.name.text.clone(),
-                value: g.value.value.clone(),
-            })
+            .map(|g| arg_of(&g.name.text, &g.value))
             .collect(),
         results: a
             .bindings
             .iter()
             .map(|b| KiResultBinding {
                 field: b.field.text.clone(),
-                local: b.local.text.clone(),
+                local: b.target.text.clone(),
             })
             .collect(),
         condition: ctx,
     });
+    for g in &a.args {
+        walk_value(&g.value, ctx, id, acc);
+    }
 }
 
 /// Lift one parsed item.
@@ -476,13 +725,19 @@ pub fn lift(item: &KnowledgeItem, opts: &LiftOptions) -> Result<Lifted, LiftErro
         .as_ref()
         .and_then(|h| h.description.as_ref())
         .map(|n| n.value.clone());
+    let version = item
+        .header
+        .as_ref()
+        .and_then(|h| h.version.as_ref())
+        .map(|n| n.value.clone());
+    let tier = item.header.as_ref().and_then(|h| h.tier);
     let id = name
         .clone()
         .or_else(|| opts.item_id.clone())
         .ok_or(LiftError::NoIdentity)?;
 
     let mut acc = Acc::default();
-    let on = on_target(&item.on.cond);
+    let on = on_target(item);
     let on_pos = item.on.span.start;
     match &on {
         OnTarget::AnyVertex => acc.notes.push(KiNote {
@@ -502,8 +757,9 @@ pub fn lift(item: &KnowledgeItem, opts: &LiftOptions) -> Result<Lifted, LiftErro
 
     let when: Vec<KiCondition> = item.when.conds.iter().map(condition_of).collect();
     for c in &when {
-        read_name(&mut acc, c.name());
+        read_condition(&mut acc, c);
         note_bare(&mut acc, c, ConditionSite::When);
+        note_beyond(&mut acc, c, ConditionSite::When);
         if let KiCondition::Equals { name, pos, .. } = c
             && kind_of(name) == NameKind::Local
         {
@@ -577,6 +833,8 @@ pub fn lift(item: &KnowledgeItem, opts: &LiftOptions) -> Result<Lifted, LiftErro
         id,
         name,
         description,
+        version,
+        tier,
         on,
         on_pos,
         when,
@@ -586,6 +844,7 @@ pub fn lift(item: &KnowledgeItem, opts: &LiftOptions) -> Result<Lifted, LiftErro
         locals_read: acc.locals_read,
         locals_written: acc.locals_written,
         calls: acc.calls,
+        other_calls: acc.other_calls,
         source: item.source.clone(),
     };
     // Order the notes by position so a reader sees them in text order.
