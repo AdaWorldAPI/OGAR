@@ -57,6 +57,7 @@
 #![warn(missing_docs)]
 
 pub mod applicability;
+pub mod crash;
 #[cfg(feature = "dt64")]
 pub mod dt64;
 pub mod ogit;
