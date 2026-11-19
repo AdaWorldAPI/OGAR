@@ -354,7 +354,7 @@ fn malformed_response_bodies_are_refused_with_a_named_error() {
         })
     );
     assert_eq!(
-        parse_applies_on(r#"{"h":{"C":["on x"]}}"#),
+        parse_applies_on(r#"{"h":{"C":[1]}}"#),
         Err(ApplicabilityError::CapabilityNotAnObject {
             handler: "h".to_owned(),
             capability: "C".to_owned()

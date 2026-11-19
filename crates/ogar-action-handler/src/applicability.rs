@@ -211,6 +211,10 @@ const LEGACY_KEYS: [&str; 7] = [
 fn is_on_shaped(obj: &Map<String, Value>) -> bool {
     obj.values().all(|v| match v {
         Value::Object(ons) => ons.keys().all(|k| k.starts_with("on ")),
+        // The list form of a parameterless capability.
+        Value::Array(list) => list
+            .iter()
+            .all(|i| matches!(i, Value::String(k) if k.starts_with("on "))),
         _ => false,
     })
 }
@@ -257,6 +261,39 @@ fn applies_on_from_object(body: &Map<String, Value>) -> Result<Vec<AppliesOn>, A
             });
         };
         for (capability, cv) in caps {
+            let on_of = |key: &str| {
+                on_expression(key).map_err(|e| match e {
+                    OnKeyError::NoPrefix => ApplicabilityError::NotAnOnKey {
+                        handler: handler.clone(),
+                        capability: capability.clone(),
+                        key: key.to_owned(),
+                    },
+                    OnKeyError::Empty => ApplicabilityError::EmptyOnExpression {
+                        handler: handler.clone(),
+                        capability: capability.clone(),
+                    },
+                })
+            };
+            // The list form: a capability with no parameters is a list of its
+            // `on <expr>` strings (HIRO's public Action API page, the
+            // `ParameterlessExecute` entry of the applicabilities example).
+            if let Value::Array(list) = cv {
+                for item in list {
+                    let Value::String(key) = item else {
+                        return Err(ApplicabilityError::CapabilityNotAnObject {
+                            handler: handler.clone(),
+                            capability: capability.clone(),
+                        });
+                    };
+                    rows.push(AppliesOn {
+                        handler: handler.clone(),
+                        capability: capability.clone(),
+                        on: on_of(key)?,
+                        parameters: Vec::new(),
+                    });
+                }
+                continue;
+            }
             let Value::Object(ons) = cv else {
                 return Err(ApplicabilityError::CapabilityNotAnObject {
                     handler: handler.clone(),
@@ -264,17 +301,7 @@ fn applies_on_from_object(body: &Map<String, Value>) -> Result<Vec<AppliesOn>, A
                 });
             };
             for (key, pv) in ons {
-                let on = on_expression(key).map_err(|e| match e {
-                    OnKeyError::NoPrefix => ApplicabilityError::NotAnOnKey {
-                        handler: handler.clone(),
-                        capability: capability.clone(),
-                        key: key.clone(),
-                    },
-                    OnKeyError::Empty => ApplicabilityError::EmptyOnExpression {
-                        handler: handler.clone(),
-                        capability: capability.clone(),
-                    },
-                })?;
+                let on = on_of(key)?;
                 let Value::Object(params) = pv else {
                     return Err(ApplicabilityError::ParametersNotAnObject {
                         handler: handler.clone(),

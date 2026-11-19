@@ -289,26 +289,48 @@ fn the_typed_entry_point_reads_the_docs_map_form() {
     );
 }
 
-/// STOPPED ITEM (reported): the docs' list form for a parameterless capability
-/// inside the response body, `"ParameterlessExecute": ["on ..."]`, is REFUSED
-/// today, by name, and `tests/hiro_registration.rs`
-/// (`malformed_response_bodies_are_refused_with_a_named_error`) pins that refusal
-/// for `{"h":{"C":["on x"]}}`. Accepting it would change that pinned behaviour, so
-/// it is not done here. The list form IS read where graph_conn has it, in a
-/// definition list (`parse_applies_on_definitions`).
+/// The docs' full example, with the list form for a parameterless capability
+/// (`"ParameterlessExecute": ["on ogit/machineClass == \"windows\""]`), parses:
+/// each `on <expr>` string of the list is one entry with no parameters. A list
+/// element that is not a string, or does not begin with `on `, is refused by name.
 #[test]
-fn the_docs_list_form_inside_a_response_body_is_refused_as_before() {
-    let expected = ApplicabilityError::CapabilityNotAnObject {
-        handler: "HandlerID1".to_owned(),
-        capability: "ParameterlessExecute".to_owned(),
-    };
+fn the_docs_list_form_inside_a_response_body_is_one_entry_per_on_string() {
+    let rows = parse_applies_on(APPLICABILITIES_DOCS_FULL).expect("the docs' example parses");
+    let list: Vec<_> = rows
+        .iter()
+        .filter(|r| r.capability == "ParameterlessExecute")
+        .collect();
+    assert_eq!(list.len(), 1);
+    assert_eq!(list[0].handler, "HandlerID1");
+    assert_eq!(list[0].on, r#"ogit/machineClass == "windows""#);
+    assert!(list[0].parameters.is_empty());
+    // The map-form entries of the same body are still read.
     assert_eq!(
-        parse_applies_on(APPLICABILITIES_DOCS_FULL),
-        Err(expected.clone())
+        rows.iter()
+            .filter(|r| r.capability == "ExecuteCommand")
+            .count(),
+        2
     );
+    // The typed entry point agrees.
     assert_eq!(
         parse_applicabilities_typed(APPLICABILITIES_DOCS_FULL),
-        Err(expected)
+        Ok(Applicabilities::AppliesOn(rows))
+    );
+
+    assert_eq!(
+        parse_applies_on(r#"{"h":{"C":["at x"]}}"#),
+        Err(ApplicabilityError::NotAnOnKey {
+            handler: "h".to_owned(),
+            capability: "C".to_owned(),
+            key: "at x".to_owned(),
+        })
+    );
+    assert_eq!(
+        parse_applies_on(r#"{"h":{"C":[{"on x":{}}]}}"#),
+        Err(ApplicabilityError::CapabilityNotAnObject {
+            handler: "h".to_owned(),
+            capability: "C".to_owned(),
+        })
     );
 }
 
