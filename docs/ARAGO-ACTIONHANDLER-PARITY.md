@@ -418,9 +418,9 @@ is kept, with the overclaiming marker struck through where it appears.
 
 | Claim | State |
 |---|---|
-| dedup of a repeated `id` (`idempotency_key`, `ModalSpec::Idempotent`) | not done: `handle_submit` holds no state, a repeated id executes twice. In progress in another slice, not merged |
-| `submitAction.timeout` to a deadline | not done: `timeout_millis` is never read and the executors have no deadline. In progress in another slice, not merged |
-| result resend until acknowledged | not done: nothing reads an inbound `acknowledged`. HIRO's Elixir handler resends every 3000 ms until acked or nacked |
+| dedup of a repeated `id` (`idempotency_key`, `ModalSpec::Idempotent`) | not done in `handle_submit`, which holds no state: a repeated id executes twice there. Done in `Session` (section 8, "Session", below) |
+| `submitAction.timeout` to a deadline | not done in `handle_submit`. Done in `Session`: the frame's `timeout` (ms) is the deadline |
+| result resend until acknowledged | not done in `handle_submit`. Done in `Session`: resend every 3000 ms until acked or nacked |
 | `body_source` for `Capability.Command` | not done: always `None`; the command is whatever the submit carries |
 | applicability → capability path | not done: `RegisteredApplicability` names no capability, nothing evaluates applicabilities on a submit, and resolving `on <expr>` to a class id is not built (it belongs at intake) |
 | `handler`/`scope`/`id` mapping onto `ActionInvocation` | only inside `submit_to_invocation`, which `handle_submit` does not call |
@@ -460,9 +460,40 @@ sans-IO (the caller passes `now`, runs the `Run` effects and reports them with
 id, 60 minute cached result, 3000 ms resend until `acknowledged` or `negativeAcknowledged`,
 the frame `timeout` (ms) as the deadline, the status-13 timeout result. Frames that do not
 decode are returned as a `WireError`, with no run and no reply (graph_conn sends none).
-Not wired: no socket, timer or reconnect loop; episodes are not persisted; class id, target
-and effect class stay unset in the episode; `handle_submit` is unchanged and still runs a
-repeated id twice.
+
+**Update (2026-11-19), handler complete.** Also wired, each pinned by a test against the HIRO
+source it cites:
+
+| Wired | Where | Tests |
+|---|---|---|
+| a failed execution is `action_status` 54 with the banner rules of `crash.ex` (an executor `Err(m)` is `** (RuntimeError) m`, a panic is `** (exit)`); a panicking executor is caught in `on_text_sync` / `run_capability`; the crashed result is cached | `crash.rs`, `session::run_capability` | `tests/hiro_crash.rs` |
+| an oversized `sendActionResult` becomes status 59 (`Response was too big (X.XX MB, limit Y.YY MB)`), before it is cached; the limit is the latest `hello`'s `max_frame_bytes`, else 1,000,000 bytes; no other frame is ever fitted | `wire::fit`, `HandlerState::set_max_frame_bytes`, `Session` on `hello` | `tests/hiro_frame_fit.rs` |
+| `Debug` of `Submit`, `Input`, `Output`, `Effect`, `ExecResult`, the wire frames and the state prints names, counts and lengths, never a parameter or result value (oracle 42) | `submit_state`, `session`, `ogar-from-schema::action_ws` | `tests/hiro_redaction.rs` |
+| the frames the Python and Java clients write or document are taken as the Elixir handler takes them (section 10) | `wire`, `session` | `tests/hiro_clients.rs` |
+| `acknowledge()` words its message `""`, as the handler does (it read "Received the action") | `ogar-from-schema::action_ws` | `action_ws` unit test, `tests/hiro_session.rs` |
+
+Limits, true after this change:
+
+* No socket, timer or reconnect loop: the caller owns them. The frame limit is per session; a
+  new connection is a new `Session` (or `set_max_frame_bytes(None)` until its `hello`).
+* Episodes are not persisted; class id, target and effect class stay unset in the episode.
+* `handle_submit` is unchanged apart from its ack text: it is stateless, runs a repeated id
+  twice, has no deadline, reports an executor `Err` as `{"error":"<message>"}` (not 54) and
+  does not fit a result. `Session::on_text_sync` is the stateful drop-in.
+* Bind errors (a missing mandatory parameter) stay the one-field `{"error":"<message>"}`
+  result: nothing ran, so it is not an execution failure. Elixir would report a missing
+  clause as a `FunctionClauseError` with status 54.
+* A panic is caught only with `panic = "unwind"`. The crate installs no panic hook, so the
+  default hook still writes the panic message to stderr; a host that keeps messages out of its
+  logs sets its own hook.
+* `Jason.EncodeError` (status 54 for an unencodable result) has no Rust counterpart: a result
+  is a list of string pairs.
+* A `negativeAcknowledged` without `code` or `message` is a `WireError` (a pinned test), where
+  the Elixir handler would accept it and stop the resend. No client sends one.
+* In-band 429 and 503 frames, `configChanged` and the typed `error` are decoded and ignored,
+  as the Elixir handler ignores them. Python's resend after `retryAfterMs` is not built.
+* Not an invoker: submitting, waiting and the invoker's own inbound path (a result wrapped with
+  `code` and `message`, a 500 result) are another change.
 
 ## 9. Deferred (2026-11-19) — abort as a recall
 
@@ -513,3 +544,44 @@ chosen. The queue and the lance-context side are outside this crate.
 target, and time is modelled by versioning through thought git. Where this section says
 "queued" or "queue", read: an open thought that has not landed. A recall before the run is
 then a thought that does not land. See `SHARED-DO-DESIGN.md` section 10.
+
+## 10. Client variants against the OGAR handler (2026-11-19)
+
+The reference is the Elixir handler (graph_conn `lib/action_api/handler.ex`). OGAR keeps its
+behaviour and must take, without failing, what the Python (`P`) and Java (`J`) clients write or
+document. Assertion numbers are the oracle's (`HIRO_ORACLE.md` section 7). `P` is
+`hiro-client-python/src/hiro_graph_client/actionwebsocket.py`, `J` is
+`hiro-client-java/.../websocket/ActionWebSocket.java` and `.../impl/`. Rows 49, 57 and 58 are
+about a result's wrapper and a 500 result, which a handler never reads: they belong to the
+invoker's inbound path and are not changed here.
+
+| # | Elixir | Python | Java | What OGAR does | Test (`tests/hiro_clients.rs` unless noted) |
+|---|---|---|---|---|---|
+| 46 | acks a submit with `{id, type, code: 200, message: ""}` (`handler.ex:170`) | `message: "submitAction acknowledged"` (`P:605`) | `{type, id}`; `code` and `message` null (`ActionWebSocket.java:144`; null form UNVERIFIED) | sends the Elixir ack. An inbound ack of any of these shapes stops the resend of that id's result; `code` and `message` are not read | `python_style_ack_with_a_message_stops_the_resend`, `java_style_ack_without_a_code_stops_the_resend`; `hiro_session` `repeated_submit_while_executing_runs_once_and_acks_twice` |
+| 47 | a duplicate is acked and joins the waiters (`handler.ex:169-172`, `:201-203`) | acked, then `ActionItemExists` is logged and nothing else (`P:607-611`) | acked, then dropped (`J:146-154`) | acked each time, never run again | `a_duplicate_submit_is_acked_each_time_and_runs_once` |
+| 48 | a cached result is sent at once (`handler.ex:186-188`) | a stored result is sent without executing (`P:613-617`) | same (`J:156-162`) | acked, and the cached result sent again, executor not run | `a_duplicate_submit_is_acked_each_time_and_runs_once` |
+| 49 | raise, exit or throw is a result with status 54 (`handler.ex:343-358`) | `on_submit_action` raising is a result with `code` 500, `message` `str(E)` (`P:619-623`) | `onActionSubmit` throwing is code 500 (`J:164-170`) | the handler side is 54 with the banner (`tests/hiro_crash.rs`). The 500 wrapper is an invoker-path difference: not handled here | `hiro_crash` tests |
+| 50 | an in-band 429 is not handled; warning (`handler.ex:152-159`) | resends the stored result after a jittered `retryAfterMs`, retries kept (`P:643-644`, `667-688`) | not handled; `ActionMessageType.fromString(null)` throws (by reading) | decoded and ignored: no frame out, the 3000 ms resend neither stopped nor moved to `retryAfterMs` | `inband_429_for_a_pending_result_changes_nothing`, `inband_429_without_an_id_is_ignored` |
+| 51 | a NACK cancels the resend (`handler.ex:112-119`) | retries while `retry_get` allows (4), resend after 1 s (`P:635-641`) | resends after 1 ms (`J:193-203`) | a NACK stops the resend, with no retry and no reply. A NACK 400 `"sendActionResult rejected"` is the one a Python or Java handler sends | `nack_400_sendactionresult_rejected_stops_the_resend_and_is_not_retried` |
+| 52 | an ack cancels the resend (`handler.ex:109-110`) | removes the stored result (`P:630-633`) | removes it (`J:184-191`) | stops the resend; an ack for another id changes nothing | `python_style_ack_with_a_message_stops_the_resend`; `hiro_session` `acknowledged_frame_for_another_id_does_not_stop_the_resend` |
+| 53 | a `sendActionResult` received: warning (`handler.ex:152-159`) | NACK 400 `"sendActionResult rejected"` (`P:625-628`) | same (`J:174-181`) | decoded and ignored, no NACK | `a_send_action_result_is_ignored_with_no_nack` |
+| 54 | an unknown type: warning, no reply | NACK 400 with the id (`P:320-323`, `658-661`) | `WebSocketException` (`J:222-224`) | `WireError::UnknownType` to the caller, no frame sent; the caller may build a NACK from the id | `an_unknown_type_with_an_id_is_a_wire_error_and_gets_no_reply` |
+| 55 | no `timeout`: 60000 ms (`handler.ex:133`, `:361-362`) | no `timeout`: `TypeError` in the parser, no NACK (by reading, `P:131`) | no `timeout`: 300000 ms (`ActionHandlerSubmit.java:34`) | 60000 ms. The Java javadoc frame (`"timeout": 30000`) gives 30000 ms | `submit_without_timeout_is_60000ms_not_javas_300000ms`, `java_javadoc_submit_is_acked_run_and_given_30000ms` |
+| 56 | resend every 3000 ms for ever (`responder.ex:143-163`) | 4 retries (`P:358`) | 4 retries (`J:44`) | for ever | `the_result_is_resent_beyond_four_attempts` |
+| 57 | exception in the handler: result 54 | exception in `on_message`: NACK 500 (`P:662-665`) | listener exception: result code 500 | handler side as 49; invoker path not handled here | n/a |
+| 58 | the result is the JSON of the return value, unwrapped (`handler.ex:275-276`) | `{"message","code","data"}` (`P:769-780`) | code 200 or 204, message `"Action successful"` or `"Action successful (no data)"` (`J:324-335`) | sends the Elixir form, unwrapped. Reading a wrapped result is the invoker path: not handled here | n/a |
+
+Further differences of section 8 of the oracle that reach the handler's inbound path:
+
+| Difference | Elixir | Python / Java | What OGAR does | Test |
+|---|---|---|---|---|
+| in-band 503 with an id | not handled, warning | Python: unknown type, NACK 400; Java: throws (by reading) | decoded and ignored for an executing id and a pending result; no reply | `inband_503_with_an_id_is_ignored_and_not_nacked` |
+| `configChanged`, typed `error` | not handled, warning | Python and Java call a listener or log | decoded and ignored | `config_changed_and_a_typed_error_are_ignored` |
+| unknown fields in a frame | the keys it needs are matched, the rest ignored (`handler.ex:121-130`) | `dict.get` / Jackson | ignored, in a submit, an ack and a `hello` | `submit_with_unknown_fields_is_accepted_and_they_are_ignored`, `an_ack_with_unknown_fields_is_an_ack`, `hello_with_unknown_fields_is_accepted` |
+| `parameters` values that are not strings | any term | `dict` (`P:101`), `Map<String, Object>` (`J:30`) | a string verbatim, any other value as compact JSON text | `submit_parameters_that_are_not_strings_are_kept_as_compact_json` |
+| a NACK with neither `code` nor `message` | accepted: `type` and `id` are matched (`handler.ex:112-116`) | not sent by either client | **refused** by the codec (a pinned test), so it is a `WireError` and the resend continues. A known gap; nothing sends such a frame | `a_nack_without_code_or_message_is_a_wire_error_and_the_resend_continues` |
+
+Frame limit and the oracle. The oracle's assertion 10 names `GraphConn.max_frame_bytes` without its
+default. The source (`connection_manager.ex:61`, `:201-221`; `README.md:174-182`) returns
+1,000,000 when the `hello` advertised none or none was received, so a session fits at 1,000,000
+bytes until a `hello` says otherwise; it does not skip fitting.
