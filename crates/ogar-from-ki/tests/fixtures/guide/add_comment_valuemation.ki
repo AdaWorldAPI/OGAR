@@ -1,0 +1,31 @@
+ki
+  name: "TestKi"
+  version: "0@NoName"
+  description: "Update the ticket with a comment stored directly in the ToDo AddComment"
+on
+  ogit/name == "default_issue_node"
+
+when
+  AddComment
+  ticketId
+  valEnterpriseId
+
+do
+
+  # Call to update a Ticket in Valuemation with a ticket message
+  body: LOCAL::BODY,
+  code: LOCAL::CODE,
+  headers: LOCAL::HEADERS,
+  exit: LOCAL::ACTIONSYSTEMRC = action(capability: "UpdateTicket",
+  mainDescription: "ticket description",
+  ticketNo: "${ticketId}",
+  descriptionBody: "${AddComment}",
+  descriptionTitle: "Updating ticket",
+  tenantId: "${valEnterpriseId}"
+  )
+
+  if LOCAL::CODE == "200" then
+   delete(AddComment)
+  else
+    log("Updating ticket failed")
+  end

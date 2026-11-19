@@ -95,18 +95,17 @@ fn spans_have_start_and_end() {
 
 // ── refusals: each names the construct and the line ──────────────────
 
+// CHANGED: the guide's matching page lists `!=` and `>` in its operator table,
+// so they are read now (they were refused when only three examples were known).
+// What is still refused is an operator the table does not list.
 #[test]
-fn refuses_not_equal() {
-    let e = refused(&item("ProcessIssue != \"x\"", "delete(ProcessIssue)"));
-    assert_eq!(e.kind, ErrorKind::UnsupportedOperator { op: "!=".into() });
-    assert_eq!(e.pos.line, 4);
-    assert!(e.to_string().contains("unsupported operator `!=`"), "{e}");
-}
-
-#[test]
-fn refuses_greater_than() {
-    let e = refused(&item("Count > \"3\"", "delete(ProcessIssue)"));
-    assert_eq!(e.kind, ErrorKind::UnsupportedOperator { op: ">".into() });
+fn reads_not_equal_and_greater_than_and_refuses_unlisted_operators() {
+    let ok = parse(&item("ProcessIssue != \"x\"", "delete(ProcessIssue)")).expect("parses");
+    assert_eq!(ok.when.conds.len(), 1);
+    let ok = parse(&item("Count > \"3\"", "delete(ProcessIssue)")).expect("parses");
+    assert_eq!(ok.when.conds.len(), 1);
+    let e = refused(&item("Count <> \"3\"", "delete(ProcessIssue)"));
+    assert_eq!(e.kind, ErrorKind::UnsupportedOperator { op: "<>".into() });
     assert_eq!(e.pos.line, 4);
     assert!(e.to_string().contains("line 4"), "{e}");
 }
@@ -117,29 +116,26 @@ fn refuses_single_equals_as_comparison() {
     assert_eq!(e.kind, ErrorKind::UnsupportedOperator { op: "=".into() });
 }
 
+// CHANGED: a number on the right of a comparison is documented (`StepCounter
+// < 1000`, `"ABC2.5" > 0`). A number where a condition starts is still refused.
 #[test]
-fn refuses_number_in_when() {
-    let e = refused(&item("Count == 3", "delete(ProcessIssue)"));
+fn number_on_the_right_is_read_and_number_on_the_left_is_refused() {
+    parse(&item("Count == 3", "delete(ProcessIssue)")).expect("parses");
+    let e = refused(&item("3", "delete(ProcessIssue)"));
     assert_eq!(e.kind, ErrorKind::NumberInCondition { text: "3".into() });
     assert_eq!(e.pos.line, 4);
-    let e = refused(&item("3", "delete(ProcessIssue)"));
-    assert!(matches!(e.kind, ErrorKind::NumberInCondition { .. }));
 }
 
+// CHANGED: the guide documents a long list of functions, so a call to any
+// function name is recorded as a generic call and given no meaning.
 #[test]
-fn refuses_unknown_function() {
-    let e = refused(&item("ProcessIssue", "send_mail(\"x\")"));
-    assert_eq!(
-        e.kind,
-        ErrorKind::UnknownFunction {
-            name: "send_mail".into()
-        }
-    );
-    assert_eq!(e.pos.line, 6);
-    assert!(
-        e.to_string().contains("unknown function `send_mail`"),
-        "{e}"
-    );
+fn any_function_is_recorded_as_a_generic_call() {
+    let it = parse(&item("ProcessIssue", "send_mail(\"x\")")).expect("parses");
+    let ogar_from_ki::ast::Stmt::Call(c) = &it.do_.stmts[0] else {
+        panic!("a generic call");
+    };
+    assert_eq!(c.function.text, "send_mail");
+    assert_eq!((c.span.start.line, c.span.start.col), (6, 3));
 }
 
 #[test]
@@ -200,9 +196,14 @@ fn refuses_if_without_end() {
 }
 
 #[test]
-fn refuses_if_without_else_and_nested_if() {
+fn if_without_else_is_read_and_nested_if_is_refused() {
+    // CHANGED: the guide's `if` page calls the `else` block optional.
     let src = "on\n  ogit/_id\nwhen\n  X\ndo\n  if A == \"1\" then\n    log(\"a\")\n  end\n";
-    assert_eq!(refused(src).kind, ErrorKind::MissingElse);
+    let it = parse(src).expect("parses");
+    let ogar_from_ki::ast::Stmt::If(i) = &it.do_.stmts[0] else {
+        panic!("an if");
+    };
+    assert!(i.else_branch.is_none());
     let src = "on\n  ogit/_id\nwhen\n  X\ndo\n  if A == \"1\" then\n    if B == \"2\" then\n      log(\"a\")\n    else\n      log(\"b\")\n    end\n  else\n    log(\"c\")\n  end\n";
     let e = refused(src);
     assert_eq!(e.kind, ErrorKind::NestedIf);
@@ -235,21 +236,22 @@ fn refuses_nested_action_in_argument() {
 
 #[test]
 fn refuses_other_undocumented_forms() {
-    // no comment form
+    // CHANGED: `#` starts a comment (structure page, "Comments"), so a
+    // trailing comment is read.
+    parse(&item("X", "log(\"a\") # note")).expect("parses");
+    // an unknown character outside a string
     assert!(matches!(
-        refused(&item("X", "log(\"a\") # note")).kind,
-        ErrorKind::UnexpectedChar { ch: '#' }
+        refused(&item("X", "log(\"a\") ; note")).kind,
+        ErrorKind::UnexpectedChar { ch: ';' }
     ));
-    // escape in a string
+    // escaped quote in a string
     assert_eq!(
         refused(&item("X", "log(\"a\\\"b\")")).kind,
         ErrorKind::EscapeInString
     );
-    // number as an argument value, trailing comma, duplicate, missing capability
-    assert!(matches!(
-        refused(&item("X", "action(\"C\", timeout: 10)")).kind,
-        ErrorKind::UnexpectedToken { .. }
-    ));
+    // CHANGED: a number as an argument value is documented (`timeout: 60`).
+    parse(&item("X", "action(\"C\", timeout: 10)")).expect("parses");
+    // trailing comma, duplicate, missing capability
     assert!(matches!(
         refused(&item("X", "action(\"C\", a: \"1\",)")).kind,
         ErrorKind::UnexpectedToken { .. }
@@ -266,16 +268,11 @@ fn refuses_other_undocumented_forms() {
         refused(&item("X", "action(\"C\", capability: \"D\")")).kind,
         ErrorKind::DuplicateCapability
     );
-    // `and` between conditions
-    assert!(matches!(
-        refused(&item("A == \"1\" and B == \"2\"", "delete(A)")).kind,
-        ErrorKind::UnsupportedConnective { .. }
-    ));
-    // binding target other than LOCAL::
-    assert!(matches!(
-        refused(&item("X", "code: Foo = action(\"C\")")).kind,
-        ErrorKind::UnknownNamespace { .. }
-    ));
+    // CHANGED: `and` between conditions is documented (`if` page, structure
+    // page), and a result tag may be stored in any variable (`result: date =
+    // dateprint(...)` in the guide's date example).
+    parse(&item("A == \"1\" and B == \"2\"", "delete(A)")).expect("parses");
+    parse(&item("X", "code: Foo = action(\"C\")")).expect("parses");
     // a second item in one text
     assert!(matches!(
         refused(&format!(

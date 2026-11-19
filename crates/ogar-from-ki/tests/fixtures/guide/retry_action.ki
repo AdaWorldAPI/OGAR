@@ -1,0 +1,24 @@
+ki
+  name: "TestKi"
+  version: "0@NoName"
+  description: "This KI will retry execution up to three times upon AH failure"
+on
+  ogit/name == "default_issue_node"
+
+when
+  ProcessIssue
+  ticketId == "IN-XXXXX"
+  ? counter < 3 := 0
+  ogit/Automation/processingTimestamp
+
+do
+  #AH to the Solve ticket
+  LOCAL::SYSTEMRC = "1"
+
+  if LOCAL::SYSTEMRC == "0" then
+   delete(ProcessIssue)
+  else
+   log.error("process ticket failed")
+   counter = counter + 1
+   log(counter)
+ end

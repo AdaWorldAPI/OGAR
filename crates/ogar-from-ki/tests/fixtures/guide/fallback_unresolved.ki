@@ -1,0 +1,33 @@
+ki
+  name: "TestKi"
+  version: "0@NoName"
+  description: "KI to be trigger before the datagroup.de:Default:AutoStopIdleIssues KI, it will forward the ticket to the responsible support Group for manual resolution"
+  tier: "fallback"
+on
+  ogit/name == "default_issue_node"
+
+when
+  ? ogit/Automation/maxIdleTime@any := 6
+  ExecIdle > ogit/Automation/maxIdleTime
+  ticketId
+  assignmentGroup == "HIRO"
+  responsibleSupportGroup
+  description
+
+do
+
+  body: LOCAL::BODY,
+  code: LOCAL::CODE,
+  headers: LOCAL::HEADERS,
+  exit: LOCAL::ACTIONSYSTEMRC = action(capability: "ForwardTicket",
+  ticketNo: "${ticketId}",
+  supportGroup: "${responsibleSupportGroup}",
+  description: "${description}"
+  )
+
+  # result interpretation
+  if LOCAL::CODE == "200" then
+    log("Forwarded to support group")
+  else
+    log("Forward Ticket to support group failed")
+  end

@@ -1,25 +1,36 @@
 //! Tokens. The lexer stops at the first lexical fault and leaves a `Bad` token
 //! that carries the error, so the parser reports an earlier grammar fault
 //! first and this one only when the parser reaches it.
+//!
+//! Comments (`#` to the end of the line, outside strings) are dropped here.
+//! Strings may be written with `"` or `'` and may span lines; a backslash is
+//! kept as written, except directly before the closing quote character,
+//! which is refused. A regex literal `/.../flags` is lexed only right after
+//! `=~` or `!~`.
 
-use crate::ast::{Pos, Span};
+use crate::ast::{Pos, Quote, Span};
 use crate::error::{ErrorKind, ParseError};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum Tok {
     /// A name or keyword (`ogit/_id`, `LOCAL::X`, `if`, `on`).
     Name(String),
-    Str(String),
+    Str(String, Quote),
     Number(String),
-    EqEq,
-    Eq,
+    /// `/pattern/flags`, only after `=~` or `!~`.
+    Regex(String, String),
+    /// An operator: `==`, `=`, `<`, `+`, `?`, `:=`, or a run of comparison
+    /// characters that is no documented operator (the parser refuses it).
+    Op(String),
     Colon,
     Comma,
     LParen,
     RParen,
+    LBracket,
+    RBracket,
+    Dot,
+    At,
     Newline,
-    /// A run of operator characters other than `=` and `==`.
-    Operator(String),
     Bad(ParseError),
     Eof,
 }
@@ -32,7 +43,10 @@ pub(crate) struct Token {
     pub first_on_line: bool,
 }
 
-const OP_CHARS: &str = "!<>=~&|+*%^?@-";
+/// Characters of the comparison operators. A maximal run is one token.
+const CMP_CHARS: &str = "!<>=~&|^";
+/// Arithmetic and optional-match characters. Each is one token.
+const SINGLE_OPS: &str = "+-*/%?";
 
 fn is_start(c: char) -> bool {
     c.is_ascii_alphabetic() || c == '_'
@@ -89,6 +103,9 @@ pub(crate) fn lex(src: &str) -> Vec<Token> {
     };
     let mut out: Vec<Token> = Vec::new();
     let mut first = true;
+    // Whether the previous token on this line ends a value. Decides whether
+    // `-1` is a negative number or a subtraction.
+    let mut prev_value = false;
     while let Some(c) = lx.at(0) {
         let start = lx.pos();
         let tok = match c {
@@ -104,19 +121,33 @@ pub(crate) fn lex(src: &str) -> Vec<Token> {
                 };
                 out.push(t);
                 first = true;
+                prev_value = false;
                 continue;
             }
             ' ' | '\t' | '\r' => {
                 lx.bump();
                 continue;
             }
-            '"' => lex_string(&mut lx, start),
-            '-' if lx.at(1).is_some_and(|d| d.is_ascii_digit()) => lex_number(&mut lx, start),
+            '#' => {
+                while lx.at(0).is_some_and(|d| d != '\n') {
+                    lx.bump();
+                }
+                continue;
+            }
+            '"' | '\'' => lex_string(&mut lx, start, c),
+            '-' | '+' if !prev_value && lx.at(1).is_some_and(|d| d.is_ascii_digit()) => {
+                lex_number(&mut lx, start)
+            }
             c if c.is_ascii_digit() => lex_number(&mut lx, start),
             c if is_start(c) => lex_name(&mut lx),
             ':' => {
                 lx.bump();
-                Tok::Colon
+                if lx.at(0) == Some('=') {
+                    lx.bump();
+                    Tok::Op(":=".to_string())
+                } else {
+                    Tok::Colon
+                }
             }
             ',' => {
                 lx.bump();
@@ -130,29 +161,69 @@ pub(crate) fn lex(src: &str) -> Vec<Token> {
                 lx.bump();
                 Tok::RParen
             }
-            c if OP_CHARS.contains(c) => {
+            '[' => {
+                lx.bump();
+                Tok::LBracket
+            }
+            ']' => {
+                lx.bump();
+                Tok::RBracket
+            }
+            '.' => {
+                lx.bump();
+                Tok::Dot
+            }
+            '@' => {
+                lx.bump();
+                Tok::At
+            }
+            // A call's arguments may break across lines, so the delimiter
+            // that opens a regex position is looked for past line ends.
+            '/' if matches!(
+                out.last().map(|t| &t.tok),
+                Some(Tok::Op(o)) if o == "=~" || o == "!~"
+            ) || matches!(
+                out.iter()
+                    .rev()
+                    .map(|t| &t.tok)
+                    .find(|t| !matches!(t, Tok::Newline)),
+                Some(Tok::Colon | Tok::Comma | Tok::LParen)
+            ) =>
+            {
+                lex_regex(&mut lx, start)
+            }
+            c if CMP_CHARS.contains(c) => {
                 let mut run = String::new();
                 while let Some(d) = lx.at(0) {
-                    if OP_CHARS.contains(d) {
+                    if CMP_CHARS.contains(d) {
                         run.push(d);
                         lx.bump();
                     } else {
                         break;
                     }
                 }
-                match run.as_str() {
-                    "=" => Tok::Eq,
-                    "==" => Tok::EqEq,
-                    _ => Tok::Operator(run),
-                }
+                Tok::Op(run)
+            }
+            c if SINGLE_OPS.contains(c) => {
+                lx.bump();
+                Tok::Op(c.to_string())
             }
             other => bad(
                 ErrorKind::UnexpectedChar { ch: other },
                 start,
-                "a name, string, number, `:`, `,`, `(`, `)` or `==`",
+                "a name, string, number, operator, `:`, `,`, `(`, `)`, `[`, `]`, `.` or `@`",
             ),
         };
         let is_bad = matches!(tok, Tok::Bad(_));
+        prev_value = matches!(
+            tok,
+            Tok::Name(_)
+                | Tok::Str(..)
+                | Tok::Number(_)
+                | Tok::Regex(..)
+                | Tok::RParen
+                | Tok::RBracket
+        );
         out.push(Token {
             tok,
             span: Span {
@@ -175,27 +246,32 @@ pub(crate) fn lex(src: &str) -> Vec<Token> {
     out
 }
 
-fn lex_string(lx: &mut Lexer, start: Pos) -> Tok {
+fn lex_string(lx: &mut Lexer, start: Pos, quote: char) -> Tok {
     lx.bump(); // opening quote
     let mut value = String::new();
     loop {
         match lx.at(0) {
-            None | Some('\n') => {
+            None => {
                 return bad(
                     ErrorKind::UnterminatedString,
                     start,
-                    "a closing `\"` on the same line",
+                    "a closing quote (strings may span lines)",
                 );
             }
-            Some('"') => {
+            Some(c) if c == quote => {
                 lx.bump();
-                return Tok::Str(value);
+                let q = if quote == '"' {
+                    Quote::Double
+                } else {
+                    Quote::Single
+                };
+                return Tok::Str(value, q);
             }
-            Some('\\') => {
+            Some('\\') if lx.at(1) == Some(quote) => {
                 return bad(
                     ErrorKind::EscapeInString,
                     lx.pos(),
-                    "a string without backslashes (escapes are not documented)",
+                    "a string without an escaped quote (escapes are not documented)",
                 );
             }
             Some(c) => {
@@ -206,10 +282,47 @@ fn lex_string(lx: &mut Lexer, start: Pos) -> Tok {
     }
 }
 
+fn lex_regex(lx: &mut Lexer, start: Pos) -> Tok {
+    lx.bump(); // opening slash
+    let mut pattern = String::new();
+    loop {
+        match lx.at(0) {
+            None | Some('\n') => {
+                return bad(
+                    ErrorKind::UnterminatedRegex,
+                    start,
+                    "a closing `/` on the same line",
+                );
+            }
+            Some('/') => {
+                lx.bump();
+                break;
+            }
+            Some('\\') if lx.at(1).is_some_and(|d| d != '\n') => {
+                pattern.push('\\');
+                lx.bump();
+                if let Some(d) = lx.bump() {
+                    pattern.push(d);
+                }
+            }
+            Some(c) => {
+                pattern.push(c);
+                lx.bump();
+            }
+        }
+    }
+    let mut flags = String::new();
+    while let Some(c) = lx.at(0).filter(char::is_ascii_alphabetic) {
+        flags.push(c);
+        lx.bump();
+    }
+    Tok::Regex(pattern, flags)
+}
+
 fn lex_number(lx: &mut Lexer, start: Pos) -> Tok {
     let mut text = String::new();
-    if lx.at(0) == Some('-') {
-        text.push('-');
+    if let Some(sign @ ('-' | '+')) = lx.at(0) {
+        text.push(sign);
         lx.bump();
     }
     while let Some(d) = lx.at(0).filter(char::is_ascii_digit) {

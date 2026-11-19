@@ -1,0 +1,32 @@
+ki
+  name: "TestKi"
+  version: "0@NoName"
+  description: "Just a simple test KI"
+on
+  NodeType    # exists
+  not NodeFoo # not exists
+  (NodeType == "Machine")
+  OSName =~ "(SLES|Centos)"
+  (OSVersion > "7") and (OSVersion < "10") # or OSVersion in 7..10 ?
+  with Type@in as ParentScope
+    (NodeType == "Resource") or (NodeType == "Software")
+    MonitoringEnabled
+  end
+when
+  VarA
+  VarB["key"] # match on key
+  VarC[VarA] == NodeType
+  list VarD
+  VarF as Test
+  MonitoringStatus@in == "true"
+do
+  log.info("bind ki and execute do")
+  VarB["new_key"] = 1
+  add(NewVar["key"] = "1")
+  delete(VarA)
+  stdout: ExecuteOutput, exit: LOCAL::Error = execute("path/to/script", timeout: 60)
+  if Error then
+    log.error("command returned non-zero exit code")
+  else
+    log("execute returned ${ExecuteOutput}")
+  end
