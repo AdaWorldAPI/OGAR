@@ -271,7 +271,7 @@ declaration it was registered from.
 
 Keeping the upper layer lets HIRO's behaviour itself be modelled later as
 polyfill, on top of the lower one, instead of being fixed in handler code: an
-actor or agent that owns a queue, decides, retries or recalls (see
+actor or agent that decides, retries or recalls (see section 10 and
 `ARAGO-ACTIONHANDLER-PARITY.md` section 9) needs a declaration to reason over,
 and a registered method is too small for that. A method carries a guard, an
 effect and a field basis; it does not carry who acts by default, when, in what
@@ -295,3 +295,71 @@ mode, or why.
 
 **Not decided.** What the actor or agent layer looks like, and which of
 `ActionDef`'s fields it reads first. This section only keeps the door open.
+
+## 10. The actor layer has no mailboxes; time is versioning (ruling, 2026-11-19)
+
+**Rulings (owner).**
+
+1. No actual mailboxes. The actor or agent layer above `ActionDef` does not
+   hold a queue per target.
+2. Time is modelled by versioning, through thought git (lance-graph).
+3. lance-context is the intended place for receipts and for ablation and
+   intervention, as polyfill.
+4. A use this is wanted for: learning from interference between ticket actions.
+
+Where this document or `ARAGO-ACTIONHANDLER-PARITY.md` section 9 says "queue",
+read it through the table below.
+
+**The mapping (author's proposal from those rulings, not built).** An
+invocation is a thought: it reads a sealed base version and either lands as the
+next version or does not land.
+
+| need | with thought git |
+|---|---|
+| order of actions on one ticket | the version each lands in |
+| two actions on one ticket at once | both are open thoughts; several land together as one version per cycle. Different values for one cell in one version store nothing and are recorded as a divergence |
+| the same request delivered twice | landing the same thought twice leaves the version unchanged |
+| recall (EXO-349) | the thought does not land: only `Commit` lands; `Plan`, `Prune` or a veto leave the version count unchanged |
+| undo after it ran | a new thought, a new version (a compensating action) |
+| retry | replay from the receipt; replay refuses if the base, the seed or the sources changed |
+| episode record | the receipt, plus the commit witness of the version it landed in |
+| feedback | `log`, `diff`, `blame` over versions |
+
+**Ticket interference learning.** Interference between two actions on one
+ticket is what a divergence records.
+
+- Detect: the divergence record itself. A queue would hide it by picking an order.
+- Learn: a divergence with the receipts of both actions is a labelled example
+  of two behaviours colliding on a class under given conditions.
+- Attribute: ablation, i.e. replay from the receipt with one action removed,
+  and compare.
+- Act: a guard on the method, a re-ordering, or a recall of an open thought now
+  known to collide.
+
+**Caveats.**
+
+1. Thought git is lab only (`lance-graph/crates/thought-git-probe`). The slot
+   pool (D-TGB-1) and the receipt (D-TGB-4) are built. Landing (D-TGB-3), the
+   `checkout` / `log` / `diff` / `blame` folds (D-TGB-5) and the driver API
+   (D-TGB-7) are specified and not built; nothing is wired to Lance storage.
+2. An external effect cannot be un-landed. A command on a host is not a cell
+   write. The rule would have to be: an `ExternalHost` or `LifecycleWrite`
+   effect fires only after its thought commits, and its result lands as a later
+   thought.
+3. Interference is visible only on cells both actions write. Two actions that
+   collide through an outside system leave no divergence unless their effects
+   are landed as cells.
+4. The slot pool holds 64 open thoughts and squashes or evicts under pressure.
+   A long-open invocation needs a rule that it is not dropped silently.
+5. Receipts must be immutable. lance-context's store replaces the earlier
+   record when an id repeats, and an existence check followed by an add is not
+   atomic (EXO-300). It is not admitted for persisting episodes yet.
+6. The HIRO wire still needs `session`: ack and result resend are transport
+   behaviour towards the engine and stay at the edge.
+7. A deadline is wall-clock, not a version. The caller still supplies the clock.
+
+**Open.** No document was found that is a refactoring plan of lance-context
+for this use; the closest are EXO-323 (lance-context as the intervention graph)
+and the thought-git, interventional-faithfulness and temporal-ablation plans in
+`lance-graph/.claude/plans`. A full read of those against this mapping is in
+progress and will amend this section.
