@@ -6,34 +6,47 @@
 mod ogit_checkout;
 
 use std::alloc::{GlobalAlloc, Layout, System};
+use std::cell::Cell;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
-use std::sync::atomic::{AtomicUsize, Ordering};
 
 use ogar_action_handler::ogit::{EdgeError, Lane, OgitEdges, OgitTables, Table, TypeId, VerbId};
 
-// Counts every allocation call and byte of this binary. The accepting-path
-// test reads the counters around its queries; every test holds `GUARD`, so no
-// other thread allocates in between.
+// Counts the allocation calls and bytes of the CURRENT thread. The accepting-path
+// test reads the counters around its queries. The counters are per thread
+// because the test harness and tests waiting for `GUARD` allocate on their own
+// threads at any time; a process-wide counter saw those and failed now and then.
 struct Counting;
 
-static CALLS: AtomicUsize = AtomicUsize::new(0);
-static BYTES: AtomicUsize = AtomicUsize::new(0);
+thread_local! {
+    static CALLS: Cell<usize> = const { Cell::new(0) };
+    static BYTES: Cell<usize> = const { Cell::new(0) };
+}
 
-// SAFETY: forwards every call to `System`; the counters are atomics.
+fn count(bytes: usize) {
+    // `try_with`: the allocator also runs while a thread's locals are torn down.
+    let _ = CALLS.try_with(|c| c.set(c.get() + 1));
+    let _ = BYTES.try_with(|c| c.set(c.get() + bytes));
+}
+
+/// This thread's (allocation calls, bytes) so far.
+fn counters() -> (usize, usize) {
+    (CALLS.with(Cell::get), BYTES.with(Cell::get))
+}
+
+// SAFETY: forwards every call to `System`; the counters are thread-local cells
+// with a const initialiser, so reading them does not allocate.
 unsafe impl GlobalAlloc for Counting {
     unsafe fn alloc(&self, l: Layout) -> *mut u8 {
-        CALLS.fetch_add(1, Ordering::SeqCst);
-        BYTES.fetch_add(l.size(), Ordering::SeqCst);
+        count(l.size());
         unsafe { System.alloc(l) }
     }
     unsafe fn dealloc(&self, p: *mut u8, l: Layout) {
         unsafe { System.dealloc(p, l) }
     }
     unsafe fn realloc(&self, p: *mut u8, l: Layout, n: usize) -> *mut u8 {
-        CALLS.fetch_add(1, Ordering::SeqCst);
-        BYTES.fetch_add(n, Ordering::SeqCst);
+        count(n);
         unsafe { System.realloc(p, l, n) }
     }
 }
@@ -247,7 +260,7 @@ fn the_accepting_path_allocates_nothing() {
         "ogit.MARS:Resource",
     );
 
-    let (calls0, bytes0) = (CALLS.load(Ordering::SeqCst), BYTES.load(Ordering::SeqCst));
+    let (calls0, bytes0) = counters();
     let mut accepted = 0;
     for &(s, v, d) in &rows {
         accepted += usize::from(e.allowed(s, v, d));
@@ -255,10 +268,8 @@ fn the_accepting_path_allocates_nothing() {
     }
     accepted += usize::from(e.allowed_names(names.0, names.1, names.2) == Ok(true));
     let missed = e.allowed(miss.0, miss.1, miss.2);
-    let (calls, bytes) = (
-        CALLS.load(Ordering::SeqCst) - calls0,
-        BYTES.load(Ordering::SeqCst) - bytes0,
-    );
+    let (calls1, bytes1) = counters();
+    let (calls, bytes) = (calls1 - calls0, bytes1 - bytes0);
 
     assert_eq!(accepted, 7, "every query was accepted");
     assert_eq!(missed, want_miss);

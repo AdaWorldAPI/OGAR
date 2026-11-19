@@ -462,7 +462,8 @@ the frame `timeout` (ms) as the deadline, the status-13 timeout result. Frames t
 decode are returned as a `WireError`, with no run and no reply (graph_conn sends none).
 Not wired: no socket, timer or reconnect loop; episodes are not persisted; class id, target
 and effect class stay unset in the episode; `handle_submit` is unchanged and still runs a
-repeated id twice.
+repeated id twice; its in-repo callers (the crate doc example and `full_dispatch_runs_a_real_command`
+in `ogar-action-handler`) now go through `Session::on_text_sync`.
 
 ## 9. Deferred (2026-11-19) — abort as a recall
 
