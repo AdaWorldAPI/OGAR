@@ -95,7 +95,8 @@ pub const DEFAULT_EXECUTION_TIMEOUT_MS: Millis = 60_000;
 /// `code` of the receipt ack (`handler.ex:170`).
 pub const ACK_CODE: u16 = 200;
 /// `action_status` of a result whose execution outlived its deadline
-/// (`handler.ex:313`).
+/// (`handler.ex:313`). The public docs give 13 as "ActionHandler didn't respond"
+/// and 14 as the handler's execution timeout; see [`crate::status`]. This stays 13.
 pub const EXEC_TIMEOUT_STATUS: u32 = 13;
 /// How many attempts one [`Episode`] keeps. A result with no give-up is resent
 /// for ever, so the list is bounded; older entries are dropped and counted in

@@ -109,6 +109,15 @@ where
 
 /// One capability as `GET /capabilities` reports it. The parameter maps are
 /// keyed by parameter name (`MapOfParameters`).
+///
+/// Two key layouts are read. graph_conn's is `mandatoryParameters`,
+/// `optionalParameters` (and `description`); the public HIRO 7.0 "List of Action
+/// Capabilities" page writes `ogit/Automation/mandatoryParameters`,
+/// `ogit/Automation/optionalParameters` and `ogit/Automation/resultParameters`.
+/// The prefixed keys are serde aliases of the same fields. A key this struct does
+/// not name is ignored by the parser: it is neither kept nor reported (the serde
+/// default, unchanged). A body that carries both spellings of one key is refused
+/// as a duplicate field.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 #[cfg_attr(feature = "serde", derive(Deserialize))]
 #[cfg_attr(feature = "serde", serde(rename_all = "camelCase"))]
@@ -116,17 +125,29 @@ pub struct RegisteredCapability {
     /// Human-readable description (arago `Capability.Description`).
     #[cfg_attr(feature = "serde", serde(default))]
     pub description: Option<String>,
-    /// Required-input signature, keyed by parameter name.
-    #[cfg_attr(feature = "serde", serde(default))]
+    /// Required-input signature, keyed by parameter name. The OGIT-prefixed key
+    /// `ogit/Automation/mandatoryParameters` is read as an alias (the public
+    /// "List of Action Capabilities" page writes that form).
+    #[cfg_attr(
+        feature = "serde",
+        serde(default, alias = "ogit/Automation/mandatoryParameters")
+    )]
     pub mandatory_parameters: BTreeMap<String, RegisteredParam>,
-    /// Optional-input signature, keyed by parameter name.
-    #[cfg_attr(feature = "serde", serde(default))]
+    /// Optional-input signature, keyed by parameter name. Alias:
+    /// `ogit/Automation/optionalParameters`.
+    #[cfg_attr(
+        feature = "serde",
+        serde(default, alias = "ogit/Automation/optionalParameters")
+    )]
     pub optional_parameters: BTreeMap<String, RegisteredParam>,
     /// The output signature (`resultParameters`, OGIT `ogit.Automation:resultParameters`:
     /// "optional result parameters as key/value mapping"), keyed by name. Empty
     /// when absent. Its body shape is read as a `MapOfParameters`, like the two
     /// input maps; no HIRO client repository sends it, so that shape is UNVERIFIED.
-    #[cfg_attr(feature = "serde", serde(default))]
+    #[cfg_attr(
+        feature = "serde",
+        serde(default, alias = "ogit/Automation/resultParameters")
+    )]
     pub result_parameters: BTreeMap<String, RegisteredParam>,
 }
 

@@ -53,6 +53,31 @@ pub fn auth_subprotocol(token: &str) -> String {
     format!("token-{token}")
 }
 
+/// The `action-ws` URL path as the public HIRO 7.0 "Action API in Hiro 7" page
+/// writes it: `wss://core.almato.ai/api/action-ws/1.0/` (page key AA). Unlike
+/// [`ACTION_WS_PATH`] it has no `connect` segment. The migration page writes
+/// `/api/action-ws/1/` and the tutorial uses `/1/`; the docs disagree with each
+/// other. The API changelog lists "all api version 0.9 calls" as removed in
+/// action-ws `[1.0.0]`. Not used by this crate: [`ACTION_WS_PATH`] is
+/// unchanged, and which of the two is right is the owner's decision.
+pub const ACTION_WS_DOCS_PATH: &str = "/api/action-ws/1.0/";
+
+/// The first WebSocket subprotocol value of the public docs' sample:
+/// `new WebSocket('wss://core.almato.ai/api/action-ws/1.0/', ['action-1.0.0',
+/// 'token-' + token])` (page key AA). The tutorial (TUT-AH) writes
+/// `'action-1.0.0, token-' + ws_token` in one sample and `'1.0, token-' + ws_token` in
+/// the last, so the docs disagree with themselves on this value too.
+pub const ACTION_WS_SUBPROTOCOL: &str = "action-1.0.0";
+
+/// The two subprotocol values of the public docs' sample, in order:
+/// [`ACTION_WS_SUBPROTOCOL`] and `token-<token>` (the same value as
+/// [`auth_subprotocol`]). [`auth_subprotocol`] alone is what this crate has
+/// always sent; this is the docs' form, for the owner to adopt or not.
+#[must_use]
+pub fn docs_subprotocols(token: &str) -> [String; 2] {
+    [ACTION_WS_SUBPROTOCOL.to_owned(), auth_subprotocol(token)]
+}
+
 /// Spec bounds on a `submitAction` / `sendActionResult` correlation `id`
 /// (12–256 chars). [`validate_id`] enforces it.
 pub const ID_MIN_LEN: usize = 12;
@@ -698,6 +723,26 @@ mod tests {
     fn auth_subprotocol_prefixes_the_token() {
         assert_eq!(auth_subprotocol("abc123"), "token-abc123");
         assert_eq!(ACTION_WS_PATH, "/api/action-ws/1.0/connect");
+    }
+
+    /// The public docs' connection sample (harvest section B, page AA):
+    /// `new WebSocket('wss://core.almato.ai/api/action-ws/1.0/', ['action-1.0.0',
+    /// 'token-' + '$token'])`. The docs' path has no `connect` segment; the
+    /// existing constant keeps it, and both are pinned.
+    #[test]
+    fn the_public_docs_connection_values_sit_beside_the_existing_ones() {
+        assert_eq!(ACTION_WS_DOCS_PATH, "/api/action-ws/1.0/");
+        assert_eq!(ACTION_WS_SUBPROTOCOL, "action-1.0.0");
+        assert_eq!(
+            docs_subprotocols("$token"),
+            ["action-1.0.0".to_owned(), "token-$token".to_owned()]
+        );
+        assert_eq!(docs_subprotocols("$token")[1], auth_subprotocol("$token"));
+        assert_eq!(
+            ACTION_WS_PATH,
+            format!("{ACTION_WS_DOCS_PATH}connect"),
+            "the existing path is the docs' path plus `connect`"
+        );
     }
 
     /// The whole loop, end-to-end (socket-free): submit → ack → bind → invoke

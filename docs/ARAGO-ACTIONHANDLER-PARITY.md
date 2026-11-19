@@ -681,3 +681,102 @@ the same millisecond are not explored (HIRO says frame order is not guaranteed, 
 invoker and one handler; several of either are not modelled. The executor is a test double, so a long-running
 capability's cost, a killed task and the handler's own supervisor are not exercised. The equivalence run against a
 live gateway stays WP8.
+
+## 13. Against HIRO's public documentation (2026-11-19)
+
+Section 8 to 12 check the code against graph_conn. This section checks it against what HIRO
+publishes: the 7.0 developer portal (`dev-portal.engine.datagroup.de/7.0/`). The decision
+(`HIRO_PARITY_INTEGRATION_PLAN.md` section 3b) is that **graph_conn's behaviour is kept and the
+documentation's differences are recorded as questions**. So the change is tolerance and
+documentation: the docs' own samples are fed to the code in `tests/hiro_public_docs.rs`, and
+code changed only where a sample was not accepted (item 1 only). The harvest and its diff are
+`HIRO_PUBLIC_DOCS_HARVEST.md` and `HIRO_PUBLIC_DOCS_DIFF.md` (bardioc `docs/handover/`).
+
+Public pages named below: **Action API in Hiro 7** (`/documentation/api/action-api/`, "AA"),
+**List of Action Capabilities** (`/documentation/integration/Capabilities/capabilities_list/`,
+"CAP"), **Action handler tutorial** (`/tutorials/tutorial-action-handler-action-api/`, "TUT-AH"),
+**API changelog** (`/documentation/api/apichangelog/`, "CHG"), **Migration 6 to 7**
+(`/documentation/migration_topics/migration_6_7/`, "MIG"). Quotes are the short samples of the harvest.
+
+### 13.1 Item by item
+
+| # | Docs say | graph_conn does | OGAR does | Test (`tests/hiro_public_docs.rs`) |
+|---|---|---|---|---|
+| 1 Capabilities, REST shape | AA: `GET capabilities` is `{"ExecuteCommand": {"description", "mandatoryParameters", "optionalParameters": {"timeout": {"default": "120"}}}}`. CAP writes the keys `ogit/Automation/mandatoryParameters`, `.../optionalParameters`, `.../resultParameters` | the unprefixed keys and a numeric default (`mock_test.exs:73-93`); no `description`, no result field | **code changed** (`registration.rs`). Before: the AA form parsed; the CAP form parsed to a capability with **no parameters**, because the unknown prefixed keys were dropped silently. Now the three prefixed keys are serde aliases of the three fields. Defaults are kept as text (`"120"` stays `"120"`). Unknown keys: the parser **ignores** them, neither keeping nor reporting them (unchanged; pinned). A body with both spellings of one key is a duplicate-field error | `get_capabilities_example_parses_with_its_string_default`, `capabilities_list_page_variant_with_ogit_automation_keys_parses`, `both_key_spellings_lift_to_the_same_typed_capability`, `prefixed_result_parameters_are_kept`, `an_unknown_key_in_a_capability_is_ignored_not_reported` |
+| 2 Applicabilities | AA: handler id, capability, `"on ogit/machineClass == \"linux\" ssh_keyfile ssh_options"` (and `... ssh_keyfile not ssh_options`), then templates; a parameterless capability is a list `["on ogit/machineClass == \"windows\""]` | the same map form is the stored form (`mock.ex:129-141`); the list form is the **definition** input, converted to an empty map (`mock.ex:626-627`) | the map form parses; the `on` expression keeps the trailing words **verbatim** (no `not` is read, nothing is split off) and the templates are not expanded. The list form inside a response body is read too (since the follow-up to this pass): each `on <expr>` string is one entry with no parameters; a list element that is not such a string is refused by name | `applicabilities_example_keeps_the_on_expression_and_templates_verbatim`, `the_typed_entry_point_reads_the_docs_map_form`, `the_docs_list_form_inside_a_response_body_is_one_entry_per_on_string` |
+| 3 `hello` | AA: `host`, `server_version`, `client_id`; no `max_frame_bytes`; "informational" | `max_frame_bytes` optional; with none, 1,000,000 (`connection_manager.ex:61`, `:201-221`) | already decoded (unknown fields are ignored); the session keeps 1,000,000 bytes, and a result frame over it becomes the status 59 error. Test only | `hello_without_max_frame_bytes_decodes`, `the_docs_hello_leaves_the_default_frame_limit_of_1000000_bytes` |
+| 4 `submitAction` | AA: `handler`, `capability`, top-level `timeout` 300000, `parameters` object; the sentence under it says "handler field is not sent to the action handler". TUT-AH: also `scope`, timeout 60000000, `timeout` again in `parameters` | the handler matches `type`, `id`, `capability`, `parameters` and an optional `timeout`; the rest is ignored (`handler.ex:121-133`) | both decode, are acked, run once; the deadline is the top-level `timeout`. `scope` is **ignored**: dropped at decode, `SubmitAction::scope` is `None`, no error. `timeout` inside `parameters` is an ordinary parameter (text `"60000000"`). A submit without `handler` runs, `handler` empty. Test only | `the_docs_submit_runs_through_the_handler_session`, `the_tutorial_submit_with_scope_runs_and_scope_is_ignored`, `handler_field_is_not_sent_to_the_action_handler` |
+| 5 `acknowledged` | AA: `type` and `id` only. TUT-AH quotes `code` 200 and `message` "" | an ack is matched on `type` and `id` (`handler.ex:109-110`) | both stop the result resend. Test only (the Java form was already pinned in `hiro_clients.rs`) | `the_docs_acknowledged_with_type_and_id_only_stops_the_resend`, `the_tutorials_acknowledged_with_code_and_message_stops_the_resend` |
+| 6 `result` as an object, invoker | AA: `"result": {"resultfield1": ...}`, with `action_status` (0 = executed) and `action_error` recommended. TUT-AH sends a plain string | `_decode_result` JSON-decodes a binary once and returns **anything else as it is** (`invoker.ex:742-754`), so an object is accepted and is the value. Then only an `error` key makes it an error (`:723-735`). `action_status` and `action_error` are **read nowhere** in the invoker (they appear only in `handler.ex:335-339` and `result_frame.ex`, where the handler builds its own error results) | already the same: the object is kept as compact JSON text by the codec and decoded once, so the call completes `Ok(object)`. An object with `action_status` 54 is a value like one with 0; the caller reads `action_status` from it, intact. It is **not** an `InvokeError`, as in graph_conn. An object with an `error` key stays an error. Test only | `the_docs_result_object_completes_the_call_with_the_object`, `an_object_with_a_nonzero_action_status_is_distinguishable_to_the_caller`, `the_object_form_and_the_json_string_form_give_the_same_value`, `an_object_with_an_error_key_is_still_an_error` |
+| 7 NACK 404 | AA: "code 404 should be returned from the action handler if it doesn't support requested capability" | the handler answers an unknown capability with a **result** `{"error":{"code":404,...}}` (`handler.ex:369-371`). The invoker ends the call on a NACK whatever the code (`invoker.ex:659-664`), but only while it waits for the ack | invoker: the terminal NACK it already has (code and message to the caller, no resend, a 404 not logged). A NACK that arrives **after** the ack is dropped, as in graph_conn. Handler: unchanged, a 404 result; the off-by-default option is **not built** (13.4). Test only | `code_404_should_be_returned_from_the_action_handler_if_it_doesnt_support_requested_capability`, `a_nack_after_the_ack_does_not_end_the_call_as_in_graph_conn`, `an_unsupported_capability_on_the_handler_is_a_404_result_not_a_nack` |
+| 8 Status codes | AA lists 0, 11, 12, 13, 14, 51, 52, 53, 54, 666. 13 is "ActionHandler didn't respond", 14 "ActionHandler responded with execution timeout" | the handler sends 13 for its own execution deadline, 54 for a crash, 59 for an oversized result; never 14 | **code added, no behaviour change:** `ogar_action_handler::status`, a table of the documented codes with the docs' short meanings and the code only graph_conn has (59). The doc comments of 13 and 14 state the disagreement. The session sends the same codes as before | `the_documented_status_table_is_the_docs_list_and_59_is_not_in_it`, `the_codes_the_session_sends_are_the_same_as_before` |
+| 9 Connection constants | AA: `wss://core.almato.ai/api/action-ws/1.0/`, subprotocols `['action-1.0.0', 'token-' + token]`. MIG and TUT-AH write `/api/action-ws/1/`; TUT-AH writes `'1.0, token-' + ws_token` in its last sample. CHG: "all api version 0.9 calls" removed in action-ws `[1.0.0]` | the Elixir client reads path and subprotocol from `GET /api/version` (`discovery.rs`); its mock gives `/api/0.9/action-ws/` and `action-0.9.0` | see 13.2. **Constants added** beside the existing ones, nothing switched | `ogar-from-schema` unit test `the_public_docs_connection_values_sit_beside_the_existing_ones` |
+
+### 13.2 Connection constants and every 0.9 value (item 9)
+
+What OGAR has, in `ogar-from-schema/src/action_ws.rs`: `ACTION_WS_PATH = "/api/action-ws/1.0/connect"`
+and `auth_subprotocol(token) = "token-<token>"`. So OGAR does **not** hard-code 0.9 in code that runs
+against a gateway; it already says 1.0. Two differences from the docs, neither changed:
+
+* the path has a `connect` segment the public docs do not show (`/api/action-ws/1.0/`);
+* only the token subprotocol is offered; the docs' first value `action-1.0.0` is not.
+
+Added, additive, not used by any code path: `ACTION_WS_DOCS_PATH` (`/api/action-ws/1.0/`),
+`ACTION_WS_SUBPROTOCOL` (`action-1.0.0`) and `docs_subprotocols(token)` (both values, in the docs'
+order). The owner decides whether to switch.
+
+Every place a **0.9** value appears (none outside the HIRO mock's fixtures and examples):
+
+| Where | What |
+|---|---|
+| `crates/ogar-action-handler/src/discovery.rs:76,78,80` | doc comments giving `/api/0.9/action/`, `action-0.9.0`, `0.9` as examples of what `GET /api/version` returns |
+| `.../src/discovery.rs:225-226,708,710` | doc comment and doctest of `prefix_path` / `FetchState::new("/api/0.9/action/", ...)`: the prefix is an argument, taken from the server's `/api/version` answer, not a constant |
+| `.../src/mock_gateway.rs:556,562` | doc comments naming the mock's `GET /api/0.9/action/capabilities` and `.../applicabilities` (graph_conn's mock; stays as it is) |
+| `.../tests/discovery.rs` (18 places), `.../tests/closed_loop.rs` (3) | fixtures copied from graph_conn's mock `/api/version` answer and the fetch paths built from it |
+
+The REST registration docs in `registration.rs` (`/api/action/1.0/`) and section 2a of this
+document say 1.0; MIG writes `/api/action/1/`. Which of `1` and `1.0` the live gateway takes is
+not in the docs.
+
+### 13.3 What the public docs do not cover
+
+Nothing below is in the pages read; OGAR keeps graph_conn's value or behaviour for each.
+
+* a frame size limit, and an `action_status` for one (59); `hello` carries no `max_frame_bytes`;
+* the default timeout of a submit (all fields are said to be mandatory), and one unit for capability
+  `timeout` defaults (`"120"` is seconds for `ExecuteCommand`; others are 300000, 10000 or 3000
+  without a unit);
+* the ack wait, the resend interval of a result, a retry cap, the Action API's give-up rule ("each
+  couple of seconds" only), the 3000 ms and 60 minute values;
+* what a handler does on a NACK of its result;
+* NACK codes other than 404; the fields of the `configChanged` and `error` push messages (named in CHG);
+* in-band 429 and 503 frames; typeless `error` frames;
+* what the gateway does with the token;
+* who expands the `${...}` templates and when; a grammar for the `on` expression, the meaning of
+  the words after the comparison, and whether `not` is a presence test;
+* whether the live REST endpoint serves the plain or the `ogit/Automation/` capability keys;
+* the order of frames, a dedupe lifetime, relaying of acks by the gateway.
+
+### 13.4 Open questions and the items stopped
+
+1. **The list form in a response body (item 2): done.** The docs' applicabilities example has
+   `"ParameterlessExecute": ["on ..."]` inside the response; graph_conn has that form only as an
+   input definition. It is now read in a response as well: one entry per `on ...` string, no
+   parameters. The assertion in `tests/hiro_registration.rs` that refused `{"h":{"C":["on x"]}}`
+   was changed deliberately; a list holding anything but `on ...` strings is still refused.
+2. **Handler NACK 404 option (item 7, not built).** `unknown_capability: Result404 | Nack404` would
+   need a decision before the ack, but the state machine does not know the served capabilities (only
+   `Session::on_text_sync`, which takes the `ActionDef`, does). It would need a field on `Session` or
+   `Config` (`Config` is a public struct without `#[non_exhaustive]`, so a new field is an API
+   break for exhaustive literals), a decode of the submit ahead of `step` in `on_text_sync`, and a
+   rule for what a NACKed id leaves in the dedupe cache. More than a few lines, and it touches the
+   default path, so it is not built.
+3. Is the docs' 13 ("ActionHandler didn't respond") the Action API's own code, as the text reads, while
+   graph_conn's handler uses 13 for its execution deadline? Should the handler send 14?
+4. In the docs' chain the handler's NACK can follow the gateway's ack of the request; graph_conn's
+   invoker only takes a NACK before the ack. Which one does the real gateway send, and when?
+5. Is a `sendActionResult.result` an object or a JSON string on the real gateway? Both are read.
+6. `/api/action-ws/1.0/` with or without `connect`; `1.0` or `1`; which subprotocol value or values.
+7. The `ogit/Automation/` capability keys: does the live endpoint serve them?
+8. The docs say `handler` is not sent to the handler yet show it in the sample; the code reads it if
+   present and does not need it.
