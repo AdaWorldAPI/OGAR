@@ -7,11 +7,13 @@ use lance_graph_contract::ontology::{DisplayTemplate, FieldRef};
 use lance_graph_contract::set_algebra::{Logic, SetExpr};
 use lance_graph_dt64::{BindStore, MethodId, Refusal, SchemaRev};
 use ogar_action_handler::dt64::{
-    ARMS_PER_CLASS, BehaviourArmRefusal, BehaviourView, CanonicalClasses, ClassMap, ConvertRefusal,
-    FieldRole, TableOutcome, TableRefusal, behaviour_arm, method_of, register_domain_table,
-    register_domain_table_activated, register_domain_table_for,
+    BehaviourArmRefusal, BehaviourView, CanonicalClasses, ClassMap, ConvertRefusal, FieldRole,
+    LedgerRefusal, TableOutcome, TableRefusal, method_of, register_domain_table,
+    register_domain_table_activated, register_domain_table_activated_with_arms,
+    register_domain_table_for, register_domain_table_with_arms,
 };
 use ogar_class_view::OgarClassView;
+use ogar_vocab::arm_ledger::{CANONICAL, ConsumerArms, canonical_arm};
 use ogar_vocab::capability_registry::{DomainTable, HotplugDrift, domain_tables, resolve_hotplug};
 use ogar_vocab::effect_class::{EffectClass, classify};
 use ogar_vocab::{ActionDef, KausalSpec, class_ids};
@@ -60,6 +62,37 @@ fn def(predicate: &str) -> ActionDef {
         format!("ogit-ocr/textline::action_def::{predicate}"),
         predicate,
         "ogit-ocr/textline",
+    )
+}
+
+/// A consumer ledger for a test table: each def's identity on a consumer arm,
+/// `0xF800` upward in table order (a repeated identity keeps its first arm).
+fn probe_arms(table: &DomainTable) -> ConsumerArms {
+    let mut arms = ConsumerArms::new();
+    let mut seen: Vec<String> = Vec::new();
+    for d in (table.actions)() {
+        if !seen.contains(&d.identity) {
+            arms = arms.with(&d.identity, 0xF800 + seen.len() as u16);
+            seen.push(d.identity);
+        }
+    }
+    arms
+}
+
+/// Register a test table of behaviours OGAR does not know, under OGAR's canon
+/// classes, with consumer arms from [`probe_arms`].
+fn register_probe<V: ClassView + ?Sized>(
+    store: &mut BindStore,
+    view: &V,
+    table: &DomainTable,
+) -> Result<TableOutcome, TableRefusal> {
+    register_domain_table_with_arms(
+        store,
+        view,
+        &CanonicalClasses,
+        &probe_arms(table),
+        table,
+        REV,
     )
 }
 
@@ -171,107 +204,108 @@ fn every_one_of_the_fifty_defs_is_registered_or_refused_by_name() {
 }
 
 /// The behaviour arm (right half of `class :: F###`) of every one of the 50
-/// defs, by identity. Pinned: a renumbering (a changed rule, a dropped `0xF`
-/// mask) fails here. Independent of the consumer and of table order.
+/// defs, by identity, in table order: the canonical ledger as it was first
+/// handed out (`0xF001` upward). Pinned here and in `ogar_vocab::arm_ledger`'s
+/// own tests; independent of the consumer.
 const GOLDEN_ARMS: [(&str, u16); 50] = [
-    ("ogit-ocr/textline::action_def::recognize_line", 0xf154),
-    ("ogit-ocr/page_image::action_def::recognize_page", 0xf268),
+    ("ogit-ocr/textline::action_def::recognize_line", 0xF001),
+    ("ogit-ocr/page_image::action_def::recognize_page", 0xF002),
     (
         "ogit-ocr/page_image::action_def::extract_text_layer",
-        0xfcb8,
+        0xF003,
     ),
     (
         "ogit-ocr/page_image::action_def::extract_page_image",
-        0xf622,
+        0xF004,
     ),
-    ("ogit-ocr/ocr_renderer::action_def::render_text", 0xfa39),
-    ("ogit-ocr/ocr_renderer::action_def::render_tsv", 0xf93e),
-    ("ogit-ocr/ocr_renderer::action_def::render_hocr", 0xf3e1),
+    ("ogit-ocr/ocr_renderer::action_def::render_text", 0xF005),
+    ("ogit-ocr/ocr_renderer::action_def::render_tsv", 0xF006),
+    ("ogit-ocr/ocr_renderer::action_def::render_hocr", 0xF007),
     (
         "ogit-ocr/ocr_renderer::action_def::render_searchable_pdf",
-        0xfcf7,
+        0xF008,
     ),
     (
         "ogit-ocr/page_image::action_def::recognize_page_words",
-        0xf091,
+        0xF009,
     ),
     (
         "ogit-ocr/page_image::action_def::recognize_document",
-        0xf023,
+        0xF00A,
     ),
-    ("ogit-ocr/page_layout::action_def::harvest_fields", 0xf788),
-    ("ogit-ocr/page_image::action_def::segment_page", 0xf40d),
+    ("ogit-ocr/page_layout::action_def::harvest_fields", 0xF00B),
+    ("ogit-ocr/page_image::action_def::segment_page", 0xF00C),
     (
         "ogit-ocr/page_image::action_def::detect_halftone_regions",
-        0xfd9b,
+        0xF00D,
     ),
     (
         "ogit-ocr/page_layout::action_def::detect_page_furniture",
-        0xfb5b,
+        0xF00E,
     ),
-    ("ogit-geo/osm_node::action_def::locate_point", 0xffc9),
-    ("ogit-geo/osm_node::action_def::locate_tile", 0xfc3e),
-    ("ogit-geo/osm_node::action_def::locate_fragment", 0xf031),
-    ("ogit-geo/osm_node::action_def::project_fields", 0xfaf2),
-    ("ogit-geo/osm_way::action_def::street_edges", 0xf2ec),
-    ("ogit-geo/osm_way::action_def::polyline_length", 0xf4ee),
-    ("ogit-health/patient::action_def::register_patient", 0xfaa4),
+    ("ogit-geo/osm_node::action_def::locate_point", 0xF00F),
+    ("ogit-geo/osm_node::action_def::locate_tile", 0xF010),
+    ("ogit-geo/osm_node::action_def::locate_fragment", 0xF011),
+    ("ogit-geo/osm_node::action_def::project_fields", 0xF012),
+    ("ogit-geo/osm_way::action_def::street_edges", 0xF013),
+    ("ogit-geo/osm_way::action_def::polyline_length", 0xF014),
+    ("ogit-health/patient::action_def::register_patient", 0xF015),
     (
         "ogit-health/patient::action_def::get_patient_record",
-        0xff19,
+        0xF016,
     ),
-    ("ogit-health/patient::action_def::list_patients", 0xf6c8),
+    ("ogit-health/patient::action_def::list_patients", 0xF017),
     (
         "ogit-health/patient::action_def::update_patient_access",
-        0xf633,
+        0xF018,
     ),
-    ("ogit-health/diagnosis::action_def::add_diagnosis", 0xf952),
-    ("ogit-health/diagnosis::action_def::get_diagnosis", 0xf70f),
-    ("ogit-health/diagnosis::action_def::list_diagnoses", 0xf196),
+    ("ogit-health/diagnosis::action_def::add_diagnosis", 0xF019),
+    ("ogit-health/diagnosis::action_def::get_diagnosis", 0xF01A),
+    ("ogit-health/diagnosis::action_def::list_diagnoses", 0xF01B),
     (
         "ogit-health/diagnosis::action_def::delete_diagnosis",
-        0xf86a,
+        0xF01C,
     ),
-    ("ogit-health/lab_value::action_def::add_lab_result", 0xfb61),
-    ("ogit-health/lab_value::action_def::get_lab_result", 0xf462),
+    ("ogit-health/lab_value::action_def::add_lab_result", 0xF01D),
+    ("ogit-health/lab_value::action_def::get_lab_result", 0xF01E),
     (
         "ogit-health/lab_value::action_def::list_lab_results",
-        0xf947,
+        0xF01F,
     ),
-    ("ogit-health/medication::action_def::add_medication", 0xf595),
-    ("ogit-health/medication::action_def::get_medication", 0xf2bd),
+    ("ogit-health/medication::action_def::add_medication", 0xF020),
+    ("ogit-health/medication::action_def::get_medication", 0xF021),
     (
         "ogit-health/medication::action_def::list_medications",
-        0xfd56,
+        0xF022,
     ),
-    ("ogit-health/treatment::action_def::add_treatment", 0xfb82),
-    ("ogit-health/treatment::action_def::get_treatment", 0xfb0e),
-    ("ogit-health/treatment::action_def::list_treatments", 0xf27f),
-    ("ogit-health/vital_sign::action_def::add_vital_sign", 0xfb53),
+    ("ogit-health/treatment::action_def::add_treatment", 0xF023),
+    ("ogit-health/treatment::action_def::get_treatment", 0xF024),
+    ("ogit-health/treatment::action_def::list_treatments", 0xF025),
+    ("ogit-health/vital_sign::action_def::add_vital_sign", 0xF026),
     (
         "ogit-health/vital_sign::action_def::list_vital_signs",
-        0xf201,
+        0xF027,
     ),
     (
         "ogit-health/vital_sign::action_def::delete_vital_signs",
-        0xfa58,
+        0xF028,
     ),
-    ("ogit-ocr/document::action_def::persist_document", 0xf50e),
-    ("ogit-ocr/document::action_def::read_document", 0xf77c),
+    ("ogit-ocr/document::action_def::persist_document", 0xF029),
+    ("ogit-ocr/document::action_def::read_document", 0xF02A),
     (
         "ogit-ocr/document::action_def::reconstruct_document",
-        0xfe7b,
+        0xF02B,
     ),
-    ("ogit-erp/erp_polyfill::action_def::create_entry", 0xf5ba),
-    ("ogit-erp/erp_polyfill::action_def::post_entry", 0xff92),
-    ("ogit-erp/erp_polyfill::action_def::read_entry", 0xf338),
-    ("ogit-erp/erp_polyfill::action_def::set_const", 0xfba5),
-    ("ogit-erp/erp_polyfill::action_def::mark_set", 0xf018),
+    ("ogit-erp/erp_polyfill::action_def::create_entry", 0xF02C),
+    ("ogit-erp/erp_polyfill::action_def::post_entry", 0xF02D),
+    ("ogit-erp/erp_polyfill::action_def::read_entry", 0xF02E),
+    ("ogit-erp/erp_polyfill::action_def::set_const", 0xF02F),
+    ("ogit-erp/erp_polyfill::action_def::mark_set", 0xF030),
     (
         "ogit-erp/erp_polyfill::action_def::record_time_entry",
-        0xf919,
+        0xF031,
     ),
-    ("ogit-erp/erp_polyfill::action_def::emit_row", 0xf6f2),
+    ("ogit-erp/erp_polyfill::action_def::emit_row", 0xF032),
 ];
 
 fn all_defs() -> Vec<ActionDef> {
@@ -286,12 +320,13 @@ fn the_behaviour_arms_of_the_fifty_defs_are_pinned() {
     assert_eq!(defs.len(), 50);
     for (def, (identity, arm)) in defs.iter().zip(GOLDEN_ARMS) {
         assert_eq!(def.identity, identity, "the golden list is in table order");
-        assert_eq!(behaviour_arm(&def.identity), arm, "{identity}");
+        assert_eq!(canonical_arm(&def.identity), Some(arm), "{identity}");
         assert!((0xF001..=0xFFFF).contains(&arm), "{identity}");
     }
     let (_, outcomes) = census();
     let rows: Vec<_> = outcomes.iter().flat_map(|o| o.rows.iter()).collect();
     assert_eq!(rows.len(), 50);
+    assert_eq!(CANONICAL.len(), 50);
     for (row, (_, arm)) in rows.iter().zip(GOLDEN_ARMS) {
         assert_eq!(row.id, MethodId(u32::from(arm)), "{}", row.predicate);
         if let Ok(reg) = &row.result {
@@ -343,15 +378,15 @@ fn the_canonical_consumers_full_ids_are_pinned() {
             .map(|r| r.behaviour)
     };
     assert_eq!(class_ids::ERP_POLYFILL, 0x020C);
-    assert_eq!(full("erp", "create_entry"), Some(0x020C_F5BA));
-    assert_eq!(full("erp", "emit_row"), Some(0x020C_F6F2));
+    assert_eq!(full("erp", "create_entry"), Some(0x020C_F02C));
+    assert_eq!(full("erp", "emit_row"), Some(0x020C_F032));
     assert_eq!(
         full("healthcare", "register_patient"),
-        Some(u32::from(class_ids::PATIENT) << 16 | 0xFAA4)
+        Some(u32::from(class_ids::PATIENT) << 16 | 0xF015)
     );
     assert_eq!(
         full("geo", "street_edges"),
-        Some(u32::from(class_ids::OSM_WAY) << 16 | 0xF2EC)
+        Some(u32::from(class_ids::OSM_WAY) << 16 | 0xF013)
     );
 }
 
@@ -388,7 +423,11 @@ fn registering_one_more_def_leaves_every_earlier_id_unchanged() {
     };
     // Into the SAME store: the earlier ids are accepted as they were (D5), the
     // new def lands on its own id.
-    let after = register_domain_table(&mut a, &view, &bigger, APP, REV).unwrap();
+    // `cancel_entry` is not in OGAR's ledger: the consumer supplies its arm.
+    let arms = ConsumerArms::new().with("ogit-erp/erp_polyfill::action_def::cancel_entry", 0xF800);
+    let after =
+        register_domain_table_with_arms(&mut a, &view, &CanonicalClasses, &arms, &bigger, REV)
+            .unwrap();
     for r in before.registered() {
         let again = after
             .registered()
@@ -397,6 +436,14 @@ fn registering_one_more_def_leaves_every_earlier_id_unchanged() {
         assert_eq!(again.behaviour, r.behaviour, "{}", r.capability);
     }
     assert_eq!(after.registered().count(), 8);
+    let cancel = after
+        .registered()
+        .find(|r| r.capability == "cancel_entry")
+        .unwrap();
+    assert_eq!(
+        cancel.arm, 0xF800,
+        "the consumer's own arm, apart from OGAR's"
+    );
     assert_eq!(a.class_count(), 8);
 }
 
@@ -532,7 +579,7 @@ fn a_write_def_registers_as_a_lifecycle_write_with_no_f000_effects() {
         actions: writer,
     };
     let mut store = BindStore::new();
-    let out = register_domain_table(&mut store, &view, &table, APP, REV).unwrap();
+    let out = register_probe(&mut store, &view, &table).unwrap();
     let classes: Vec<_> = out.registered().map(|r| r.effect).collect();
     assert_eq!(
         classes,
@@ -665,10 +712,10 @@ fn re_registering_is_idempotent_and_a_changed_guard_is_refused() {
         actions,
     };
     let mut store = BindStore::new();
-    let out = register_domain_table(&mut store, &view, &t(plain), APP, REV).unwrap();
+    let out = register_probe(&mut store, &view, &t(plain)).unwrap();
     let behaviour = out.registered().next().unwrap().behaviour;
     assert_eq!(
-        register_domain_table(&mut store, &view, &t(guarded), APP, REV),
+        register_probe(&mut store, &view, &t(guarded)),
         Err(TableRefusal::Dt64 {
             class: behaviour,
             refusal: Refusal::BehaviourImmutable(behaviour)
@@ -895,7 +942,7 @@ fn depends_paths_become_on_and_methods_on_finds_them() {
         actions: recompute,
     };
     let mut store = BindStore::new();
-    let out = register_domain_table(&mut store, &view, &table, APP, REV).unwrap();
+    let out = register_probe(&mut store, &view, &table).unwrap();
     let reg = out.registered().next().unwrap();
     assert_eq!(out.method_ids(), vec![MethodId(u32::from(reg.arm))]);
     assert_eq!(reg.on, class_ids::TEXTLINE);
@@ -1086,79 +1133,209 @@ fn the_reading_only_concepts_still_answer_no_capabilities() {
     assert!(erp.registered().all(|r| r.on == class_ids::ERP_POLYFILL));
 }
 
-/// Two defs on one class that would take one arm, and a class with more defs
-/// than arms, are refused by name; nothing is registered.
-#[test]
-fn a_colliding_arm_and_an_overfull_class_are_refused_by_name() {
+fn textline_def(name: &str) -> ActionDef {
+    ActionDef::new(
+        format!("ogit-ocr/textline::action_def::{name}"),
+        name,
+        "ogit-ocr/textline",
+    )
+}
+
+fn textline_table(actions: fn() -> Vec<ActionDef>) -> DomainTable {
     fn none() -> Vec<(String, u16)> {
         Vec::new()
     }
-    fn dup() -> Vec<ActionDef> {
-        let d = |i: &str| {
-            ActionDef::new(
-                format!("ogit-ocr/textline::action_def::{i}"),
-                i,
-                "ogit-ocr/textline",
-            )
-        };
-        // Find two distinct identities with one arm (4095 arms: a few dozen
-        // names suffice, deterministically).
-        let mut seen: std::collections::BTreeMap<u16, String> = Default::default();
-        for n in 0.. {
-            let name = format!("m{n}");
-            let arm = behaviour_arm(&d(&name).identity);
-            if let Some(prev) = seen.insert(arm, name.clone()) {
-                return vec![d(&prev), d(&name)];
-            }
-        }
-        unreachable!()
-    }
-    fn same_twice() -> Vec<ActionDef> {
-        let d = ActionDef::new("ogit-ocr/textline::action_def::x", "x", "ogit-ocr/textline");
-        vec![d.clone(), d]
-    }
-    fn overfull() -> Vec<ActionDef> {
-        (0..=ARMS_PER_CLASS)
-            .map(|i| {
-                ActionDef::new(
-                    format!("ogit-ocr/textline::action_def::n{i}"),
-                    format!("n{i}"),
-                    "ogit-ocr/textline",
-                )
-            })
-            .collect()
-    }
-    let t = |actions: fn() -> Vec<ActionDef>| DomainTable {
+    DomainTable {
         domain: "probe",
         expected_executors: &[],
         entries: none,
         actions,
-    };
+    }
+}
+
+/// A def whose identity is in neither ledger is refused by name and the table
+/// is not registered: there is no fallback number. The canonical entry points
+/// refuse it too.
+#[test]
+fn an_identity_with_no_ledger_entry_is_refused_by_name_and_never_gets_a_number() {
+    fn unknown() -> Vec<ActionDef> {
+        // `x` is first and OGAR knows it; the unknown one is behind it.
+        vec![
+            ActionDef::new(
+                "ogit-ocr/textline::action_def::recognize_line",
+                "recognize_line",
+                "ogit-ocr/textline",
+            ),
+            textline_def("not_in_any_ledger"),
+        ]
+    }
+    let view = textline_view();
+    let table = textline_table(unknown);
+    let want = Err(TableRefusal::Arm(BehaviourArmRefusal::NoLedgerEntry {
+        identity: "ogit-ocr/textline::action_def::not_in_any_ledger".into(),
+    }));
+    let mut store = BindStore::new();
+    assert_eq!(
+        register_domain_table(&mut store, &view, &table, APP, REV),
+        want
+    );
+    assert_eq!(
+        register_domain_table_for(&mut store, &view, &CanonicalClasses, &table, REV),
+        want
+    );
+    // A consumer ledger that does not cover it does not help either.
+    let other = ConsumerArms::new().with("some::other::identity", 0xF800);
+    assert_eq!(
+        register_domain_table_with_arms(&mut store, &view, &CanonicalClasses, &other, &table, REV),
+        want
+    );
+    assert_eq!(store.class_count(), 0, "nothing was registered");
+    // The consumer's entry for it registers it, at that arm and no other.
+    let own = ConsumerArms::new().with("ogit-ocr/textline::action_def::not_in_any_ledger", 0xF900);
+    let out =
+        register_domain_table_with_arms(&mut store, &view, &CanonicalClasses, &own, &table, REV)
+            .unwrap();
+    let arms: Vec<u16> = out.registered().map(|r| r.arm).collect();
+    assert_eq!(arms, vec![0xF001, 0xF900]);
+}
+
+/// A table that lists one identity twice is refused; nothing is registered.
+#[test]
+fn a_def_listed_twice_is_refused_by_name() {
+    fn same_twice() -> Vec<ActionDef> {
+        vec![textline_def("x"), textline_def("x")]
+    }
     let view = textline_view();
     let mut store = BindStore::new();
-    for table in [t(dup), t(same_twice)] {
-        match register_domain_table(&mut store, &view, &table, APP, REV) {
-            Err(TableRefusal::Arm(BehaviourArmRefusal::Collision {
-                on,
-                arm,
-                first,
-                second,
-            })) => {
-                assert_eq!(on, class_ids::TEXTLINE);
-                assert_eq!(behaviour_arm(&first), arm);
-                assert_eq!(behaviour_arm(&second), arm);
-            }
-            other => panic!("{other:?}"),
-        }
-    }
     assert_eq!(
-        register_domain_table(&mut store, &view, &t(overfull), APP, REV),
-        Err(TableRefusal::Arm(BehaviourArmRefusal::Overflow {
+        register_probe(&mut store, &view, &textline_table(same_twice)),
+        Err(TableRefusal::Arm(BehaviourArmRefusal::DuplicateDef {
             on: class_ids::TEXTLINE,
-            defs: ARMS_PER_CLASS + 1
+            identity: "ogit-ocr/textline::action_def::x".into()
         }))
     );
     assert_eq!(store.class_count(), 0);
+}
+
+/// The consumer's ledger entries are checked before DT64 is called: reusing a
+/// canonical arm, rebinding a canonical identity, taking an arm in OGAR's range
+/// and an arm outside the behaviour range are each refused by name, and nothing
+/// is registered. Consumer arms live in `0xF800..=0xFFFF`.
+#[test]
+fn a_consumer_ledger_that_crosses_ogars_arms_is_refused_by_name() {
+    fn one() -> Vec<ActionDef> {
+        vec![textline_def("probe_one")]
+    }
+    let id = "ogit-ocr/textline::action_def::probe_one";
+    let (canon_id, canon_arm) = CANONICAL[0];
+    let view = textline_view();
+    let table = textline_table(one);
+    let try_arms = |arms: ConsumerArms| {
+        let mut store = BindStore::new();
+        let r = register_domain_table_with_arms(
+            &mut store,
+            &view,
+            &CanonicalClasses,
+            &arms,
+            &table,
+            REV,
+        );
+        assert_eq!(store.class_count(), 0);
+        r
+    };
+    let refused = |l: LedgerRefusal| Err(TableRefusal::Arm(BehaviourArmRefusal::Ledger(l)));
+
+    assert_eq!(
+        try_arms(ConsumerArms::new().with(id, canon_arm)),
+        refused(LedgerRefusal::ReusesCanonicalArm {
+            identity: id.into(),
+            arm: canon_arm,
+            canonical_identity: canon_id.into()
+        })
+    );
+    assert_eq!(
+        try_arms(ConsumerArms::new().with(id, 0xF800).with(canon_id, 0xF801)),
+        refused(LedgerRefusal::RebindsCanonicalIdentity {
+            identity: canon_id.into(),
+            canonical: canon_arm,
+            asked: 0xF801
+        })
+    );
+    assert_eq!(
+        try_arms(ConsumerArms::new().with(id, 0xF7FF)),
+        refused(LedgerRefusal::ReservedForOgar {
+            identity: id.into(),
+            arm: 0xF7FF
+        })
+    );
+    assert_eq!(
+        try_arms(ConsumerArms::new().with(id, 0xF000)),
+        refused(LedgerRefusal::ArmOutOfRange {
+            identity: id.into(),
+            arm: 0xF000
+        })
+    );
+    assert_eq!(
+        try_arms(ConsumerArms::new().with(id, 0xF800).with("other", 0xF800)),
+        refused(LedgerRefusal::DuplicateArm {
+            arm: 0xF800,
+            first: id.into(),
+            second: "other".into()
+        })
+    );
+    // The edges of the consumer range are accepted.
+    for arm in [0xF800, 0xFFFF] {
+        let r = try_arms_ok(&view, &table, ConsumerArms::new().with(id, arm));
+        assert_eq!(r.registered().next().unwrap().arm, arm);
+    }
+}
+
+fn try_arms_ok<V: ClassView + ?Sized>(
+    view: &V,
+    table: &DomainTable,
+    arms: ConsumerArms,
+) -> TableOutcome {
+    let mut store = BindStore::new();
+    register_domain_table_with_arms(&mut store, view, &CanonicalClasses, &arms, table, REV)
+        .expect("registers")
+}
+
+/// The activated entry point takes the consumer's ledger too: the activation
+/// runs first (a wrong consumer never reaches the ledger), then the ledger is
+/// checked, then DT64 is called.
+#[test]
+fn the_activated_entry_point_takes_the_consumer_ledger() {
+    let view = OgarClassView::new();
+    let table = healthcare();
+    let covered = ogar_vocab::healthcare_actions::HEALTHCARE_ACTION_NAMES;
+    let bad = ConsumerArms::new().with("x", CANONICAL[0].1);
+    let good = ConsumerArms::new().with("x", 0xF800);
+    let run = |store: &mut BindStore, arms: &ConsumerArms, consumer: &str| {
+        register_domain_table_activated_with_arms(
+            store,
+            &view,
+            &CanonicalClasses,
+            arms,
+            &table,
+            consumer,
+            covered,
+            REV,
+        )
+    };
+    let mut store = BindStore::new();
+    assert!(matches!(
+        run(&mut store, &bad, "tesseract-ogar"),
+        Err(TableRefusal::NotActivated(_))
+    ));
+    assert!(matches!(
+        run(&mut store, &bad, "medcare-rs"),
+        Err(TableRefusal::Arm(BehaviourArmRefusal::Ledger(
+            LedgerRefusal::ReusesCanonicalArm { .. }
+        )))
+    ));
+    assert_eq!(store.class_count(), 0);
+    let ok = run(&mut store, &good, "medcare-rs").expect("green");
+    assert_eq!(ok.registered().count(), 20);
 }
 
 // ── a generic concept shared by two consumers ───────────────────────────────
@@ -1218,6 +1395,28 @@ fn ticket_table(actions: fn() -> Vec<ActionDef>) -> DomainTable {
 
 const SEAT: u16 = 0x7F01;
 
+/// The consumer's own ledger for the ticket behaviours (OGAR does not know
+/// them): its range, `0xF800` upward.
+fn ticket_arms() -> ConsumerArms {
+    ConsumerArms::new()
+        .with("ogit-crm/crm_ticket::action_def::close_ticket", 0xF800)
+        .with("ogit-crm/crm_ticket::action_def::reopen_ticket", 0xF801)
+        .with(
+            "ogit-zammad/zammad_seat::action_def::escalate_to_group",
+            0xF802,
+        )
+}
+
+fn register_ticket<V: ClassView + ?Sized>(
+    store: &mut BindStore,
+    view: &V,
+    classes: &ClassMap,
+    table: &DomainTable,
+    rev: SchemaRev,
+) -> Result<TableOutcome, TableRefusal> {
+    register_domain_table_with_arms(store, view, classes, &ticket_arms(), table, rev)
+}
+
 /// Both consumers read the ticket concept as the shared canonical class.
 fn shared_ticket() -> (Consumer, ClassMap) {
     (
@@ -1236,7 +1435,7 @@ fn two_consumers_sharing_a_concept_register_one_behaviour() {
     let (view_a, map_a) = shared_ticket();
     let (view_b, map_b) = shared_ticket();
     let mut store = BindStore::new();
-    let a = register_domain_table_for(
+    let a = register_ticket(
         &mut store,
         &view_a,
         &map_a,
@@ -1244,7 +1443,7 @@ fn two_consumers_sharing_a_concept_register_one_behaviour() {
         REV,
     )
     .unwrap();
-    let b = register_domain_table_for(
+    let b = register_ticket(
         &mut store,
         &view_b,
         &map_b,
@@ -1271,11 +1470,12 @@ fn two_consumers_sharing_a_concept_register_one_behaviour() {
     assert_eq!(r.methods.len(), 1, "one method, not two");
     // The canonical entry point is the same choice and agrees.
     let mut via_canon = BindStore::new();
-    let c = register_domain_table(
+    let c = register_domain_table_with_arms(
         &mut via_canon,
         &view_a,
+        &CanonicalClasses,
+        &ticket_arms(),
         &ticket_table(ticket_close),
-        APP,
         REV,
     )
     .unwrap();
@@ -1290,7 +1490,7 @@ fn a_second_consumer_cannot_change_a_shared_behaviour() {
     let (view_a, map_a) = shared_ticket();
     let (view_b, map_b) = shared_ticket();
     let mut store = BindStore::new();
-    let a = register_domain_table_for(
+    let a = register_ticket(
         &mut store,
         &view_a,
         &map_a,
@@ -1299,7 +1499,7 @@ fn a_second_consumer_cannot_change_a_shared_behaviour() {
     )
     .unwrap();
     let ra = a.registered().next().unwrap();
-    let refused = register_domain_table_for(
+    let refused = register_ticket(
         &mut store,
         &view_b,
         &map_b,
@@ -1331,7 +1531,7 @@ fn a_second_consumer_adds_a_behaviour_beside_the_shared_one() {
     let (view_a, map_a) = shared_ticket();
     let (view_b, map_b) = shared_ticket();
     let mut store = BindStore::new();
-    let a = register_domain_table_for(
+    let a = register_ticket(
         &mut store,
         &view_a,
         &map_a,
@@ -1339,7 +1539,7 @@ fn a_second_consumer_adds_a_behaviour_beside_the_shared_one() {
         REV,
     )
     .unwrap();
-    let b = register_domain_table_for(
+    let b = register_ticket(
         &mut store,
         &view_b,
         &map_b,
@@ -1376,7 +1576,7 @@ fn a_second_consumer_adds_a_behaviour_beside_the_shared_one() {
 fn a_seat_behaviour_does_not_appear_under_the_shared_class() {
     let (view, map) = shared_ticket();
     let mut store = BindStore::new();
-    let out = register_domain_table_for(
+    let out = register_ticket(
         &mut store,
         &view,
         &map,
@@ -1394,10 +1594,7 @@ fn a_seat_behaviour_does_not_appear_under_the_shared_class() {
         .unwrap();
     assert_eq!(shared.on, class_ids::CRM_TICKET);
     assert_eq!(seat.on, SEAT);
-    assert_eq!(
-        seat.arm,
-        behaviour_arm("ogit-zammad/zammad_seat::action_def::escalate_to_group")
-    );
+    assert_eq!(seat.arm, 0xF802);
     // Nothing of the seat is registered under the shared concept.
     let bview = BehaviourView::from_outcomes(&view, [&out]);
     let under_shared = (u32::from(class_ids::CRM_TICKET) << 16) | u32::from(seat.arm);

@@ -44,6 +44,9 @@ pub mod recipe;
 /// `extract_text_layer` / `extract_page_image` / `render_text` /
 /// `render_tsv` / `render_hocr` / `render_searchable_pdf`, each targeting a
 /// minted `0x08XX` [`class_ids`] concept.
+/// The explicit, append-only ledger of behaviour arms (`class :: F###`): the
+/// canonical ledger for OGAR's own defs and the rules for a consumer's.
+pub mod arm_ledger;
 pub mod capability_registry;
 pub mod document_actions;
 /// The shared effect classification ([`effect_class::EffectClass`],
