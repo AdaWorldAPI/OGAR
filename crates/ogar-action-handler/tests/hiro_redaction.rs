@@ -203,7 +203,7 @@ fn wire_frames_do_not_print_parameters_or_results() {
     assert_redacted("SendActionResult", &result);
     assert_redacted(
         "ActionWsFrame::SendActionResult",
-        &ActionWsFrame::SendActionResult(result.clone()),
+        &ActionWsFrame::from(result.clone()),
     );
     let decoded = wire::decode(&wire::encode(&result.clone().into())).unwrap();
     assert_redacted("decoded SendActionResult", &decoded);
@@ -229,7 +229,9 @@ fn a_wire_error_does_not_print_the_frame() {
         format!(
             r#"{{"type":"submitAction","id":7,"capability":"c","parameters":{{"p":"{SECRET}"}}}}"#
         ),
-        format!(r#"{{"type":"sendActionResult","id":"x","password":"{SECRET}"}}"#),
+        // A result with no `id` is still refused (a result with no `result` is
+        // accepted since the codec made it optional).
+        format!(r#"{{"type":"sendActionResult","result":"x","password":"{SECRET}"}}"#),
     ] {
         let err = wire::decode(&text).expect_err(&text);
         assert_redacted("WireError", &err);

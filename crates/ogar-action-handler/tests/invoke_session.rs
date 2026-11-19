@@ -336,3 +336,139 @@ fn the_result_ack_decodes_as_an_acknowledged_frame() {
     };
     assert_eq!((a.id.as_str(), a.code, a.message), ("r-1", Some(200), None));
 }
+
+/// A `negativeAcknowledged` with no `code` and no `message` (`I:201-212` passes
+/// `nil` for both) ends the call as the terminal NACK it is: not resent, logged
+/// (`nil` is not 404, `I:662-664`), and the caller gets the absent fields as they
+/// were, not invented ones. The codec used to refuse such a frame.
+#[test]
+fn a33_a_nack_without_code_or_message_is_terminal() {
+    for f in [
+        json!({"type": "negativeAcknowledged"}),
+        json!({"type": "negativeAcknowledged", "code": null, "message": null}),
+    ] {
+        let mut s = InvokeSession::new();
+        let id = started(&mut s, 0, req(1));
+        let mut f = f;
+        f["id"] = json!(id);
+        let fx = s.on_text(5, &frame(&f)).expect("decodes");
+        assert_eq!(
+            fx[0],
+            Effect::Log(Log::MessageNacked {
+                request_id: id.clone(),
+                code: None
+            })
+        );
+        assert_eq!(
+            completion(&fx).result,
+            Err(InvokeError::Nack {
+                code: None,
+                message: None
+            })
+        );
+        assert!(s.on_tick(1_000_000).is_empty(), "no resend");
+        assert_eq!(s.state().tracked(), 0);
+    }
+}
+
+/// A NACK with no `id` finds no caller in HIRO (`request_registry.ex:126-134`
+/// looks up `nil`): nobody is answered. Here it is the codec's error and the
+/// call goes on.
+#[test]
+fn a_nack_without_an_id_answers_nobody() {
+    let mut s = InvokeSession::new();
+    started(&mut s, 0, req(1));
+    for f in [
+        json!({"type": "negativeAcknowledged", "code": 404, "message": "m"}),
+        json!({"type": "negativeAcknowledged", "id": null, "code": 404, "message": "m"}),
+    ] {
+        assert_eq!(
+            s.on_text(5, &frame(&f)),
+            Err(WireError::MissingField {
+                frame: "negativeAcknowledged",
+                field: "id"
+            }),
+            "{f}"
+        );
+    }
+    assert_eq!(s.state().tracked(), 1);
+}
+
+/// The invoker writes a typed `submitAction` (`wire::encode` would write strings).
+/// What the handler session accepts of it: every parameter value as text, the
+/// `timeout` entries the invoker puts INSIDE `parameters` included. HIRO's handler
+/// takes `params` as it is (`handler.ex:121-133`), so a number or a `null` is
+/// there for it; this crate keeps a non-string as its compact JSON text.
+#[test]
+fn the_invokers_typed_submit_is_what_the_handler_session_accepts() {
+    use ogar_action_handler::session::{Effect as HEffect, Session};
+    use ogar_action_handler::submit_state::Config;
+
+    // A numeric `timeout` inside `parameters` (seconds 123 -> 123000 ms) ...
+    let mut inv = InvokeSession::new();
+    let fx = inv.call(
+        0,
+        req(1)
+            .param("retries", json!(3))
+            .param("flag", json!(true))
+            .param("nested", json!({"a": [1, 2]}))
+            .with_timeout(TimeoutArg::Int(123)),
+    );
+    let text = match &fx[0] {
+        Effect::Send { text, .. } => text.clone(),
+        other => panic!("{other:?}"),
+    };
+    // The wire has the typed values.
+    let v: Value = serde_json::from_str(&text).expect("json");
+    assert_eq!(v["parameters"]["timeout"], json!(123_000));
+    assert_eq!(v["parameters"]["retries"], json!(3));
+
+    let mut h = Session::new(Config::default()).unwrap();
+    let hfx = h.on_text(0, &text).expect("the handler session accepts it");
+    let HEffect::Run {
+        id,
+        capability,
+        parameters,
+    } = &hfx[1]
+    else {
+        panic!("{hfx:?}")
+    };
+    assert_eq!(id, v["id"].as_str().unwrap());
+    assert_eq!(capability, "ExecuteCommand");
+    let mut parameters = parameters.clone();
+    parameters.sort();
+    assert_eq!(
+        parameters,
+        vec![
+            ("command".to_owned(), "ls".to_owned()),
+            ("flag".to_owned(), "true".to_owned()),
+            ("nested".to_owned(), r#"{"a":[1,2]}"#.to_owned()),
+            ("retries".to_owned(), "3".to_owned()),
+            ("timeout".to_owned(), "123000".to_owned()),
+        ]
+    );
+    // ... and the frame's own `timeout` is the handler's deadline.
+    assert_eq!(h.next_wakeup(), Some(123_000));
+
+    // ... and with no timeout at all: `parameters.timeout` is `null` (`I:421`), the
+    // frame's `timeout` is the 60000 ms default, and the handler reads `"null"`.
+    let mut inv = InvokeSession::new();
+    let fx = inv.call(0, req(2));
+    let text = match &fx[0] {
+        Effect::Send { text, .. } => text.clone(),
+        other => panic!("{other:?}"),
+    };
+    let v: Value = serde_json::from_str(&text).expect("json");
+    assert_eq!(v["parameters"]["timeout"], Value::Null);
+    assert_eq!(v["timeout"], json!(60_000));
+    let mut h = Session::new(Config::default()).unwrap();
+    let hfx = h.on_text(0, &text).expect("accepted");
+    let HEffect::Run { parameters, .. } = &hfx[1] else {
+        panic!("{hfx:?}")
+    };
+    assert!(
+        parameters.contains(&("timeout".to_owned(), "null".to_owned())),
+        "{parameters:?}"
+    );
+    assert_eq!(h.next_wakeup(), Some(60_000));
+}

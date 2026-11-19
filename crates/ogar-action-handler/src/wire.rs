@@ -10,8 +10,8 @@
 //! |---|---|
 //! | `submitAction` | `type`, `id`, `handler`, `capability`, `parameters` (object), `timeout` (integer, milliseconds) |
 //! | `acknowledged` | `type`, `id`, optional `code`, optional `message` |
-//! | `negativeAcknowledged` | `type`, `id`, `code`, `message` |
-//! | `sendActionResult` | `type`, `id`, `result` (a string: the JSON text of the result) |
+//! | `negativeAcknowledged` | `type`, `id`, optional `code`, optional `message` |
+//! | `sendActionResult` | `type`, `id`, `result` (a string: the JSON text of the result; the invoker side also takes it missing or `null`) |
 //! | `configChanged` | `type` only |
 //! | `error` | `type`, `code`, `message` |
 //! | `hello` | `type`, optional `max_frame_bytes` |
@@ -41,10 +41,22 @@
 //!   an empty `handler`.
 //! - An `acknowledged` frame carries `code` and `message` only sometimes (the
 //!   gateway's ack of a submit carries neither), so it has its own type, [`AckFrame`].
-//! - `sendActionResult.result` must be present. A string is kept verbatim. The
-//!   invoker side of graph_conn also takes an object or a number there; such a value
-//!   is kept as its compact JSON text. A missing or `null` result is refused
-//!   ([`WireError::MissingField`]) rather than invented.
+//! - `sendActionResult.result` is optional ([`ResultFrame`]). A string is kept
+//!   verbatim. The invoker side of graph_conn also takes an object or a number
+//!   there; such a value is kept as its compact JSON text. A missing or `null`
+//!   result is `None`: graph_conn hands the caller `nil`
+//!   (`invoker_result_test.exs:42-48`), and no value is invented. An `id` is still
+//!   required.
+//! - `negativeAcknowledged.code` and `.message` are optional ([`NackFrame`]):
+//!   graph_conn's handler matches `type` and `id` only (`handler.ex:112-119`) and
+//!   its invoker passes `msg["code"]` and `msg["message"]` on, `nil` when absent
+//!   (`invoker.ex:201-212`). A NACK with no `id` (or a `null` one) is still a
+//!   [`WireError::MissingField`]: graph_conn looks the id up and finds nobody
+//!   (`request_registry.ex:126-134`, `handler.ex:112-119` with `Responder`), so
+//!   nothing happens in either party, which is what an error that steps no state
+//!   machine does.
+//! - The in-band 503 keeps its whole `error` object ([`UpstreamUnavailable::error`]),
+//!   because graph_conn's invoker hands that map to the caller (`invoker.ex:267`).
 
 use serde_json::{Map, Value};
 
@@ -105,9 +117,13 @@ pub(crate) fn fit_checked(frame: ActionWsFrame, max_frame_bytes: u64) -> (Action
         megabytes(bytes),
         megabytes(max_frame_bytes)
     );
-    let replaced = SendActionResult {
+    let replaced = ResultFrame {
         id: result.id.clone(),
-        result: crate::submit_state::error_result(&result.id, TOO_BIG_STATUS, &message),
+        result: Some(crate::submit_state::error_result(
+            &result.id,
+            TOO_BIG_STATUS,
+            &message,
+        )),
     };
     (replaced.into(), true)
 }
@@ -219,6 +235,85 @@ impl AckFrame {
     }
 }
 
+/// A `negativeAcknowledged` frame as it travels: `code` and `message` are
+/// optional on the wire, as for [`AckFrame`] (graph_conn `handler.ex:112-119`,
+/// `invoker.ex:201-212`). Nothing is invented for an absent field.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NackFrame {
+    /// The id of the message being refused.
+    pub id: String,
+    /// Status code, when the sender gave one.
+    pub code: Option<u16>,
+    /// Note, when the sender gave one.
+    pub message: Option<String>,
+}
+
+impl From<NegativeAcknowledged> for NackFrame {
+    fn from(n: NegativeAcknowledged) -> Self {
+        Self {
+            id: n.id,
+            code: Some(n.code),
+            message: Some(n.message),
+        }
+    }
+}
+
+impl NackFrame {
+    /// The typed [`NegativeAcknowledged`], when the frame carried both `code` and
+    /// `message`; `None` otherwise (no default is invented).
+    #[must_use]
+    pub fn into_negative_acknowledged(self) -> Option<NegativeAcknowledged> {
+        Some(NegativeAcknowledged {
+            id: self.id,
+            code: self.code?,
+            message: self.message?,
+        })
+    }
+}
+
+/// A `sendActionResult` frame as it travels: `result` is optional on the wire.
+/// A missing or `null` result is `None`; graph_conn's invoker hands the caller
+/// `nil` for it (`invoker_result_test.exs:42-48`).
+///
+/// `Debug` prints the length of the result, never its text (oracle 42), as
+/// [`SendActionResult`] does.
+#[derive(Clone, PartialEq, Eq)]
+pub struct ResultFrame {
+    /// The request id.
+    pub id: String,
+    /// The result text; a string verbatim, any other JSON value as compact JSON.
+    pub result: Option<String>,
+}
+
+impl core::fmt::Debug for ResultFrame {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("ResultFrame")
+            .field("id", &self.id)
+            .field("result_len", &self.result.as_ref().map(String::len))
+            .finish()
+    }
+}
+
+impl From<SendActionResult> for ResultFrame {
+    fn from(r: SendActionResult) -> Self {
+        Self {
+            id: r.id,
+            result: Some(r.result),
+        }
+    }
+}
+
+impl ResultFrame {
+    /// The typed [`SendActionResult`], when the frame carried a `result`.
+    #[must_use]
+    pub fn into_send_action_result(self) -> Option<SendActionResult> {
+        Some(SendActionResult {
+            id: self.id,
+            result: self.result?,
+        })
+    }
+}
+
 /// The gateway's `hello`, sent once on connect.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct Hello {
@@ -275,6 +370,35 @@ pub struct UpstreamUnavailable {
     pub message: Option<String>,
     /// `error.upstream`, when present.
     pub upstream: Option<String>,
+    /// The frame's whole `error` object, whatever fields it carries: graph_conn's
+    /// invoker hands this map to the caller (`invoker.ex:267`). A decoded frame
+    /// always has it (with `code`). When encoding, the map is written with `code`
+    /// 503 and any `Some` typed field laid over it; [`UpstreamUnavailable::new`]
+    /// builds a consistent one.
+    pub error: Map<String, Value>,
+}
+
+impl UpstreamUnavailable {
+    /// A 503 built from its typed fields; [`UpstreamUnavailable::error`] holds
+    /// `code`, and `message` and `upstream` when given, so the frame equals what
+    /// [`decode`] makes of its encoding.
+    #[must_use]
+    pub fn new(id: Option<String>, message: Option<String>, upstream: Option<String>) -> Self {
+        let mut error = Map::new();
+        error.insert("code".to_owned(), Value::from(503));
+        if let Some(m) = &message {
+            error.insert("message".to_owned(), Value::from(m.as_str()));
+        }
+        if let Some(u) = &upstream {
+            error.insert("upstream".to_owned(), Value::from(u.as_str()));
+        }
+        Self {
+            id,
+            message,
+            upstream,
+            error,
+        }
+    }
 }
 
 /// One decoded `action-ws` frame.
@@ -290,9 +414,9 @@ pub enum ActionWsFrame {
     /// `acknowledged`.
     Acknowledged(AckFrame),
     /// `negativeAcknowledged`.
-    NegativeAcknowledged(NegativeAcknowledged),
+    NegativeAcknowledged(NackFrame),
     /// `sendActionResult`.
-    SendActionResult(SendActionResult),
+    SendActionResult(ResultFrame),
     /// `configChanged`.
     ConfigChanged,
     /// A typed `error`.
@@ -320,11 +444,21 @@ impl From<AckFrame> for ActionWsFrame {
 }
 impl From<NegativeAcknowledged> for ActionWsFrame {
     fn from(m: NegativeAcknowledged) -> Self {
+        Self::NegativeAcknowledged(m.into())
+    }
+}
+impl From<NackFrame> for ActionWsFrame {
+    fn from(m: NackFrame) -> Self {
         Self::NegativeAcknowledged(m)
     }
 }
 impl From<SendActionResult> for ActionWsFrame {
     fn from(m: SendActionResult) -> Self {
+        Self::SendActionResult(m.into())
+    }
+}
+impl From<ResultFrame> for ActionWsFrame {
+    fn from(m: ResultFrame) -> Self {
         Self::SendActionResult(m)
     }
 }
@@ -405,14 +539,20 @@ fn frame_to_value(frame: &ActionWsFrame) -> Value {
         ActionWsFrame::NegativeAcknowledged(n) => {
             let mut m = typed("negativeAcknowledged");
             m.insert("id".to_owned(), Value::from(n.id.as_str()));
-            m.insert("code".to_owned(), Value::from(n.code));
-            m.insert("message".to_owned(), Value::from(n.message.as_str()));
+            if let Some(c) = n.code {
+                m.insert("code".to_owned(), Value::from(c));
+            }
+            if let Some(msg) = &n.message {
+                m.insert("message".to_owned(), Value::from(msg.as_str()));
+            }
             Value::Object(m)
         }
         ActionWsFrame::SendActionResult(r) => {
             let mut m = typed("sendActionResult");
             m.insert("id".to_owned(), Value::from(r.id.as_str()));
-            m.insert("result".to_owned(), Value::from(r.result.as_str()));
+            if let Some(result) = &r.result {
+                m.insert("result".to_owned(), Value::from(result.as_str()));
+            }
             Value::Object(m)
         }
         ActionWsFrame::ConfigChanged => Value::Object(typed("configChanged")),
@@ -434,7 +574,7 @@ fn frame_to_value(frame: &ActionWsFrame) -> Value {
             typeless(err, r.id.as_deref())
         }
         ActionWsFrame::UpstreamUnavailable(u) => {
-            let mut err = Map::new();
+            let mut err = u.error.clone();
             err.insert("code".to_owned(), Value::from(503));
             if let Some(msg) = &u.message {
                 err.insert("message".to_owned(), Value::from(msg.as_str()));
@@ -490,10 +630,10 @@ fn decode_typed(kind: &str, obj: &Map<String, Value>) -> Result<ActionWsFrame, W
             code: opt_u16(obj, "acknowledged", "code")?,
             message: opt_string(obj, "acknowledged", "message")?,
         })),
-        "negativeAcknowledged" => Ok(ActionWsFrame::NegativeAcknowledged(NegativeAcknowledged {
+        "negativeAcknowledged" => Ok(ActionWsFrame::NegativeAcknowledged(NackFrame {
             id: req_string(obj, "negativeAcknowledged", "id")?,
-            code: req_u16(obj, "negativeAcknowledged", "code")?,
-            message: req_string(obj, "negativeAcknowledged", "message")?,
+            code: opt_u16(obj, "negativeAcknowledged", "code")?,
+            message: opt_string(obj, "negativeAcknowledged", "message")?,
         })),
         "sendActionResult" => decode_result(obj),
         "configChanged" => Ok(ActionWsFrame::ConfigChanged),
@@ -592,18 +732,10 @@ fn decode_result(obj: &Map<String, Value>) -> Result<ActionWsFrame, WireError> {
     const F: &str = "sendActionResult";
     let id = req_string(obj, F, "id")?;
     let result = match obj.get("result") {
-        None | Some(Value::Null) => {
-            return Err(WireError::MissingField {
-                frame: F,
-                field: "result",
-            });
-        }
-        Some(v) => value_text(v),
+        None | Some(Value::Null) => None,
+        Some(v) => Some(value_text(v)),
     };
-    Ok(ActionWsFrame::SendActionResult(SendActionResult {
-        id,
-        result,
-    }))
+    Ok(ActionWsFrame::SendActionResult(ResultFrame { id, result }))
 }
 
 fn decode_typeless(obj: &Map<String, Value>) -> Result<ActionWsFrame, WireError> {
@@ -640,6 +772,7 @@ fn decode_typeless(obj: &Map<String, Value>) -> Result<ActionWsFrame, WireError>
                 .get("upstream")
                 .and_then(Value::as_str)
                 .map(str::to_owned),
+            error: err.clone(),
         })),
         other => Err(WireError::UnknownTypelessError(other)),
     }

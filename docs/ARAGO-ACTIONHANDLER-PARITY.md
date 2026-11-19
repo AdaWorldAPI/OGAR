@@ -489,8 +489,9 @@ Limits, true after this change:
   logs sets its own hook.
 * `Jason.EncodeError` (status 54 for an unencodable result) has no Rust counterpart: a result
   is a list of string pairs.
-* A `negativeAcknowledged` without `code` or `message` is a `WireError` (a pinned test), where
-  the Elixir handler would accept it and stop the resend. No client sends one.
+* A `negativeAcknowledged` without `code` or `message` is accepted (the codec keeps both
+  optional) and stops the resend, as the Elixir handler's does. A NACK with no `id` is still a
+  `WireError`, which steps nothing; HIRO finds nothing pending for it either.
 * In-band 429 and 503 frames, `configChanged` and the typed `error` are decoded and ignored,
   as the Elixir handler ignores them. Python's resend after `retryAfterMs` is not built.
 * Not an invoker: submitting, waiting and the invoker's own inbound path (a result wrapped with
@@ -580,7 +581,7 @@ Further differences of section 8 of the oracle that reach the handler's inbound 
 | `configChanged`, typed `error` | not handled, warning | Python and Java call a listener or log | decoded and ignored | `config_changed_and_a_typed_error_are_ignored` |
 | unknown fields in a frame | the keys it needs are matched, the rest ignored (`handler.ex:121-130`) | `dict.get` / Jackson | ignored, in a submit, an ack and a `hello` | `submit_with_unknown_fields_is_accepted_and_they_are_ignored`, `an_ack_with_unknown_fields_is_an_ack`, `hello_with_unknown_fields_is_accepted` |
 | `parameters` values that are not strings | any term | `dict` (`P:101`), `Map<String, Object>` (`J:30`) | a string verbatim, any other value as compact JSON text | `submit_parameters_that_are_not_strings_are_kept_as_compact_json` |
-| a NACK with neither `code` nor `message` | accepted: `type` and `id` are matched (`handler.ex:112-116`) | not sent by either client | **refused** by the codec (a pinned test), so it is a `WireError` and the resend continues. A known gap; nothing sends such a frame | `a_nack_without_code_or_message_is_a_wire_error_and_the_resend_continues` |
+| a NACK with neither `code` nor `message` | accepted: `type` and `id` are matched (`handler.ex:112-119`) | not sent by either client | accepted (`code` and `message` are optional in the codec); it stops the resend like any NACK. It used to be a `WireError` (a known gap, closed 2026-11-19). A NACK with no `id` is still a `WireError`: nothing is pending for it in HIRO either | `a_nack_without_code_or_message_stops_the_resend`, `a_nack_without_an_id_changes_nothing` |
 
 Frame limit and the oracle. The oracle's assertion 10 names `GraphConn.max_frame_bytes` without its
 default. The source (`connection_manager.ex:61`, `:201-221`; `README.md:174-182`) returns
@@ -597,6 +598,13 @@ are sans-IO: time is an argument and the things to send or fetch are returned as
 |---|---|
 | `invoke_state` | one invoker, many concurrent calls: ack wait 3000 ms and three sends, response wait = request timeout + 1000 ms with one last call, in-band 429/503 with and without an id, timeout validation before any send, NACK, result acked before delivery and decoded once, request ids shared by identical calls, late refusals (oracle assertions 20-41) |
 | `invoke_session` | the text-frame adapter: `acknowledged`, `negativeAcknowledged`, `sendActionResult`, the typeless 429/503, `configChanged`; `submitAction` written with typed parameters |
+
+The three codec gaps this section once listed are closed in `wire`: a `negativeAcknowledged` with no
+`code` or `message` (`NackFrame`, both optional; the invoker completes with `{:nack, %{code: nil, message:
+nil}}` as HIRO does), a `sendActionResult` with a missing or `null` `result` (`ResultFrame`, `None`; the caller
+gets `nil`), and the in-band 503's whole `error` object (`UpstreamUnavailable::error`). `invoke_session` no
+longer re-reads the raw text for any of them. A NACK, an ack or a result with no `id` is still a
+`WireError` (HIRO acks a result with no id using `null`; this does not send that ack).
 | `discovery` | the pure parsers of `GET /api/version` (malformed entries skipped), the auth answer and the path prefix; `capability_defaults`; and `FetchState`, the capabilities-then-applicabilities fetch with HIRO's backoff curve (1000 ms seed, cap 10000 ms, jitter, a 429's retry-after as the floor) and the refetch on `configChanged` |
 
 `tests/invoke_tolerance.rs` pins what the invoker completes with when the handler is a Python or
