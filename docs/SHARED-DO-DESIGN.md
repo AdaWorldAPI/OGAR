@@ -351,15 +351,62 @@ ticket is what a divergence records.
    are landed as cells.
 4. The slot pool holds 64 open thoughts and squashes or evicts under pressure.
    A long-open invocation needs a rule that it is not dropped silently.
-5. Receipts must be immutable. lance-context's store replaces the earlier
-   record when an id repeats, and an existence check followed by an add is not
-   atomic (EXO-300). It is not admitted for persisting episodes yet.
+5. Receipts must be immutable. In lance-context this depends on the store:
+   `GenericStore::add` checks no uniqueness and reads newest-wins per id, so a
+   repeated id replaces the earlier record (EXO-300); `ContextStore` rejects a
+   duplicate id on `add`, and its upsert appends and marks the old row
+   superseded. Neither has a seal or a witness. Not admitted for persisting
+   episodes yet.
 6. The HIRO wire still needs `session`: ack and result resend are transport
    behaviour towards the engine and stay at the edge.
 7. A deadline is wall-clock, not a version. The caller still supplies the clock.
 
-**Open.** No document was found that is a refactoring plan of lance-context
-for this use; the closest are EXO-323 (lance-context as the intervention graph)
-and the thought-git, interventional-faithfulness and temporal-ablation plans in
-`lance-graph/.claude/plans`. A full read of those against this mapping is in
-progress and will amend this section.
+**What the existing plans say (read 2026-11-19; lance-graph `053fab405`,
+lance-context `c9a638b`).** No plan exists, in either repository, to refactor
+lance-context for receipts, ablation or intervention, and nothing is wired:
+no lance-graph crate depends on lance-context. The nearest lance-context
+refactor is `docs/src/design/auto-dream.md`, a draft for memory consolidation.
+
+| topic | finding | source |
+|---|---|---|
+| what a receipt is | a replay recipe: base (dataset, branch, version), program and version, inputs, seed, config, slot, a fold over the values read, a fold over the writes, outcome. It stores witnesses, not values; replay recomputes and compares | `thought-git-probe/src/receipt.rs` |
+| where receipts go | a separate table keyed by (dataset, data version, thought id), so the data table does not depend on the metadata schema | `thought-git-api-v1.md`, `thought-git-basics-v1.md` |
+| lance-context today | none of the receipt fields exist. Its own "receipt" is an ingest acknowledgement, stated as not proof of commit. `GenericStore` with a caller schema is the right shape for a receipt table but lacks write-once and a witness check | `lance-context-core`, `lance-context-wal/README.md` |
+| who owns intervention | lance-graph: `lance-graph-planner/src/pearl.rs` (association, intervention, counterfactual, confounder check) and `chain_counterfactual.rs` (single-cut replay) | source |
+| ablation | a research RFC, explicitly not shipped: worlds W0 against a detached world, a structural `do` needs a causal model before any causal claim | `inverted-temporal-ablation-reasoner-oracles-v1.md` |
+| lance-context compare | `AbReport` compares two dataset versions on retrieval metrics only; it is not a harness for reasoning or actions | `lance-context` `eval.rs` |
+| interference between actions | no plan defines an oracle for it | (none found) |
+
+**Conflicts between those plans and rulings 2 and 3 above.** Each needs a
+decision before anything is built.
+
+1. *Polyfill rule.* Thought git runs only on the polyfill stack and excludes
+   DataFusion and MemWAL's DataFusion scanner ("Polyfill, niemals legacy",
+   2026-10-20). `GenericStore` imports DataFusion and uses MemWAL. So
+   lance-context can sit beside the execution path as a store, not inside it.
+2. *Two write-ahead logs.* The plans warn against two logs under one commit.
+   lance-context runs its own.
+3. *No new store.* The interventional-faithfulness plan and the lifecycle
+   contract both put "a new store" out of scope. A receipt store in
+   lance-context lifts that and should be decided as such.
+4. *Identity.* Thought ids must never be reused (blocked on EXO-148);
+   `GenericStore` allows overwrite.
+5. *Branches.* Thought-git branches are resident and cost no Lance call; a
+   Lance branch per thought is called too heavy. The earlier proposal of a
+   Lance branch per intervention (bardioc listing r12, item 94) conflicts.
+6. *Receipts of what did not land.* Receipts are kept at `Commit`. A recalled
+   or pruned invocation is exactly what interference learning wants to see, and
+   where its receipt lives is undecided in the plans.
+7. *Retention.* Replay needs the base version still present; Lance cleanup
+   removes untagged old versions.
+8. *The word.* "Receipt" means an ingest acknowledgement in lance-context and
+   a replay recipe in thought git.
+
+Consistent with ruling 1: the same thought-git plan retires the mailbox readers
+(`MailboxSoA::apply_edges`) and the kanban actor.
+
+**Not read.** About 100 further lance-graph plans matched by keyword
+(including `wal-shootout-v1.md`, `counterfactual-rung3-closure-v1.md`,
+`d-rft-relalg-thought-git-frontier-v1.md`) and most of lance-context's
+annotation and WAL design notes; lance-context's tag, branch and retention
+behaviour was not checked.
