@@ -52,6 +52,7 @@
 #![warn(missing_docs)]
 
 pub mod applicability;
+pub mod discovery;
 #[cfg(feature = "dt64")]
 pub mod dt64;
 pub mod invoke_session;

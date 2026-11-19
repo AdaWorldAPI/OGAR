@@ -649,6 +649,14 @@ impl InvokeState {
         self.defaults.insert(capability.into(), defaults);
     }
 
+    /// Take the parameter defaults from a capabilities body (the JSON of
+    /// `GET /capabilities`), as the invoker reads them after a fetch
+    /// (assertion 32): see [`crate::discovery::capability_defaults`]. Replaces
+    /// the defaults of every capability.
+    pub fn load_capabilities(&mut self, capabilities: &Value) {
+        self.defaults = crate::discovery::all_capability_defaults(capabilities);
+    }
+
     /// Replace the defaults of every capability.
     pub fn replace_capability_defaults(&mut self, all: BTreeMap<String, Map<String, Value>>) {
         self.defaults = all;

@@ -513,3 +513,29 @@ chosen. The queue and the lance-context side are outside this crate.
 target, and time is modelled by versioning through thought git. Where this section says
 "queued" or "queue", read: an open thought that has not landed. A recall before the run is
 then a thought that does not land. See `SHARED-DO-DESIGN.md` section 10.
+
+## 10. The invoker side (2026-11-19) — `invoke_state`, `invoke_session`, `discovery`
+
+The handler side (sections 3 and 8) was the first half. This is the other half: the party that
+submits an action and waits for the result, as graph_conn's `Invoker` does. All three modules
+are sans-IO: time is an argument and the things to send or fetch are returned as values.
+
+| module | covers |
+|---|---|
+| `invoke_state` | one invoker, many concurrent calls: ack wait 3000 ms and three sends, response wait = request timeout + 1000 ms with one last call, in-band 429/503 with and without an id, timeout validation before any send, NACK, result acked before delivery and decoded once, request ids shared by identical calls, late refusals (oracle assertions 20-41) |
+| `invoke_session` | the text-frame adapter: `acknowledged`, `negativeAcknowledged`, `sendActionResult`, the typeless 429/503, `configChanged`; `submitAction` written with typed parameters |
+| `discovery` | the pure parsers of `GET /api/version` (malformed entries skipped), the auth answer and the path prefix; `capability_defaults`; and `FetchState`, the capabilities-then-applicabilities fetch with HIRO's backoff curve (1000 ms seed, cap 10000 ms, jitter, a 429's retry-after as the floor) and the refetch on `configChanged` |
+
+`tests/invoke_tolerance.rs` pins what the invoker completes with when the handler is a Python or
+a Java client: their `{code, message, data}` wrapper, including the 500 they send for a handler
+exception, completes as a success, because only an `error` key is an error. The Rust invoker
+keeps the Elixir behaviour.
+
+**What it does not cover.** There is no HTTP client and no socket: the caller sends the
+frames, makes the GETs, keeps the clock and applies the request timeout. Request ids are
+FNV-1a 64 over a canonical encoding, not the MD5 of Erlang's term encoding that HIRO uses;
+ids are opaque to the handler, so this does not matter on the wire, but an id is not
+comparable to one HIRO computed. A 200 capabilities body that is not a JSON object is a
+failed fetch here; HIRO accepts it and fails later. The real gateway's behaviour is
+unverified (the oracle's section 9 applies: the reference is the mock). Choices where the
+source is silent are listed in the module documentation of each.
