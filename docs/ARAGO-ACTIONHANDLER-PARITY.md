@@ -463,3 +463,48 @@ decode are returned as a `WireError`, with no run and no reply (graph_conn sends
 Not wired: no socket, timer or reconnect loop; episodes are not persisted; class id, target
 and effect class stay unset in the episode; `handle_submit` is unchanged and still runs a
 repeated id twice.
+
+## 9. Deferred (2026-11-19) — abort as a recall
+
+**Decision.** Abort is not built now. It is recorded here so the gap is deliberate and the
+place for it is known. Revisit when both conditions below hold.
+
+**When it becomes needed.** For tickets (`crm_ticket`, `0x0504`, and any other class whose
+actions are queued per target), IF invocations run through virtual actor queues AND
+lance-context is used as the feedback loop that decides or re-orders what is queued. A
+decision that feedback has since overturned must then be withdrawn before it runs: a
+recall. Without queues there is nothing waiting to recall; without feedback there is
+nothing that changes its mind.
+
+**What exists today.**
+
+| | HIRO reference handler | OGAR `submit_state` / `session` |
+|---|---|---|
+| Recall of a submitted action by the sender | none: no abort frame in graph_conn or the client repos | none: `Input` has no abort |
+| Stop of a running execution | only the deadline (`Task.shutdown(:brutal_kill)`), reported as a timeout result | only the deadline; a late `Finished` is ignored and the timeout result stands |
+| `negativeAcknowledged` | stops the result resend; it is not an abort | same |
+| Episode outcome | n/a | `Succeeded`, `Failed`, `TimedOut`; no `Recalled` |
+
+So a recall is an extension beyond HIRO parity, not a parity gap.
+
+**What a recall has to settle when it is built.**
+
+1. *Before the run starts* (still queued): the invocation is dropped and never runs. This
+   is the easy case and the one the queue design should make the common one.
+2. *While it runs*: the executor must be told to stop, and the effect class decides whether
+   that is allowed. A pure predicate or read can be dropped; a `LifecycleWrite` or
+   `ExternalHost` action may already have had its effect, so a recall there is at best a
+   request and the answer must say what happened.
+3. *After it finished*: a recall cannot undo it. Undoing is a compensating action, a new
+   invocation with its own id, not a recall.
+4. The request id stays claimed for the cache window after a recall, so a late redelivery
+   of the recalled submit does not run it after all.
+5. The episode records it: an outcome `Recalled`, who recalled (the Actor route), and
+   whether the run had started. This is the feedback lance-context needs: a recalled
+   intervention is a different signal from a failed or timed-out one.
+6. The wire: HIRO has no frame for it. It needs a new frame type or stays inside the queue
+   and never reaches the HIRO wire.
+
+**Where it would go.** `submit_state`: one new `Input` (recall of an id), one new `Output`
+(stop request to the executor), one new `Outcome`. `session`: only if a wire frame is
+chosen. The queue and the lance-context side are outside this crate.
