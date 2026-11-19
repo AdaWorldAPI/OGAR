@@ -508,3 +508,8 @@ So a recall is an extension beyond HIRO parity, not a parity gap.
 **Where it would go.** `submit_state`: one new `Input` (recall of an id), one new `Output`
 (stop request to the executor), one new `Outcome`. `session`: only if a wire frame is
 chosen. The queue and the lance-context side are outside this crate.
+
+**Amendment (2026-11-19).** There are no mailboxes: the actor layer holds no queue per
+target, and time is modelled by versioning through thought git. Where this section says
+"queued" or "queue", read: an open thought that has not landed. A recall before the run is
+then a thought that does not land. See `SHARED-DO-DESIGN.md` section 10.
