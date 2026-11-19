@@ -177,11 +177,16 @@ pub(crate) fn lex(src: &str) -> Vec<Token> {
                 lx.bump();
                 Tok::At
             }
+            // A call's arguments may break across lines, so the delimiter
+            // that opens a regex position is looked for past line ends.
             '/' if matches!(
                 out.last().map(|t| &t.tok),
                 Some(Tok::Op(o)) if o == "=~" || o == "!~"
             ) || matches!(
-                out.last().map(|t| &t.tok),
+                out.iter()
+                    .rev()
+                    .map(|t| &t.tok)
+                    .find(|t| !matches!(t, Tok::Newline)),
                 Some(Tok::Colon | Tok::Comma | Tok::LParen)
             ) =>
             {

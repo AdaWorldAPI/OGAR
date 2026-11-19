@@ -121,3 +121,19 @@ fn variables_named_like_block_words_are_conditions() {
     // `with` is reserved: refused as a name, not read as a block
     assert!(parse("on\n  with and Ready\nwhen\n  X\ndo\n  log(\"x\")\n").is_err());
 }
+
+// A regex argument on its own line inside a call reads like the inline form.
+#[test]
+fn regex_literal_on_its_own_line_in_a_call() {
+    let src = "on\n  ogit/_id\nwhen\n  X\ndo\n  result: LOCAL::RESULT = regex(\n    \"VaLuE: 42.0\",\n    expression: /value ([0-9.]+)/i\n  )\n  result: LOCAL::R2 = regex(\n    /value/i\n  )\n";
+    parse(src).expect("a regex literal after a line break inside a call");
+    // after an operand, `/` on the next line is still division
+    let it = parse(&when_src("Bar == Foo / 2")).expect("parses");
+    let ogar_from_ki::ast::Cond::Leaf(l) = &it.when.conds[0] else {
+        panic!()
+    };
+    assert!(matches!(
+        l.test.as_ref().unwrap().right,
+        Expr::Binary { .. }
+    ));
+}
