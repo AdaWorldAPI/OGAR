@@ -477,6 +477,12 @@ fn error_result(id: &str, message: &str) -> SendActionResult {
 ///
 /// Pure given `executor`; the same flow arago's Python daemon runs, minus the
 /// socket (B2-transport) and the real command (the `executor` impl, B1).
+///
+/// This is the single-request building block. It is stateless: it holds no record
+/// of earlier requests, so the same request id delivered twice runs twice. For
+/// HIRO's run-once behaviour per request id (a repeat is acked and answered from the
+/// cached result), use `ogar_action_handler::session::Session`, whose
+/// `on_text_sync` takes the JSON text frame and returns the frames to send.
 #[must_use]
 pub fn handle_submit(
     msg: &SubmitAction,

@@ -3,7 +3,8 @@
 //!
 //! `ogar-from-schema::action_ws` is the I/O-free protocol core — the typed
 //! `action-ws` messages, the `submitAction → ActionInvocation → sendActionResult`
-//! binding, and [`handle_submit`] (the reactive dispatch). This crate supplies
+//! binding, and [`handle_submit`] (the single-request reactive dispatch; use
+//! [`session::Session`] for run-once per request id). This crate supplies
 //! the **[`CapabilityExecutor`]** the dispatch calls — the only piece that does
 //! real I/O — so the producer crate stays pure.
 //!
@@ -17,25 +18,29 @@
 //!
 //! ```
 //! use ogar_action_handler::NativeCommandExecutor;
-//! use ogar_from_schema::action_ws::{handle_submit, Receipt, SubmitAction};
+//! use ogar_action_handler::session::Session;
+//! use ogar_action_handler::submit_state::Config;
 //! use ogar_from_schema::do_arm::ActionParam;
 //! use ogar_vocab::ActionDef;
 //!
 //! let def = ActionDef::new("ogit-automation/.../ExecuteCommand", "ExecuteCommand", "ogit-automation/mars_machine");
 //! let sig = [ActionParam { name: "command".into(), mandatory: true, default: None }];
-//! let msg = SubmitAction {
-//!     id: "demo:req-000001".into(), capability: "ExecuteCommand".into(),
-//!     handler: "h1".into(), scope: None,
-//!     parameters: vec![("command".into(), "echo hi".into())],
-//!     timeout_millis: None,
-//! };
-//! let reaction = handle_submit(&msg, &def, &sig, &NativeCommandExecutor);
-//! assert!(matches!(reaction.receipt, Receipt::Acknowledged(_)));
-//! let result = reaction.result.unwrap();
-//! assert!(result.result.contains("\"output\":\"hi\""));
+//! let frame = r#"{"type":"submitAction","id":"demo:req-000001","handler":"h1",
+//!     "capability":"ExecuteCommand","parameters":{"command":"echo hi"}}"#;
+//!
+//! let mut session = Session::new(Config::default()).unwrap();
+//! let frames = session.on_text_sync(0, frame, &def, &sig, &NativeCommandExecutor).unwrap();
+//! // The ack first, then the result.
+//! assert_eq!(frames.len(), 2);
+//! assert!(frames[0].contains(r#""type":"acknowledged""#));
+//! assert!(frames[1].contains(r#""type":"sendActionResult""#));
+//! assert!(frames[1].contains(r#"\"output\":\"hi\""#));
 //! ```
 //!
-//! [`ogit`] holds the OGIT tables HIRO validates against, read once from an
+//! The session claims the request id: the same frame delivered again is acked and
+//! answered from the cached result without running the command again.
+//!
+//! //! [`ogit`] holds the OGIT tables HIRO validates against, read once from an
 //! OGIT tree, behind the `ontology-cache` feature the Ontology cache loader,
 //! and behind the `quack` feature a Quack binder and the Java validator's
 //! structural checks over those tables.
@@ -471,13 +476,30 @@ mod tests {
         );
     }
 
-    /// End-to-end: the dispatch core + this executor run a real command and
-    /// produce the `sendActionResult` — "OGAR running it here," native target.
+    /// End-to-end: a HIRO `submitAction` text frame through the session and this
+    /// executor runs a real command and produces the `sendActionResult` — "OGAR
+    /// running it here," native target. The same frame delivered a second time is
+    /// acked and answered from the cached result without running again.
     #[test]
     fn full_dispatch_runs_a_real_command() {
-        use ogar_from_schema::action_ws::{Receipt, SubmitAction, handle_submit};
+        use crate::session::Session;
+        use crate::submit_state::Config;
         use ogar_from_schema::do_arm::ActionParam;
         use ogar_vocab::ActionDef;
+        use std::cell::Cell;
+
+        /// Counts how many times the wrapped native executor really runs.
+        struct Counting(Cell<u32>);
+        impl CapabilityExecutor for Counting {
+            fn execute(
+                &self,
+                capability: &str,
+                bound: &[(String, String)],
+            ) -> Result<Vec<(String, String)>, String> {
+                self.0.set(self.0.get() + 1);
+                NativeCommandExecutor.execute(capability, bound)
+            }
+        }
 
         let def = ActionDef::new(
             "ogit-automation/action_capability::action_def::ExecuteCommand",
@@ -489,23 +511,35 @@ mod tests {
             mandatory: true,
             default: None,
         }];
-        let msg = SubmitAction {
-            id: "e2e:req-000001".to_owned(),
-            capability: "ExecuteCommand".to_owned(),
-            handler: "h1".to_owned(),
-            scope: None,
-            parameters: vec![("command".to_owned(), "echo running".to_owned())],
-            timeout_millis: None,
-        };
+        let frame = r#"{"type":"submitAction","id":"e2e:req-000001","handler":"h1",
+            "capability":"ExecuteCommand","parameters":{"command":"echo running"}}"#;
+        let executor = Counting(Cell::new(0));
+        let mut session = Session::new(Config::default()).expect("default config");
 
-        let reaction = handle_submit(&msg, &def, &sig, &NativeCommandExecutor);
-        assert!(matches!(reaction.receipt, Receipt::Acknowledged(_)));
-        let result = reaction.result.expect("result");
-        assert_eq!(result.id, "e2e:req-000001");
-        assert!(
-            result.result.contains(r#""output":"running""#),
-            "got: {}",
-            result.result
+        let first = session
+            .on_text_sync(0, frame, &def, &sig, &executor)
+            .expect("decodes");
+        assert_eq!(first.len(), 2, "ack then result: {first:?}");
+        let ack: serde_json::Value = serde_json::from_str(&first[0]).unwrap();
+        assert_eq!(ack["type"], "acknowledged");
+        let result: serde_json::Value = serde_json::from_str(&first[1]).unwrap();
+        assert_eq!(result["type"], "sendActionResult");
+        assert_eq!(result["id"], "e2e:req-000001");
+        let body = result["result"].as_str().expect("result is a JSON string");
+        assert!(body.contains(r#""output":"running""#), "got: {body}");
+        assert_eq!(executor.0.get(), 1);
+
+        // The same frame again: acked, answered from the cache, not run again.
+        let second = session
+            .on_text_sync(10, frame, &def, &sig, &executor)
+            .expect("decodes");
+        assert_eq!(executor.0.get(), 1, "a repeated id must not execute again");
+        assert_eq!(second.len(), 2, "ack and cached result: {second:?}");
+        let ack: serde_json::Value = serde_json::from_str(&second[0]).unwrap();
+        assert_eq!(ack["type"], "acknowledged");
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(&second[1]).unwrap(),
+            result
         );
     }
 

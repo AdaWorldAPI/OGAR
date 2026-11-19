@@ -479,7 +479,8 @@ Limits, true after this change:
 * Episodes are not persisted; class id, target and effect class stay unset in the episode.
 * `handle_submit` is unchanged apart from its ack text: it is stateless, runs a repeated id
   twice, has no deadline, reports an executor `Err` as `{"error":"<message>"}` (not 54) and
-  does not fit a result. `Session::on_text_sync` is the stateful drop-in.
+  does not fit a result. `Session::on_text_sync` is the stateful drop-in, and the in-repo
+  callers (the crate doc example and `full_dispatch_runs_a_real_command`) go through it.
 * Bind errors (a missing mandatory parameter) stay the one-field `{"error":"<message>"}`
   result: nothing ran, so it is not an execution failure. Elixir would report a missing
   clause as a `FunctionClauseError` with status 54.
