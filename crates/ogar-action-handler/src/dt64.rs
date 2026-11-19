@@ -737,9 +737,38 @@ pub fn register_domain_table_with_arms<V: ClassView + ?Sized, C: ConsumerClasses
     table: &DomainTable,
     schema_rev: SchemaRev,
 ) -> Result<TableOutcome, TableRefusal> {
+    register_defs_with_arms(
+        store,
+        view,
+        classes,
+        arms,
+        table.domain,
+        &(table.actions)(),
+        schema_rev,
+    )
+}
+
+/// [`register_domain_table_with_arms`] for a set of defs the caller holds,
+/// not a [`DomainTable`]. A `DomainTable` names its defs through a plain `fn`,
+/// which cannot carry defs built at run time (a handler's registered
+/// capabilities, for example); this takes them as a slice, with the `domain`
+/// label the outcome carries (diagnostics only). Behaviour, refusals and
+/// outcome are the same.
+///
+/// # Errors
+///
+/// As [`register_domain_table_with_arms`].
+pub fn register_defs_with_arms<V: ClassView + ?Sized, C: ConsumerClasses + ?Sized>(
+    store: &mut BindStore,
+    view: &V,
+    classes: &C,
+    arms: &ConsumerArms,
+    domain: &'static str,
+    defs: &[ActionDef],
+    schema_rev: SchemaRev,
+) -> Result<TableOutcome, TableRefusal> {
     arms.validate()
         .map_err(|e| TableRefusal::Arm(BehaviourArmRefusal::Ledger(e)))?;
-    let defs = (table.actions)();
     let lefts: Vec<Result<u16, ConvertRefusal>> = defs
         .iter()
         .map(|d| {
@@ -752,7 +781,7 @@ pub fn register_domain_table_with_arms<V: ClassView + ?Sized, C: ConsumerClasses
     // One arm per def, whether or not the def later converts, so that refusing
     // or un-refusing one never decides another's fate.
     let mut ledger_arms: Vec<u16> = Vec::with_capacity(defs.len());
-    for d in &defs {
+    for d in defs {
         match arms.arm_of(&d.identity) {
             Some(arm) => ledger_arms.push(arm),
             None => {
@@ -822,10 +851,7 @@ pub fn register_domain_table_with_arms<V: ClassView + ?Sized, C: ConsumerClasses
                 refusal,
             })?;
     }
-    Ok(TableOutcome {
-        domain: table.domain,
-        rows,
-    })
+    Ok(TableOutcome { domain, rows })
 }
 
 /// [`register_domain_table`] only if OGAR's hot-plug resolution is green for

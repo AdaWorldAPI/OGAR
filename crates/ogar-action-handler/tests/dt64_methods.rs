@@ -8,9 +8,10 @@ use lance_graph_contract::set_algebra::{Logic, SetExpr};
 use lance_graph_dt64::{BindStore, MethodId, Refusal, SchemaRev};
 use ogar_action_handler::dt64::{
     BehaviourArmRefusal, BehaviourView, CanonicalClasses, ClassMap, ConvertRefusal, FieldRole,
-    LedgerRefusal, TableOutcome, TableRefusal, method_of, register_domain_table,
-    register_domain_table_activated, register_domain_table_activated_with_arms,
-    register_domain_table_for, register_domain_table_with_arms,
+    LedgerRefusal, TableOutcome, TableRefusal, method_of, register_defs_with_arms,
+    register_domain_table, register_domain_table_activated,
+    register_domain_table_activated_with_arms, register_domain_table_for,
+    register_domain_table_with_arms,
 };
 use ogar_class_view::OgarClassView;
 use ogar_vocab::arm_ledger::{CANONICAL, ConsumerArms, canonical_arm};
@@ -1790,4 +1791,64 @@ fn a_seat_behaviour_does_not_appear_under_the_shared_class() {
             .name,
         "close_ticket"
     );
+}
+
+/// Defs built at run time (not reachable through a `DomainTable`'s `fn`) register
+/// through the slice entry point with the same outcome as the table path, and
+/// with the same refusal when an identity has no ledger line.
+#[test]
+fn defs_built_at_run_time_register_like_a_table() {
+    fn one() -> Vec<ActionDef> {
+        vec![textline_def("probe_run_time")]
+    }
+    let id = "ogit-ocr/textline::action_def::probe_run_time";
+    let view = textline_view();
+    let arms = ConsumerArms::new().with(id, ogar_vocab::arm_ledger::CONSUMER_ARM_FIRST);
+
+    let mut by_table = BindStore::new();
+    let table = textline_table(one);
+    let from_table = register_domain_table_with_arms(
+        &mut by_table,
+        &view,
+        &CanonicalClasses,
+        &arms,
+        &table,
+        REV,
+    );
+
+    // The same def, built from a name that exists only at run time.
+    let name = String::from("probe_run") + "_time";
+    let defs = vec![textline_def(&name)];
+    let mut by_defs = BindStore::new();
+    let from_defs = register_defs_with_arms(
+        &mut by_defs,
+        &view,
+        &CanonicalClasses,
+        &arms,
+        table.domain,
+        &defs,
+        REV,
+    );
+    assert!(from_defs.is_ok(), "{from_defs:?}");
+    assert_eq!(from_defs, from_table);
+    assert_eq!(by_defs.class_count(), by_table.class_count());
+    assert_eq!(by_defs.class_count(), 1);
+
+    // No ledger line: the same refusal by name, and nothing registered.
+    let mut empty = BindStore::new();
+    assert_eq!(
+        register_defs_with_arms(
+            &mut empty,
+            &view,
+            &CanonicalClasses,
+            &ConsumerArms::new(),
+            table.domain,
+            &defs,
+            REV,
+        ),
+        Err(TableRefusal::Arm(BehaviourArmRefusal::NoLedgerEntry {
+            identity: id.into()
+        }))
+    );
+    assert_eq!(empty.class_count(), 0);
 }
