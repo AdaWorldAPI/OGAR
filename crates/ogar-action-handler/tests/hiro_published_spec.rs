@@ -85,7 +85,7 @@ struct Schema {
 const SCHEMAS: &[Schema] = &[
     Schema {
         name: "Hello",
-        lines: (295, 319),
+        lines: (295, 318),
         required_line: 297,
         required: &[
             ("type", Ty::Str),
@@ -104,7 +104,7 @@ const SCHEMAS: &[Schema] = &[
     },
     Schema {
         name: "SubmitActionInbound",
-        lines: (321, 339),
+        lines: (321, 338),
         required_line: 323,
         required: &[
             ("type", Ty::Str),
@@ -138,7 +138,7 @@ const SCHEMAS: &[Schema] = &[
     },
     Schema {
         name: "SendActionResult",
-        lines: (358, 371),
+        lines: (358, 369),
         required_line: 360,
         required: &[("type", Ty::Str), ("id", Ty::Str), ("result", Ty::Str)],
         properties: &["type", "id", "result"],
@@ -271,6 +271,65 @@ fn outbound_submit_minimal() -> String {
     .to_string()
 }
 
+/// The 1-based last line of the definition that starts at line `start`: the
+/// last line before the next blank line, comment or line at indentation of two
+/// spaces or less, or the end of the file.
+fn definition_end(lines: &[&str], start: usize) -> usize {
+    let mut end = start;
+    for (i, l) in lines.iter().enumerate().skip(start) {
+        let indent = l.len() - l.trim_start().len();
+        if l.trim().is_empty() || indent <= 2 {
+            break;
+        }
+        end = i + 1;
+    }
+    end
+}
+
+fn ty_of(name: &str) -> Ty {
+    match name {
+        "string" => Ty::Str,
+        "integer" => Ty::Int,
+        "object" => Ty::Obj,
+        other => panic!("a type the table does not know: {other}"),
+    }
+}
+
+/// The type of property `field` of the definition spanning `start..=end`: its
+/// inline `type:`, or the `type:` of the local definition its `$ref` names.
+fn property_type(lines: &[&str], start: usize, end: usize, field: &str) -> Ty {
+    let key = format!("      {field}:");
+    let at = lines[start - 1..end]
+        .iter()
+        .position(|l| *l == key)
+        .unwrap_or_else(|| panic!("property {field} not found"))
+        + start;
+    // Its block: the following lines indented deeper than six spaces.
+    let block: Vec<&str> = lines[at..end]
+        .iter()
+        .copied()
+        .take_while(|l| l.starts_with("        "))
+        .collect();
+    if let Some(t) = block.iter().find_map(|l| l.strip_prefix("        type: ")) {
+        return ty_of(t.trim());
+    }
+    let target = block
+        .iter()
+        .find_map(|l| l.strip_prefix("        $ref: \"#/definitions/"))
+        .and_then(|r| r.strip_suffix('"'))
+        .unwrap_or_else(|| panic!("property {field} has neither type nor $ref"));
+    let def = lines
+        .iter()
+        .position(|l| *l == format!("  {target}:"))
+        .unwrap_or_else(|| panic!("definition {target} not found"));
+    let t = lines[def + 1..]
+        .iter()
+        .take_while(|l| l.starts_with("   "))
+        .find_map(|l| l.strip_prefix("    type: "))
+        .unwrap_or_else(|| panic!("definition {target} has no type"));
+    ty_of(t.trim())
+}
+
 // -------------------------------------------- the table against the YAML --
 
 #[test]
@@ -280,6 +339,11 @@ fn schema_table_matches_the_yaml() {
     let at = |n: usize| lines[n - 1];
     for s in SCHEMAS {
         assert_eq!(at(s.lines.0), format!("  {}:", s.name), "{} starts", s.name);
+        // The real end of the definition, from the file: the last content line
+        // before the next line at the definitions' indentation (a sibling key or
+        // a comment) or a blank line, or the end of the file.
+        let end = definition_end(&lines, s.lines.0);
+        assert_eq!(s.lines.1, end, "{}: recorded range end", s.name);
         let names: Vec<&str> = s.required.iter().map(|(n, _)| *n).collect();
         assert_eq!(
             at(s.required_line).trim(),
@@ -289,7 +353,7 @@ fn schema_table_matches_the_yaml() {
         );
         // Top-level properties sit at six spaces; nested ones (ClientHello's
         // `client.app`) sit deeper and are not counted.
-        let mut found: Vec<&str> = lines[s.lines.0 - 1..s.lines.1]
+        let mut found: Vec<&str> = lines[s.lines.0 - 1..end]
             .iter()
             .filter(|l| l.starts_with("      ") && !l.starts_with("       "))
             .filter_map(|l| l.trim_start().strip_suffix(':'))
@@ -298,6 +362,15 @@ fn schema_table_matches_the_yaml() {
         found.sort_unstable();
         listed.sort_unstable();
         assert_eq!(found, listed, "{}: property names", s.name);
+        // The type of every required property, from the file.
+        for (field, ty) in s.required {
+            assert_eq!(
+                property_type(&lines, s.lines.0, end, field),
+                *ty,
+                "{}: type of `{field}`",
+                s.name
+            );
+        }
     }
     // The header says the definitions are these and no others of the eight.
     for name in [
@@ -339,7 +412,7 @@ fn handler_ack_has_the_required_fields_and_two_extras() {
     assert_eq!(frames[0]["message"], "");
 }
 
-/// `SendActionResult` (YAML:358-371, required `type`, `id`, `result`).
+/// `SendActionResult` (YAML:358-369, required `type`, `id`, `result`).
 #[test]
 fn handler_send_action_result_has_the_required_fields() {
     let mut s = session();
@@ -488,7 +561,7 @@ fn invoke_call() -> (InvokeSession, Value) {
     (s, frames[0].clone())
 }
 
-/// `SubmitActionInbound` (YAML:321-339): the invoker's submit to aapi keeps
+/// `SubmitActionInbound` (YAML:321-338): the invoker's submit to aapi keeps
 /// `handler`. No extra fields.
 #[test]
 fn invoker_submit_action_has_the_inbound_required_fields() {
@@ -586,6 +659,10 @@ fn leniency_extra_properties_are_ignored_and_handler_is_read_when_present() {
         "somethingNew": true
     })
     .to_string();
+    match wire::decode(&frame) {
+        Ok(ActionWsFrame::SubmitAction(m)) => assert_eq!(m.handler, "handlerId"),
+        other => panic!("{other:?}"),
+    }
     let mut s = session();
     let fx = s.on_text(0, &frame).expect("decodes");
     assert_eq!(runs(&fx), 1);
@@ -613,7 +690,7 @@ fn submit_timeout_30000_is_a_30000_ms_deadline() {
     assert_eq!(inner["error"]["action_status"], 13);
 }
 
-/// `Hello` (YAML:295-319) with all five fields and the schema's examples. The
+/// `Hello` (YAML:295-318) with all five fields and the schema's examples. The
 /// frame decodes, and the session's frame limit becomes `max_frame_bytes`
 /// (YAML:313-319: "largest inbound frame this aapi accepts").
 #[test]
@@ -745,7 +822,7 @@ fn negative_acknowledged_ends_an_invoker_call_with_its_code_and_message() {
     );
 }
 
-/// `SendActionResult` (YAML:358-371) with the schema's example `result` "ok",
+/// `SendActionResult` (YAML:358-369) with the schema's example `result` "ok",
 /// which is a string and not JSON text. After the ack, the invoker acks the
 /// result and completes the call with that string as the value.
 #[test]
@@ -769,10 +846,13 @@ fn result_frame_with_the_schema_example_is_accepted_by_the_invoker() {
 
 // ----------------------------------------------- post-ack re-delivery --
 
-/// The "post-ack re-delivery" of YAML:290-293: aapi may deliver a `submitAction`
-/// again after the handler acknowledged it. Here the handler has acked, run and
-/// sent its result, and the peer has acked the result. The re-delivery is
-/// answered from the stored result and the capability does not run again.
+/// Re-delivery after an ack. The YAML names only the opt-out (YAML:286-294,
+/// `settings.redelivery`: "false opts the connection out of aapi's post-ack
+/// re-delivery") and does not say how a handler answers a duplicate. This is
+/// our behaviour, as graph_conn does, and is NOT required by the specification.
+/// The handler has acked, run and sent its result, and the peer has acked the
+/// result. A re-delivered submit is answered from the stored result and the
+/// capability does not run again.
 #[test]
 fn redelivery_after_ack_and_result_is_answered_from_the_stored_result() {
     let mut s = session();
@@ -888,8 +968,25 @@ fn constants_equal_the_catalog() {
 #[test]
 fn the_yaml_types_only_the_placeholder_keys() {
     let yaml = fixture("action.yaml");
-    assert!(yaml.contains("      capabilityName1:"));
-    assert!(yaml.contains("      handlerId1:"));
+    let lines: Vec<&str> = yaml.lines().collect();
+    let def = |name: &str| -> String {
+        let start = lines
+            .iter()
+            .position(|l| *l == format!("  {name}:"))
+            .unwrap_or_else(|| panic!("{name} not found"));
+        lines[start..]
+            .iter()
+            .enumerate()
+            .take_while(|(i, l)| *i == 0 || l.starts_with("   "))
+            .map(|(_, l)| *l)
+            .collect::<Vec<_>>()
+            .join("\n")
+    };
+    assert!(def("MapOfCapabilities").contains("      capabilityName1:"));
+    assert!(def("MapOfApplicabilities").contains("      handlerId1:"));
+    // `Applicability` (line 119) also uses the key `capabilityName1`, for its
+    // own entry type; pinned apart so it is not mistaken for the map's key.
+    assert!(def("Applicability").contains("      capabilityName1:"));
     // And the Capability definition (lines 95-97) requires these two.
     assert!(yaml.contains("required: [description, mandatoryParameters]"));
 }
