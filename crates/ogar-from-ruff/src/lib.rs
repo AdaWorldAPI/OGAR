@@ -898,6 +898,7 @@ fn lift_validation(v: &RuffValidation) -> Option<Validation> {
         ValidationKind::Validates => "validates",
         ValidationKind::ValidatesAssociated => "validates_associated",
         ValidationKind::ValidatesEach => "validates_each",
+        ValidationKind::ValidatesWith => "validates_with",
         ValidationKind::Normalizes => unreachable!("filtered above"),
     });
     if !v.target.is_empty() {
@@ -1490,6 +1491,18 @@ mod tests {
         let time_entries = &class.associations[1];
         assert_eq!(time_entries.kind, AssociationKind::HasMany);
         assert_eq!(time_entries.dependent.as_deref(), Some("delete_all"));
+    }
+
+    #[test]
+    fn lift_validates_with_names_the_validator_class() {
+        let v = lift_validation(&RuffValidation {
+            kind: ValidationKind::ValidatesWith,
+            target: "StateValidator".to_string(),
+            options: vec![("on".to_string(), ":create".to_string())],
+        })
+        .expect("validates_with is a constraint");
+        assert_eq!(v.target, "StateValidator");
+        assert_eq!(v.rule_source, "validates_with StateValidator, on: :create");
     }
 
     #[test]
