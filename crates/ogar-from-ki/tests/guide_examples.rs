@@ -240,7 +240,7 @@ fn fallback_unresolved() {
             name: Some("TestKi"),
             id: None,
             version: "0@NoName",
-            description: "KI to be trigger before the datagroup.de:Default:AutoStopIdleIssues KI, it will forward the ticket to the responsible support Group for manual resolution",
+            description: "KI to be trigger before the vendor.example:Default:AutoStopIdleIssues KI, it will forward the ticket to the responsible support Group for manual resolution",
             tier: Some(Tier::Fallback),
         },
     );

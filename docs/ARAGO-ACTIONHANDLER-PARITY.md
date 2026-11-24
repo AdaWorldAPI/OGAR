@@ -685,7 +685,7 @@ live gateway stays WP8.
 ## 13. Against HIRO's public documentation (2026-11-19)
 
 Section 8 to 12 check the code against graph_conn. This section checks it against what HIRO
-publishes: the 7.0 developer portal (`dev-portal.engine.datagroup.de/7.0/`). The decision
+publishes: the 7.0 developer portal (`dev-portal.engine.vendor.example/7.0/`). The decision
 (`HIRO_PARITY_INTEGRATION_PLAN.md` section 3b) is that **graph_conn's behaviour is kept and the
 documentation's differences are recorded as questions**. So the change is tolerance and
 documentation: the docs' own samples are fed to the code in `tests/hiro_public_docs.rs`, and

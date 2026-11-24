@@ -30,7 +30,7 @@ No parser generator and no third-party dependency (only `ogar-vocab`).
 ## Sources
 
 The language is read from "KI Syntax" in the HIRO User Guides 7.0
-(https://user-guides.engine.datagroup.de/7.0/ki-syntax/). The guide has no
+(https://user-guides.engine.vendor.example/7.0/ki-syntax/). The guide has no
 formal grammar. It gives informal templates, tables and examples. Where a rule
 is not on a page, the reader refuses the form by name.
 
