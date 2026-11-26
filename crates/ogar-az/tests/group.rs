@@ -137,3 +137,40 @@ fn a_wrongly_typed_group_property_is_refused() {
         Err(AzError::BadType(0, "securityEnabled"))
     ));
 }
+
+/// The dynamic-membership definition is read raw, and a group that reports
+/// none keeps it unknown rather than empty.
+#[test]
+fn the_membership_rule_is_read_raw_and_absent_stays_unknown() {
+    const DYN: &str = r#"{"value":[
+      {"id":"a1a1a1a1-0000-4000-8000-000000000001","displayName":"Lic E3",
+       "groupTypes":["DynamicMembership"],
+       "membershipRule":"(user.extensionAttribute7 -eq \"E3\")",
+       "membershipRuleProcessingState":"On"},
+      {"id":"d1d1d1d1-0000-4000-8000-000000000002","displayName":"Static",
+       "groupTypes":[],"membershipRule":null}
+    ]}"#;
+    assert!(group_select_query().contains(",membershipRule,membershipRuleProcessingState"));
+    let mut pool = ValuePool::new();
+    let page = ingest_groups_page(DYN, g(TENANT), &mut pool, 7).unwrap();
+    assert!(
+        page.ignored.is_empty(),
+        "both properties are in the schema: {:?}",
+        page.ignored
+    );
+    let dynamic = &page.records[0];
+    assert_eq!(
+        group_str(dynamic, &pool, "membershipRule"),
+        Some(r#"(user.extensionAttribute7 -eq "E3")"#)
+    );
+    assert_eq!(
+        group_str(dynamic, &pool, "membershipRuleProcessingState"),
+        Some("On")
+    );
+    let fixed = &page.records[1];
+    assert_eq!(group_str(fixed, &pool, "membershipRule"), None);
+    assert_eq!(
+        group_str(fixed, &pool, "membershipRuleProcessingState"),
+        None
+    );
+}
