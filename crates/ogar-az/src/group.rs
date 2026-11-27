@@ -24,7 +24,7 @@ use ogar_dir_core::{AttrDef, AttrKind, DirRecord, Guid128, SchemaFamily, SchemaI
 use serde_json::Value;
 
 /// Encoder schema version of [`GROUP_SCHEMA_V1`].
-pub const GROUP_SCHEMA_VERSION: u16 = 1;
+pub const GROUP_SCHEMA_VERSION: u16 = 2;
 /// The group record's schema id. It shares the Graph family with the
 /// `user` records; [`AzKind::Group`] tells the tables apart.
 pub const GROUP_SCHEMA: SchemaId = SchemaId {
@@ -36,6 +36,12 @@ pub const GROUP_SCHEMA: SchemaId = SchemaId {
 /// `mailNickname`, `proxyAddresses`), kind (`groupTypes`, `mailEnabled`,
 /// `securityEnabled`), the cloud SID, and the `onPremises*` evidence about an
 /// AD counterpart.
+///
+/// v2 adds the dynamic-membership definition, `membershipRule` and
+/// `membershipRuleProcessingState`, raw. They describe which members the
+/// group should have; they are never its observed membership, which stays the
+/// separate members read. Absent or `null` is unknown, like every attribute
+/// here.
 pub const GROUP_SCHEMA_V1: &[AttrDef] = &[
     AttrDef {
         name: "displayName",
@@ -102,6 +108,18 @@ pub const GROUP_SCHEMA_V1: &[AttrDef] = &[
         slot: 10,
         kind: AttrKind::Str,
         since: 1,
+    },
+    AttrDef {
+        name: "membershipRule",
+        slot: 11,
+        kind: AttrKind::Str,
+        since: 2,
+    },
+    AttrDef {
+        name: "membershipRuleProcessingState",
+        slot: 12,
+        kind: AttrKind::Str,
+        since: 2,
     },
     AttrDef {
         name: "mailEnabled",

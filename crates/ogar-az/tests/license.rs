@@ -2,7 +2,8 @@
 
 use ogar_az::AzError;
 use ogar_az::license::{
-    LicensePath, PathState, ingest_licenses_page, ingest_skus_page, licenses_url, skus_url,
+    LicensePath, Origin, PathState, decode_assignment_states, ingest_licenses_page,
+    ingest_skus_page, licenses_url, skus_url,
 };
 use ogar_dir_core::Guid128;
 
@@ -72,13 +73,15 @@ fn two_paths_are_one_sku() {
         paths[0],
         LicensePath {
             sku: g(SKU),
-            assigned_by_group: None,
+            origin: Some(Origin::Direct),
             state: PathState::Active,
             error: Some("None".into()),
             disabled_plans: vec![],
         }
     );
-    assert_eq!(paths[1].assigned_by_group, Some(g(GROUP)));
+    assert_eq!(paths[1].origin, Some(Origin::Group(g(GROUP))));
+    assert_eq!(paths[1].assigning_group(), Some(g(GROUP)));
+    assert_eq!(paths[0].assigning_group(), None);
     assert_eq!(paths[1].disabled_plans, vec![g(PLAN)]);
 }
 
@@ -190,4 +193,53 @@ fn a_missing_count_is_an_error_not_zero() {
         ingest_skus_page(&fractional),
         Err(AzError::BadType(0, "consumedUnits"))
     );
+}
+
+/// `assignedByGroup: null` is a direct assignment, a group id is a group
+/// assignment, and an omitted property is unreported: three facts, not two.
+#[test]
+fn a_missing_origin_is_not_a_direct_one() {
+    let body = format!(
+        r#"{{"value":[{{"id":"{U1}","licenseAssignmentStates":[
+            {{"skuId":"{SKU}","state":"Active","assignedByGroup":null}},
+            {{"skuId":"{SKU}","state":"Active","assignedByGroup":"{GROUP}"}},
+            {{"skuId":"{SKU2}","state":"Active"}}]}}]}}"#
+    );
+    let page = ingest_licenses_page(&body).unwrap();
+    let paths = page.users[0].paths.as_ref().unwrap();
+    let origins: Vec<_> = paths.iter().map(|p| p.origin).collect();
+    assert_eq!(
+        origins,
+        vec![Some(Origin::Direct), Some(Origin::Group(g(GROUP))), None]
+    );
+    assert_ne!(
+        paths[0].origin, paths[2].origin,
+        "null and missing must differ"
+    );
+    // An unreported origin is not a group either.
+    assert_eq!(paths[2].assigning_group(), None);
+}
+
+/// The public per-user decoder keeps the user-level presence: absent and
+/// `null` are not read, `[]` is read with no paths, any other shape is refused.
+#[test]
+fn the_user_decoder_keeps_not_read_apart_from_none() {
+    use serde_json::json;
+    assert_eq!(decode_assignment_states(None, 0), Ok(None));
+    assert_eq!(decode_assignment_states(Some(&json!(null)), 0), Ok(None));
+    assert_eq!(
+        decode_assignment_states(Some(&json!([])), 0),
+        Ok(Some(vec![]))
+    );
+    assert_eq!(
+        decode_assignment_states(Some(&json!({"skuId": SKU})), 3),
+        Err(AzError::BadType(3, "licenseAssignmentStates"))
+    );
+    let one = decode_assignment_states(
+        Some(&json!([{"skuId": SKU, "state": "Active", "assignedByGroup": null}])),
+        0,
+    )
+    .unwrap()
+    .unwrap();
+    assert_eq!(one[0].origin, Some(Origin::Direct));
 }

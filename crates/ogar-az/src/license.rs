@@ -13,6 +13,10 @@
 //! * **Not read is not none.** A property absent or `null` in the page is
 //!   `None`; an empty array is `Some(vec![])`. Only the second says the user
 //!   has no licence.
+//! * **Direct is reported, never assumed.** Graph sends `assignedByGroup:
+//!   null` for a direct assignment and a group id for an inherited one; a
+//!   path that omits the property has [`LicensePath::origin`] `None`, an
+//!   unreported origin, not a direct one.
 //! * **A path is not a seat.** A user who holds one SKU both directly and
 //!   through a group has two [`LicensePath`]s and one SKU.
 //! * **A state is kept as read.** Text other than `Active`, `Disabled` or
@@ -63,19 +67,38 @@ impl PathState {
     }
 }
 
+/// How one assignment path reaches the user, as `assignedByGroup` reported it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum Origin {
+    /// `assignedByGroup: null`: assigned to the user directly.
+    Direct,
+    /// `assignedByGroup` is this group's id.
+    Group(Guid128),
+}
+
 /// One way a SKU reaches a user (one entry of `licenseAssignmentStates`).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct LicensePath {
     /// The SKU.
     pub sku: Guid128,
-    /// The assigning group; `None` for a direct assignment.
-    pub assigned_by_group: Option<Guid128>,
+    /// `assignedByGroup` as reported; `None` when the entry omits it.
+    pub origin: Option<Origin>,
     /// The reported state.
     pub state: PathState,
     /// The reported `error` text, if present and not `null`.
     pub error: Option<String>,
     /// Service plans disabled on this path.
     pub disabled_plans: Vec<Guid128>,
+}
+
+impl LicensePath {
+    /// The assigning group, when the path reports one.
+    pub fn assigning_group(&self) -> Option<Guid128> {
+        match self.origin {
+            Some(Origin::Group(g)) => Some(g),
+            Some(Origin::Direct) | None => None,
+        }
+    }
 }
 
 /// One effective SKU of a user (one entry of `assignedLicenses`).
@@ -136,15 +159,7 @@ pub fn ingest_licenses_page(body: &str) -> Result<LicensesPage, AzError> {
     for (i, item) in items.iter().enumerate() {
         let obj = item.as_object().ok_or(AzError::BadId(i))?;
         let user = guid_field(obj, "id").ok_or(AzError::BadId(i))?;
-        let paths = match read_array(obj, i, "licenseAssignmentStates")? {
-            None => None,
-            Some(items) => Some(
-                items
-                    .iter()
-                    .map(|s| decode_path(s, i))
-                    .collect::<Result<Vec<_>, _>>()?,
-            ),
-        };
+        let paths = decode_assignment_states(obj.get("licenseAssignmentStates"), i)?;
         let effective = match read_array(obj, i, "assignedLicenses")? {
             None => None,
             Some(items) => Some(
@@ -247,16 +262,38 @@ pub fn ingest_skus_page(body: &str) -> Result<SkuPage, AzError> {
     Ok(page)
 }
 
+/// Decode one user's `licenseAssignmentStates` value, the property as Graph
+/// returned it (`None` when the user object lacks the key).
+///
+/// `None` or `null` is not read and decodes to `None`; `[]` decodes to
+/// `Some(vec![])`, read with no paths. Any other shape, or a GUID that does
+/// not parse, is an error naming entry `i`, never dropped.
+pub fn decode_assignment_states(
+    states: Option<&Value>,
+    i: usize,
+) -> Result<Option<Vec<LicensePath>>, AzError> {
+    match states {
+        None | Some(Value::Null) => Ok(None),
+        Some(Value::Array(items)) => items
+            .iter()
+            .map(|s| decode_path(s, i))
+            .collect::<Result<Vec<_>, _>>()
+            .map(Some),
+        Some(_) => Err(AzError::BadType(i, "licenseAssignmentStates")),
+    }
+}
+
 fn decode_path(v: &Value, i: usize) -> Result<LicensePath, AzError> {
     let o = v
         .as_object()
         .ok_or(AzError::BadType(i, "licenseAssignmentStates"))?;
     let sku = guid_field(o, "skuId").ok_or(AzError::BadType(i, "skuId"))?;
-    let assigned_by_group = match o.get("assignedByGroup") {
-        None | Some(Value::Null) => None,
-        Some(Value::String(s)) => {
-            Some(Guid128::parse(s).map_err(|_| AzError::BadType(i, "assignedByGroup"))?)
-        }
+    let origin = match o.get("assignedByGroup") {
+        None => None,
+        Some(Value::Null) => Some(Origin::Direct),
+        Some(Value::String(s)) => Some(Origin::Group(
+            Guid128::parse(s).map_err(|_| AzError::BadType(i, "assignedByGroup"))?,
+        )),
         Some(_) => return Err(AzError::BadType(i, "assignedByGroup")),
     };
     let state = match o.get("state") {
@@ -270,7 +307,7 @@ fn decode_path(v: &Value, i: usize) -> Result<LicensePath, AzError> {
     };
     Ok(LicensePath {
         sku,
-        assigned_by_group,
+        origin,
         state,
         error,
         disabled_plans: guid_list(o, i, "disabledPlans")?,
